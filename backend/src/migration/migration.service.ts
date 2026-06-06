@@ -82,19 +82,37 @@ export class MigrationService {
           this.logger.log(`Skipping existing panel: ${p.name}`);
           continue;
         } else {
+          // Parse url to get webBasePath and apiBaseUrl
+          let webBasePath = '';
+          let apiBaseUrl = p.url;
+          try {
+            const urlObj = new URL(p.url);
+            let path = urlObj.pathname.replace(/\/$/, '');
+            const panelIndex = path.indexOf('/panel');
+            if (panelIndex !== -1) {
+              webBasePath = path.substring(0, panelIndex);
+            } else {
+              webBasePath = path;
+            }
+            apiBaseUrl = `${urlObj.origin}${webBasePath}`;
+          } catch (err) {
+            this.logger.warn(`Failed to parse URL for panel ${p.name}: ${p.url}. Using raw URL.`);
+          }
+
           // Create new
           await this.prisma.panel.create({
             data: {
               serverId: defaultServer.id,
               name: p.name,
-              url: p.url,
+              url: p.url.replace(/\/$/, ''),
+              subUrl: p.sub_url || null,
               apiToken: p.token || null,
               username: p.username,
               password: p.password,
               status: p.is_active ? 'online' : 'offline',
               panelType: p.panel_type || '3x-ui',
-              webBasePath: p.sub_url || '',
-              apiBaseUrl: p.sub_url ? `${new URL(p.url).origin}${p.sub_url}` : p.url,
+              webBasePath: webBasePath,
+              apiBaseUrl: apiBaseUrl,
             }
           });
           importedPanels++;
