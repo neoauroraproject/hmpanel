@@ -76,29 +76,42 @@ export class MigrationService {
       // 2. Import Panels
       const panels = db.prepare('SELECT * FROM panels').all() as any[];
       for (const p of panels) {
+        // Parse url to get webBasePath and apiBaseUrl first so they are available for both create/update
+        let webBasePath = '';
+        let apiBaseUrl = p.url;
+        try {
+          const urlObj = new URL(p.url);
+          let path = urlObj.pathname.replace(/\/$/, '');
+          const panelIndex = path.indexOf('/panel');
+          if (panelIndex !== -1) {
+            webBasePath = path.substring(0, panelIndex);
+          } else {
+            webBasePath = path;
+          }
+          apiBaseUrl = `${urlObj.origin}${webBasePath}`;
+        } catch (err) {
+          this.logger.warn(`Failed to parse URL for panel ${p.name}: ${p.url}. Using raw URL.`);
+        }
+
         const existing = await this.prisma.panel.findFirst({ where: { name: p.name } });
         if (existing) {
-          // Skip existing to prevent overwriting
-          this.logger.log(`Skipping existing panel: ${p.name}`);
-          continue;
-        } else {
-          // Parse url to get webBasePath and apiBaseUrl
-          let webBasePath = '';
-          let apiBaseUrl = p.url;
-          try {
-            const urlObj = new URL(p.url);
-            let path = urlObj.pathname.replace(/\/$/, '');
-            const panelIndex = path.indexOf('/panel');
-            if (panelIndex !== -1) {
-              webBasePath = path.substring(0, panelIndex);
-            } else {
-              webBasePath = path;
+          // Update existing panel to apply correct URLs/tokens
+          await this.prisma.panel.update({
+            where: { id: existing.id },
+            data: {
+              url: p.url.replace(/\/$/, ''),
+              subUrl: p.sub_url || null,
+              apiToken: p.token || null,
+              username: p.username,
+              password: p.password,
+              status: p.is_active ? 'online' : 'offline',
+              panelType: p.panel_type || '3x-ui',
+              webBasePath: webBasePath,
+              apiBaseUrl: apiBaseUrl,
             }
-            apiBaseUrl = `${urlObj.origin}${webBasePath}`;
-          } catch (err) {
-            this.logger.warn(`Failed to parse URL for panel ${p.name}: ${p.url}. Using raw URL.`);
-          }
-
+          });
+          this.logger.log(`Updated existing panel: ${p.name}`);
+        } else {
           // Create new
           await this.prisma.panel.create({
             data: {
