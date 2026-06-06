@@ -1,0 +1,1076 @@
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import axios, { AxiosError } from 'axios';
+import * as https from 'https';
+import * as crypto from 'crypto';
+
+@Injectable()
+export class PanelsService {
+  private readonly logger = new Logger(PanelsService.name);
+  constructor(private prisma: PrismaService) {}
+
+  async testConnection(data: { url: string; apiToken?: string; panelId?: string }) {
+    if (data.panelId && !data.apiToken) {
+      const panel = await this.prisma.panel.findUnique({ where: { id: data.panelId } });
+      if (panel && panel.apiToken) data.apiToken = panel.apiToken;
+    }
+
+    if (!data.url || !/^https?:\/\//.test(data.url)) {
+      throw new BadRequestException('A valid http(s) URL is required');
+    }
+    let urlObj: URL;
+    try {
+      urlObj = new URL(data.url);
+    } catch {
+      throw new BadRequestException('Malformed URL');
+    }
+
+    const parsedHost = urlObj.hostname;
+    const parsedPort = urlObj.port || (urlObj.protocol === 'https:' ? '443' : '80');
+    
+    let path = urlObj.pathname.replace(/\/$/, '');
+    let webBasePath = '';
+    const panelIndex = path.indexOf('/panel');
+    if (panelIndex !== -1) {
+      webBasePath = path.substring(0, panelIndex);
+    } else {
+      webBasePath = path;
+    }
+
+    const baseUrl = urlObj.origin;
+    const apiBaseUrl = `${baseUrl}${webBasePath}`;
+
+    const startTime = Date.now();
+    
+    const checklist = {
+      sslValid: true,
+      apiReachable: false,
+      authPassed: false,
+      panelDetected: false,
+      versionSupported: false,
+    };
+
+    const debugLog = {
+      requestedUrl: data.url,
+      method: 'GET',
+      responseStatus: 0,
+      endpoint: `${apiBaseUrl}/panel/api/server/status`,
+    };
+
+    let errorType: string | undefined;
+    let exactError: string | undefined;
+    let obj: any = {};
+    let rawResponse: any = null;
+    let pingMs = 0;
+
+    try {
+      const response = await axios.get(debugLog.endpoint, {
+        headers: { Authorization: data.apiToken ? `Bearer ${data.apiToken}` : undefined },
+        timeout: 5000,
+      });
+      
+      pingMs = Date.now() - startTime;
+      checklist.apiReachable = true;
+      debugLog.responseStatus = response.status;
+      rawResponse = response.data;
+
+      if (response.status === 200 && response.data && response.data.success) {
+        checklist.authPassed = true;
+        obj = response.data.obj || {};
+        
+        const panelVersion = obj.panelVersion || 'unknown';
+        const xray = obj.xray || {};
+        const xrayVersion = xray.version || 'unknown';
+        
+        if (obj && obj.panelVersion) {
+          checklist.panelDetected = true;
+        }
+        
+        if (panelVersion !== 'unknown') {
+          checklist.versionSupported = true;
+        }
+
+        let inboundCount = 0;
+        let clientCount = 0;
+        try {
+          const inboundsRes = await axios.get(`${apiBaseUrl}/panel/api/inbounds/list`, {
+            headers: { Authorization: data.apiToken ? `Bearer ${data.apiToken}` : undefined },
+            timeout: 5000,
+          });
+          if (inboundsRes.data && inboundsRes.data.success) {
+            const apiInbounds = inboundsRes.data.obj || [];
+            inboundCount = apiInbounds.length;
+            for (const apiInbound of apiInbounds) {
+              const settings = typeof apiInbound.settings === 'string' ? JSON.parse(apiInbound.settings) : apiInbound.settings;
+              const clientsList = settings?.clients || [];
+              clientCount += clientsList.length;
+            }
+          }
+        } catch (inboundsErr: any) {
+          // Soft failure on inbounds
+        }
+
+        return {
+          ok: true,
+          checklist,
+          version: panelVersion,
+          xrayVersion: xrayVersion,
+          pingMs,
+          status: 'online',
+          inboundCount,
+          clientCount,
+          parsedHost,
+          parsedPort,
+          webBasePath,
+          apiBaseUrl,
+          debugLog,
+          rawResponse,
+          message: 'Connection successful',
+        };
+      } else {
+        // Response format is correct but success is false
+        debugLog.responseStatus = response.status;
+        rawResponse = response.data;
+        if (obj && obj.panelVersion) {
+          checklist.panelDetected = true;
+        }
+        const msgLower = response.data?.msg?.toLowerCase() || '';
+        if (msgLower.includes('token') || msgLower.includes('auth') || msgLower.includes('login')) {
+          checklist.authPassed = false;
+          errorType = 'Invalid Token';
+        } else {
+          errorType = 'API Version Unsupported';
+        }
+        exactError = response.data?.msg || 'Failed to authenticate with panel';
+      }
+    } catch (err: any) {
+      pingMs = Date.now() - startTime;
+      const axiosErr = err as AxiosError;
+      
+      if (axiosErr.response) {
+        debugLog.responseStatus = axiosErr.response.status;
+        checklist.apiReachable = true;
+        checklist.panelDetected = true; // Got a HTTP response at least
+        
+        if (axiosErr.response.status === 401 || axiosErr.response.status === 403) {
+          checklist.authPassed = false;
+          errorType = 'Unauthorized';
+          exactError = 'Invalid API Token or Credentials';
+        } else if (axiosErr.response.status === 404) {
+          checklist.panelDetected = false;
+          errorType = 'API Version Unsupported';
+          exactError = 'Endpoint /panel/api/server/status not found. Is this 3x-ui?';
+        } else {
+          errorType = 'API Version Unsupported';
+          exactError = `HTTP ${axiosErr.response.status}`;
+        }
+      } else if (axiosErr.request) {
+        // Network error
+        checklist.apiReachable = false;
+        if (axiosErr.code === 'ECONNABORTED' || err.message.includes('timeout')) {
+          errorType = 'Timeout';
+          exactError = 'Connection timed out. Check firewall and routing.';
+        } else if (axiosErr.code === 'CERT_HAS_EXPIRED' || err.message.toLowerCase().includes('ssl') || err.message.toLowerCase().includes('cert')) {
+          checklist.sslValid = false;
+          errorType = 'SSL Error';
+          exactError = 'Invalid or expired SSL Certificate.';
+        } else if (axiosErr.code === 'ECONNREFUSED') {
+          errorType = 'Panel Unreachable';
+          exactError = 'Connection refused. Check URL and Port.';
+        } else {
+          errorType = 'Panel Unreachable';
+          exactError = err.message;
+        }
+      } else {
+        errorType = 'Unknown Error';
+        exactError = err.message;
+      }
+    }
+
+    // If we reached here, something failed
+    return {
+      ok: false,
+      checklist,
+      errorType,
+      message: exactError,
+      pingMs,
+      parsedHost,
+      parsedPort,
+      webBasePath,
+      apiBaseUrl,
+      debugLog,
+      rawResponse,
+    };
+  }
+
+  async register(data: { serverId?: string; name: string; url: string; subUrl?: string; apiToken?: string; username?: string; password?: string }) {
+    const authMode = data.apiToken ? 'token' : 'credentials';
+    if (authMode === 'credentials' && (!data.username || !data.password)) {
+      throw new BadRequestException('Username and password required for credential auth');
+    }
+
+    let serverId = data.serverId;
+    if (!serverId) {
+      const server = await this.prisma.server.findFirst({ select: { id: true } });
+      if (!server) throw new BadRequestException('No server available to attach the panel to');
+      serverId = server.id;
+    }
+
+    let urlObj: URL;
+    try {
+      urlObj = new URL(data.url);
+    } catch {
+      throw new BadRequestException('Malformed URL');
+    }
+    let path = urlObj.pathname.replace(/\/$/, '');
+    let webBasePath = '';
+    const panelIndex = path.indexOf('/panel');
+    if (panelIndex !== -1) {
+      webBasePath = path.substring(0, panelIndex);
+    } else {
+      webBasePath = path;
+    }
+    const apiBaseUrl = `${urlObj.origin}${webBasePath}`;
+
+    let formattedSubUrl = null;
+    if (data.subUrl && data.subUrl.trim() !== '') {
+      formattedSubUrl = data.subUrl.trim();
+      if (!formattedSubUrl.startsWith('https://')) {
+        throw new BadRequestException('Subscription URL must start with https://');
+      }
+      if (!formattedSubUrl.endsWith('/')) {
+        formattedSubUrl += '/';
+      }
+    } else {
+      throw new BadRequestException('Subscription URL is required');
+    }
+
+    const panel = await this.prisma.panel.create({
+      data: {
+        serverId,
+        name: data.name,
+        url: data.url.replace(/\/$/, ''),
+        subUrl: formattedSubUrl,
+        version: 'unknown',
+        apiToken: data.apiToken,
+        username: data.username,
+        password: data.password,
+        authMode,
+        status: 'online',
+        panelType: '3x-ui',
+        webBasePath,
+        apiBaseUrl,
+      },
+    });
+
+    try {
+      const syncReport = await this.sync(panel.id);
+      
+      await this.prisma.auditLog.create({
+        data: { action: 'PANEL_REGISTERED', entity: 'Panel', entityId: panel.id, details: { url: panel.url } }
+      });
+
+      return {
+        panelId: panel.id,
+        name: panel.name,
+        syncReport,
+      };
+    } catch (err: any) {
+      return {
+        panelId: panel.id,
+        name: panel.name,
+        syncReport: {
+          success: false,
+          error: err.message,
+        }
+      };
+    }
+  }
+
+  async findAll() {
+    const panels = await this.prisma.panel.findMany({
+      select: {
+        id: true, name: true, url: true, subUrl: true, version: true, authMode: true, status: true, createdAt: true,
+        inboundCount: true, clientCount: true, lastSync: true, lastOnline: true, panelType: true,
+        server: { select: { id: true, name: true, ipAddress: true } },
+        syncState: { select: { lastSync: true, wsConnected: true, latencyMs: true, status: true } },
+        _count: { select: { inbounds: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    return panels;
+  }
+
+  async findOne(id: string) {
+    const panel = await this.prisma.panel.findUnique({
+      where: { id },
+      include: {
+        server: { select: { id: true, name: true, ipAddress: true } },
+        inbounds: { select: { id: true, tag: true, port: true, protocol: true, _count: { select: { clients: true } } } },
+        syncState: true,
+      },
+    });
+    if (!panel) throw new NotFoundException('Panel not found');
+    return panel;
+  }
+
+  async getInbounds(id: string) {
+    await this.findOne(id); // Ensures panel exists
+    const dbInbounds = await this.prisma.inbound.findMany({
+      where: { panelId: id },
+      select: {
+        id: true,
+        tag: true,
+        port: true,
+        protocol: true,
+        panel: { select: { id: true, name: true } },
+      },
+    });
+    return dbInbounds;
+  }
+
+  async update(id: string, data: { name?: string; url?: string; subUrl?: string; apiToken?: string; status?: string }) {
+    await this.findOne(id);
+    let formattedSubUrl: string | undefined | null = undefined;
+    if (data.subUrl !== undefined) {
+      if (data.subUrl && data.subUrl.trim() !== '') {
+        formattedSubUrl = data.subUrl.trim();
+        if (!formattedSubUrl.startsWith('https://')) {
+          throw new BadRequestException('Subscription URL must start with https://');
+        }
+        if (!formattedSubUrl.endsWith('/')) {
+          formattedSubUrl += '/';
+        }
+      } else {
+        throw new BadRequestException('Subscription URL is required');
+      }
+    }
+
+    return this.prisma.panel.update({
+      where: { id },
+      data: {
+        name: data.name,
+        url: data.url ? data.url.replace(/\/$/, '') : undefined,
+        subUrl: formattedSubUrl,
+        apiToken: data.apiToken,
+        status: data.status,
+      },
+      select: { id: true, name: true, url: true, subUrl: true, version: true, authMode: true, status: true },
+    });
+  }
+
+  async remove(id: string) {
+    await this.findOne(id);
+    const inbounds = await this.prisma.inbound.findMany({
+      where: { panelId: id },
+      select: { id: true }
+    });
+    const inboundIds = inbounds.map((i) => i.id);
+
+    const clientIds = (
+      await this.prisma.client.findMany({
+        where: { inboundId: { in: inboundIds } },
+        select: { id: true }
+      })
+    ).map((c) => c.id);
+
+    await this.prisma.trafficTransaction.deleteMany({
+      where: { clientId: { in: clientIds } }
+    });
+
+    await this.prisma.client.deleteMany({
+      where: { inboundId: { in: inboundIds } }
+    });
+
+    await this.prisma.panel.delete({ where: { id } });
+    return { deleted: true };
+  }
+
+  async sync(id: string) {
+    const panel = await this.findOne(id);
+    const startTime = Date.now();
+    const apiBaseUrl = panel.apiBaseUrl || panel.url.replace(/\/$/, '');
+
+    try {
+      const statusRes = await axios.get(`${apiBaseUrl}/panel/api/server/status`, {
+        headers: { Authorization: panel.apiToken ? `Bearer ${panel.apiToken}` : undefined },
+        timeout: 5000,
+      });
+
+      if (!statusRes.data || !statusRes.data.success) {
+        throw new Error(statusRes.data?.msg || 'Failed to get server status');
+      }
+
+      const obj = statusRes.data.obj || {};
+      const panelVersion = obj.panelVersion || '3.2.5';
+      const xray = obj.xray || {};
+      const version = panelVersion; // or combine them if needed
+      const latencyMs = Date.now() - startTime;
+
+      const cpuUsage = typeof obj.cpu === 'number' ? obj.cpu : 0;
+      const memCurrent = obj.mem?.current ? Number(obj.mem.current) : 0;
+      const memTotal = obj.mem?.total ? Number(obj.mem.total) : 1;
+      const ramUsage = (memCurrent / memTotal) * 100;
+
+      const diskCurrent = obj.disk?.current ? Number(obj.disk.current) : 0;
+      const diskTotal = obj.disk?.total ? Number(obj.disk.total) : 1;
+      const diskUsage = (diskCurrent / diskTotal) * 100;
+
+      const netUp = obj.netTraffic?.sent ? BigInt(obj.netTraffic.sent) : (obj.netIO?.up ? BigInt(obj.netIO.up) : 0n);
+      const netDown = obj.netTraffic?.recv ? BigInt(obj.netTraffic.recv) : (obj.netIO?.down ? BigInt(obj.netIO.down) : 0n);
+
+      await this.prisma.systemStats.create({
+        data: {
+          serverId: panel.serverId,
+          cpuUsage,
+          ramUsage,
+          diskUsage,
+          netUp,
+          netDown,
+        }
+      });
+
+      // --- Group Sync & Conflict Detection ---
+      try {
+        const apiGroups = await this.listGroups(id);
+        const apiGroupIds = new Set(apiGroups.map((g: any) => String(g.id || g.name || g.tgId))); // Depends on panel impl, usually g.id
+        
+        const localAdminsWithGroup = await this.prisma.admin.findMany({
+          where: { xuiGroupId: { not: null } },
+          select: { id: true, username: true, xuiGroupId: true, xuiGroupName: true }
+        });
+
+        const localGroupIds = new Set(localAdminsWithGroup.map(a => a.xuiGroupId));
+
+        for (const admin of localAdminsWithGroup) {
+          if (!apiGroupIds.has(admin.xuiGroupId!)) {
+            // Missing in panel but exists locally
+            await this.prisma.auditLog.create({
+              data: {
+                action: 'GROUP_SYNC_CONFLICT',
+                entity: 'Panel',
+                entityId: id,
+                details: { message: `Group ${admin.xuiGroupName} (ID: ${admin.xuiGroupId}) is missing in panel but exists locally for reseller ${admin.username}. Flagged for review.` }
+              }
+            });
+          }
+        }
+
+        for (const g of apiGroups) {
+          const gId = String(g.id || g.name || g.tgId);
+          if (!localGroupIds.has(gId)) {
+            // Exists in panel but not locally
+            await this.prisma.auditLog.create({
+              data: {
+                action: 'GROUP_SYNC_CONFLICT',
+                entity: 'Panel',
+                entityId: id,
+                details: { message: `Group ${g.name || gId} exists in panel but is not tracked locally. Flagged for review.` }
+              }
+            });
+          }
+        }
+      } catch (err: any) {
+        this.logger.warn(`Failed to sync groups for panel ${id}: ${err.message}`);
+      }
+      // --- End Group Sync ---
+
+      const inboundsRes = await axios.get(`${apiBaseUrl}/panel/api/inbounds/list`, {
+        headers: { Authorization: panel.apiToken ? `Bearer ${panel.apiToken}` : undefined },
+        timeout: 8000,
+      });
+
+      if (!inboundsRes.data || !inboundsRes.data.success) {
+        throw new Error(inboundsRes.data?.msg || 'Failed to fetch inbounds');
+      }
+
+      const apiInbounds = inboundsRes.data.obj || [];
+
+      let totalSyncedInbounds = 0;
+      let totalSyncedClients = 0;
+      
+      const apiUuids = new Set<string>();
+
+      for (const apiInbound of apiInbounds) {
+        totalSyncedInbounds++;
+        const settings = typeof apiInbound.settings === 'string'
+          ? JSON.parse(apiInbound.settings)
+          : apiInbound.settings;
+        const streamSettings = typeof apiInbound.streamSettings === 'string'
+          ? JSON.parse(apiInbound.streamSettings)
+          : apiInbound.streamSettings;
+
+        let dbInbound = await this.prisma.inbound.findFirst({
+          where: { panelId: panel.id, port: apiInbound.port }
+        });
+
+        if (!dbInbound) {
+          dbInbound = await this.prisma.inbound.create({
+            data: {
+              panelId: panel.id,
+              tag: apiInbound.remark || `inbound-${apiInbound.port}`,
+              port: apiInbound.port,
+              protocol: apiInbound.protocol,
+              settings: settings || {},
+              streamSettings: streamSettings || {},
+            }
+          });
+        } else {
+          dbInbound = await this.prisma.inbound.update({
+            where: { id: dbInbound.id },
+            data: {
+              tag: apiInbound.remark || dbInbound.tag,
+              protocol: apiInbound.protocol,
+              settings: settings || {},
+              streamSettings: streamSettings || {},
+            }
+          });
+        }
+
+        const clientsList = settings?.clients || [];
+        const clientStats = apiInbound.clientStats || [];
+        const statsMap = new Map();
+        for (const stat of clientStats) {
+          statsMap.set(stat.email, stat);
+        }
+
+        const adminUsageCharges = new Map<string, bigint>();
+
+        for (const apiClient of clientsList) {
+          totalSyncedClients++;
+          apiUuids.add(apiClient.id);
+          
+          let dbClient = await this.prisma.client.findUnique({
+            where: { uuid: apiClient.id },
+            include: { admin: true }
+          });
+
+          const stats = statsMap.get(apiClient.email) || {};
+
+          const up = BigInt(stats.up || 0);
+          const down = BigInt(stats.down || 0);
+          const total = BigInt(stats.total || 0);
+          const expiryTime = BigInt(stats.expiryTime || 0);
+          const enable = stats.enable !== false;
+
+          if (!dbClient) {
+            await this.prisma.client.create({
+              data: {
+                uuid: apiClient.id,
+                subId: apiClient.subId || null,
+                subToken: crypto.randomBytes(5).toString('hex'),
+                email: apiClient.email || `client-${apiClient.id.slice(0, 8)}`,
+                inboundId: dbInbound.id,
+                adminId: null, // Nullable for Orphaned / Native System Clients
+                enable,
+                up,
+                down,
+                total,
+                expiryTime,
+                flow: apiClient.flow || null,
+              }
+            });
+          } else {
+            // Usage Accounting Delta Calculation
+            const usedOld = dbClient.up + dbClient.down;
+            const usedNew = up + down;
+            const delta = usedNew - usedOld;
+
+            if (delta > 0n && dbClient.admin && dbClient.admin.trafficMode === 'USAGE' && dbClient.adminId) {
+              const currentCharge = adminUsageCharges.get(dbClient.adminId) || 0n;
+              adminUsageCharges.set(dbClient.adminId, currentCharge + delta);
+            }
+
+            // Conflict Detection (Ignore up/down normal usage)
+            const changes = [];
+            if (dbClient.enable !== enable) changes.push(`enable: ${dbClient.enable} -> ${enable}`);
+            if (dbClient.total !== total) changes.push(`total: ${dbClient.total} -> ${total}`);
+            if (dbClient.expiryTime !== expiryTime) changes.push(`expiryTime: ${dbClient.expiryTime} -> ${expiryTime}`);
+
+            if (changes.length > 0) {
+              await this.prisma.auditLog.create({
+                data: {
+                  action: 'SYNC_CONFLICT_RESOLVED',
+                  entity: 'Client',
+                  entityId: dbClient.id,
+                  details: { message: 'Panel state overwrote DB state', changes }
+                }
+              });
+            }
+
+            const changedData: any = {};
+            if (apiClient.subId && dbClient.subId !== apiClient.subId) changedData.subId = apiClient.subId;
+            if (dbClient.enable !== enable) {
+              changedData.enable = enable;
+              if (!enable) {
+                const usedNew = up + down;
+                if (total > 0n && usedNew >= total) changedData.disableReason = 'TRAFFIC_LIMIT';
+                else if (expiryTime > 0n && BigInt(Date.now()) >= expiryTime) changedData.disableReason = 'EXPIRED';
+                else changedData.disableReason = 'MANUAL';
+              } else {
+                changedData.disableReason = null;
+              }
+            }
+            if (dbClient.up !== up) changedData.up = up;
+            if (dbClient.down !== down) changedData.down = down;
+            if (dbClient.total !== total) changedData.total = total;
+            if (dbClient.expiryTime !== expiryTime) changedData.expiryTime = expiryTime;
+            if (dbClient.inboundId !== dbInbound.id) changedData.inboundId = dbInbound.id;
+            if (dbClient.flow !== apiClient.flow) changedData.flow = apiClient.flow;
+
+            if (Object.keys(changedData).length > 0) {
+              await this.prisma.client.update({
+                where: { id: dbClient.id },
+                data: changedData
+              });
+            }
+          }
+        }
+
+        // Apply Usage Charges for USAGE mode admins
+        for (const [adminId, totalDelta] of adminUsageCharges.entries()) {
+          const admin = await this.prisma.admin.findUnique({ where: { id: adminId } });
+          if (admin) {
+            await this.prisma.admin.update({
+              where: { id: adminId },
+              data: { balance: { decrement: Number(totalDelta) } }
+            });
+            await this.prisma.trafficTransaction.create({
+              data: {
+                adminId,
+                amount: totalDelta,
+                type: 'USAGE_CHARGE',
+                description: `Periodic Sync Usage Charge`
+              }
+            });
+          }
+        }
+
+        }
+
+        // Orphan Cleanup
+        const dbClientsInPanel = await this.prisma.client.findMany({
+        where: { inbound: { panelId: id } },
+        include: { admin: true }
+      });
+
+      for (const dbC of dbClientsInPanel) {
+        if (!apiUuids.has(dbC.uuid)) {
+          // Client was deleted directly on the panel
+          if (dbC.admin && dbC.admin.trafficMode === 'ALLOCATION') {
+            const used = dbC.up + dbC.down;
+            const remaining = dbC.total - used;
+            if (remaining > 0n && dbC.total >= used) {
+              await this.prisma.admin.update({ where: { id: dbC.admin.id }, data: { balance: { increment: Number(remaining) } } });
+              await this.prisma.trafficTransaction.create({
+                data: {
+                  adminId: dbC.admin.id,
+                  clientId: dbC.id,
+                  amount: remaining,
+                  type: 'CREDIT',
+                  description: 'Orphaned Client Deletion Refund',
+                }
+              });
+            }
+          }
+          
+          await this.prisma.trafficTransaction.deleteMany({ where: { clientId: dbC.id } });
+          await this.prisma.client.delete({ where: { id: dbC.id } });
+          
+          await this.prisma.auditLog.create({
+            data: {
+              action: 'SYNC_ORPHAN_DELETED',
+              entity: 'Client',
+              entityId: dbC.id,
+              details: { message: 'Client deleted directly on panel. Removed from DB.' }
+            }
+          });
+        }
+      }
+
+      await this.prisma.panel.update({
+        where: { id },
+        data: { 
+          status: 'online', 
+          version,
+          lastOnline: new Date(),
+          lastSync: new Date(),
+          inboundCount: totalSyncedInbounds,
+          clientCount: totalSyncedClients,
+          syncState: {
+            upsert: {
+              create: { lastSync: new Date(), status: 'success', latencyMs: latencyMs },
+              update: { lastSync: new Date(), status: 'success', latencyMs: latencyMs }
+            }
+          }
+        },
+      });
+
+      const dbClientCount = await this.prisma.client.count({ where: { inbound: { panelId: id } } });
+      const discrepancies = dbClientCount - totalSyncedClients;
+      const discrepancyMsg = discrepancies === 0 
+        ? "Perfect Match" 
+        : `Found ${Math.abs(discrepancies)} ${discrepancies > 0 ? "extra DB clients" : "missing DB clients"}`;
+
+      this.logger.log(`Sync complete for Panel ${id}. API: ${totalSyncedClients}, DB: ${dbClientCount}. ${discrepancyMsg}`);
+
+      const syncDurationMs = Date.now() - startTime;
+      
+      await this.prisma.auditLog.create({
+        data: { action: 'PANEL_SYNC_SUCCESS', entity: 'Panel', entityId: id, details: { syncedInbounds: totalSyncedInbounds, syncedClients: totalSyncedClients, latencyMs } }
+      });
+
+      return {
+        success: true,
+        version,
+        syncedInbounds: totalSyncedInbounds,
+        syncedClients: totalSyncedClients,
+        dbClientCount,
+        discrepancyMsg,
+        syncDurationMs,
+      };
+
+    } catch (err: any) {
+      await this.prisma.panel.update({
+        where: { id },
+        data: { status: 'offline' },
+      });
+
+      await this.prisma.syncState.upsert({
+        where: { panelId: id },
+        create: { panelId: id, lastSync: new Date(), lastPolledAt: new Date(), wsConnected: false, status: 'failure', errorLogs: err.message },
+        update: { lastPolledAt: new Date(), wsConnected: false, status: 'failure', errorLogs: err.message },
+      });
+
+      await this.prisma.auditLog.create({
+        data: { action: 'PANEL_SYNC_FAILURE', entity: 'Panel', entityId: id, details: { error: err.message } }
+      });
+
+      throw new BadRequestException(`Sync failed: ${err.message}`);
+    }
+  }
+
+  async restartXray(id: string) {
+    const panel = await this.findOne(id);
+    const apiBaseUrl = panel.apiBaseUrl || panel.url.replace(/\/$/, '');
+    try {
+      const response = await axios.post(`${apiBaseUrl}/panel/api/server/restartXrayService`, {}, {
+        headers: { Authorization: panel.apiToken ? `Bearer ${panel.apiToken}` : undefined },
+        timeout: 5000,
+      });
+      if (response.data && response.data.success) {
+        return { ok: true, message: 'Xray restart issued successfully' };
+      } else {
+        throw new Error(response.data?.msg || 'Restart failed');
+      }
+    } catch (err: any) {
+      throw new BadRequestException(`Xray restart failed: ${err.message}`);
+    }
+  }
+
+  async logs(id: string) {
+    const panel = await this.findOne(id);
+    const logs = await this.prisma.auditLog.findMany({
+      where: { entityId: id, entity: 'Panel' },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+    
+    // Format them for the frontend UI which expects a string array
+    const lines = logs.map(l => `[${l.createdAt.toISOString()}] [${l.action}] ${l.details ? JSON.stringify(l.details) : ''}`);
+    
+    return {
+      panel: panel.name,
+      lines: lines.length > 0 ? lines : ['No internal logs available yet.'],
+    };
+  }
+
+  private getHttpsAgent() {
+    return new https.Agent({ rejectUnauthorized: false });
+  }
+
+  async updateInboundFull(panelId: string, inboundPort: number, modifier: (inbound: any) => void) {
+    const panel = await this.findOne(panelId);
+    const apiBaseUrl = panel.apiBaseUrl || panel.url.replace(/\/$/, '');
+    const headers = { Authorization: panel.apiToken ? `Bearer ${panel.apiToken}` : undefined };
+    const httpsAgent = this.getHttpsAgent();
+
+    const listRes = await axios.get(`${apiBaseUrl}/panel/api/inbounds/list`, { headers, httpsAgent, timeout: 5000 });
+    if (!listRes.data || !listRes.data.success) throw new Error('Failed to list inbounds');
+    const inboundList = listRes.data.obj || [];
+    const inboundMeta = inboundList.find((i: any) => i.port === inboundPort);
+    if (!inboundMeta) throw new Error(`Inbound with port ${inboundPort} not found on panel`);
+
+    const getRes = await axios.get(`${apiBaseUrl}/panel/api/inbounds/get/${inboundMeta.id}`, { headers, httpsAgent, timeout: 5000 });
+    if (!getRes.data || !getRes.data.success) throw new Error('Failed to fetch full inbound data');
+    const inbound = getRes.data.obj;
+
+    modifier(inbound);
+
+    const updateRes = await axios.post(`${apiBaseUrl}/panel/api/inbounds/update/${inbound.id}`, inbound, { headers, httpsAgent, timeout: 5000 });
+    if (!updateRes.data || !updateRes.data.success) throw new Error(updateRes.data?.msg || 'Failed to update inbound');
+    
+    return updateRes.data;
+  }
+
+  async addClient(panelId: string, inboundPort: number, settingsPayload: any) {
+    try {
+      return await this.updateInboundFull(panelId, inboundPort, (inbound) => {
+        if (!inbound.settings) inbound.settings = { clients: [] };
+        else if (typeof inbound.settings === 'string') inbound.settings = JSON.parse(inbound.settings);
+        if (!inbound.settings.clients) inbound.settings.clients = [];
+        
+        if (settingsPayload && settingsPayload.clients) {
+          inbound.settings.clients.push(...settingsPayload.clients);
+        }
+      });
+    } catch (err: any) {
+      throw new BadRequestException(`Failed to add client to panel: ${err.message}`);
+    }
+  }
+
+  async updateClient(panelId: string, inboundPort: number, uuid: string, clientPayload: any) {
+    try {
+      return await this.updateInboundFull(panelId, inboundPort, (inbound) => {
+        if (!inbound.settings) return;
+        if (typeof inbound.settings === 'string') inbound.settings = JSON.parse(inbound.settings);
+        if (!inbound.settings.clients) return;
+        
+        const clientIndex = inbound.settings.clients.findIndex((c: any) => c.id === uuid);
+        if (clientIndex === -1) throw new Error(`Client with UUID ${uuid} not found in inbound`);
+        
+        inbound.settings.clients[clientIndex] = { ...inbound.settings.clients[clientIndex], ...clientPayload };
+      });
+    } catch (err: any) {
+      throw new BadRequestException(`Failed to update client on panel: ${err.message}`);
+    }
+  }
+
+  async delClient(panelId: string, inboundPort: number, uuid: string) {
+    try {
+      return await this.updateInboundFull(panelId, inboundPort, (inbound) => {
+        if (!inbound.settings) return;
+        if (typeof inbound.settings === 'string') inbound.settings = JSON.parse(inbound.settings);
+        if (!inbound.settings.clients) return;
+        
+        inbound.settings.clients = inbound.settings.clients.filter((c: any) => c.id !== uuid);
+      });
+    } catch (err: any) {
+      throw new BadRequestException(`Failed to delete client from panel: ${err.message}`);
+    }
+  }
+
+  async resetClientTraffic(panelId: string, inboundPort: number, email: string) {
+    try {
+      return await this.updateInboundFull(panelId, inboundPort, (inbound) => {
+        if (!inbound.clientStats) return;
+        const stat = inbound.clientStats.find((s: any) => s.email === email);
+        if (stat) {
+          stat.up = 0;
+          stat.down = 0;
+        }
+      });
+    } catch (err: any) {
+      throw new BadRequestException(`Failed to reset client traffic on panel: ${err.message}`);
+    }
+  }
+
+  // --- Group APIs ---
+
+  async createGroup(panelId: string, name: string) {
+    const panel = await this.findOne(panelId);
+    const apiBaseUrl = panel.apiBaseUrl || panel.url.replace(/\/$/, '');
+    try {
+      const response = await axios.post(`${apiBaseUrl}/panel/api/groups/add`, { name }, {
+        headers: { Authorization: panel.apiToken ? `Bearer ${panel.apiToken}` : undefined },
+        timeout: 5000,
+      });
+      if (!response.data || !response.data.success) {
+        throw new Error(response.data?.msg || 'Panel API rejected createGroup');
+      }
+      return response.data;
+    } catch (err: any) {
+      throw new BadRequestException(`Failed to create group on panel: ${err.message}`);
+    }
+  }
+
+  async updateGroup(panelId: string, groupId: string, name: string) {
+    const panel = await this.findOne(panelId);
+    const apiBaseUrl = panel.apiBaseUrl || panel.url.replace(/\/$/, '');
+    try {
+      const response = await axios.post(`${apiBaseUrl}/panel/api/groups/update/${groupId}`, { name }, {
+        headers: { Authorization: panel.apiToken ? `Bearer ${panel.apiToken}` : undefined },
+        timeout: 5000,
+      });
+      if (!response.data || !response.data.success) {
+        throw new Error(response.data?.msg || 'Panel API rejected updateGroup');
+      }
+      return response.data;
+    } catch (err: any) {
+      throw new BadRequestException(`Failed to update group on panel: ${err.message}`);
+    }
+  }
+
+  async deleteGroup(panelId: string, groupId: string) {
+    const panel = await this.findOne(panelId);
+    const apiBaseUrl = panel.apiBaseUrl || panel.url.replace(/\/$/, '');
+    try {
+      const response = await axios.post(`${apiBaseUrl}/panel/api/groups/del/${groupId}`, {}, {
+        headers: { Authorization: panel.apiToken ? `Bearer ${panel.apiToken}` : undefined },
+        timeout: 5000,
+      });
+      if (!response.data || !response.data.success) {
+        throw new Error(response.data?.msg || 'Panel API rejected deleteGroup');
+      }
+      return response.data;
+    } catch (err: any) {
+      throw new BadRequestException(`Failed to delete group on panel: ${err.message}`);
+    }
+  }
+
+  async listGroups(panelId: string) {
+    const panel = await this.findOne(panelId);
+    const apiBaseUrl = panel.apiBaseUrl || panel.url.replace(/\/$/, '');
+    try {
+      const response = await axios.get(`${apiBaseUrl}/panel/api/groups/list`, {
+        headers: { Authorization: panel.apiToken ? `Bearer ${panel.apiToken}` : undefined },
+        timeout: 5000,
+      });
+      if (!response.data || !response.data.success) {
+        throw new Error(response.data?.msg || 'Panel API rejected listGroups');
+      }
+      return response.data.obj || []; // Array of groups
+    } catch (err: any) {
+      this.logger.warn(`Failed to list groups from panel ${panelId}: ${err.message}`);
+      return []; // Return empty array on failure as unsupported versions might 404
+    }
+  }
+
+
+  async processSuspensions() {
+    const now = new Date();
+    
+    // 1. Process Admins Entering Grace Period
+    const newlyExhausted = await this.prisma.admin.findMany({
+      where: {
+        trafficMode: 'USAGE',
+        balance: { lte: 0 },
+        gracePeriodStart: null,
+        status: 'active'
+      }
+    });
+
+    for (const admin of newlyExhausted) {
+      await this.prisma.admin.update({
+        where: { id: admin.id },
+        data: { gracePeriodStart: now }
+      });
+      await this.prisma.auditLog.create({
+        data: {
+          adminId: admin.id,
+          action: 'GRACE_STARTED',
+          entity: 'Admin',
+          entityId: admin.id,
+          details: { message: 'Admin balance exhausted. 24h grace period started.' }
+        }
+      });
+    }
+
+    // 2. Process Admins Restored (Balance > 0)
+    const restoredAdmins = await this.prisma.admin.findMany({
+      where: {
+        trafficMode: 'USAGE',
+        balance: { gt: 0 },
+        gracePeriodStart: { not: null }
+      }
+    });
+
+    for (const admin of restoredAdmins) {
+      await this.prisma.admin.update({
+        where: { id: admin.id },
+        data: { gracePeriodStart: null }
+      });
+      await this.prisma.auditLog.create({
+        data: {
+          adminId: admin.id,
+          action: 'BALANCE_RESTORED',
+          entity: 'Admin',
+          entityId: admin.id,
+          details: { message: 'Admin balance restored above zero. Grace period ended.' }
+        }
+      });
+
+      // Batch reactivate clients disabled due to BALANCE_EXHAUSTED
+      const clientsToReactivate = await this.prisma.client.findMany({
+        where: { adminId: admin.id, disableReason: 'BALANCE_EXHAUSTED', enable: false },
+        take: 100,
+        include: { inbound: { include: { panel: true } } }
+      });
+
+      if (clientsToReactivate.length > 0) {
+        for (const client of clientsToReactivate) {
+          try {
+            await this.updateClient(client.inbound.panelId, client.inbound.port, client.uuid, { enable: true });
+            await this.prisma.client.update({
+              where: { id: client.id },
+              data: { enable: true, disableReason: null }
+            });
+          } catch (error) {
+            console.error(`Failed to reactivate client ${client.id}:`, error);
+          }
+        }
+        await this.prisma.auditLog.create({
+          data: {
+            adminId: admin.id,
+            action: 'CLIENTS_REACTIVATED',
+            entity: 'Client',
+            entityId: admin.id,
+            details: { message: `Reactivated ${clientsToReactivate.length} clients after balance restoration.` }
+          }
+        });
+      }
+    }
+
+    // 3. Process Admins Past Grace Period (Need Suspension)
+    const gracePeriodEndMs = now.getTime() - 24 * 60 * 60 * 1000;
+    const suspendedAdmins = await this.prisma.admin.findMany({
+      where: {
+        trafficMode: 'USAGE',
+        balance: { lte: 0 },
+        gracePeriodStart: { lte: new Date(gracePeriodEndMs) },
+        status: 'active'
+      }
+    });
+
+    for (const admin of suspendedAdmins) {
+      const clientsToSuspend = await this.prisma.client.findMany({
+        where: { adminId: admin.id, enable: true },
+        take: 100,
+        include: { inbound: { include: { panel: true } } }
+      });
+
+      if (clientsToSuspend.length > 0) {
+        for (const client of clientsToSuspend) {
+          try {
+            await this.updateClient(client.inbound.panelId, client.inbound.port, client.uuid, { enable: false });
+            await this.prisma.client.update({
+              where: { id: client.id },
+              data: { enable: false, disableReason: 'BALANCE_EXHAUSTED' }
+            });
+          } catch (error) {
+            console.error(`Failed to suspend client ${client.id}:`, error);
+          }
+        }
+        await this.prisma.auditLog.create({
+          data: {
+            adminId: admin.id,
+            action: 'CLIENTS_SUSPENDED',
+            entity: 'Client',
+            entityId: admin.id,
+            details: { message: `Suspended ${clientsToSuspend.length} clients due to balance exhaustion.` }
+          }
+        });
+      }
+    }
+  }
+}

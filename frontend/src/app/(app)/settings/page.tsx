@@ -1,0 +1,131 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Save, Settings, Activity, ArchiveX, ChevronRight } from "lucide-react";
+import { api } from "@/lib/api";
+import { useRouter } from "next/navigation";
+import { Card, PageHeader, Spinner, ErrorBox } from "@/components/ui";
+import { useToast } from "@/components/toast";
+import { motion } from "framer-motion";
+
+export default function GlobalSettingsPage() {
+  const qc = useQueryClient();
+  const toast = useToast((s) => s.push);
+  const router = useRouter();
+
+  const { data: settings, isLoading, error } = useQuery({
+    queryKey: ["settings"],
+    queryFn: async () => (await api.get<any>("/settings")).data,
+  });
+
+  const updateSettings = useMutation({
+    mutationFn: async (payload: any) => (await api.post("/settings", payload)).data,
+    onSuccess: () => {
+      toast("Settings saved successfully");
+      qc.invalidateQueries({ queryKey: ["settings"] });
+    },
+    onError: () => toast("Failed to save settings", "error"),
+  });
+
+  const [form, setForm] = useState({
+    cleanup_threshold_days: 30,
+  });
+
+  useEffect(() => {
+    if (settings) {
+      setForm({
+        cleanup_threshold_days: Number(settings.cleanup_threshold_days) || 30,
+      });
+    }
+  }, [settings]);
+
+  if (isLoading) return <Spinner />;
+  if (error) return <ErrorBox message="Failed to load settings" />;
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
+      <PageHeader
+        title="Global Settings"
+        subtitle="Manage platform-wide configurations"
+      />
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <Card className="p-6">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="p-2 rounded-lg bg-blue-500/10 text-blue-500">
+              <Settings size={20} />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-zinc-800 dark:text-zinc-100">Cleanup Candidate Threshold</h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">Determine when expired clients become eligible for cleanup.</p>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                Days After Expiration
+              </label>
+              <div className="flex items-center gap-3">
+                <input
+                  type="number"
+                  min="0"
+                  value={form.cleanup_threshold_days}
+                  onChange={(e) => setForm({ ...form, cleanup_threshold_days: Number(e.target.value) })}
+                  className="w-full max-w-[120px] rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors"
+                />
+                <span className="text-sm text-zinc-500">Days</span>
+              </div>
+              <p className="text-xs text-zinc-500 mt-2">Clients expired for more than {form.cleanup_threshold_days} days will appear in the Cleanup Candidates list.</p>
+            </div>
+
+            <div className="pt-4 border-t border-zinc-200 dark:border-zinc-800 flex justify-end">
+              <button
+                onClick={() => updateSettings.mutate(form)}
+                disabled={updateSettings.isPending}
+                className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50 transition-colors"
+              >
+                {updateSettings.isPending ? <Spinner className="w-4 h-4" /> : <Save size={16} />}
+                Save Settings
+              </button>
+            </div>
+          </div>
+        </Card>
+
+        {/* Quick Links for relocated pages */}
+        <div className="space-y-4">
+          <Card className="p-0 overflow-hidden hover:border-blue-500 transition-colors cursor-pointer">
+            <div className="p-6 flex items-center justify-between" onClick={() => router.push('/diagnostics')}>
+              <div className="flex items-center gap-4">
+                <div className="p-3 rounded-lg bg-indigo-500/10 text-indigo-500">
+                  <Activity size={24} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-zinc-800 dark:text-zinc-100">System Diagnostics</h3>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">View platform logs, health checks, and system processes.</p>
+                </div>
+              </div>
+              <ChevronRight className="text-zinc-400" />
+            </div>
+          </Card>
+
+          <Card className="p-0 overflow-hidden hover:border-red-500 transition-colors cursor-pointer">
+            <div className="p-6 flex items-center justify-between" onClick={() => router.push('/cleanup')}>
+              <div className="flex items-center gap-4">
+                <div className="p-3 rounded-lg bg-red-500/10 text-red-500">
+                  <ArchiveX size={24} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-zinc-800 dark:text-zinc-100">Cleanup Candidates</h3>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">Manage and permanently delete long-expired clients.</p>
+                </div>
+              </div>
+              <ChevronRight className="text-zinc-400" />
+            </div>
+          </Card>
+        </div>
+      </div>
+    </motion.div>
+  );
+}

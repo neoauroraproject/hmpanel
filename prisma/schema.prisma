@@ -1,0 +1,452 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../backend/node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------
+// Infrastructure
+// ---------------------------------------------------------
+
+// Server entity satisfies the "multi-server" requirement
+model Server {
+  id        String   @id @default(uuid())
+  name      String
+  ipAddress String
+  status    String   @default("active")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  panels      Panel[]
+  systemStats SystemStats[]
+}
+
+// Panel entity satisfies the "multi-panel" requirement
+model Panel {
+  id              String    @id @default(uuid())
+  serverId        String
+  name            String
+  url             String
+  subUrl          String? // Custom domain/URL for subscription links
+  version         String? // Reported Xray/panel version (from the node, simulated in demo)
+  apiToken        String? // Bearer token for 3x-ui API Token Based Auth
+  username        String? // Fallback: username/password auth
+  password        String? // Encrypted at the application layer (AES-256)
+  authMode        String    @default("token") // token | credentials
+  status          String    @default("online")
+  panelType       String    @default("3x-ui")
+  webBasePath     String?
+  apiBaseUrl      String?
+  lastSync        DateTime?
+  lastOnline      DateTime?
+  inboundCount    Int       @default(0)
+  clientCount     Int       @default(0)
+  backupEnabled   Boolean   @default(false)
+  backupFrequency String    @default("daily") // hourly | 6h | 12h | daily
+  backupKeepCount Int       @default(20)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  server        Server         @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  inbounds      Inbound[]
+  syncState     SyncState?
+  backups       Backup[]
+  incidents     Incident[]
+  storeProfiles StoreProfile[]
+}
+
+model Inbound {
+  id             String   @id @default(uuid())
+  panelId        String
+  tag            String
+  remark         String?
+  port           Int
+  protocol       String
+  settings       Json
+  streamSettings Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  panel       Panel          @relation(fields: [panelId], references: [id], onDelete: Cascade)
+  clients     Client[]
+  adminAccess AdminInbound[]
+}
+
+// ---------------------------------------------------------
+// Users & Ownership
+// ---------------------------------------------------------
+
+enum AdminRole {
+  SUPER_ADMIN
+  RESELLER
+}
+
+enum TrafficMode {
+  ALLOCATION
+  USAGE
+}
+
+model Admin {
+  id               String      @id @default(uuid())
+  username         String      @unique
+  email            String      @unique
+  passwordHash     String
+  role             AdminRole   @default(RESELLER)
+  balance          Float       @default(0.0)
+  trafficMode      TrafficMode @default(ALLOCATION)
+  status           String      @default("active") // active | suspended | disabled
+  expiryTime       BigInt      @default(0)
+  maxClients       Int         @default(0)
+  permissions      Json?
+  portalSettings   Json?       @default("{}")
+  totalAssigned    Float       @default(0.0) // All-time assigned traffic
+  gracePeriodStart DateTime? // When balance hits zero in USAGE mode
+  xuiGroupId       String? // Reference to 3x-ui Group ID
+  xuiGroupName     String? // Human-readable group name
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  clients          Client[]
+  trafficPools     TrafficPool[]
+  transactions     TrafficTransaction[]
+  auditLogs        AuditLog[]
+  adminInbounds    AdminInbound[]
+  domains          Domain[]
+  remoteBackups    RemoteBackupTarget[]
+  alerts           AlertConfiguration[]
+  storeProfile     StoreProfile?
+  storeEnabled     Boolean              @default(false)
+  productTemplates ProductTemplate[]
+  Brand            Brand[]
+}
+
+// Bridging table for Admin <-> Inbound access
+model AdminInbound {
+  adminId    String
+  inboundId  String
+  assignedAt DateTime @default(now())
+
+  admin   Admin   @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  inbound Inbound @relation(fields: [inboundId], references: [id], onDelete: Cascade)
+
+  @@id([adminId, inboundId])
+}
+
+// Client entity strictly tied to an Admin for "ownership tracking"
+model Client {
+  id      String  @id @default(uuid())
+  adminId String? // Nullable for Orphaned / Native System Clients
+  brandId String?
+
+  inboundId     String
+  email         String // 3x-ui client identity key
+  remark        String? // Human-readable display name
+  ownerTag      String? // Short label for grouping/filtering (e.g. 'vip', 'trial')
+  uuid          String  @unique // 3x-ui UUID
+  subId         String? // 3x-ui subId (used for subscription links)
+  subToken      String? @unique // Secure generated token for portal proxy
+  flow          String? // XTLS Flow (e.g. xtls-rprx-vision)
+  enable        Boolean @default(true)
+  disableReason String? // MANUAL | EXPIRED | TRAFFIC_LIMIT | BALANCE_EXHAUSTED
+
+  up         BigInt @default(0) // Bytes uploaded
+  down       BigInt @default(0) // Bytes downloaded
+  total      BigInt @default(0) // Max bytes allowed (0 = unlimited)
+  expiryTime BigInt @default(0) // Unix ms timestamp (0 = no expiry)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  admin         Admin?               @relation(fields: [adminId], references: [id], onDelete: SetNull)
+  brand         Brand?               @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  inbound       Inbound              @relation(fields: [inboundId], references: [id], onDelete: Restrict)
+  transactions  TrafficTransaction[]
+  createdOrders StoreOrder[]         @relation("CreatedClient")
+  renewedOrders StoreOrder[]         @relation("RenewClient")
+}
+
+// ---------------------------------------------------------
+// Traffic Accounting
+// ---------------------------------------------------------
+
+// Used for "Allocation Mode" (pre-purchased data pools)
+model TrafficPool {
+  id         String   @id @default(uuid())
+  adminId    String
+  totalLimit BigInt // Total bytes allocated
+  used       BigInt   @default(0)
+  status     String   @default("active") // active, exhausted
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  admin Admin @relation(fields: [adminId], references: [id], onDelete: Cascade)
+}
+
+enum TransactionType {
+  CREDIT
+  DEBIT
+  USAGE_CHARGE
+}
+
+// Used for "Usage Mode" billing, top-ups, and ownership ledger entries
+model TrafficTransaction {
+  id          String          @id @default(uuid())
+  adminId     String
+  clientId    String? // Which client triggered this transaction (nullable for top-ups)
+  amount      BigInt // Bytes moved (positive = credit, negative = debit)
+  type        TransactionType
+  description String?
+  createdAt   DateTime        @default(now())
+
+  admin  Admin   @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  client Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+}
+
+// ---------------------------------------------------------
+// Operations & Auditing
+// ---------------------------------------------------------
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  adminId   String?
+  action    String
+  entity    String // e.g., 'Client', 'Panel', 'TrafficPool'
+  entityId  String?
+  details   Json?
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  admin Admin? @relation(fields: [adminId], references: [id], onDelete: SetNull)
+}
+
+model Backup {
+  id        String   @id @default(uuid())
+  panelId   String? // Null denotes a global/PostgreSQL backup
+  type      String // 'postgres' | 'x-ui-db'
+  filePath  String
+  fileSize  BigInt
+  checksum  String? // SHA-256 hash for corruption detection
+  tier      String   @default("hourly") // hourly | daily | weekly | monthly
+  isManual  Boolean  @default(false)
+  status    String   @default("completed") // pending | completed | failed | corrupted
+  createdAt DateTime @default(now())
+
+  panel Panel? @relation(fields: [panelId], references: [id], onDelete: SetNull)
+}
+
+model SystemStats {
+  id         String   @id @default(uuid())
+  serverId   String
+  cpuUsage   Float
+  ramUsage   Float
+  diskUsage  Float
+  netUp      BigInt
+  netDown    BigInt
+  recordedAt DateTime @default(now())
+
+  server Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
+}
+
+model SyncState {
+  id           String    @id @default(uuid())
+  panelId      String    @unique
+  lastSync     DateTime
+  lastPolledAt DateTime?
+  wsConnected  Boolean   @default(false)
+  latencyMs    Int? // Last measured round-trip latency to this panel
+  status       String // success | failure | pending | offline
+  errorLogs    String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  panel Panel @relation(fields: [panelId], references: [id], onDelete: Cascade)
+}
+
+model SystemSetting {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     String // Stored as JSON string to accommodate complex objects
+  updatedAt DateTime @updatedAt
+}
+
+// ---------------------------------------------------------
+// Premium Features
+// ---------------------------------------------------------
+
+enum DomainType {
+  PORTAL
+  SUBSCRIPTION
+  BRAND
+}
+
+enum DomainStatus {
+  PENDING
+  VERIFIED
+  SSL_ACTIVE
+  SSL_FAILED
+  EXPIRED
+}
+
+model Domain {
+  id        String       @id @default(uuid())
+  adminId   String?
+  domain    String       @unique
+  type      DomainType
+  status    DomainStatus @default(PENDING)
+  sslMethod String?
+  certPath  String?
+  keyPath   String?
+  errorLogs String?
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  admin        Admin?        @relation(fields: [adminId], references: [id], onDelete: SetNull)
+  storeProfile StoreProfile?
+  brand        Brand?        @relation("BrandDomain")
+}
+
+model Brand {
+  id             String   @id @default(uuid())
+  adminId        String
+  name           String
+  domainId       String?  @unique
+  logo           String?
+  favicon        String?
+  theme          String?
+  supportLinks   Json?
+  contactMethods Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  admin   Admin    @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  domain  Domain?  @relation("BrandDomain", fields: [domainId], references: [id], onDelete: SetNull)
+  clients Client[]
+}
+
+model RemoteBackupTarget {
+  id        String   @id @default(uuid())
+  adminId   String?
+  provider  String
+  config    Json
+  status    String   @default("active")
+  createdAt DateTime @default(now())
+
+  admin Admin? @relation(fields: [adminId], references: [id], onDelete: Cascade)
+}
+
+model AlertConfiguration {
+  id         String  @id @default(uuid())
+  adminId    String
+  type       String
+  channels   Json
+  thresholds Json?
+  enabled    Boolean @default(true)
+
+  admin Admin @relation(fields: [adminId], references: [id], onDelete: Cascade)
+}
+
+// ---------------------------------------------------------
+// Premium Storefront
+// ---------------------------------------------------------
+
+model StoreProfile {
+  id                  String   @id @default(uuid())
+  adminId             String   @unique
+  slug                String   @unique
+  domainId            String?  @unique
+  title               String   @default("Premium VPN Store")
+  description         String?
+  logo                String?
+  paymentInstructions String?
+  bankCardNumber      String?
+  bankAccountInfo     String?
+  panelId             String?
+  theme               String   @default("modern")
+  supportLinks        Json?
+  defaultCurrency     String   @default("USD")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  admin  Admin        @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  panel  Panel?       @relation(fields: [panelId], references: [id], onDelete: SetNull)
+  domain Domain?      @relation(fields: [domainId], references: [id], onDelete: SetNull)
+  orders StoreOrder[]
+}
+
+model ProductTemplate {
+  id           String   @id @default(uuid())
+  adminId      String
+  name         String
+  description  String?
+  price        Float
+  traffic      BigInt // in bytes
+  durationDays Int
+  inboundIds   Json // Array of inbound IDs
+  locationSet  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  admin  Admin        @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  orders StoreOrder[]
+}
+
+model StoreOrder {
+  id           String @id @default(uuid())
+  trackingCode String @unique
+  storeId      String
+  productId    String
+
+  clientName String
+  telegramId String?
+  whatsapp   String?
+  notes      String?
+
+  receiptText  String?
+  receiptImage String?
+
+  status String @default("PENDING") // PENDING, APPROVED, REJECTED, DELIVERED
+
+  clientId      String? // The newly created client (or modified existing client)
+  isRenewal     Boolean @default(false)
+  renewClientId String? // If renewal, which client are they renewing?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  store       StoreProfile    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  product     ProductTemplate @relation(fields: [productId], references: [id], onDelete: Restrict)
+  client      Client?         @relation("CreatedClient", fields: [clientId], references: [id], onDelete: SetNull)
+  renewClient Client?         @relation("RenewClient", fields: [renewClientId], references: [id], onDelete: SetNull)
+}
+
+// ---------------------------------------------------------
+// XRAY PRO (Operations Center)
+// ---------------------------------------------------------
+
+enum IncidentSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+enum IncidentStatus {
+  ACTIVE
+  RESOLVED
+}
+
+model Incident {
+  id         String           @id @default(uuid())
+  panelId    String?
+  type       String
+  severity   IncidentSeverity
+  status     IncidentStatus   @default(ACTIVE)
+  details    Json?
+  detectedAt DateTime         @default(now())
+  resolvedAt DateTime?
+
+  panel Panel? @relation(fields: [panelId], references: [id], onDelete: SetNull)
+}

@@ -1,0 +1,117 @@
+<USER_REQUEST>
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "3X-UI Panel API",
+    "version": "3.x",
+    "description": "Programmatic interface to a 3X-UI panel. Authenticate either by logging in (cookie) or with an API token from Settings → Security → API Token (Bearer). All endpoints under /panel/api/* honour both modes."
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Current panel (basePath aware)"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "API token from Settings → Security → API Token. Send as `Authorization: Bearer <token>`."
+      },
+      "cookieAuth": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "3x-ui",
+        "description": "Session cookie set by POST /login. Browser-only."
+      }
+    }
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    },
+    {
+      "cookieAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Authentication",
+      "description": "Two authentication modes are supported. UI sessions use a cookie set by the login endpoint. Programmatic clients (bots, scripts, remote panels) authenticate with a Bearer token taken from Settings → Security → API Token. Both work for every endpoint under /panel/api/*."
+    },
+    {
+      "name": "Inbounds",
+      "description": "Manage inbound configurations and their clients. All endpoints live under /panel/api/inbounds and require a logged-in session or Bearer token. Link-generating endpoints honour forwarded headers only when the request comes from a configured trusted proxy."
+    },
+    {
+      "name": "Server",
+      "description": "System status, log retrieval, certificate generators, Xray binary management, and backup/restore. All under /panel/api/server."
+    },
+    {
+      "name": "Clients",
+      "description": "Manage clients as first-class entities that can be attached to one or more inbounds. A single client row drives the s
+<truncated 45216 bytes>
+   }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/server/getNewUUID": {
+      "get": {
+        "tags": [
+          "Server"
+        ],
+        "summary": "Generate a fresh UUID v4. Convenience helper for client IDs.",
+        "operationId": "get_panel_api_server_getNewUUID",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "obj": "550e8400-e29b-41d4-a716-446655440000"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/server/getWebCertFiles": {
+      "get": {
+        "tags": [
+          "Server"
+        ],
+        "summary": "Return this panel's own web TLS certificate and key file paths. The central panel calls it on a node (via the node API token) so \"Set Cert from Panel\" fills a node-assigned inbound with paths that exist on the node.",
+        "operationId": "get_panel_api_server_getWebCertFiles",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "typ
+<truncated 134554 bytes>
+
+NOTE: The output was truncated because it was too long. Use a more targeted query or a smaller range to get the information you need.
