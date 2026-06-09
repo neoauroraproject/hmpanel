@@ -1,91 +1,151 @@
-# HMray Panel — Version 1.0 (Community Edition)
+<div align="center">
 
-Bilingual documentation: [English](#english) | [فارسی](#farsi)
+# HMPanel
+**Advanced 3x-ui Management Platform**
+
+Multi-Panel • Resellers • Traffic Accounting • Bulk Operations • Subscription Management
+
+[Installation](#installation) • [Features](#features) • [Screenshots](#screenshots) • [Architecture](#architecture)
+
+</div>
 
 ---
 
-<a name="english"></a>
-# English Documentation
+HMPanel is not a generic web panel—it is a **professional management layer built specifically on top of native 3x-ui**. 
+Designed from the ground up for VPN Providers, Resellers, and Administrators managing large client bases across multi-panel deployments.
 
-HMray Panel is a modern, fast, and secure monorepo-based web panel designed to manage proxy protocols and server configurations. The Community Edition provides essential core features for system administrators and developers.
+---
 
-## Features
+## ⚡ Features
 
-- **Dashboard**: Real-time server status, monitoring, traffic usage, and metrics.
-- **Admin Management**: Multiple admin levels with customizable permissions.
-- **Client Management**: Create, edit, and monitor clients and their data usage limits.
-- **Panel Control**: Start, stop, and configure proxy core protocols.
-- **Traffic Monitoring**: Accurate real-time traffic collection and limits enforcement.
-- **Subscriptions**: Clean subscription links and automatic configuration generation.
-- **QR Codes**: Fast connection links via QR codes for client ease.
-- **Migration & Backup**: Built-in import/export tools for migration and database backups.
+- **Multi-Panel Management:** Control multiple distributed 3x-ui nodes from a single centralized dashboard.
+- **Reseller Management:** Multi-tier permission models (Super Admin vs Reseller) with traffic limits and client capacities.
+- **Traffic Accounting:** Highly accurate real-time traffic collection, grace periods, and automatic depletion enforcement.
+- **Native 3x-ui Groups Integration:** Map clients cleanly into native 3x-ui Groups without disrupting existing inbounds.
+- **Subscription Management:** Clean, universal subscription links with automated configuration generation.
+- **Multi-Inbound Clients:** Effortlessly assign a single client to multiple independent inbounds simultaneously.
+- **Bulk Operations:** Execute bulk additions, deletions, and modifications efficiently.
+- **Migration Engine:** Built-in seamless migration from legacy panels (e.g., WhalePanel), preserving all user configurations.
+- **Database Backup & Restore:** Native tools to snapshot and restore your PostgreSQL data safely.
+- **Custom Branding Portal:** Full white-labeling capabilities (Community Edition includes core branding features).
 
-## System Requirements
+---
 
-- **OS**: Ubuntu (20.04+ recommended), Debian (10+), CentOS/RHEL (8+).
-- **Architecture**: `amd64` / `x86_64` or `arm64` / `aarch64`.
-- **Hardware**: Minimum 1GB RAM and 5GB free disk space.
-- **Network**: Direct public IP (A/AAAA records pointing to the server for Let's Encrypt SSL).
+## 📊 Feature Comparison
 
-## Installation
+| Feature | HMPanel (Community Edition) | Native 3x-ui |
+| :--- | :---: | :---: |
+| **Multi-Panel Management** | ✓ | ✗ |
+| **Reseller Management** | ✓ | ✗ |
+| **Traffic Accounting & Enforcement** | ✓ | ✗ |
+| **Bulk Operations** | ✓ | Limited |
+| **Migration Tools** | ✓ | ✗ |
+| **Centralized Subscription Links** | ✓ | ✗ |
 
-You can install HMray Panel in one step using the interactive single-command installer:
+---
+
+## 📸 Screenshots
+
+### Super Admin Dashboard
+![Dashboard](docs/images/dashboard.png)
+
+### Client Management
+![Clients](docs/images/clients.png)
+
+### Admin & Reseller Control
+![Admins](docs/images/admins.png)
+
+---
+
+## 🚀 Installation
+
+HMPanel provides an interactive, one-line installation script that automatically provisions Docker, configures your database, generates secure JWT secrets, and issues a Let's Encrypt SSL certificate.
+
+### One-Line Install Command
+Execute the following on any fresh Ubuntu (20.04+) or Debian server:
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/neoauroraproject/hmpanel/main/install.sh)
 ```
 
-*(Alternatively, clone the repository and run `sudo bash install.sh` locally).*
+### System Requirements
+- **OS**: Ubuntu (20.04+ recommended), Debian (10+).
+- **Architecture**: `amd64` / `x86_64` or `arm64` / `aarch64`.
+- **Hardware**: Minimum 1GB RAM and 5GB free disk space.
+- **Network**: Direct public IP (A/AAAA records pointing to the server for Let's Encrypt SSL).
 
-### The Installer will:
-1. Verify system requirements (RAM, OS, Arch).
-2. Install Docker, Docker Compose, Certbot, and openssl (if missing).
-3. Interactively ask for your domain, admin email/password, ports, and SSL preference.
-4. Auto-generate strong security secrets for database and JWT token.
-5. Create a secure local `.env` configuration file.
-6. Obtain a Let's Encrypt SSL certificate (or fall back to self-signed/HTTP if domain is unresolvable).
-7. Build the multi-stage optimized monorepo Docker image.
-8. Start the Postgres, Redis, Nginx, and Panel App containers.
-9. Configure auto-start on boot via a systemd service.
+### Quick Start
+1. Ensure your domain's DNS A/AAAA records point to your server IP.
+2. Run the One-Line Install Command above as `root`.
+3. Follow the interactive prompts to define your admin credentials and ports.
+4. Log into `https://<your-domain>` and start attaching your 3x-ui nodes!
 
 ---
 
-## Update
+## 🔄 Management Commands
 
+### Update
 To update your installation to the latest version, run the updater script:
-
 ```bash
 sudo bash /opt/hmray-panel/update.sh
 ```
 
-This will pull the latest code from GitHub, rebuild the Docker images, run any database schema migrations, restart the services, and verify health.
+### Uninstall
+To uninstall HMPanel and optionally remove all user data, database volumes, and certificates:
+```bash
+sudo bash /opt/hmray-panel/uninstall.sh
+```
 
 ---
 
-## Backup & Restore
+## 💾 Backup & Restore
 
 ### Database Backup
-To back up your entire database configuration:
-
+To back up your entire database configuration safely:
 ```bash
 docker exec -t hmray-postgres pg_dumpall -c -U panel_user > backup.sql
 ```
 
 ### Database Restore
 To restore a previously backed up database file:
-
 ```bash
 cat backup.sql | docker exec -i hmray-postgres psql -U panel_user -d panel_db
 ```
 
-### File Uploads & Backups
-System upload folders and backups are mounted on named Docker volumes. They are stored on the host under:
-- `/var/lib/docker/volumes/hmray_uploads`
-- `/var/lib/docker/volumes/hmray_backups`
+---
+
+## 🏗️ Architecture
+
+HMPanel is built using a modern, scalable, and secure technology stack:
+
+- **Frontend**: Next.js (React) with TailwindCSS for a highly responsive, dynamic UI.
+- **Backend**: NestJS (TypeScript) providing a robust, type-safe API architecture.
+- **Database**: PostgreSQL for reliable, relational data storage and traffic accounting.
+- **Cache / Events**: Redis for high-speed job queues and WebSocket synchronization.
+- **Reverse Proxy**: Nginx handling SSL termination and request routing.
+- **Deployment**: Multi-stage Docker & Docker Compose for isolated, reproducible environments.
 
 ---
 
-## Troubleshooting
+## 📦 Migration Tools
+
+HMPanel includes a built-in migration engine specifically designed to upgrade from legacy systems like WhalePanel smoothly:
+
+1. **Admin Import:** Imports all legacy Admins and Resellers.
+2. **Client Import:** Imports all Clients, transferring their UUIDs, expiry dates, and usage limits precisely.
+3. **Native Groups Assignment:** Safely maps legacy clients into Native 3x-ui Groups seamlessly, allowing multi-inbound attachments without breaking active connections.
+
+---
+
+## 🌟 Community Edition
+
+The **Community Edition** includes all core proxy management features necessary to run a highly scalable VPN operation. It provides unhindered access to multi-panel routing, traffic accounting, reseller tiers, and the migration engine. 
+
+*Note: Premium enterprise modules (e.g., Domain Management, Store Billing, and Smart Alerts) are not included in the Community Edition.*
+
+---
+
+## 🛠️ Troubleshooting & FAQ
 
 ### Check Service Status
 ```bash
@@ -97,147 +157,24 @@ docker compose -f /opt/hmray-panel/docker-compose.yml ps
 docker compose -f /opt/hmray-panel/docker-compose.yml logs -f panel-app
 ```
 
-### View Nginx Reverse Proxy Logs
-```bash
-docker compose -f /opt/hmray-panel/docker-compose.yml logs -f nginx
-```
+### FAQ
+**Q: My Let's Encrypt SSL failed during installation?**
+A: Ensure your domain's DNS is fully propagated and pointing directly to the server's IP address. Cloudflare Proxy (Orange Cloud) must be disabled during the initial installation.
+
+**Q: Where are my files stored?**
+A: System uploads and backups are mounted on named Docker volumes, typically found at `/var/lib/docker/volumes/hmray_uploads` and `/var/lib/docker/volumes/hmray_backups`.
 
 ---
 
-## Uninstallation
+## 🔗 Official Links & Support
 
-To uninstall HMray Panel and optionally remove all user data, database volumes, and certificates:
-
-```bash
-sudo bash /opt/hmray-panel/uninstall.sh
-```
+- **Official GitHub**: [neoauroraproject/hmpanel](https://github.com/neoauroraproject/hmpanel)
+- **Official Website**: [https://hmray.example.com](https://hmray.example.com)
+- **Official Telegram Channel**: [@hmray_example](https://t.me/hmray_example)
 
 ---
 
-## License
-
-This project is released under the MIT License.
-
----
-
-# HMray Panel | [Official Website Placeholder](https://hmray.example.com) | [Official Channel Placeholder](https://t.me/hmray_example)
-
----
-
-<a name="farsi"></a>
-# راهنمای فارسی (Persian Documentation)
-
-پنل HMray یک پنل تحت وب مدرن، سریع و امن بر پایه ساختار monorepo برای مدیریت پروتکل‌های پروکسی و پیکربندی سرورها است. نسخه Community (جامعه) قابلیت‌های اصلی و اساسی را برای مدیران سیستم و توسعه‌دهندگان فراهم می‌کند.
-
-## قابلیت‌ها
-
-- **داشبورد**: مشاهده وضعیت سرور، مانیتورینگ منابع، میزان مصرف ترافیک و آمارهای زنده.
-- **مدیریت مدیران (Admins)**: سطوح چندگانه ادمین با دسترسی‌های قابل تنظیم.
-- **مدیریت کاربران (Clients)**: ایجاد، ویرایش و مانیتورینگ کاربران همراه با اعمال محدودیت حجم مصرفی.
-- **کنترل پنل**: راه اندازی، توقف و پیکربندی هسته اصلی پروتکل‌ها.
-- **مانیتورینگ ترافیک**: محاسبه دقیق ترافیک به صورت زنده و اعمال محدودیت‌ها.
-- **لینک‌های سابسکریپشن**: ساخت لینک‌های اشتراک مرتب و تولید خودکار کانفیگ‌ها.
-- **کدهای QR**: تولید سریع کد QR برای اتصال آسان کاربران.
-- **انتقال و بک‌آپ**: ابزارهای پیش‌فرض ایمپورت/اکسپورت برای انتقال اطلاعات و بک‌آپ دیتابیس.
-
-## پیش‌نیازهای سیستم
-
-- **سیستم عامل**: اوبونتو (ترجیحاً نسخه 20.04 به بالا)، دبیان (10 به بالا)، CentOS/RHEL (نسخه 8 به بالا).
-- **معماری**: `amd64` / `x86_64` یا `arm64` / `aarch64`.
-- **سخت‌افزار**: حداقل ۱ گیگابایت رم و ۵ گیگابایت فضای خالی دیسک.
-- **شبکه**: آی‌پی عمومی متصل (رکورد A/AAAA متصل به سرور جهت دریافت SSL از Let's Encrypt).
-
-## نصب و راه‌اندازی
-
-شما می‌توانید پنل HMray را با اجرای یک دستور ساده و به صورت تعاملی نصب کنید:
-
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/neoauroraproject/hmpanel/main/install.sh)
-```
-
-*(یا به عنوان جایگزین، مخزن را کلون کرده و فایل `sudo bash install.sh` را به صورت محلی اجرا کنید).*
-
-### مراحل اجرای نصب‌کننده:
-۱. بررسی پیش‌نیازهای سیستم (رم، سیستم‌عامل، معماری).
-۲. نصب خودکار Docker، Docker Compose، Certbot و openssl (در صورت عدم وجود).
-۳. دریافت تعاملی اطلاعاتی نظیر دامنه، ایمیل و رمز ادمین، پورت‌ها و ترجیحات SSL.
-۴. تولید کلیدها و پسوردهای تصادفی و امن برای دیتابیس و JWT.
-۵. ایجاد فایل پیکربندی محلی و امن `.env`.
-۶. دریافت گواهینامه SSL Let's Encrypt (یا سلف‌سایند/HTTP در صورت عدم اتصال دامنه).
-۷. ساخت ایمیج چندمرحله‌ای و بهینه‌شده Docker برای پنل.
-۸. اجرای کانتینرهای Postgres، Redis، Nginx و Panel App.
-۹. پیکربندی اجرای خودکار پنل هنگام روشن شدن سرور از طریق سرویس systemd.
-
----
-
-## بروزرسانی
-
-جهت آپدیت پنل به آخرین نسخه منتشر شده، اسکریپت بروزرسانی را اجرا کنید:
-
-```bash
-sudo bash /opt/hmray-panel/update.sh
-```
-
-این اسکریپت کدهای جدید را از گیت‌هاب دریافت کرده، کانتینرها را بازسازی می‌کند، مایگریشن‌های دیتابیس را اعمال کرده و پس از راه‌اندازی مجدد، سلامت سرویس را تایید می‌کند.
-
----
-
-## پشتیبان‌گیری و بازگردانی (Backup & Restore)
-
-### پشتیبان‌گیری از دیتابیس
-جهت گرفتن خروجی و پشتیبان‌گیری کامل از دیتابیس:
-
-```bash
-docker exec -t hmray-postgres pg_dumpall -c -U panel_user > backup.sql
-```
-
-### بازگردانی دیتابیس
-جهت ایمپورت و بازگرداندن فایل پشتیبان به دیتابیس:
-
-```bash
-cat backup.sql | docker exec -i hmray-postgres psql -U panel_user -d panel_db
-```
-
-### فایل‌ها و آپلودها
-پوشه فایل‌های آپلود شده و بک‌آپ‌ها روی دایرکتوری‌های Docker Volume ذخیره می‌شوند. این دایرکتوری‌ها در آدرس‌های زیر در سرور میزبان قرار دارند:
-- `/var/lib/docker/volumes/hmray_uploads`
-- `/var/lib/docker/volumes/hmray_backups`
-
----
-
-## عیب‌یابی و بررسی وضعیت (Troubleshooting)
-
-### بررسی وضعیت کانتینرها
-```bash
-docker compose -f /opt/hmray-panel/docker-compose.yml ps
-```
-
-### مشاهده لاگ‌های برنامه
-```bash
-docker compose -f /opt/hmray-panel/docker-compose.yml logs -f panel-app
-```
-
-### مشاهده لاگ‌های وب‌سرور Nginx
-```bash
-docker compose -f /opt/hmray-panel/docker-compose.yml logs -f nginx
-```
-
----
-
-## حذف پنل (Uninstall)
-
-جهت پاکسازی کامل پنل و (در صورت تمایل) حذف تمامی داده‌ها، ولوم‌های دیتابیس و گواهینامه‌ها دستور زیر را وارد کنید:
-
-```bash
-sudo bash /opt/hmray-panel/uninstall.sh
-```
-
----
-
-## لایسنس
-
-این پروژه تحت لایسنس MIT منتشر شده است.
-
----
-
-# HMray Panel | [وبسایت رسمی پنل (فرضی)](https://hmray.example.com) | [کانال رسمی تلگرام (فرضی)](https://t.me/hmray_example)
+<div align="center">
+  <p>Released under the MIT License</p>
+  <p><strong>HMPanel — Crafted with ♥ by HMray</strong></p>
+</div>

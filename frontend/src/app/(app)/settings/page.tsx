@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Save, Settings, Activity, ArchiveX, ChevronRight } from "lucide-react";
+import { Save, Settings, Activity, ArchiveX, ChevronRight, Info, ExternalLink } from "lucide-react";
 import { api } from "@/lib/api";
 import { useRouter } from "next/navigation";
 import { Card, PageHeader, Spinner, ErrorBox } from "@/components/ui";
@@ -93,8 +93,41 @@ export default function GlobalSettingsPage() {
           </div>
         </Card>
 
-        {/* Quick Links for relocated pages */}
+        {/* Quick Links and About */}
         <div className="space-y-4">
+          <Card className="p-6 border-blue-500/20 bg-blue-500/5">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 rounded-lg bg-blue-500/10 text-blue-500">
+                <Info size={20} />
+              </div>
+              <h3 className="text-lg font-bold text-zinc-800 dark:text-zinc-100">About HMPanel</h3>
+            </div>
+            <div className="space-y-3 text-sm">
+              <div className="flex justify-between border-b border-zinc-200 dark:border-zinc-800/60 pb-2">
+                <span className="text-zinc-500">Panel Version</span>
+                <span className="font-medium text-zinc-800 dark:text-zinc-200">v1.0.0</span>
+              </div>
+              <div className="flex justify-between border-b border-zinc-200 dark:border-zinc-800/60 pb-2">
+                <span className="text-zinc-500">Edition</span>
+                <span className="font-medium text-blue-500">Community Edition</span>
+              </div>
+              <div className="flex justify-between border-b border-zinc-200 dark:border-zinc-800/60 pb-2">
+                <span className="text-zinc-500">Build</span>
+                <span className="font-mono text-xs text-zinc-600 dark:text-zinc-400 mt-0.5">v1.0.0-rc1</span>
+              </div>
+              <div className="pt-2 space-y-2">
+                <a href="https://github.com/neoauroraproject/hmpanel" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-zinc-600 dark:text-zinc-400 hover:text-blue-500 transition-colors">
+                  <ExternalLink size={14} /> Official GitHub
+                </a>
+                <a href="https://hmray.example.com" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-zinc-600 dark:text-zinc-400 hover:text-blue-500 transition-colors">
+                  <ExternalLink size={14} /> Official Website
+                </a>
+                <a href="https://t.me/hmray_example" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-zinc-600 dark:text-zinc-400 hover:text-blue-500 transition-colors">
+                  <ExternalLink size={14} /> Telegram Channel
+                </a>
+              </div>
+            </div>
+          </Card>
           <Card className="p-0 overflow-hidden hover:border-blue-500 transition-colors cursor-pointer">
             <div className="p-6 flex items-center justify-between" onClick={() => router.push('/diagnostics')}>
               <div className="flex items-center gap-4">

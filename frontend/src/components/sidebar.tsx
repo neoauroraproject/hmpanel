@@ -21,7 +21,8 @@ import {
   Store,
   BarChart,
   Key,
-  Diamond
+  Diamond,
+  ExternalLink
 } from "lucide-react";
 import { useAuth } from "@/store/auth";
 import type { Role } from "@/lib/types";
@@ -147,6 +148,20 @@ export function Sidebar() {
             {admin?.role === "SUPER_ADMIN" ? "Super Admin" : "Reseller"}
           </div>
         </div>
+
+        {admin?.role === "SUPER_ADMIN" && (
+          <div className="px-2 pb-2">
+            <a 
+              href="https://github.com/neoauroraproject/hmpanel" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors"
+            >
+              <ExternalLink size={14} /> Official GitHub
+            </a>
+          </div>
+        )}
+
         <div className="px-2 pb-2">
           <ThemeToggle />
         </div>
