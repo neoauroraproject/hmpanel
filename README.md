@@ -84,24 +84,25 @@ bash <(curl -fsSL https://raw.githubusercontent.com/neoauroraproject/hmpanel/mai
 
 ## 🔄 Management Commands
 
-### Update
-To update your installation to the latest version, run the updater script:
-```bash
-sudo bash /opt/hmray-panel/update.sh
-```
+HMPanel includes a unified, interactive **Global CLI Manager** that can be executed from anywhere on your server.
 
-### Uninstall
-To uninstall HMPanel and optionally remove all user data, database volumes, and certificates:
+To launch the CLI Manager, simply type:
 ```bash
-sudo bash /opt/hmray-panel/uninstall.sh
+sudo hmpanel
 ```
+*(You can also use the alias `sudo hm`)*
+
+From the interactive menu, you can check panel status, update, restart services, tail logs, create backups, restore databases, check SSL status, and uninstall.
 
 ---
 
 ## 💾 Backup & Restore
 
-### Database Backup
-To back up your entire database configuration safely:
+### Automated via CLI (Recommended)
+Launch the CLI Manager (`sudo hm`), and select **Create Backup** or **Restore Backup**. Backups are automatically timestamped and saved safely to `/opt/hmpanel/backups`.
+
+### Manual Database Backup
+To manually back up your database outside of the CLI:
 ```bash
 docker exec -t hmray-postgres pg_dumpall -c -U panel_user > backup.sql
 ```

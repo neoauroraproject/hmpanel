@@ -457,6 +457,14 @@ EOF
     log "Systemd auto-start enabled"
   fi
 
+  if [[ -f "${INSTALL_DIR}/cli.sh" ]]; then
+    info "Installing CLI Manager..."
+    cp "${INSTALL_DIR}/cli.sh" /usr/local/bin/hmpanel
+    chmod +x /usr/local/bin/hmpanel
+    ln -sf /usr/local/bin/hmpanel /usr/local/bin/hm
+    log "Global 'hmpanel' and 'hm' commands installed"
+  fi
+
   print_success
 }
 
@@ -481,8 +489,9 @@ print_success() {
   esac
   
   echo ""
-  echo -e "  Update:    ${CYAN}sudo bash /opt/hmpanel/update.sh${NC}"
-  echo -e "  Uninstall: ${CYAN}sudo bash /opt/hmpanel/uninstall.sh${NC}"
+  echo -e "  Management: ${CYAN}Type 'hmpanel' or 'hm' anywhere to launch CLI${NC}"
+  echo -e "  Update:     ${CYAN}sudo hmpanel${NC} -> option 3"
+  echo -e "  Uninstall:  ${CYAN}sudo hmpanel${NC} -> option 9"
   echo ""
 }
 
