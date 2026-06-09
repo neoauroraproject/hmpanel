@@ -233,13 +233,6 @@ cmd_uninstall() {
   fi
 }
 
-cmd_premium() {
-  echo -e "${BOLD}--- Premium Feature ---${NC}\n"
-  echo -e "${YELLOW}This feature requires an active XRAY PRO or Enterprise License.${NC}"
-  echo "To upgrade your license, please contact your account manager or visit the official website."
-  pause
-}
-
 # ─────────────────────────────────────────────────────────────────
 # Main Menu Loop
 # ─────────────────────────────────────────────────────────────────
@@ -257,13 +250,6 @@ while true; do
   echo -e "  9. Uninstall HMPanel"
   echo -e "  0. Exit"
   echo ""
-  echo -e "  ${BOLD}Premium Modules (Locked):${NC}"
-  echo -e "  P1. XRAY PRO"
-  echo -e "  P2. License Manager"
-  echo -e "  P3. Remote Backups"
-  echo -e "  P4. Advanced Monitoring"
-  echo -e "  P5. Domain Manager"
-  echo ""
   
   read -rp "  Select an option: " choice
   echo ""
@@ -279,7 +265,6 @@ while true; do
     8) cmd_ssl ;;
     9) cmd_uninstall ;;
     0) echo "Goodbye!"; exit 0 ;;
-    p1|P1|p2|P2|p3|P3|p4|P4|p5|P5) cmd_premium ;;
     *) echo -e "  ${RED}Invalid option!${NC}"; sleep 1 ;;
   esac
 done
