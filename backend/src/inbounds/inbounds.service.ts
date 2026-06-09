@@ -22,7 +22,7 @@ export class InboundsService {
         protocol: true,
         streamSettings: true,
         panel: { select: { id: true, name: true, url: true } },
-        _count: { select: { clients: true } },
+        _count: { select: { clientInbounds: true } },
       },
       orderBy: { tag: 'asc' },
     });

@@ -2,7 +2,7 @@ import { Controller, Get, Post, Patch, Delete, Body, Param, Query, Req, UseGuard
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { ClientsService } from './clients.service';
-import { CreateClientDto, UpdateClientDto, BulkClientDto } from './dto/client.dto';
+import { CreateClientDto, UpdateClientDto, BulkClientDto, BulkCreateClientDto } from './dto/client.dto';
 import type { AuthRequest } from '../common/auth-request';
 
 @ApiTags('Clients')
@@ -18,8 +18,26 @@ export class ClientsController {
     return this.clientsService.create(req.user.id, dto);
   }
 
+  @Post('bulk-create')
+  @ApiOperation({ summary: 'Bulk create clients' })
+  bulkCreate(@Req() req: AuthRequest, @Body() dto: BulkCreateClientDto) {
+    return this.clientsService.bulkCreate(req.user.id, req.user.role, dto);
+  }
+
+  @Post('bulk-create/validate')
+  @ApiOperation({ summary: 'Validate parameters for bulk client creation' })
+  validateBulkCreate(@Req() req: AuthRequest, @Body() dto: BulkCreateClientDto) {
+    return this.clientsService.validateBulkCreate(req.user.id, req.user.role, dto);
+  }
+
+  @Get('groups')
+  @ApiOperation({ summary: 'List all unique groups across all panels' })
+  getGroups(@Req() req: AuthRequest) {
+    return this.clientsService.getGroups(req.user.id, req.user.role);
+  }
+
   @Post('bulk')
-  @ApiOperation({ summary: 'Bulk action on clients (enable/disable/delete/addTraffic/addDays)' })
+  @ApiOperation({ summary: 'Bulk action on clients (enable/disable/delete/addTraffic/addDays/assignGroup)' })
   bulk(@Req() req: AuthRequest, @Body() dto: BulkClientDto) {
     return this.clientsService.bulk(req.user.id, req.user.role, dto);
   }

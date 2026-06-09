@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { randomUUID } from 'crypto';
 import * as QRCode from 'qrcode';
 import { PanelsService } from '../panels/panels.service';
+import { BulkCreateClientDto, BulkClientDto } from './dto/client.dto';
 
 const GB = 1024 ** 3;
 
@@ -25,18 +26,24 @@ export class ClientsService {
     private panelsService: PanelsService
   ) {}
 
-  async create(callerId: string, data: { email: string; inboundId: string; remark?: string; total?: number; expiryTime?: number; flow?: string; adminId?: string }) {
+  async create(callerId: string, data: { email: string; inboundIds: string[]; remark?: string; total?: number; expiryTime?: number; flow?: string; adminId?: string }) {
+    if (data.email) data.email = data.email.trim();
     const totalBytes = BigInt(data.total || 0);
     const clientUuid = randomUUID();
     
     // Preliminary check
-    const inbound = await this.prisma.inbound.findUnique({ where: { id: data.inboundId } });
-    if (!inbound) throw new BadRequestException('Inbound not found');
+    const inbounds = await this.prisma.inbound.findMany({
+      where: { id: { in: data.inboundIds } },
+      include: { panel: true }
+    });
+    if (!inbounds || inbounds.length === 0) throw new BadRequestException('No inbounds found');
     
     if (data.flow) {
-      const streamSettings = inbound.streamSettings as any;
-      if (inbound.protocol !== 'vless' || streamSettings?.security !== 'reality') {
-        throw new BadRequestException('Flow is only supported on VLESS Reality inbounds');
+      for (const inbound of inbounds) {
+        const streamSettings = inbound.streamSettings as any;
+        if (inbound.protocol !== 'vless' || streamSettings?.security !== 'reality') {
+          throw new BadRequestException('Flow is only supported on VLESS Reality inbounds');
+        }
       }
     }
     const caller = await this.prisma.admin.findUnique({ 
@@ -91,18 +98,22 @@ export class ClientsService {
       flow: data.flow || "",
       totalGB: Number(data.total) || 0,
       expiryTime: data.expiryTime || 0,
+      limitIp: 0,
+      tgId: "",
+      comment: "",
+      reset: 0,
     };
 
-    if (targetAdmin.xuiGroupId) {
-      clientPayload.tgId = targetAdmin.xuiGroupId; // Commonly used in 3x-ui for grouping
-      // Some newer forks might use 'groupId' or something else, but tgId is common in Sanaei.
-      // Or we can just pass tgId to be safe. We also might pass groupId if that becomes standard.
-      clientPayload.groupId = targetAdmin.xuiGroupId;
-    }
+    for (const inbound of inbounds) {
+      await this.panelsService.addClient(inbound.panelId, inbound.port, {
+        clients: [clientPayload]
+      });
 
-    await this.panelsService.addClient(inbound.panelId, inbound.port, {
-      clients: [clientPayload]
-    });
+      // Assign client to reseller's native 3x-ui group (auto-creates group if needed)
+      await this.panelsService.assignClientToGroup(
+        inbound.panelId, [data.email], targetAdmin.username
+      );
+    }
 
     return this.prisma.$transaction(async (tx) => {
       // Re-fetch caller to lock balance during transaction
@@ -127,7 +138,6 @@ export class ClientsService {
       const client = await tx.client.create({
         data: {
           adminId: targetAdminId,
-          inboundId: data.inboundId,
           email: data.email,
           remark: data.remark,
           uuid: clientUuid,
@@ -136,11 +146,39 @@ export class ClientsService {
           flow: data.flow,
           total: totalBytes,
           expiryTime: BigInt(data.expiryTime || 0),
+          inbounds: {
+            create: data.inboundIds.map(inboundId => ({ inboundId }))
+          }
         },
         include: {
-          inbound: { select: { id: true, tag: true, port: true, protocol: true, panel: { select: { id: true, name: true, url: true } } } }
+          inbounds: {
+            select: {
+              inbound: {
+                select: {
+                  id: true,
+                  tag: true,
+                  port: true,
+                  protocol: true,
+                  panel: {
+                    select: {
+                      id: true,
+                      name: true,
+                      url: true,
+                      subUrl: true
+                    }
+                  }
+                }
+              }
+            }
+          }
         }
       });
+
+      const mappedClient = {
+        ...client,
+        inbound: client.inbounds?.[0]?.inbound || null,
+        inbounds: client.inbounds?.map(ci => ci.inbound) || []
+      };
 
       if (totalBytes > 0n && lockedCaller.role !== 'SUPER_ADMIN' && lockedCaller.trafficMode === 'ALLOCATION') {
         await tx.trafficTransaction.create({
@@ -158,7 +196,7 @@ export class ClientsService {
         data: { action: 'CLIENT_CREATED', entity: 'Client', entityId: client.id, adminId: callerId, details: { targetAdminId } }
       });
 
-      return client;
+      return mappedClient;
     });
   }
 
@@ -171,8 +209,22 @@ export class ClientsService {
     else if (filters.adminId) where.adminId = filters.adminId;
 
     if (filters.search) where.email = { contains: filters.search, mode: 'insensitive' };
-    if (filters.inboundId) where.inboundId = filters.inboundId;
-    if (filters.panelId) where.inbound = { panelId: filters.panelId };
+    if (filters.inboundId) {
+      where.inbounds = {
+        some: {
+          inboundId: filters.inboundId
+        }
+      };
+    }
+    if (filters.panelId) {
+      where.inbounds = {
+        some: {
+          inbound: {
+            panelId: filters.panelId
+          }
+        }
+      };
+    }
 
     const now = BigInt(Date.now());
     if (filters.status === 'active') {
@@ -231,13 +283,33 @@ export class ClientsService {
           id: true, email: true, remark: true, ownerTag: true, uuid: true, subId: true, enable: true, flow: true,
           up: true, down: true, total: true, expiryTime: true, createdAt: true,
           admin: { select: { id: true, username: true } },
-          inbound: { select: { id: true, tag: true, port: true, protocol: true, streamSettings: true, panel: { select: { id: true, name: true, url: true, subUrl: true } } } },
+          inbounds: {
+            select: {
+              inbound: {
+                select: {
+                  id: true,
+                  tag: true,
+                  port: true,
+                  protocol: true,
+                  streamSettings: true,
+                  panel: { select: { id: true, name: true, url: true, subUrl: true } }
+                }
+              }
+            }
+          },
         },
         orderBy: { createdAt: 'desc' },
       }),
       this.prisma.client.count({ where }),
     ]);
-    return { data, total, page, limit };
+
+    const mappedData = data.map(client => ({
+      ...client,
+      inbound: client.inbounds?.[0]?.inbound || null,
+      inbounds: client.inbounds?.map(ci => ci.inbound) || []
+    }));
+
+    return { data: mappedData, total, page, limit };
   }
 
   async findOne(id: string, adminId: string, role: string) {
@@ -245,18 +317,50 @@ export class ClientsService {
       where: { id },
       include: {
         admin: { select: { id: true, username: true } },
-        inbound: { select: { id: true, panelId: true, tag: true, port: true, protocol: true, streamSettings: true, panel: { select: { id: true, name: true, url: true, subUrl: true } } } },
+        inbounds: {
+          select: {
+            inbound: {
+              select: {
+                id: true,
+                panelId: true,
+                tag: true,
+                port: true,
+                protocol: true,
+                streamSettings: true,
+                panel: { select: { id: true, name: true, url: true, subUrl: true } }
+              }
+            }
+          }
+        }
       },
     });
     if (!client) throw new NotFoundException('Client not found');
     if (role !== 'SUPER_ADMIN' && client.adminId !== adminId) throw new ForbiddenException();
-    return client;
+
+    return {
+      ...client,
+      inbound: client.inbounds?.[0]?.inbound || null,
+      inbounds: client.inbounds?.map(ci => ci.inbound) || []
+    };
   }
 
   async getQrCode(id: string, adminId: string, role: string) {
     const client = await this.findOne(id, adminId, role);
     const subUrlBase = client.inbound?.panel?.subUrl || client.inbound?.panel?.url || 'http://localhost';
-    const subUrl = `${subUrlBase}/sub/${client.subId || client.email}`;
+    
+    let subUrl = '';
+    try {
+      const pUrl = new URL(subUrlBase);
+      const pathname = pUrl.pathname.endsWith('/sub/') ? pUrl.pathname : `${pUrl.pathname.replace(/\/$/, '')}/sub/`;
+      subUrl = `${pUrl.origin}${pathname}${encodeURIComponent(client.subId || client.email)}`;
+    } catch {
+      const base = subUrlBase.endsWith('/') ? subUrlBase : `${subUrlBase}/`;
+      if (base.includes('/sub/')) {
+        subUrl = `${base}${encodeURIComponent(client.subId || client.email)}`;
+      } else {
+        subUrl = `${base}sub/${encodeURIComponent(client.subId || client.email)}`;
+      }
+    }
     
     try {
       const qrDataUrl = await QRCode.toDataURL(subUrl, { width: 300, margin: 2 });
@@ -268,12 +372,13 @@ export class ClientsService {
 
   async update(id: string, adminId: string, role: string, data: { enable?: boolean; total?: number; expiryTime?: number; remark?: string; flow?: string }) {
     const existing = await this.findOne(id, adminId, role);
-    const inbound = existing.inbound as any;
     
     if (data.flow) {
-      const streamSettings = inbound?.streamSettings as any;
-      if (inbound?.protocol !== 'vless' || streamSettings?.security !== 'reality') {
-        throw new BadRequestException('Flow is only supported on VLESS Reality inbounds');
+      for (const inbound of existing.inbounds) {
+        const streamSettings = inbound?.streamSettings as any;
+        if (inbound?.protocol !== 'vless' || streamSettings?.security !== 'reality') {
+          throw new BadRequestException('Flow is only supported on VLESS Reality inbounds');
+        }
       }
     }
 
@@ -295,27 +400,29 @@ export class ClientsService {
 
     const clientPayload: any = {
       id: existing.uuid,
-      subId: existing.subId || undefined,
-      email: existing.email,
+      subId: existing.subId || "",
+      email: existing.email.trim(),
       enable: newEnable,
       flow: newFlow || "",
       totalGB: Number(newTotal),
       expiryTime: Number(newExpiry),
+      tgId: "",
     };
 
-    if (existing.adminId) {
-      const dbAdmin = await this.prisma.admin.findUnique({ where: { id: existing.adminId }});
-      if (dbAdmin && dbAdmin.xuiGroupId) {
-        clientPayload.tgId = dbAdmin.xuiGroupId;
-        clientPayload.groupId = dbAdmin.xuiGroupId;
+    // Call Panel API First for all attached inbounds
+    for (const inbound of existing.inbounds) {
+      try {
+        await this.panelsService.updateClient(inbound.panelId, inbound.port, existing.uuid, clientPayload);
+      } catch (err: any) {
+        console.error(`Failed to update client ${existing.email} on panel inbound ${inbound.id}:`, err.message);
       }
     }
-
-    // Call Panel API First
-    await this.panelsService.updateClient(inbound.panelId, inbound.port, existing.uuid, clientPayload);
     
     return this.prisma.$transaction(async (tx) => {
       const updateData: Prisma.ClientUpdateInput = {};
+      if (existing.email !== existing.email.trim()) {
+        updateData.email = existing.email.trim();
+      }
       if (data.enable !== undefined) {
         updateData.enable = data.enable;
         updateData.disableReason = data.enable ? null : 'MANUAL';
@@ -377,9 +484,14 @@ export class ClientsService {
 
   async remove(id: string, adminId: string, role: string, skipRefund: boolean = false) {
     const existing = await this.findOne(id, adminId, role);
-    const inbound = existing.inbound as any;
     
-    await this.panelsService.delClient(inbound.panelId, inbound.port, existing.uuid);
+    for (const inbound of existing.inbounds) {
+      try {
+        await this.panelsService.delClient(inbound.panelId, inbound.port, existing.uuid);
+      } catch (err: any) {
+        console.error(`Failed to delete client ${existing.email} from panel inbound ${inbound.id}:`, err.message);
+      }
+    }
     
     return this.prisma.$transaction(async (tx) => {
       if (existing.adminId && !skipRefund) {
@@ -418,9 +530,14 @@ export class ClientsService {
   async resetUsage(id: string, adminId: string, role: string) {
     if (role !== 'SUPER_ADMIN') throw new BadRequestException('Only Super Admin can reset traffic usage');
     const existing = await this.findOne(id, adminId, role);
-    const inbound = existing.inbound as any;
     
-    await this.panelsService.resetClientTraffic(inbound.panelId, inbound.port, existing.email);
+    for (const inbound of existing.inbounds) {
+      try {
+        await this.panelsService.resetClientTraffic(inbound.panelId, inbound.port, existing.email);
+      } catch (err: any) {
+        console.error(`Failed to reset traffic for client ${existing.email} on panel inbound ${inbound.id}:`, err.message);
+      }
+    }
     
     return this.prisma.$transaction(async (tx) => {
       const used = existing.up + existing.down;
@@ -448,11 +565,232 @@ export class ClientsService {
     });
   }
 
+  async getGroups(adminId: string, role: string) {
+    const panels = await this.prisma.panel.findMany({ select: { id: true } });
+    const uniqueGroups = new Set<string>();
+
+    for (const panel of panels) {
+      try {
+        const groups = await this.panelsService.listGroups(panel.id);
+        for (const g of groups) {
+          if (g && g.name) {
+            uniqueGroups.add(g.name);
+          }
+        }
+      } catch (err) {
+        // Ignore panel list errors
+      }
+    }
+    return Array.from(uniqueGroups).sort();
+  }
+
+  async validateBulkCreate(callerId: string, role: string, dto: BulkCreateClientDto) {
+    const count = dto.endNumber - dto.startNumber + 1;
+    if (count <= 0) throw new BadRequestException('Invalid start or end number');
+    if (count > 1000) throw new BadRequestException('Bulk creation limit is 1000 clients per request');
+
+    const emails = [];
+    const sep = dto.separator === 'None' ? '' : (dto.separator || '');
+    for (let i = dto.startNumber; i <= dto.endNumber; i++) {
+      emails.push(`${dto.prefix}${sep}${i}`);
+    }
+
+    const duplicates = await this.prisma.client.findMany({
+      where: { email: { in: emails } },
+      select: { email: true }
+    });
+
+    const duplicateEmails = duplicates.map(d => d.email);
+    const estimatedTimeMs = count * 20 + 300; // 20ms per client + base overhead
+
+    return {
+      valid: duplicateEmails.length === 0,
+      count,
+      duplicateEmails,
+      estimatedTimeMs,
+      preview: emails.slice(0, 5),
+    };
+  }
+
+  async bulkCreate(callerId: string, role: string, dto: BulkCreateClientDto) {
+    const inbounds = await this.prisma.inbound.findMany({
+      where: { id: { in: dto.inboundIds } },
+      include: { panel: true }
+    });
+    if (!inbounds || inbounds.length === 0) throw new BadRequestException('No inbounds found');
+
+    const caller = await this.prisma.admin.findUnique({ 
+      where: { id: callerId },
+      include: { _count: { select: { clients: true } } }
+    });
+    if (!caller) throw new BadRequestException('Admin not found');
+    
+    let targetAdminId = callerId;
+    let targetAdmin = caller;
+    
+    if (caller.role === 'SUPER_ADMIN' && dto.adminId) {
+      targetAdminId = dto.adminId;
+      const explicitTarget = await this.prisma.admin.findUnique({ 
+        where: { id: targetAdminId },
+        include: { _count: { select: { clients: true } } }
+      });
+      if (!explicitTarget) throw new BadRequestException('Target Admin not found');
+      targetAdmin = explicitTarget;
+    }
+
+    const count = dto.endNumber - dto.startNumber + 1;
+    if (count <= 0) throw new BadRequestException('Invalid start or end number');
+    if (count > 1000) throw new BadRequestException('Bulk creation limit is 1000 clients per request');
+
+    if (targetAdmin.maxClients > 0 && targetAdmin._count.clients + count > targetAdmin.maxClients) {
+      throw new BadRequestException(`Client limit reached. Maximum allowed: ${targetAdmin.maxClients}. Current: ${targetAdmin._count.clients}`);
+    }
+
+    const totalBytesPerClient = BigInt(dto.total || 0);
+    const totalBytesRequired = totalBytesPerClient * BigInt(count);
+
+    if (caller.role !== 'SUPER_ADMIN') {
+      if (caller.trafficMode === 'ALLOCATION') {
+        if (caller.balance < Number(totalBytesRequired)) {
+          throw new BadRequestException('Insufficient traffic balance');
+        }
+      } else if (caller.trafficMode === 'USAGE') {
+        if (caller.balance <= 0) {
+          throw new BadRequestException('Insufficient traffic balance. Cannot create clients when balance is zero or below.');
+        }
+      }
+    }
+
+    if (dto.flow) {
+      for (const inbound of inbounds) {
+        const streamSettings = inbound.streamSettings as any;
+        if (inbound.protocol !== 'vless' || streamSettings?.security !== 'reality') {
+          throw new BadRequestException('Flow is only supported on VLESS Reality inbounds');
+        }
+      }
+    }
+
+    const emails = [];
+    const sep = dto.separator === 'None' ? '' : (dto.separator || '');
+    for (let i = dto.startNumber; i <= dto.endNumber; i++) {
+      emails.push(`${dto.prefix}${sep}${i}`);
+    }
+
+    const existingClient = await this.prisma.client.findFirst({
+      where: { email: { in: emails } }
+    });
+    if (existingClient) {
+      throw new BadRequestException(`Email "${existingClient.email}" is already in use.`);
+    }
+
+    const clientPayloads: any[] = [];
+    const clientsDbData: any[] = [];
+
+    for (const email of emails) {
+      const clientUuid = crypto.randomUUID();
+      const clientSubId = crypto.randomBytes(8).toString('hex');
+      const clientSubToken = crypto.randomBytes(5).toString('hex');
+
+      clientPayloads.push({
+        id: clientUuid,
+        subId: clientSubId,
+        email: email,
+        enable: dto.enable !== false,
+        flow: dto.flow || "",
+        totalGB: Number(dto.total) || 0,
+        expiryTime: dto.expiryTime || 0,
+        limitIp: 0,
+        tgId: 0,
+        comment: dto.remark || "",
+        reset: 0,
+        security: "auto",
+      });
+
+      clientsDbData.push({
+        adminId: targetAdminId,
+        email: email,
+        remark: dto.remark,
+        uuid: clientUuid,
+        subId: clientSubId,
+        subToken: clientSubToken,
+        flow: dto.flow,
+        total: totalBytesPerClient,
+        expiryTime: BigInt(dto.expiryTime || 0),
+        enable: dto.enable !== false,
+      });
+    }
+
+    // 1. Add to Panel
+    for (const inbound of inbounds) {
+      await this.panelsService.addClient(inbound.panelId, inbound.port, {
+        clients: clientPayloads
+      });
+
+      // 2. Assign to reseller Group
+      const groupName = dto.group || targetAdmin.username;
+      await this.panelsService.assignClientToGroup(
+        inbound.panelId, emails, groupName
+      );
+    }
+
+    // 3. Save to local DB in transaction
+    const createdClients = await this.prisma.$transaction(async (tx) => {
+      if (caller.role !== 'SUPER_ADMIN' && caller.trafficMode === 'ALLOCATION') {
+        const lockedCaller = await tx.admin.findUnique({ where: { id: callerId } });
+        if (!lockedCaller) throw new BadRequestException('Admin not found');
+        if (lockedCaller.balance < Number(totalBytesRequired)) {
+          throw new BadRequestException('Insufficient traffic balance');
+        }
+        await tx.admin.update({
+          where: { id: callerId },
+          data: { balance: lockedCaller.balance - Number(totalBytesRequired) }
+        });
+      }
+
+      const result = [];
+      for (const clientData of clientsDbData) {
+        const c = await tx.client.create({
+          data: {
+            ...clientData,
+            inbounds: {
+              create: dto.inboundIds.map(inboundId => ({ inboundId }))
+            }
+          }
+        });
+        result.push(c);
+      }
+
+      if (totalBytesRequired > 0n && caller.role !== 'SUPER_ADMIN' && caller.trafficMode === 'ALLOCATION') {
+        await tx.trafficTransaction.create({
+          data: {
+            adminId: callerId,
+            amount: totalBytesRequired,
+            type: 'DEBIT',
+            description: `Bulk Client Creation (${count} clients)`,
+          }
+        });
+      }
+
+      await tx.auditLog.create({
+        data: {
+          action: 'BULK_CLIENT_CREATED',
+          entity: 'Client',
+          adminId: callerId,
+          details: { count, targetAdminId, prefix: dto.prefix }
+        }
+      });
+
+      return result;
+    });
+
+    return { success: true, count: createdClients.length };
+  }
+
   /** Bulk operations, scoped to the caller's ownership when a reseller. */
   async bulk(
     adminId: string,
     role: string,
-    dto: { ids: string[]; action: 'enable' | 'disable' | 'delete' | 'cleanup' | 'addTraffic' | 'addDays' | 'resetUsage'; value?: number },
+    dto: BulkClientDto,
   ) {
     if (!dto.ids?.length) throw new BadRequestException('No clients selected');
 
@@ -460,47 +798,138 @@ export class ClientsService {
     if (role !== 'SUPER_ADMIN') scope.adminId = adminId;
 
     const targets = await this.prisma.client.findMany({ where: scope });
-    const ids = targets.map((t) => t.id);
-    if (!ids.length) return { affected: 0 };
+    if (!targets.length) return { affected: 0 };
 
-    for (const t of targets) {
-      switch (dto.action) {
-        case 'enable':
-          await this.update(t.id, adminId, role, { enable: true });
-          break;
-        case 'disable':
-          await this.update(t.id, adminId, role, { enable: false });
-          break;
-        case 'delete':
-          await this.remove(t.id, adminId, role);
-          break;
-        case 'cleanup':
-          await this.remove(t.id, adminId, role, true);
-          break;
-        case 'addTraffic': {
-          const bytes = BigInt(Math.round((dto.value ?? 0) * GB));
-          if (bytes > 0n) {
-            await this.update(t.id, adminId, role, { total: Number(t.total + bytes) });
-          }
-          break;
+    const results = { success: 0, failed: 0, errors: [] as string[] };
+
+    // Up-front balance checks for traffic addition
+    if (dto.action === 'addTraffic') {
+      const bytesToAddPerClient = BigInt(Math.round((dto.value ?? 0) * GB));
+      const totalRequired = bytesToAddPerClient * BigInt(targets.length);
+
+      const caller = await this.prisma.admin.findUnique({ where: { id: adminId } });
+      if (caller && caller.role !== 'SUPER_ADMIN' && caller.trafficMode === 'ALLOCATION') {
+        if (caller.balance < Number(totalRequired)) {
+          throw new BadRequestException(`Insufficient balance to add traffic. Required: ${Number(totalRequired) / GB} GB, Available: ${caller.balance / GB} GB`);
         }
-        case 'addDays': {
-          const ms = BigInt((dto.value ?? 0) * 24 * 60 * 60 * 1000);
-          const now = BigInt(Date.now());
-          const base = t.expiryTime > 0n ? t.expiryTime : now;
-          await this.update(t.id, adminId, role, { expiryTime: Number(base + ms) });
-          break;
-        }
-        case 'resetUsage': {
-          await this.resetUsage(t.id, adminId, role);
-          break;
-        }
-        default:
-          throw new BadRequestException('Unknown action');
       }
     }
-    
-    return { affected: ids.length };
+
+    if (dto.action === 'assignGroup') {
+      if (!dto.groupName) throw new BadRequestException('Group name is required');
+      
+      const panelClients = new Map<string, string[]>();
+      for (const t of targets) {
+        const clientWithInbounds = await this.prisma.client.findUnique({
+          where: { id: t.id },
+          include: {
+            inbounds: {
+              include: {
+                inbound: true
+              }
+            }
+          }
+        });
+        if (clientWithInbounds?.inbounds) {
+          for (const ci of clientWithInbounds.inbounds) {
+            if (ci.inbound) {
+              const panelId = ci.inbound.panelId;
+              if (!panelClients.has(panelId)) panelClients.set(panelId, []);
+              const list = panelClients.get(panelId)!;
+              if (!list.includes(t.email)) {
+                list.push(t.email);
+              }
+            }
+          }
+        }
+      }
+
+      for (const [panelId, emails] of panelClients.entries()) {
+        try {
+          await this.panelsService.assignClientToGroup(panelId, emails, dto.groupName);
+          results.success += emails.length;
+        } catch (err: any) {
+          results.failed += emails.length;
+          results.errors.push(`Panel ${panelId}: ${err.message}`);
+        }
+      }
+    } else {
+      // Process sequential operations in parallel batches of 10
+      const batchSize = 10;
+      for (let i = 0; i < targets.length; i += batchSize) {
+        const batch = targets.slice(i, i + batchSize);
+        await Promise.all(
+          batch.map(async (t) => {
+            try {
+              switch (dto.action) {
+                case 'enable':
+                  await this.update(t.id, adminId, role, { enable: true });
+                  break;
+                case 'disable':
+                  await this.update(t.id, adminId, role, { enable: false });
+                  break;
+                case 'delete':
+                  await this.remove(t.id, adminId, role);
+                  break;
+                case 'cleanup':
+                  await this.remove(t.id, adminId, role, true);
+                  break;
+                case 'addTraffic': {
+                  const bytes = BigInt(Math.round((dto.value ?? 0) * GB));
+                  if (bytes > 0n) {
+                    await this.update(t.id, adminId, role, { total: Number(t.total + bytes) });
+                  }
+                  break;
+                }
+                case 'addDays': {
+                  const ms = BigInt((dto.value ?? 0) * 24 * 60 * 60 * 1000);
+                  const now = BigInt(Date.now());
+                  const base = t.expiryTime > 0n ? t.expiryTime : now;
+                  await this.update(t.id, adminId, role, { expiryTime: Number(base + ms) });
+                  break;
+                }
+                case 'resetUsage':
+                case 'resetTraffic': {
+                  await this.resetUsage(t.id, adminId, role);
+                  break;
+                }
+              }
+              results.success++;
+            } catch (err: any) {
+              results.failed++;
+              results.errors.push(`${t.email}: ${err.message}`);
+            }
+          })
+        );
+      }
+    }
+
+    // Write audit log
+    await this.prisma.auditLog.create({
+      data: {
+        action: `BULK_${dto.action.toUpperCase()}`,
+        entity: 'Client',
+        adminId,
+        details: {
+          count: targets.length,
+          success: results.success,
+          failed: results.failed,
+          errors: results.errors,
+          value: dto.value,
+          groupName: dto.groupName,
+        }
+      }
+    });
+
+    if (results.failed > 0) {
+      return {
+        affected: results.success,
+        failed: results.failed,
+        errors: results.errors,
+      };
+    }
+
+    return { affected: results.success };
   }
 
   async getCleanupCandidates(adminId: string, role: string) {
@@ -516,15 +945,31 @@ export class ClientsService {
       where.adminId = adminId;
     }
 
-    return this.prisma.client.findMany({
+    const candidates = await this.prisma.client.findMany({
       where,
       select: {
         id: true, email: true, remark: true, ownerTag: true, uuid: true, subId: true, enable: true, flow: true,
         up: true, down: true, total: true, expiryTime: true, createdAt: true,
         admin: { select: { id: true, username: true } },
-        inbound: { select: { id: true, tag: true, panel: { select: { id: true, name: true, url: true, subUrl: true } } } },
+        inbounds: {
+          select: {
+            inbound: {
+              select: {
+                id: true,
+                tag: true,
+                panel: { select: { id: true, name: true, url: true, subUrl: true } }
+              }
+            }
+          }
+        },
       },
       orderBy: { expiryTime: 'asc' },
     });
+
+    return candidates.map(client => ({
+      ...client,
+      inbound: client.inbounds?.[0]?.inbound || null,
+      inbounds: client.inbounds?.map(ci => ci.inbound) || []
+    }));
   }
 }

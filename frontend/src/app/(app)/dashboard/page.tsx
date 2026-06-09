@@ -6,14 +6,15 @@ import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  AreaChart, Area, BarChart, Bar, LineChart, Line,
-  PieChart, Pie, Cell,
+  AreaChart, Area, BarChart, Bar,
+  PieChart, Pie, Cell, Legend,
   XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from "recharts";
 import {
   Server, UserCog, Users, HardDrive, CalendarDays, DollarSign,
   Activity, Wifi, Bell, AlertTriangle, DatabaseBackup, ArchiveX
 } from "lucide-react";
+
 import type { Overview, SeriesPoint, Trends, Monitoring } from "@/lib/types";
 import { formatBytes, formatDateTime } from "@/lib/format";
 import { Card, Spinner, ErrorBox, Badge } from "@/components/ui";
@@ -131,7 +132,12 @@ function SuperDashboard() {
   useEffect(() => {
     const socket = io("http://localhost:4000", { transports: ["websocket"] });
     socket.on("live-speed", (data) => {
-      if (Array.isArray(data)) setLivePanels(data);
+      if (Array.isArray(data)) {
+        // Stable sort by panelName to prevent reordering on each broadcast
+        setLivePanels([...data].sort((a, b) =>
+          String(a.panelName).localeCompare(String(b.panelName))
+        ));
+      }
     });
     return () => { socket.disconnect(); };
   }, []);
@@ -176,7 +182,13 @@ function SuperDashboard() {
           parts={[{ label: "active", value: o.clients.active, tone: "text-emerald-400" }, { label: "expired", value: o.clients.expired, tone: "text-red-400" }]} />
         <Kpi icon={Activity} tone="text-cyan-400" label="Today's Usage" value={o.usage?.today != null ? formatBytes(Number(o.usage.today)) : "Unknown"} />
         <Kpi icon={CalendarDays} tone="text-purple-400" label="Monthly Usage" value={o.usage?.monthly != null ? formatBytes(Number(o.usage.monthly)) : "Unknown"} />
-        <Kpi icon={Activity} tone="text-cyan-400" label="Remaining Traffic" value={o.traffic.remaining === 0 ? "No data" : formatBytes(o.traffic.remaining)} />
+        <Kpi icon={HardDrive} tone="text-cyan-400" label="Remaining Traffic"
+          value={
+            o.traffic?.remaining != null
+              ? formatBytes(Number(o.traffic.remaining))
+              : "No data"
+          }
+        />
         <Card className="border-red-500/30 bg-red-500/5">
           <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
             <ArchiveX size={16} className="text-red-400" /> Cleanup Ready
@@ -251,20 +263,29 @@ function SuperDashboard() {
             <h2 className="font-semibold text-zinc-800 dark:text-zinc-100">Usage by Admin</h2>
             <div className="h-8 w-8 rounded-full bg-emerald-500/10 flex items-center justify-center"><UserCog size={16} className="text-emerald-500"/></div>
           </div>
+          {adminData.length === 0 ? (
+            <div className="h-[200px] flex items-center justify-center text-zinc-500 text-sm">No data available</div>
+          ) : (
           <ResponsiveContainer width="100%" height={200}>
             <PieChart margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-              <Pie data={adminData} dataKey="bytes" nameKey="name" cx="50%" cy="50%" innerRadius={55} outerRadius={75} paddingAngle={2} stroke="none">
+              <Pie data={adminData} dataKey="bytes" nameKey="name" cx="50%" cy="45%" innerRadius={45} outerRadius={65} paddingAngle={2} stroke="none">
                 {adminData.map((entry, index) => (
                   <Cell key={`cell-${index}`} fill={['#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#ef4444', '#ec4899'][index % 6]} />
                 ))}
               </Pie>
-              <Tooltip 
-                formatter={(val: any) => [formatBytes(Number(val)), "Usage"]} 
+              <Tooltip
+                formatter={(val: any, name: any) => [formatBytes(Number(val)), name]}
                 contentStyle={{ backgroundColor: "#18181b", borderColor: "#27272a", borderRadius: "8px", padding: "8px 12px" }}
                 itemStyle={{ color: "#e4e4e7", fontWeight: 500 }}
               />
+              <Legend
+                iconType="circle"
+                iconSize={8}
+                formatter={(value) => <span style={{ color: '#a1a1aa', fontSize: 11 }}>{value}</span>}
+              />
             </PieChart>
           </ResponsiveContainer>
+          )}
         </Card>
 
         <Card className="border-zinc-200 dark:border-zinc-800/60 shadow-sm">
@@ -272,20 +293,29 @@ function SuperDashboard() {
             <h2 className="font-semibold text-zinc-800 dark:text-zinc-100">Usage by Inbound</h2>
             <div className="h-8 w-8 rounded-full bg-amber-500/10 flex items-center justify-center"><Server size={16} className="text-amber-500"/></div>
           </div>
+          {inboundData.length === 0 ? (
+            <div className="h-[200px] flex items-center justify-center text-zinc-500 text-sm">No data available</div>
+          ) : (
           <ResponsiveContainer width="100%" height={200}>
             <PieChart margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-              <Pie data={inboundData} dataKey="bytes" nameKey="name" cx="50%" cy="50%" innerRadius={55} outerRadius={75} paddingAngle={2} stroke="none">
+              <Pie data={inboundData} dataKey="bytes" nameKey="name" cx="50%" cy="45%" innerRadius={45} outerRadius={65} paddingAngle={2} stroke="none">
                 {inboundData.map((entry, index) => (
                   <Cell key={`cell-${index}`} fill={['#f59e0b', '#ef4444', '#10b981', '#3b82f6', '#8b5cf6', '#06b6d4'][index % 6]} />
                 ))}
               </Pie>
-              <Tooltip 
-                formatter={(val: any) => [formatBytes(Number(val)), "Usage"]} 
+              <Tooltip
+                formatter={(val: any, name: any) => [formatBytes(Number(val)), name]}
                 contentStyle={{ backgroundColor: "#18181b", borderColor: "#27272a", borderRadius: "8px", padding: "8px 12px" }}
                 itemStyle={{ color: "#e4e4e7", fontWeight: 500 }}
               />
+              <Legend
+                iconType="circle"
+                iconSize={8}
+                formatter={(value) => <span style={{ color: '#a1a1aa', fontSize: 11 }}>{value}</span>}
+              />
             </PieChart>
           </ResponsiveContainer>
+          )}
         </Card>
       </div>
 

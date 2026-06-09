@@ -26,18 +26,22 @@ export class SubscriptionsService {
             portalSettings: true,
           }
         },
-        inbound: {
+        inbounds: {
           select: {
-            id: true,
-            tag: true,
-            port: true,
-            protocol: true,
-            panel: {
+            inbound: {
               select: {
                 id: true,
-                name: true,
-                url: true,
-                subUrl: true,
+                tag: true,
+                port: true,
+                protocol: true,
+                panel: {
+                  select: {
+                    id: true,
+                    name: true,
+                    url: true,
+                    subUrl: true,
+                  }
+                }
               }
             }
           }
@@ -49,8 +53,9 @@ export class SubscriptionsService {
       throw new NotFoundException('Subscription not found');
     }
 
-    // Prepare a sanitized response to avoid leaking sensitive fields 
-    // although client model doesn't have highly sensitive fields natively, we explicitly pick them.
+    const inbound = client.inbounds?.[0]?.inbound || null;
+    const inbounds = client.inbounds?.map(ci => ci.inbound) || [];
+
     return {
       id: client.id,
       uuid: client.uuid,
@@ -64,8 +69,9 @@ export class SubscriptionsService {
       total: Number(client.total),
       expiryTime: Number(client.expiryTime),
       createdAt: client.createdAt,
-      portalSettings: client.admin?.portalSettings || {},
-      inbound: client.inbound,
+      portalSettings: (client.admin as any)?.portalSettings || {},
+      inbound,
+      inbounds,
     };
   }
 
@@ -78,11 +84,18 @@ export class SubscriptionsService {
     }
 
     let nativeUrl = '';
+    const panelSubUrl = inbound.panel.subUrl || inbound.panel.url || '';
     try {
-      const pUrl = new URL(inbound.panel.subUrl || inbound.panel.url || '');
-      nativeUrl = `${pUrl.origin}/sub/${subId || email}`;
+      const pUrl = new URL(panelSubUrl);
+      const pathname = pUrl.pathname.endsWith('/sub/') ? pUrl.pathname : `${pUrl.pathname.replace(/\/$/, '')}/sub/`;
+      nativeUrl = `${pUrl.origin}${pathname}${encodeURIComponent(subId || email)}`;
     } catch {
-      nativeUrl = `${inbound.panel.subUrl || inbound.panel.url}/sub/${subId || email}`;
+      const base = panelSubUrl.endsWith('/') ? panelSubUrl : `${panelSubUrl}/`;
+      if (base.includes('/sub/')) {
+        nativeUrl = `${base}${encodeURIComponent(subId || email)}`;
+      } else {
+        nativeUrl = `${base}sub/${encodeURIComponent(subId || email)}`;
+      }
     }
 
     if (!nativeUrl || nativeUrl.includes('undefined')) {
@@ -140,26 +153,39 @@ export class SubscriptionsService {
     const client = await this.prisma.client.findFirst({
       where: { subToken: token },
       include: {
-        inbound: {
+        inbounds: {
           select: {
-            panel: {
-              select: { subUrl: true, url: true }
+            inbound: {
+              select: {
+                panel: {
+                  select: { subUrl: true, url: true }
+                }
+              }
             }
           }
         }
       }
     });
 
-    if (!client || !client.inbound || !client.inbound.panel) {
+    const inbound = client?.inbounds?.[0]?.inbound || null;
+
+    if (!client || !inbound || !inbound.panel) {
       return res.status(404).send('Subscription not found');
     }
 
     let nativeUrl = '';
+    const panelSubUrl = inbound.panel.subUrl || inbound.panel.url || '';
     try {
-      const pUrl = new URL(client.inbound.panel.subUrl || client.inbound.panel.url || '');
-      nativeUrl = `${pUrl.origin}/sub/${client.subId || client.email}`;
+      const pUrl = new URL(panelSubUrl);
+      const pathname = pUrl.pathname.endsWith('/sub/') ? pUrl.pathname : `${pUrl.pathname.replace(/\/$/, '')}/sub/`;
+      nativeUrl = `${pUrl.origin}${pathname}${encodeURIComponent(client.subId || client.email)}`;
     } catch {
-      nativeUrl = `${client.inbound.panel.subUrl || client.inbound.panel.url}/sub/${client.subId || client.email}`;
+      const base = panelSubUrl.endsWith('/') ? panelSubUrl : `${panelSubUrl}/`;
+      if (base.includes('/sub/')) {
+        nativeUrl = `${base}${encodeURIComponent(client.subId || client.email)}`;
+      } else {
+        nativeUrl = `${base}sub/${encodeURIComponent(client.subId || client.email)}`;
+      }
     }
 
     try {

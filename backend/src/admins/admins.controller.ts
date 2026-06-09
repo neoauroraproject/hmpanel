@@ -58,4 +58,11 @@ export class AdminsController {
   remove(@Param('id') id: string) {
     return this.adminsService.remove(id);
   }
+
+  @Post(':id/fix-migration')
+  @Roles('SUPER_ADMIN')
+  @ApiOperation({ summary: 'Fix migrated admin: sync balance from trafficPool and set up adminInbound' })
+  fixMigration(@Param('id') id: string, @Body() dto: { balanceGb?: number; inboundIds?: string[] }) {
+    return this.adminsService.fixMigratedAdmin(id, dto);
+  }
 }

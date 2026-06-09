@@ -12,10 +12,13 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Search, Plus, ChevronDown, ChevronUp, Copy, Check, CheckCircle2,
   Trash2, X, Play, Square, CheckSquare, Eye, MoreVertical, QrCode, Link, Edit2, Power, 
-  Activity, Users, HardDrive, CalendarDays, Filter
+  Activity, Users, HardDrive, CalendarDays, Filter, FolderPlus, RotateCcw, AlertTriangle
 } from "lucide-react";
 import { io } from "socket.io-client";
 import { ConnectionDetailsModal } from "@/components/ConnectionDetailsModal";
+import { BulkCreateModal } from "./BulkCreateModal";
+
+const GB = 1024 ** 3;
 
 interface InboundRow {
   id: string;
@@ -113,16 +116,25 @@ export default function ClientsPage() {
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(25);
 
-  // Selection state
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  // Persistent Selection state (maps client ID -> Client object)
+  const [selectedClients, setSelectedClients] = useState<Record<string, Client>>({});
+  const selectedIds = Object.keys(selectedClients);
+  const selectedCount = selectedIds.length;
+
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [dropdownOpen, setDropdownOpen] = useState<string | null>(null);
   const [editing, setEditing] = useState<Client | null>(null);
   const [connectionDetailsClient, setConnectionDetailsClient] = useState<Client | null>(null);
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
 
   // Modals state
   const [addOpen, setAddOpen] = useState(false);
+  const [bulkCreateOpen, setBulkCreateOpen] = useState(false);
+  const [groupAssignModalOpen, setGroupAssignModalOpen] = useState(false);
+  const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
+  
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+
   const [bulkValueModal, setBulkValueModal] = useState<{
     action: "addTraffic" | "addDays";
     title: string;
@@ -130,6 +142,14 @@ export default function ClientsPage() {
     placeholder: string;
   } | null>(null);
   const [bulkInputValue, setBulkInputValue] = useState("");
+
+  // Bulk operation results modal
+  const [bulkResult, setBulkResult] = useState<{
+    success: number;
+    failed: number;
+    errors: string[];
+    action: string;
+  } | null>(null);
 
   // Query Clients
   const { data, isLoading, error } = useQuery<Paginated<Client>>({
@@ -181,6 +201,25 @@ export default function ClientsPage() {
 
   // Mutations
   const toggle = useMutation({
+    onMutate: async (c: Client) => {
+      // Optimistic UI updates
+      await qc.cancelQueries({ queryKey: ["clients"] });
+      const previous = qc.getQueryData(["clients", page, limit, search, adminId, inboundId, panelId, status, expiry, trafficRange]);
+      
+      qc.setQueryData(
+        ["clients", page, limit, search, adminId, inboundId, panelId, status, expiry, trafficRange],
+        (old: any) => {
+          if (!old) return old;
+          return {
+            ...old,
+            data: old.data.map((item: Client) =>
+              item.id === c.id ? { ...item, enable: !item.enable } : item
+            ),
+          };
+        }
+      );
+      return { previous };
+    },
     mutationFn: async (c: Client) =>
       api.patch(`/clients/${c.id}`, { enable: !c.enable }),
     onSuccess: () => {
@@ -189,25 +228,46 @@ export default function ClientsPage() {
       qc.invalidateQueries({ queryKey: ["reseller-overview"] });
       qc.invalidateQueries({ queryKey: ["overview"] });
     },
-    onError: () => toast("Action failed", "error"),
+    onError: (err, variables, context) => {
+      if (context?.previous) {
+        qc.setQueryData(
+          ["clients", page, limit, search, adminId, inboundId, panelId, status, expiry, trafficRange],
+          context.previous
+        );
+      }
+      toast("Action failed", "error");
+    },
   });
 
   const bulkMutation = useMutation({
     mutationFn: async (dto: {
       ids: string[];
-      action: "enable" | "disable" | "delete" | "addTraffic" | "addDays" | "resetUsage";
+      action: "enable" | "disable" | "delete" | "cleanup" | "addTraffic" | "addDays" | "resetUsage" | "resetTraffic" | "assignGroup";
       value?: number;
-    }) => (await api.post<{ affected: number }>("/clients/bulk", dto)).data,
+      groupName?: string;
+    }) => (await api.post<any>("/clients/bulk", dto)).data,
     onSuccess: (d, vars) => {
-      toast(`Bulk ${vars.action} completed. Affected: ${d.affected} client(s).`);
-      setSelectedIds([]);
+      if (d.failed > 0) {
+        setBulkResult({
+          success: d.affected,
+          failed: d.failed,
+          errors: d.errors,
+          action: vars.action,
+        });
+      } else {
+        toast(`Bulk ${vars.action} completed. Affected: ${d.affected} client(s).`, "success");
+      }
+      setSelectedClients({});
       setBulkValueModal(null);
       setBulkInputValue("");
+      setGroupAssignModalOpen(false);
       qc.invalidateQueries({ queryKey: ["clients"] });
       qc.invalidateQueries({ queryKey: ["reseller-overview"] });
       qc.invalidateQueries({ queryKey: ["overview"] });
     },
-    onError: () => toast("Bulk action failed", "error"),
+    onError: (err: any) => {
+      toast(err.response?.data?.message || "Bulk action failed", "error");
+    },
   });
 
   if (isLoading) return <Spinner />;
@@ -218,33 +278,50 @@ export default function ClientsPage() {
   const totalPages = Math.ceil(totalItems / limit);
 
   // Checkbox functions
+  const currentPageIds = clients.map((c) => c.id);
+  const allCurrentPageSelected = clients.length > 0 && currentPageIds.every((id) => selectedClients[id]);
+
   const handleSelectAll = () => {
-    if (selectedIds.length === clients.length) {
-      setSelectedIds([]);
-    } else {
-      setSelectedIds(clients.map((c) => c.id));
-    }
-  };
-
-  const handleSelectOne = (id: string) => {
-    setSelectedIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-    );
-  };
-
-  const handleBulkAction = (action: "enable" | "disable" | "delete" | "addTraffic" | "addDays" | "resetUsage") => {
-    if (action === "delete") {
-      if (confirm(`Delete ${selectedIds.length} selected client(s) permanently?`)) {
-        bulkMutation.mutate({ ids: selectedIds, action });
+    setSelectedClients((prev) => {
+      const next = { ...prev };
+      if (allCurrentPageSelected) {
+        for (const id of currentPageIds) {
+          delete next[id];
+        }
+      } else {
+        for (const client of clients) {
+          next[client.id] = client;
+        }
       }
+      return next;
+    });
+  };
+
+  const handleSelectOne = (client: Client) => {
+    setSelectedClients((prev) => {
+      const next = { ...prev };
+      if (next[client.id]) {
+        delete next[client.id];
+      } else {
+        next[client.id] = client;
+      }
+      return next;
+    });
+  };
+
+  const handleBulkAction = (action: string) => {
+    if (action === "delete") {
+      setDeleteConfirmOpen(true);
+    } else if (action === "resetUsage" || action === "resetTraffic") {
+      setResetConfirmOpen(true);
     } else if (action === "enable" || action === "disable") {
-      bulkMutation.mutate({ ids: selectedIds, action });
+      bulkMutation.mutate({ ids: selectedIds, action: action as any });
     } else if (action === "addTraffic") {
       setBulkValueModal({
         action,
         title: "Bulk Add Traffic",
         label: "Traffic amount to add (GB)",
-        placeholder: "e.g. 50",
+        placeholder: "e.g. 10",
       });
     } else if (action === "addDays") {
       setBulkValueModal({
@@ -253,6 +330,8 @@ export default function ClientsPage() {
         label: "Number of days to extend",
         placeholder: "e.g. 30",
       });
+    } else if (action === "assignGroup") {
+      setGroupAssignModalOpen(true);
     }
   };
 
@@ -281,18 +360,38 @@ export default function ClientsPage() {
     setPage(1);
   };
 
+  // Up-front balance checks for Bulk Add Traffic
+  const inputNum = Number(bulkInputValue) || 0;
+  const bytesToAddPerClient = inputNum * 1024 * 1024 * 1024;
+  const totalRequired = bytesToAddPerClient * selectedCount;
+  const availableTraffic = overviewData?.admin?.availableTraffic ?? 0;
+  const trafficMode = overviewData?.admin?.trafficMode ?? 'ALLOCATION';
+  const balanceAfter = availableTraffic - totalRequired;
+  const insufficientBalance = trafficMode === 'ALLOCATION' && totalRequired > availableTraffic;
+
+  // Traffic Impact calculations for Delete Confirmation
+  const totalAllocatedTraffic = Object.values(selectedClients).reduce((sum, c) => sum + Number(c.total), 0);
+
   return (
     <div className="space-y-6 pb-20">
       <PageHeader
         title="Clients"
         subtitle={`${totalItems} client${totalItems === 1 ? "" : "s"} found`}
         action={
-          <button
-            onClick={() => setAddOpen(true)}
-            className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 transition-colors"
-          >
-            <Plus size={16} /> Add Client
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setBulkCreateOpen(true)}
+              className="flex items-center gap-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+            >
+              <Users size={16} /> Bulk Create
+            </button>
+            <button
+              onClick={() => setAddOpen(true)}
+              className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 transition-colors shadow-lg shadow-blue-500/20"
+            >
+              <Plus size={16} /> Add Client
+            </button>
+          </div>
         }
       />
 
@@ -445,7 +544,7 @@ export default function ClientsPage() {
               <option value="">All Inbounds</option>
               {inboundsList?.map((i) => (
                 <option key={i.id} value={i.id}>
-                  {i.tag} ({i.protocol})
+                  {i.remark ? `${i.remark} — ` : ''}{i.tag} ({i.protocol})
                 </option>
               ))}
             </select>
@@ -470,13 +569,13 @@ export default function ClientsPage() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm block md:table">
             <thead className="hidden md:table-header-group">
-              <tr className="border-b border-zinc-200 dark:border-zinc-800 text-left text-xs uppercase tracking-wide text-zinc-500 bg-white dark:bg-zinc-900/30">
+              <tr className="border-b border-zinc-200 dark:border-zinc-800 text-left text-xs uppercase tracking-wide text-zinc-500 bg-white dark:bg-zinc-900/30 font-semibold">
                 <th className="w-12 px-4 py-3 text-center">
                   <button
                     onClick={handleSelectAll}
                     className="text-zinc-500 hover:text-zinc-600 dark:text-zinc-300 transition-colors inline-block"
                   >
-                    {selectedIds.length === clients.length && clients.length > 0 ? (
+                    {allCurrentPageSelected ? (
                       <CheckSquare size={16} className="text-blue-500" />
                     ) : (
                       <Square size={16} />
@@ -494,7 +593,7 @@ export default function ClientsPage() {
             <tbody className="block md:table-row-group space-y-3 md:space-y-0">
               {displayClients.map((c, i) => {
                 const isExpanded = expandedId === c.id;
-                const isSelected = selectedIds.includes(c.id);
+                const isSelected = !!selectedClients[c.id];
                 const isOnline = onlineClients.includes(c.email);
                 return (
                   <AnimatePresence key={c.id}>
@@ -512,7 +611,7 @@ export default function ClientsPage() {
                         onClick={(e) => e.stopPropagation()}
                       >
                         <button
-                          onClick={() => handleSelectOne(c.id)}
+                          onClick={() => handleSelectOne(c)}
                           className="text-zinc-500 hover:text-zinc-600 dark:text-zinc-300 transition-colors"
                         >
                           {isSelected ? (
@@ -525,6 +624,14 @@ export default function ClientsPage() {
                       <td className="block md:table-cell px-4 py-3">
                         <div className="flex items-center justify-between md:justify-start gap-2">
                           <div className="flex items-center gap-2">
+                            {/* Checkbox wrapper for mobile */}
+                            <div className="md:hidden" onClick={(e) => { e.stopPropagation(); handleSelectOne(c); }}>
+                              {isSelected ? (
+                                <CheckSquare size={18} className="text-blue-500" />
+                              ) : (
+                                <Square size={18} className="text-zinc-400" />
+                              )}
+                            </div>
                             <div className="font-semibold text-zinc-800 dark:text-zinc-100">{c.remark || c.email}</div>
                             {isOnline && (
                               <span className="relative flex h-2.5 w-2.5" title="Online">
@@ -534,7 +641,7 @@ export default function ClientsPage() {
                             )}
                           </div>
                           
-                          {/* Mobile-only status pill (pulled from standard status logic) */}
+                          {/* Mobile status indicator */}
                           <div className="md:hidden flex items-center gap-1">
                             {(() => {
                               const used = Number(c.up) + Number(c.down);
@@ -542,10 +649,10 @@ export default function ClientsPage() {
                               const outOfTraffic = cap > 0 && used >= cap;
                               const expired = isExpired(c.expiryTime);
                               
-                              if (!c.enable) return <span className="h-2 w-2 rounded-full bg-zinc-500 shadow-[0_0_8px_rgba(113,113,122,0.8)]"></span>;
-                              if (outOfTraffic || expired) return <span className="h-2 w-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]"></span>;
-                              if (isOnline) return <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]"></span>;
-                              return <span className="h-2 w-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.8)]"></span>;
+                              if (!c.enable) return <span className="h-2 w-2 rounded-full bg-zinc-500"></span>;
+                              if (outOfTraffic || expired) return <span className="h-2 w-2 rounded-full bg-red-500"></span>;
+                              if (isOnline) return <span className="h-2 w-2 rounded-full bg-emerald-500"></span>;
+                              return <span className="h-2 w-2 rounded-full bg-blue-500"></span>;
                             })()}
                           </div>
                         </div>
@@ -576,7 +683,7 @@ export default function ClientsPage() {
                           if (!c.enable) {
                             return (
                               <div className="flex items-center gap-2" title="Disabled">
-                                <span className="h-2 w-2 rounded-full bg-zinc-500 shadow-[0_0_8px_rgba(113,113,122,0.8)]"></span>
+                                <span className="h-2 w-2 rounded-full bg-zinc-500"></span>
                                 <span className="text-xs text-zinc-500 dark:text-zinc-400">Disabled</span>
                               </div>
                             );
@@ -584,7 +691,7 @@ export default function ClientsPage() {
                           if (outOfTraffic || expired) {
                             return (
                               <div className="flex items-center gap-2" title={outOfTraffic ? "Out of Traffic" : "Expired"}>
-                                <span className="h-2 w-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]"></span>
+                                <span className="h-2 w-2 rounded-full bg-red-500"></span>
                                 <span className="text-xs text-red-400">{outOfTraffic ? "No Traffic" : "Expired"}</span>
                               </div>
                             );
@@ -594,7 +701,7 @@ export default function ClientsPage() {
                               <div className="flex items-center gap-2" title="Online">
                                 <span className="relative flex h-2 w-2">
                                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]"></span>
+                                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                                 </span>
                                 <span className="text-xs text-emerald-400">Online</span>
                               </div>
@@ -602,7 +709,7 @@ export default function ClientsPage() {
                           }
                           return (
                             <div className="flex items-center gap-2" title="Active">
-                              <span className="h-2 w-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.8)]"></span>
+                              <span className="h-2 w-2 rounded-full bg-blue-500"></span>
                               <span className="text-xs text-blue-400">Active</span>
                             </div>
                           );
@@ -718,14 +825,32 @@ export default function ClientsPage() {
                                {c.inbound?.panel?.url && (
                                  <div className="flex items-center gap-2 bg-zinc-50 dark:bg-zinc-950 p-2 rounded border border-zinc-200 dark:border-zinc-800">
                                    <span className="text-zinc-500 w-[70px] whitespace-nowrap">Panel Sub:</span>
-                                   <a 
-                                     href={c.inbound.panel.subUrl ? `${c.inbound.panel.subUrl}${c.subId}` : `${c.inbound.panel.url}/sub/${c.subId}`} 
-                                     target="_blank" 
-                                     className="font-mono text-xs text-blue-500 hover:underline truncate flex-1 block"
-                                     onClick={(e) => e.stopPropagation()}
-                                   >
-                                     {c.inbound.panel.subUrl ? `${c.inbound.panel.subUrl}${c.subId}` : `${c.inbound.panel.url}/sub/${c.subId}`}
-                                   </a>
+                                   {(() => {
+                                     const sub = encodeURIComponent(c.subId || c.email || '');
+                                     let link = '';
+                                     if (c.inbound.panel.subUrl) {
+                                       const base = c.inbound.panel.subUrl.endsWith('/') ? c.inbound.panel.subUrl : `${c.inbound.panel.subUrl}/`;
+                                       link = `${base}${sub}`;
+                                     } else {
+                                       try {
+                                         const parsed = new URL(c.inbound.panel.url);
+                                         link = `${parsed.origin}/sub/${sub}`;
+                                       } catch {
+                                         const base = c.inbound.panel.url.endsWith('/') ? c.inbound.panel.url : `${c.inbound.panel.url}/`;
+                                         link = `${base}sub/${sub}`;
+                                       }
+                                     }
+                                     return (
+                                       <a 
+                                         href={link} 
+                                         target="_blank" 
+                                         className="font-mono text-xs text-blue-500 hover:underline truncate flex-1 block"
+                                         onClick={(e) => e.stopPropagation()}
+                                       >
+                                         {link}
+                                       </a>
+                                     );
+                                   })()}
                                  </div>
                                )}
                            </div>
@@ -794,104 +919,258 @@ export default function ClientsPage() {
         )}
       </Card>
 
-      {/* Floating Bulk Actions Bar */}
-      {selectedIds.length > 0 && (
-        <div className="fixed bottom-6 left-1/2 z-40 w-full max-w-2xl -translate-x-1/2 px-4">
-          <div className="flex items-center justify-between rounded-full border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/90 px-6 py-3 shadow-2xl backdrop-blur-md animate-in slide-in-from-bottom duration-300">
-            <div className="flex items-center gap-3">
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-500 text-[11px] font-bold text-white">
-                {selectedIds.length}
-              </span>
-              <span className="text-xs font-medium text-zinc-600 dark:text-zinc-300">Selected</span>
-            </div>
+      {/* Floating Bulk Actions Bar (Responsive) */}
+      <AnimatePresence>
+        {selectedCount > 0 && (
+          <motion.div
+            initial={{ y: 50, x: "-50%", opacity: 0 }}
+            animate={{ y: 0, x: "-50%", opacity: 1 }}
+            exit={{ y: 50, x: "-50%", opacity: 0 }}
+            className="fixed bottom-6 left-1/2 z-40 w-full max-w-2xl px-4"
+          >
+            <div className="flex items-center justify-between rounded-full border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/90 px-6 py-3 shadow-2xl backdrop-blur-md">
+              <div className="flex items-center gap-3 shrink-0">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-500 text-[11px] font-bold text-white">
+                  {selectedCount}
+                </span>
+                <span className="text-xs font-medium text-zinc-600 dark:text-zinc-300">Selected</span>
+              </div>
 
-            <div className="flex items-center gap-1.5 sm:gap-2">
+              {/* Desktop Actions */}
+              <div className="hidden md:flex items-center gap-1.5 sm:gap-2 overflow-x-auto max-w-[80%] scrollbar-none py-1">
+                <button
+                  onClick={() => handleBulkAction("addTraffic")}
+                  className="rounded-full border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:bg-zinc-800 whitespace-nowrap"
+                >
+                  Add Traffic
+                </button>
+                <button
+                  onClick={() => handleBulkAction("resetTraffic")}
+                  className="rounded-full border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:bg-zinc-800 whitespace-nowrap"
+                >
+                  Reset Traffic
+                </button>
+                <button
+                  onClick={() => handleBulkAction("addDays")}
+                  className="rounded-full border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:bg-zinc-800 whitespace-nowrap"
+                >
+                  Add Days
+                </button>
+                <button
+                  onClick={() => handleBulkAction("enable")}
+                  className="rounded-full border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:bg-zinc-800 whitespace-nowrap"
+                >
+                  Enable
+                </button>
+                <button
+                  onClick={() => handleBulkAction("disable")}
+                  className="rounded-full border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:bg-zinc-800 whitespace-nowrap"
+                >
+                  Disable
+                </button>
+                <button
+                  onClick={() => handleBulkAction("assignGroup")}
+                  className="rounded-full border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:bg-zinc-800 whitespace-nowrap"
+                >
+                  Group
+                </button>
+                <button
+                  onClick={() => handleBulkAction("delete")}
+                  className="rounded-full border border-red-900/35 bg-red-950/20 px-3 py-1.5 text-xs font-medium text-red-400 hover:bg-red-950/40 whitespace-nowrap"
+                >
+                  Delete
+                </button>
+                <button
+                  onClick={() => setSelectedClients({})}
+                  className="text-zinc-500 hover:text-zinc-600 dark:text-zinc-300 p-1 ml-2 shrink-0"
+                  title="Cancel Selection"
+                >
+                  <X size={15} />
+                </button>
+              </div>
+
+              {/* Mobile Actions Menu Button */}
+              <div className="md:hidden flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() => setMobileActionsOpen(true)}
+                  className="rounded-full bg-blue-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-blue-500 shadow-md shadow-blue-500/20"
+                >
+                  Actions
+                </button>
+                <button
+                  onClick={() => setSelectedClients({})}
+                  className="text-zinc-500 hover:text-zinc-600 p-1.5"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Mobile Actions Bottom Sheet Drawer */}
+      <AnimatePresence>
+        {mobileActionsOpen && (
+          <MobileActionsSheet
+            onClose={() => setMobileActionsOpen(false)}
+            selectedCount={selectedCount}
+            onAction={handleBulkAction}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Add Client Modal */}
+      <AnimatePresence>
+        {addOpen && (
+          <AddClientModal
+            inbounds={inboundsList ?? []}
+            isLoadingInbounds={isLoadingInbounds}
+            panels={panelsList ?? []}
+            isSuperAdmin={isSuperAdmin}
+            onClose={() => setAddOpen(false)}
+            onSaved={(client) => {
+              setAddOpen(false);
+              qc.invalidateQueries({ queryKey: ["clients"] });
+              qc.invalidateQueries({ queryKey: ["reseller-overview"] });
+              qc.invalidateQueries({ queryKey: ["overview"] });
+              if (client) {
+                setConnectionDetailsClient(client);
+              }
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Bulk Create Clients Modal */}
+      <AnimatePresence>
+        {bulkCreateOpen && (
+          <BulkCreateModal
+            inboundsList={inboundsList ?? []}
+            onClose={() => setBulkCreateOpen(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Bulk Group Assign Modal */}
+      {groupAssignModalOpen && (
+        <BulkGroupAssignModal
+          selectedCount={selectedCount}
+          onClose={() => setGroupAssignModalOpen(false)}
+          onConfirm={(grp) => {
+            bulkMutation.mutate({
+              ids: selectedIds,
+              action: "assignGroup",
+              groupName: grp,
+            });
+          }}
+        />
+      )}
+
+      {/* Edit Client Modal */}
+      <AnimatePresence>
+        {editing && (
+          <EditClientModal
+            client={editing}
+            onClose={() => setEditing(null)}
+            onSaved={() => {
+              setEditing(null);
+              qc.invalidateQueries({ queryKey: ["clients"] });
+              qc.invalidateQueries({ queryKey: ["reseller-overview"] });
+              qc.invalidateQueries({ queryKey: ["overview"] });
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Connection Details Modal */}
+      <AnimatePresence>
+        {connectionDetailsClient && (
+          <ConnectionDetailsModal
+            client={connectionDetailsClient}
+            portalSettings={adminUser?.portalSettings}
+            onClose={() => setConnectionDetailsClient(null)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Bulk Result Summary Modal */}
+      {bulkResult && (
+        <BulkResultModal
+          result={bulkResult}
+          onClose={() => setBulkResult(null)}
+        />
+      )}
+
+      {/* Bulk Delete Custom Confirmation Dialog */}
+      {deleteConfirmOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-sm rounded-2xl border border-red-500/20 bg-white dark:bg-zinc-900 p-6 shadow-2xl">
+            <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-50 mb-2">Confirm Bulk Deletion</h3>
+            <p className="text-sm text-zinc-500 mb-4">
+              Are you sure you want to permanently delete these clients? This action cannot be undone.
+            </p>
+            <div className="bg-red-500/5 border border-red-500/10 rounded-xl p-3.5 space-y-1.5 text-xs mb-6">
+              <div className="flex justify-between">
+                <span className="text-zinc-500">Clients Selected:</span>
+                <span className="font-bold text-red-400">{selectedCount}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-zinc-500">Traffic Impact (Total Allocation):</span>
+                <span className="font-bold text-zinc-800 dark:text-zinc-200">{formatBytes(totalAllocatedTraffic)}</span>
+              </div>
+            </div>
+            <div className="flex gap-2">
               <button
-                onClick={() => handleBulkAction("addTraffic")}
-                className="rounded-full border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:bg-zinc-800"
+                onClick={() => setDeleteConfirmOpen(false)}
+                className="flex-1 rounded-xl bg-zinc-100 dark:bg-zinc-800 py-3 font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
               >
-                Add Traffic
+                Cancel
               </button>
               <button
-                onClick={() => handleBulkAction("addDays")}
-                className="rounded-full border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:bg-zinc-800"
+                onClick={() => {
+                  setDeleteConfirmOpen(false);
+                  bulkMutation.mutate({ ids: selectedIds, action: "delete" });
+                }}
+                className="flex-1 rounded-xl bg-red-600 py-3 font-semibold text-white hover:bg-red-500 transition-colors"
               >
-                Add Days
-              </button>
-              <button
-                onClick={() => handleBulkAction("enable")}
-                className="rounded-full border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:bg-zinc-800"
-              >
-                Enable
-              </button>
-              <button
-                onClick={() => handleBulkAction("disable")}
-                className="rounded-full border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:bg-zinc-800"
-              >
-                Disable
-              </button>
-              <button
-                onClick={() => handleBulkAction("delete")}
-                className="rounded-full border border-red-900/35 bg-red-950/20 px-3 py-1.5 text-xs font-medium text-red-400 hover:bg-red-950/40"
-              >
-                Delete
-              </button>
-              <button
-                onClick={() => setSelectedIds([])}
-                className="text-zinc-500 hover:text-zinc-600 dark:text-zinc-300 p-1 ml-2"
-                title="Cancel Selection"
-              >
-                <X size={15} />
+                Delete Clients
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Add Client Modal */}
-      {addOpen && (
-        <AddClientModal
-          inbounds={inboundsList ?? []}
-          isLoadingInbounds={isLoadingInbounds}
-          panels={panelsList ?? []}
-          isSuperAdmin={isSuperAdmin}
-          onClose={() => setAddOpen(false)}
-          onSaved={(client) => {
-            setAddOpen(false);
-            qc.invalidateQueries({ queryKey: ["clients"] });
-      qc.invalidateQueries({ queryKey: ["reseller-overview"] });
-      qc.invalidateQueries({ queryKey: ["overview"] });
-            if (client) {
-              setConnectionDetailsClient(client);
-            }
-          }}
-        />
+      {/* Bulk Reset Traffic Confirmation Dialog */}
+      {resetConfirmOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-sm rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 shadow-2xl">
+            <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-50 mb-2">Reset Traffic Counters</h3>
+            <p className="text-sm text-zinc-500 mb-4">
+              Reset upload and download traffic counters to zero for the {selectedCount} selected clients?
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setResetConfirmOpen(false)}
+                className="flex-1 rounded-xl bg-zinc-100 dark:bg-zinc-800 py-3 font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setResetConfirmOpen(false);
+                  bulkMutation.mutate({ ids: selectedIds, action: "resetTraffic" });
+                }}
+                className="flex-1 rounded-xl bg-blue-600 py-3 font-semibold text-white hover:bg-blue-500 transition-colors"
+              >
+                Confirm Reset
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
-      {/* Edit Client Modal */}
-      {editing && (
-        <EditClientModal
-          client={editing}
-          onClose={() => setEditing(null)}
-          onSaved={() => {
-            setEditing(null);
-            qc.invalidateQueries({ queryKey: ["clients"] });
-      qc.invalidateQueries({ queryKey: ["reseller-overview"] });
-      qc.invalidateQueries({ queryKey: ["overview"] });
-          }}
-        />
-      )}
-
-      {/* Connection Details Modal */}
-      {connectionDetailsClient && (
-        <ConnectionDetailsModal
-          client={connectionDetailsClient}
-          portalSettings={adminUser?.portalSettings}
-          onClose={() => setConnectionDetailsClient(null)}
-        />
-      )}
-
-      {/* Bulk Value Input Modal */}
+      {/* Bulk Value Input Modal (Traffic / Days) */}
       {bulkValueModal && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
@@ -922,7 +1201,47 @@ export default function ClientsPage() {
                   onChange={(e) => setBulkInputValue(e.target.value)}
                   className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500"
                 />
+                {bulkValueModal.action === "addDays" && (
+                  <div className="mt-2 flex gap-2">
+                    {[30, 60, 90, 180].map(days => (
+                      <button
+                        key={days}
+                        onClick={() => setBulkInputValue(days.toString())}
+                        className="flex-1 rounded-md bg-zinc-100 dark:bg-zinc-800 py-1 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+                      >
+                        +{days}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
+
+              {bulkValueModal.action === "addTraffic" && bulkInputValue && (
+                <div className="bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 p-3 rounded-xl space-y-1.5 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-zinc-500">Total Required:</span>
+                    <span className="font-bold text-zinc-700 dark:text-zinc-300">{formatBytes(totalRequired)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-zinc-500">Remaining Balance:</span>
+                    <span className="font-bold text-zinc-700 dark:text-zinc-300">{formatBytes(availableTraffic)}</span>
+                  </div>
+                  {trafficMode === 'ALLOCATION' && (
+                    <div className="flex justify-between border-t border-zinc-200 dark:border-zinc-800 pt-1 mt-1">
+                      <span className="text-zinc-500">Balance After:</span>
+                      <span className={`font-bold ${insufficientBalance ? 'text-red-400' : 'text-zinc-700 dark:text-zinc-300'}`}>
+                        {insufficientBalance ? "Negative Balance" : formatBytes(balanceAfter)}
+                      </span>
+                    </div>
+                  )}
+                  {insufficientBalance && (
+                    <div className="text-[10px] text-red-400 font-semibold bg-red-500/10 p-1.5 rounded mt-1.5 flex items-center gap-1">
+                      <AlertTriangle size={12} />
+                      Operation blocked: Insufficient balance.
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="flex justify-end gap-2 border-t border-zinc-200 dark:border-zinc-800 pt-4">
                 <button
@@ -933,7 +1252,7 @@ export default function ClientsPage() {
                 </button>
                 <button
                   onClick={submitBulkValue}
-                  disabled={bulkMutation.isPending}
+                  disabled={bulkMutation.isPending || (bulkValueModal.action === "addTraffic" && insufficientBalance)}
                   className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
                 >
                   {bulkMutation.isPending ? "Applying…" : "Confirm"}
@@ -949,14 +1268,12 @@ export default function ClientsPage() {
 
 interface AddClientForm {
   email: string;
-  inboundId: string;
+  inboundIds: string[];
   totalGB: string;
   expiryDays: string;
   remark: string;
   flow?: string;
 }
-
-
 
 function AddClientModal({
   inbounds,
@@ -988,7 +1305,7 @@ function AddClientModal({
 
   const [form, setForm] = useState<AddClientForm>({
     email: "",
-    inboundId: availableInbounds[0]?.id ?? "",
+    inboundIds: [],
     totalGB: "",
     expiryDays: "",
     remark: "",
@@ -996,13 +1313,19 @@ function AddClientModal({
   });
 
   useEffect(() => {
-    if (availableInbounds.length > 0 && !availableInbounds.find(i => i.id === form.inboundId)) {
-      setForm(f => ({ ...f, inboundId: availableInbounds[0].id }));
+    if (availableInbounds.length > 0) {
+      // Keep only selected IDs that are still in availableInbounds
+      const stillAvailable = form.inboundIds.filter(id => availableInbounds.some(i => i.id === id));
+      if (stillAvailable.length === 0) {
+        setForm(f => ({ ...f, inboundIds: [availableInbounds[0].id] }));
+      } else if (stillAvailable.length !== form.inboundIds.length) {
+        setForm(f => ({ ...f, inboundIds: stillAvailable }));
+      }
     }
-  }, [availableInbounds, form.inboundId]);
+  }, [availableInbounds, form.inboundIds]);
 
-  const selectedInbound = inbounds.find((i) => i.id === form.inboundId);
-  const isReality = selectedInbound?.protocol === "vless" && selectedInbound?.streamSettings?.security === "reality";
+  const selectedInbounds = inbounds.filter((i) => form.inboundIds.includes(i.id));
+  const isReality = selectedInbounds.some((i) => i.protocol === "vless" && i.streamSettings?.security === "reality");
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   useEffect(() => {
@@ -1016,13 +1339,11 @@ function AddClientModal({
 
   const create = useMutation({
     mutationFn: async () => {
-      // Calculate bytes from GB
       let totalBytes = 0;
       if (form.totalGB && Number(form.totalGB) > 0) {
         totalBytes = Math.floor(Number(form.totalGB) * 1024 * 1024 * 1024);
       }
       
-      // Calculate expiry timestamp
       let expiryTime = 0;
       if (form.expiryDays && Number(form.expiryDays) > 0) {
         expiryTime = Date.now() + Number(form.expiryDays) * 24 * 60 * 60 * 1000;
@@ -1030,7 +1351,7 @@ function AddClientModal({
 
       const dto = {
         email: form.email,
-        inboundId: form.inboundId,
+        inboundIds: form.inboundIds,
         total: totalBytes,
         expiryTime,
         enable: true,
@@ -1052,8 +1373,8 @@ function AddClientModal({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.inboundId) {
-      toast("Please select an inbound", "error");
+    if (form.inboundIds.length === 0) {
+      toast("Please select at least one inbound", "error");
       return;
     }
     create.mutate();
@@ -1061,8 +1382,19 @@ function AddClientModal({
 
   if (createdClient) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-        <div className="w-full max-w-sm rounded-2xl border border-emerald-500/20 bg-white dark:bg-zinc-900 p-6 text-center shadow-2xl">
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      >
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95, y: 20 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95, y: 20 }}
+          transition={{ type: "spring", bounce: 0, duration: 0.4 }}
+          className="w-full max-w-sm rounded-2xl border border-emerald-500/20 bg-white dark:bg-zinc-900 p-6 text-center shadow-2xl"
+        >
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/10">
             <CheckCircle2 size={32} className="text-emerald-500" />
           </div>
@@ -1084,16 +1416,23 @@ function AddClientModal({
               Close
             </button>
           </div>
-        </div>
-      </div>
+        </motion.div>
+      </motion.div>
     );
   }
 
   return (
-    <div
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 sm:p-4"
     >
-      <div
+      <motion.div
+        initial={{ opacity: 0, y: 20, scale: 0.95 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 20, scale: 0.95 }}
+        transition={{ type: "spring", bounce: 0, duration: 0.4 }}
         className="w-full max-w-md rounded-t-2xl sm:rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 max-h-[90vh] overflow-y-auto absolute bottom-0 sm:relative sm:bottom-auto"
         onClick={(e) => e.stopPropagation()}
       >
@@ -1105,11 +1444,11 @@ function AddClientModal({
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* General Section */}
+          {/* Basic Info Section */}
           <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/50 p-4 space-y-4">
-            <h3 className="font-medium text-zinc-700 dark:text-zinc-200">Basic Info</h3>
+            <h3 className="font-medium text-zinc-700 dark:text-zinc-200 text-sm">Basic Info</h3>
             <div>
-              <label className="mb-1 block text-sm text-zinc-500 dark:text-zinc-400">Username / Identifier</label>
+              <label className="mb-1 block text-xs text-zinc-500">Username / Identifier</label>
               <input
                 type="text"
                 required
@@ -1122,7 +1461,7 @@ function AddClientModal({
             
             {isSuperAdmin && panels && panels.length > 0 && (
               <div>
-                <label className="mb-1 block text-sm text-zinc-500 dark:text-zinc-400">Panel</label>
+                <label className="mb-1 block text-xs text-zinc-500">Panel</label>
                 <select
                   value={selectedPanelId}
                   onChange={(e) => setSelectedPanelId(e.target.value)}
@@ -1139,29 +1478,57 @@ function AddClientModal({
             )}
 
             <div>
-              <label className="mb-1 block text-sm text-zinc-500 dark:text-zinc-400">Assigned Inbound</label>
-              <select
-                value={form.inboundId}
-                onChange={(e) => setForm({ ...form, inboundId: e.target.value })}
-                disabled={isLoadingInbounds}
-                className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors disabled:opacity-50"
-              >
-                {isLoadingInbounds ? (
-                  <option value="">Loading inbounds...</option>
-                ) : availableInbounds.length === 0 ? (
-                  <option value="">No Inbounds available</option>
-                ) : (
-                  availableInbounds.map((i) => (
-                    <option key={i.id} value={i.id}>
-                      {i.remark ? `${i.remark} — ` : ''}{i.tag} ({i.protocol} on port {i.port})
-                    </option>
-                  ))
-                )}
-              </select>
+              <label className="mb-1 block text-xs text-zinc-500 font-medium">Assigned Inbounds</label>
+              <div className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 overflow-hidden">
+                <div className="max-h-[160px] overflow-y-auto divide-y divide-zinc-200 dark:divide-zinc-800">
+                  {isLoadingInbounds ? (
+                    <div className="px-3 py-4 text-center text-sm text-zinc-500">Loading inbounds...</div>
+                  ) : availableInbounds.length === 0 ? (
+                    <div className="px-3 py-4 text-center text-sm text-zinc-500">No Inbounds available</div>
+                  ) : (
+                    availableInbounds.map((i) => {
+                      const isChecked = form.inboundIds.includes(i.id);
+                      return (
+                        <label
+                          key={i.id}
+                          className="flex items-center gap-3 px-3 py-2.5 text-sm text-zinc-850 dark:text-zinc-200 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-850/30 select-none"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => {
+                              const nextIds = isChecked
+                                ? form.inboundIds.filter(id => id !== i.id)
+                                : [...form.inboundIds, i.id];
+                              setForm({ ...form, inboundIds: nextIds });
+                            }}
+                            className="h-4 w-4 rounded border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500 focus:ring-offset-white dark:focus:ring-offset-zinc-900 bg-transparent"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex justify-between items-center gap-2">
+                              <span className="font-semibold text-zinc-800 dark:text-zinc-100 truncate">
+                                {i.remark ? i.remark : i.tag}
+                              </span>
+                              <span className="text-[10px] uppercase tracking-wider text-zinc-400 dark:text-zinc-500 font-bold shrink-0">
+                                {i.protocol} : {i.port}
+                              </span>
+                            </div>
+                            {i.remark && (
+                              <div className="text-[10px] text-zinc-400 dark:text-zinc-500 truncate mt-0.5">
+                                Tag: {i.tag}
+                              </div>
+                            )}
+                          </div>
+                        </label>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
             </div>
             
             <div>
-              <label className="mb-1 block text-sm text-zinc-500 dark:text-zinc-400">Remark (Optional)</label>
+              <label className="mb-1 block text-xs text-zinc-500">Remark (Optional)</label>
               <input
                 type="text"
                 placeholder="Private note or real name"
@@ -1175,9 +1542,9 @@ function AddClientModal({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Traffic Section */}
             <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/50 p-4">
-              <h3 className="mb-4 font-medium text-zinc-700 dark:text-zinc-200">Traffic Limit</h3>
+              <h3 className="mb-4 font-medium text-zinc-700 dark:text-zinc-200 text-sm">Traffic Limit</h3>
               <div>
-                <label className="mb-1 block text-sm text-zinc-500 dark:text-zinc-400">Total (GB)</label>
+                <label className="mb-1 block text-xs text-zinc-500">Total (GB)</label>
                 <input
                   type="number"
                   min={0}
@@ -1192,9 +1559,9 @@ function AddClientModal({
 
             {/* Expiry Section */}
             <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/50 p-4">
-              <h3 className="mb-4 font-medium text-zinc-700 dark:text-zinc-200">Duration</h3>
+              <h3 className="mb-4 font-medium text-zinc-700 dark:text-zinc-200 text-sm">Duration</h3>
               <div>
-                <label className="mb-1 block text-sm text-zinc-500 dark:text-zinc-400">Expiry (Days)</label>
+                <label className="mb-1 block text-xs text-zinc-500">Expiry (Days)</label>
                 <input
                   type="number"
                   min={0}
@@ -1220,7 +1587,7 @@ function AddClientModal({
               </button>
               {showAdvanced && (
                 <div className="p-4 pt-0 border-t border-zinc-200 dark:border-zinc-800/50 mt-1">
-                  <label className="mb-1 block text-sm text-zinc-500 dark:text-zinc-400">Flow</label>
+                  <label className="mb-1 block text-xs text-zinc-500">Flow</label>
                   <select
                     value={form.flow || ""}
                     onChange={(e) => setForm({ ...form, flow: e.target.value })}
@@ -1253,8 +1620,8 @@ function AddClientModal({
             </button>
           </div>
         </form>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }
 
@@ -1366,10 +1733,17 @@ function EditClientModal({
   };
 
   return (
-    <div
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 sm:p-4"
     >
-      <div
+      <motion.div
+        initial={{ opacity: 0, y: 20, scale: 0.95 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 20, scale: 0.95 }}
+        transition={{ type: "spring", bounce: 0, duration: 0.4 }}
         className="w-full max-w-lg rounded-t-2xl sm:rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 max-h-[90vh] overflow-y-auto absolute bottom-0 sm:relative sm:bottom-auto"
         onClick={(e) => e.stopPropagation()}
       >
@@ -1384,7 +1758,7 @@ function EditClientModal({
           {/* Traffic Section */}
           <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/50 p-4">
             <div className="mb-3 flex items-center justify-between">
-              <h3 className="font-medium text-zinc-700 dark:text-zinc-200">Traffic Info</h3>
+              <h3 className="font-medium text-zinc-700 dark:text-zinc-200 text-sm">Traffic Info</h3>
               {sessionAdmin?.role === 'SUPER_ADMIN' && (
                 <button
                   type="button"
@@ -1459,7 +1833,7 @@ function EditClientModal({
 
           {/* Expiry Section */}
           <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/50 p-4">
-            <h3 className="mb-3 font-medium text-zinc-700 dark:text-zinc-200">Expiry Info</h3>
+            <h3 className="mb-3 font-medium text-zinc-700 dark:text-zinc-200 text-sm">Expiry Info</h3>
             
             <div className="mb-4 space-y-2 text-sm">
               {isFirstUse ? (
@@ -1497,7 +1871,7 @@ function EditClientModal({
             </div>
 
             <div className="pt-4 border-t border-zinc-200 dark:border-zinc-800/50">
-              <label className="mb-1 block text-sm text-zinc-500 dark:text-zinc-400">Add Days (Optional)</label>
+              <label className="mb-1 block text-xs text-zinc-500">Add Days (Optional)</label>
               <div className="flex gap-2 mb-2">
                 {[30, 60, 90, 180].map((days) => (
                   <button
@@ -1535,7 +1909,7 @@ function EditClientModal({
               </button>
               {showAdvanced && (
                 <div className="p-4 pt-0 border-t border-zinc-200 dark:border-zinc-800/50 mt-1">
-                  <label className="mb-1 block text-sm text-zinc-500 dark:text-zinc-400">Flow</label>
+                  <label className="mb-1 block text-xs text-zinc-500">Flow</label>
                   <select
                     value={form.flow || ""}
                     onChange={(e) => setForm({ ...form, flow: e.target.value })}
@@ -1552,7 +1926,7 @@ function EditClientModal({
           )}
 
           <div>
-            <label className="mb-1 block text-sm text-zinc-500 dark:text-zinc-400">Remark</label>
+            <label className="mb-1 block text-xs text-zinc-500">Remark</label>
             <input
               type="text"
               placeholder="Private note or real name"
@@ -1579,7 +1953,182 @@ function EditClientModal({
             </button>
           </div>
         </form>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+function BulkResultModal({
+  result,
+  onClose,
+}: {
+  result: { success: number; failed: number; errors: string[]; action: string };
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className="w-full max-w-md rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 shadow-2xl">
+        <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-50 mb-2">Bulk Operation Summary</h3>
+        <p className="text-sm text-zinc-500 mb-4 capitalize">Action: {result.action}</p>
+        <div className="grid grid-cols-2 gap-4 mb-4">
+          <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-center">
+            <div className="text-xs text-zinc-500">Success</div>
+            <div className="text-2xl font-bold text-emerald-500">{result.success}</div>
+          </div>
+          <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-center">
+            <div className="text-xs text-zinc-500">Failed</div>
+            <div className="text-2xl font-bold text-red-500">{result.failed}</div>
+          </div>
+        </div>
+        {result.errors.length > 0 && (
+          <div className="mb-4">
+            <label className="text-xs font-semibold text-zinc-500 uppercase">Errors:</label>
+            <div className="mt-1 max-h-40 overflow-y-auto border border-zinc-200 dark:border-zinc-800 rounded-lg p-2 bg-zinc-50 dark:bg-zinc-950 font-mono text-xs text-red-400 space-y-1">
+              {result.errors.map((e, idx) => (
+                <div key={idx}>{e}</div>
+              ))}
+            </div>
+          </div>
+        )}
+        <button
+          onClick={onClose}
+          className="w-full rounded-xl bg-zinc-100 dark:bg-zinc-800 py-3 font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+        >
+          Close
+        </button>
       </div>
     </div>
+  );
+}
+
+function BulkGroupAssignModal({
+  selectedCount,
+  onClose,
+  onConfirm,
+}: {
+  selectedCount: number;
+  onClose: () => void;
+  onConfirm: (groupName: string) => void;
+}) {
+  const [groupName, setGroupName] = useState("");
+  const { data: groups } = useQuery<string[]>({
+    queryKey: ["xui-groups"],
+    queryFn: async () => (await api.get<string[]>("/clients/groups")).data,
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!groupName.trim()) return;
+    onConfirm(groupName.trim());
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className="w-full max-w-sm rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 shadow-2xl">
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">Assign Group ({selectedCount} Clients)</h3>
+          <button onClick={onClose} className="text-zinc-500 hover:text-zinc-65535"><X size={16} /></button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="mb-1 block text-xs text-zinc-500">Group Name</label>
+            <input
+              type="text"
+              list="xui-existing-groups"
+              required
+              placeholder="Select existing or type new group..."
+              value={groupName}
+              onChange={(e) => setGroupName(e.target.value)}
+              className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500"
+            />
+            <datalist id="xui-existing-groups">
+              {groups?.map((g) => (
+                <option key={g} value={g} />
+              ))}
+            </datalist>
+            <p className="mt-1 text-[10px] text-zinc-500">If the group name does not exist, 3x-ui will auto-create it natively.</p>
+          </div>
+
+          <div className="flex justify-end gap-2 border-t border-zinc-200 dark:border-zinc-800 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg px-4 py-2 text-sm text-zinc-500 hover:text-zinc-700"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
+            >
+              Assign Group
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function MobileActionsSheet({
+  onClose,
+  selectedCount,
+  onAction,
+}: {
+  onClose: () => void;
+  selectedCount: number;
+  onAction: (action: string) => void;
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 md:hidden"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ y: "100%" }}
+        animate={{ y: 0 }}
+        exit={{ y: "100%" }}
+        transition={{ type: "spring", damping: 25, stiffness: 250 }}
+        className="w-full rounded-t-3xl bg-white dark:bg-zinc-900 p-6 space-y-4 max-h-[80vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex justify-between items-center pb-2 border-b border-zinc-200 dark:border-zinc-800">
+          <span className="font-bold text-zinc-800 dark:text-zinc-200">{selectedCount} Clients Selected</span>
+          <button onClick={onClose} className="text-zinc-500 p-1"><X size={18} /></button>
+        </div>
+
+        <div className="grid grid-cols-1 gap-2">
+          {[
+            { id: "addTraffic", label: "Add Traffic", icon: HardDrive },
+            { id: "addDays", label: "Extend Expiry", icon: CalendarDays },
+            { id: "enable", label: "Enable Selected", icon: Play },
+            { id: "disable", label: "Disable Selected", icon: Square },
+            { id: "assignGroup", label: "Assign Native Group", icon: Users },
+            { id: "resetTraffic", label: "Reset Traffic Counters", icon: RotateCcw },
+            { id: "delete", label: "Delete Permanently", icon: Trash2, danger: true },
+          ].map((a) => (
+            <button
+              key={a.id}
+              onClick={() => {
+                onClose();
+                onAction(a.id);
+              }}
+              className={`flex w-full items-center gap-3 rounded-xl p-3.5 text-sm font-medium transition-colors ${
+                a.danger
+                  ? "text-red-400 bg-red-500/5 border border-red-500/10 hover:bg-red-500/10"
+                  : "text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+              }`}
+            >
+              <a.icon size={16} />
+              {a.label}
+            </button>
+          ))}
+        </div>
+      </motion.div>
+    </motion.div>
   );
 }

@@ -34,8 +34,8 @@ export default function CyberpunkTheme({ id, data }: { id: string; data: any }) 
   const clientName = remark || email || "Unknown Client";
   const brandName = portalSettings?.portalName || "Command Center";
 
-    const getNativeUrl = () => {
-    const sub = subId || email;
+  const getNativeUrl = () => {
+    const sub = encodeURIComponent(subId || email);
     if (inbound?.panel?.subUrl) return `${inbound.panel.subUrl}${sub}`;
     if (inbound?.panel?.url) return `${inbound.panel.url}/sub/${sub}`;
     return `${typeof window !== 'undefined' ? window.location.origin : ''}/sub/${sub}`;

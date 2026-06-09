@@ -6,6 +6,7 @@ import { useState } from "react";
 import { formatBytes } from "@/lib/format";
 import { useToast } from "@/components/toast";
 import { API_BASE } from "@/lib/api";
+import { motion } from "framer-motion";
 
 interface ConnectionDetailsModalProps {
   client: any; // Full client object containing inbound, panel info, etc.
@@ -39,19 +40,40 @@ export function ConnectionDetailsModal({ client, portalSettings, onClose }: Conn
     portalSettings?.showPlatformQR !== false ? "platform" : "native"
   );
 
+  const [selectedInboundId, setSelectedInboundId] = useState<string>(
+    client.inbounds?.[0]?.id || client.inbound?.id || ""
+  );
+
   const used = Number(client.up) + Number(client.down);
   const total = Number(client.total);
+
+  const currentInbound = client.inbounds?.find((i: any) => i.id === selectedInboundId) || client.inbound;
 
   const getSystemLink = () => {
     if (!client.subId) return 'No Sub ID available';
     return `${window.location.origin}/s/${client.subId}`;
   };
 
-    const getNativeLink = () => {
+  const getNativeLink = () => {
     if (!client.subId && !client.email) return 'No Sub ID available';
-    const sub = client.subId || client.email;
-    if (client.inbound?.panel?.subUrl) return `${client.inbound.panel.subUrl}${sub}`;
-    if (client.inbound?.panel?.url) return `${client.inbound.panel.url}/sub/${sub}`;
+    const sub = encodeURIComponent(client.subId || client.email);
+    if (currentInbound?.panel?.subUrl) {
+      const base = currentInbound.panel.subUrl.endsWith('/') 
+        ? currentInbound.panel.subUrl 
+        : `${currentInbound.panel.subUrl}/`;
+      return `${base}${sub}`;
+    }
+    if (currentInbound?.panel?.url) {
+      try {
+        const parsed = new URL(currentInbound.panel.url);
+        return `${parsed.origin}/sub/${sub}`;
+      } catch {
+        const base = currentInbound.panel.url.endsWith('/') 
+          ? currentInbound.panel.url 
+          : `${currentInbound.panel.url}/`;
+        return `${base}sub/${sub}`;
+      }
+    }
     return `${typeof window !== 'undefined' ? window.location.origin : ''}/sub/${sub}`;
   };
 
@@ -77,8 +99,18 @@ export function ConnectionDetailsModal({ client, portalSettings, onClose }: Conn
   const showNative = portalSettings?.showNativeQR !== false;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
-      <div 
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      onClick={onClose}
+    >
+      <motion.div 
+        initial={{ scale: 0.95, opacity: 0, y: 20 }}
+        animate={{ scale: 1, opacity: 1, y: 0 }}
+        exit={{ scale: 0.95, opacity: 0, y: 20 }}
+        transition={{ duration: 0.2, ease: "easeOut" }}
         className="w-full max-w-lg rounded-t-3xl md:rounded-2xl border-t border-x md:border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-0 overflow-y-auto shadow-2xl mt-auto md:mt-0 max-h-[90vh] md:max-h-none safe-pb"
         onClick={(e) => e.stopPropagation()}
       >
@@ -113,10 +145,28 @@ export function ConnectionDetailsModal({ client, portalSettings, onClose }: Conn
               </div>
             </div>
             <div>
-              <div className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold mb-1">Node</div>
-              <div className="text-sm text-zinc-600 dark:text-zinc-300 truncate">{client.inbound.panel?.name || "Local Node"}</div>
+              <div className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold mb-1">Selected Node</div>
+              <div className="text-sm text-zinc-600 dark:text-zinc-300 truncate">{currentInbound?.panel?.name || "Local Node"}</div>
             </div>
           </div>
+
+          {/* Node Switcher for Multi-Inbound Clients */}
+          {client.inbounds && client.inbounds.length > 1 && (
+            <div className="space-y-1.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 p-4">
+              <label className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold mb-1 block">Switch Active Node View</label>
+              <select
+                value={selectedInboundId}
+                onChange={(e) => setSelectedInboundId(e.target.value)}
+                className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500"
+              >
+                {client.inbounds.map((inb: any) => (
+                  <option key={inb.id} value={inb.id}>
+                    {inb.panel?.name || "Node"} — {inb.remark || inb.tag} ({inb.protocol} on port {inb.port})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Tabs */}
           {(showPlatform || showNative) && (
@@ -218,7 +268,7 @@ export function ConnectionDetailsModal({ client, portalSettings, onClose }: Conn
             )}
           </div>
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }

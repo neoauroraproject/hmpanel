@@ -137,6 +137,12 @@ export class MigrationService {
       for (const a of admins) {
         let admin = await this.prisma.admin.findUnique({ where: { username: a.username } });
         
+        // Calculate balance from legacy data
+        // a.traffic = total allocated bytes, a.remaining_traffic = bytes left
+        const totalTraffic = a.traffic ? BigInt(a.traffic) : 0n;
+        const remainingTraffic = a.remaining_traffic != null ? BigInt(a.remaining_traffic) : totalTraffic;
+        const balanceBytes = remainingTraffic; // balance = what they have left
+        
         if (!admin) {
           admin = await this.prisma.admin.create({
             data: {
@@ -146,12 +152,35 @@ export class MigrationService {
               role: 'RESELLER',
               status: a.is_active ? 'active' : 'suspended',
               expiryTime: a.expiry_date ? BigInt(new Date(a.expiry_date).getTime()) : 0n,
+              // Set balance from migration data
+              balance: Number(balanceBytes),
+              trafficMode: 'ALLOCATION', // Default for migrated admins
             }
           });
           importedAdmins++;
+
+          // Create a trafficTransaction record for the total allocation (for dashboard tracking)
+          if (totalTraffic > 0n) {
+            await this.prisma.trafficTransaction.create({
+              data: {
+                adminId: admin.id,
+                amount: totalTraffic,
+                type: 'CREDIT',
+                description: 'Migration Import — Initial Allocation',
+              }
+            }).catch(() => {});
+          }
+        } else {
+          // Update existing admin balance from migration data if not already set
+          if (admin.balance === 0 && balanceBytes > 0n) {
+            await this.prisma.admin.update({
+              where: { id: admin.id },
+              data: { balance: Number(balanceBytes) }
+            });
+          }
         }
 
-        // Add traffic pool if they don't have one and traffic > 0
+        // Legacy: also create trafficPool if schema requires it
         if (a.traffic && a.traffic > 0) {
           const poolBytes = BigInt(a.traffic);
           const existingPool = await this.prisma.trafficPool.findFirst({ where: { adminId: admin.id } });
@@ -161,7 +190,7 @@ export class MigrationService {
                 adminId: admin.id,
                 totalLimit: poolBytes,
               }
-            });
+            }).catch(() => {});
           }
         }
       }
@@ -183,13 +212,16 @@ export class MigrationService {
     }
   }
 
-  async runPostImportSync() {
+  async runPostImportSync(createGroups: boolean = true) {
     const panels = await this.prisma.panel.findMany();
     const reports = [];
 
     let totalSyncedClients = 0;
     let matchedOwnerships = 0;
     let missingOwnerships = 0;
+    let groupsCreated = 0;
+    let clientsAssignedToGroups = 0;
+    let failedAssignments = 0;
 
     for (const panel of panels) {
       try {
@@ -206,7 +238,10 @@ export class MigrationService {
 
     // Apply sanaei_users ownership mapping
     for (const legacyUser of this.sanaeiUsersCache) {
-      const client = await this.prisma.client.findFirst({ where: { email: legacyUser.username } });
+      const client = await this.prisma.client.findFirst({
+        where: { email: legacyUser.username },
+        include: { inbounds: true }
+      });
       const admin = await this.prisma.admin.findUnique({ where: { username: legacyUser.owner } });
       
       if (client && admin) {
@@ -215,9 +250,78 @@ export class MigrationService {
           data: { adminId: admin.id, ownerTag: 'Whale Migration' }
         });
         matchedOwnerships++;
+
+        // Auto-assign adminInbound if not already set, using the client's inbounds
+        if (client.inbounds && client.inbounds.length > 0) {
+          for (const ci of client.inbounds) {
+            const existingAdminInbound = await this.prisma.adminInbound.findFirst({
+              where: { adminId: admin.id, inboundId: ci.inboundId }
+            });
+            if (!existingAdminInbound) {
+              await this.prisma.adminInbound.create({
+                data: { adminId: admin.id, inboundId: ci.inboundId }
+              }).catch(() => {/* skip duplicates */});
+            }
+          }
+        }
       } else {
         missingOwnerships++;
       }
+    }
+
+    // Also try to set adminInbound from sanaei_users inbound_id if present
+    // This covers the case where admins have inbound_id set in the legacy database
+    const adminsWithInboundId = this.sanaeiUsersCache.filter(u => u.inbound_id);
+    for (const legacyUser of adminsWithInboundId) {
+      const admin = await this.prisma.admin.findUnique({ where: { username: legacyUser.owner || legacyUser.username } });
+      if (!admin) continue;
+      
+      // Find inbound by matching the port/tag from legacy inbound_id
+      const inbound = await this.prisma.inbound.findFirst({
+        where: { port: Number(legacyUser.inbound_id) || undefined }
+      });
+      if (inbound) {
+        const existingAdminInbound = await this.prisma.adminInbound.findFirst({
+          where: { adminId: admin.id, inboundId: inbound.id }
+        });
+        if (!existingAdminInbound) {
+          await this.prisma.adminInbound.create({
+            data: { adminId: admin.id, inboundId: inbound.id }
+          }).catch(() => {});
+        }
+      }
+    }
+
+    // --- Bulk Group Creation ---
+    if (createGroups && this.sanaeiUsersCache.length > 0) {
+      const groupAssignments: Record<string, string[]> = {};
+      for (const legacyUser of this.sanaeiUsersCache) {
+        if (legacyUser.owner && legacyUser.username) {
+          if (!groupAssignments[legacyUser.owner]) {
+            groupAssignments[legacyUser.owner] = [];
+          }
+          groupAssignments[legacyUser.owner].push(legacyUser.username);
+        }
+      }
+
+      const successfulGroups = new Set<string>();
+      for (const panel of panels) {
+        for (const [groupName, emails] of Object.entries(groupAssignments)) {
+          if (emails.length === 0) continue;
+          try {
+            const res = await this.panelsService.assignClientToGroup(panel.id, emails, groupName);
+            if (res && res.success) {
+              successfulGroups.add(groupName);
+              clientsAssignedToGroups += emails.length;
+            } else {
+              failedAssignments += emails.length;
+            }
+          } catch (err) {
+            failedAssignments += emails.length;
+          }
+        }
+      }
+      groupsCreated = successfulGroups.size;
     }
 
     return {
@@ -225,6 +329,9 @@ export class MigrationService {
       clientsImported: totalSyncedClients,
       clientsMatched: matchedOwnerships,
       clientsMissing: missingOwnerships,
+      groupsCreated,
+      clientsAssignedToGroups,
+      failedAssignments,
       panelReports: reports,
     };
   }

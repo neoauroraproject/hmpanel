@@ -154,6 +154,11 @@ export class StoreService {
     if (order.status !== 'PENDING') throw new BadRequestException(`Order is already ${order.status}`);
 
     const product = order.product;
+    const pInboundIds: string[] = Array.isArray(product.inboundIds)
+      ? product.inboundIds
+      : typeof product.inboundIds === 'string'
+      ? [product.inboundIds]
+      : [];
 
     if (order.isRenewal && order.renewClientId) {
       // Modifying existing client
@@ -161,14 +166,21 @@ export class StoreService {
         ? BigInt(Date.now() + product.durationDays * 24 * 60 * 60 * 1000)
         : BigInt(0);
 
+      // Delete existing client inbound associations
+      await this.prisma.clientInbound.deleteMany({
+        where: { clientId: order.renewClientId }
+      });
+
       const updatedClient = await this.prisma.client.update({
         where: { id: order.renewClientId },
         data: {
           total: product.traffic,
           expiryTime: expiry,
-          inboundId: Array.isArray(product.inboundIds) ? product.inboundIds[0] : product.inboundIds, // Taking the first inbound for now
           remark: order.clientName, // Optional update of name
-          enable: true
+          enable: true,
+          inbounds: {
+            create: pInboundIds.map(inboundId => ({ inboundId }))
+          }
         }
       });
 
@@ -187,7 +199,6 @@ export class StoreService {
       const client = await this.prisma.client.create({
         data: {
           adminId: adminId,
-          inboundId: Array.isArray(product.inboundIds) ? product.inboundIds[0] : product.inboundIds,
           email: `${order.clientName.replace(/\s+/g, '').toLowerCase()}-${uuidv4().substring(0,6)}`,
           remark: order.clientName,
           uuid: uuidv4(),
@@ -196,6 +207,9 @@ export class StoreService {
           enable: true,
           total: product.traffic,
           expiryTime: expiry,
+          inbounds: {
+            create: pInboundIds.map(inboundId => ({ inboundId }))
+          }
         }
       });
 

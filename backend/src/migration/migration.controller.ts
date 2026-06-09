@@ -72,7 +72,9 @@ export class MigrationController {
 
   @Post('sync')
   @ApiOperation({ summary: 'Run post-import synchronization' })
+  @ApiBody({ schema: { type: 'object', properties: { createGroups: { type: 'boolean', default: true } } } })
   async runSync(@Req() req: AuthRequest) {
-    return this.migrationService.runPostImportSync();
+    const createGroups = req.body?.createGroups ?? true;
+    return this.migrationService.runPostImportSync(createGroups);
   }
 }

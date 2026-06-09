@@ -24,7 +24,7 @@ export class StatsService {
       panelsTotal, panelsOnline,
       adminsTotal, adminsActive, adminsSuspended,
       clientsTotal, clientsEnabled, clientsExpired,
-      trafficSold, trafficUsedResult, totalAdminBalance, thresholdSetting
+      trafficSold, trafficActualUsed, totalAdminBalance, thresholdSetting
     ] = await Promise.all([
       this.prisma.panel.count(),
       this.prisma.panel.count({ where: { status: 'online' } }),
@@ -34,8 +34,11 @@ export class StatsService {
       this.prisma.client.count({ where: { adminId: { not: null } } }),
       this.prisma.client.count({ where: { enable: true, adminId: { not: null } } }),
       this.prisma.client.count({ where: { expiryTime: { gt: 0n, lt: BigInt(now) }, adminId: { not: null } } }),
+      // Total traffic ever sold/credited to admins
       this.prisma.trafficTransaction.aggregate({ _sum: { amount: true }, where: { type: 'CREDIT' } }),
-      this.prisma.client.aggregate({ _sum: { up: true, down: true }, where: { adminId: { not: null } } }),
+      // Actual usage charged (USAGE_CHARGE) — reliable even after migration
+      this.prisma.trafficTransaction.aggregate({ _sum: { amount: true }, where: { type: 'USAGE_CHARGE' } }),
+      // Sum of current admin balances (= allocated - deducted)
       this.prisma.admin.aggregate({ _sum: { balance: true } }),
       this.prisma.systemSetting.findUnique({ where: { key: 'cleanup_threshold_days' } }),
     ]);
@@ -47,9 +50,14 @@ export class StatsService {
       where: { expiryTime: { gt: 0n, lt: BigInt(now - thresholdMs) }, adminId: { not: null } } 
     });
 
-    const trafficUsed = (trafficUsedResult._sum.up ?? 0n) + (trafficUsedResult._sum.down ?? 0n);
-    const allocated = BigInt(Math.round(totalAdminBalance._sum.balance ?? 0));
-    const remaining = allocated - trafficUsed;
+    // Remaining = sum of all admin balances (most accurate: reflects all deductions/refunds)
+    const remaining = BigInt(Math.round(Math.max(0, totalAdminBalance._sum.balance ?? 0)));
+    // Total assigned = sum of all CREDIT transactions ever
+    const trafficSoldTotal = trafficSold._sum.amount ?? 0n;
+    // Actual usage from USAGE_CHARGE transactions (for USAGE mode admins)
+    const trafficUsedFromTx = trafficActualUsed._sum.amount ?? 0n;
+    // For display: use the allocated-remaining as "used" (covers both ALLOCATION and USAGE modes)
+    const trafficUsed = trafficSoldTotal > remaining ? trafficSoldTotal - remaining : 0n;
 
     let todayUsage = 0n;
     let monthlyUsage = 0n;
@@ -93,9 +101,9 @@ export class StatsService {
         monthly: monthlyUsage.toString(),
       },
       traffic: {
-        sold: trafficSold._sum.amount ?? 0n,
+        sold: trafficSoldTotal,
         used: trafficUsed,
-        remaining: remaining < 0n ? 0n : remaining,
+        remaining,
       },
     };
   }
@@ -265,13 +273,27 @@ export class StatsService {
       select: {
         up: true, down: true, createdAt: true,
         admin: { select: { username: true } },
-        inbound: { select: { tag: true, panel: { select: { name: true } } } },
+        inbounds: {
+          select: {
+            inbound: {
+              select: {
+                tag: true,
+                panel: { select: { name: true } }
+              }
+            }
+          }
+        },
       },
     });
 
+    const mappedClients = clients.map(c => ({
+      ...c,
+      inbound: c.inbounds?.[0]?.inbound || null
+    }));
+
     // New clients per day (last 30d)
     const byDay = new Map<string, number>();
-    for (const c of clients) {
+    for (const c of mappedClients) {
       if (c.createdAt < since) continue;
       const key = c.createdAt.toISOString().slice(0, 10);
       byDay.set(key, (byDay.get(key) ?? 0) + 1);
@@ -281,9 +303,9 @@ export class StatsService {
       count,
     }));
 
-    const agg = (keyFn: (c: (typeof clients)[number]) => string) => {
+    const agg = (keyFn: (c: (typeof mappedClients)[number]) => string) => {
       const m = new Map<string, number>();
-      for (const c of clients) {
+      for (const c of mappedClients) {
         const used = Number(c.up) + Number(c.down);
         m.set(keyFn(c), (m.get(keyFn(c)) ?? 0) + used);
       }

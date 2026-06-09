@@ -306,7 +306,7 @@ export class PanelsService {
       where: { id },
       include: {
         server: { select: { id: true, name: true, ipAddress: true } },
-        inbounds: { select: { id: true, tag: true, port: true, protocol: true, _count: { select: { clients: true } } } },
+        inbounds: { select: { id: true, tag: true, port: true, protocol: true, _count: { select: { clientInbounds: true } } } },
         syncState: true,
       },
     });
@@ -367,20 +367,56 @@ export class PanelsService {
     });
     const inboundIds = inbounds.map((i) => i.id);
 
-    const clientIds = (
-      await this.prisma.client.findMany({
-        where: { inboundId: { in: inboundIds } },
-        select: { id: true }
-      })
-    ).map((c) => c.id);
-
-    await this.prisma.trafficTransaction.deleteMany({
-      where: { clientId: { in: clientIds } }
+    const clients = await this.prisma.client.findMany({
+      where: {
+        inbounds: {
+          some: {
+            inboundId: { in: inboundIds }
+          }
+        }
+      },
+      include: {
+        inbounds: true
+      }
     });
 
-    await this.prisma.client.deleteMany({
-      where: { inboundId: { in: inboundIds } }
-    });
+    const clientIdsToDelete = [];
+    const clientInboundIdsToDelete = [];
+
+    for (const c of clients) {
+      const thisPanelInbounds = c.inbounds.filter(ci => inboundIds.includes(ci.inboundId));
+      const otherPanelInbounds = c.inbounds.filter(ci => !inboundIds.includes(ci.inboundId));
+      
+      if (otherPanelInbounds.length === 0) {
+        clientIdsToDelete.push(c.id);
+      } else {
+        for (const ci of thisPanelInbounds) {
+          clientInboundIdsToDelete.push({ clientId: c.id, inboundId: ci.inboundId });
+        }
+      }
+    }
+
+    if (clientInboundIdsToDelete.length > 0) {
+      for (const item of clientInboundIdsToDelete) {
+        await this.prisma.clientInbound.delete({
+          where: {
+            clientId_inboundId: {
+              clientId: item.clientId,
+              inboundId: item.inboundId
+            }
+          }
+        }).catch(() => {});
+      }
+    }
+
+    if (clientIdsToDelete.length > 0) {
+      await this.prisma.trafficTransaction.deleteMany({
+        where: { clientId: { in: clientIdsToDelete } }
+      });
+      await this.prisma.client.deleteMany({
+        where: { id: { in: clientIdsToDelete } }
+      });
+    }
 
     await this.prisma.panel.delete({ where: { id } });
     return { deleted: true };
@@ -433,39 +469,32 @@ export class PanelsService {
       // --- Group Sync & Conflict Detection ---
       try {
         const apiGroups = await this.listGroups(id);
-        const apiGroupIds = new Set(apiGroups.map((g: any) => String(g.id || g.name || g.tgId))); // Depends on panel impl, usually g.id
+        const apiGroupNames = new Set(apiGroups.map((g: any) => String(g.name)));
         
-        const localAdminsWithGroup = await this.prisma.admin.findMany({
-          where: { xuiGroupId: { not: null } },
-          select: { id: true, username: true, xuiGroupId: true, xuiGroupName: true }
+        const resellers = await this.prisma.admin.findMany({
+          where: { role: 'RESELLER' },
+          select: { id: true, username: true }
         });
 
-        const localGroupIds = new Set(localAdminsWithGroup.map(a => a.xuiGroupId));
+        const resellerNames = new Set(resellers.map(a => a.username));
 
-        for (const admin of localAdminsWithGroup) {
-          if (!apiGroupIds.has(admin.xuiGroupId!)) {
-            // Missing in panel but exists locally
-            await this.prisma.auditLog.create({
-              data: {
-                action: 'GROUP_SYNC_CONFLICT',
-                entity: 'Panel',
-                entityId: id,
-                details: { message: `Group ${admin.xuiGroupName} (ID: ${admin.xuiGroupId}) is missing in panel but exists locally for reseller ${admin.username}. Flagged for review.` }
-              }
-            });
+        for (const admin of resellers) {
+          if (!apiGroupNames.has(admin.username)) {
+            // Reseller has no matching group in panel — will be auto-created on next client add
+            this.logger.debug(`Group for reseller ${admin.username} does not exist in panel ${id} yet.`);
           }
         }
 
         for (const g of apiGroups) {
-          const gId = String(g.id || g.name || g.tgId);
-          if (!localGroupIds.has(gId)) {
-            // Exists in panel but not locally
+          const groupName = String(g.name);
+          if (!resellerNames.has(groupName)) {
+            // Group exists in panel but no matching reseller locally
             await this.prisma.auditLog.create({
               data: {
-                action: 'GROUP_SYNC_CONFLICT',
+                action: 'GROUP_SYNC_INFO',
                 entity: 'Panel',
                 entityId: id,
-                details: { message: `Group ${g.name || gId} exists in panel but is not tracked locally. Flagged for review.` }
+                details: { message: `Group "${groupName}" exists in panel but has no matching reseller locally.` }
               }
             });
           }
@@ -490,6 +519,14 @@ export class PanelsService {
       let totalSyncedClients = 0;
       
       const apiUuids = new Set<string>();
+
+      const admins = await this.prisma.admin.findMany({
+        select: { id: true, username: true }
+      });
+      const adminMap = new Map<string, string>();
+      for (const admin of admins) {
+        adminMap.set(admin.username.toLowerCase(), admin.id);
+      }
 
       for (const apiInbound of apiInbounds) {
         totalSyncedInbounds++;
@@ -531,7 +568,9 @@ export class PanelsService {
         const clientStats = apiInbound.clientStats || [];
         const statsMap = new Map();
         for (const stat of clientStats) {
-          statsMap.set(stat.email, stat);
+          if (stat.email) {
+            statsMap.set(stat.email.trim(), stat);
+          }
         }
 
         const adminUsageCharges = new Map<string, bigint>();
@@ -545,7 +584,8 @@ export class PanelsService {
             include: { admin: true }
           });
 
-          const stats = statsMap.get(apiClient.email) || {};
+          const trimmedEmail = (apiClient.email || '').trim() || `client-${apiClient.id.slice(0, 8)}`;
+          const stats = statsMap.get(trimmedEmail) || {};
 
           const up = BigInt(stats.up || 0);
           const down = BigInt(stats.down || 0);
@@ -553,21 +593,30 @@ export class PanelsService {
           const expiryTime = BigInt(stats.expiryTime || 0);
           const enable = stats.enable !== false;
 
+          let resolvedAdminId = dbClient?.adminId || null;
+          if (apiClient.group) {
+            resolvedAdminId = adminMap.get(apiClient.group.toLowerCase()) || null;
+          }
+
           if (!dbClient) {
             await this.prisma.client.create({
               data: {
                 uuid: apiClient.id,
                 subId: apiClient.subId || null,
                 subToken: crypto.randomBytes(5).toString('hex'),
-                email: apiClient.email || `client-${apiClient.id.slice(0, 8)}`,
-                inboundId: dbInbound.id,
-                adminId: null, // Nullable for Orphaned / Native System Clients
+                email: trimmedEmail,
+                adminId: resolvedAdminId, // Nullable for Orphaned / Native System Clients
                 enable,
                 up,
                 down,
                 total,
                 expiryTime,
                 flow: apiClient.flow || null,
+                inbounds: {
+                  create: {
+                    inboundId: dbInbound.id
+                  }
+                }
               }
             });
           } else {
@@ -599,7 +648,9 @@ export class PanelsService {
             }
 
             const changedData: any = {};
+            if (dbClient.email !== trimmedEmail) changedData.email = trimmedEmail;
             if (apiClient.subId && dbClient.subId !== apiClient.subId) changedData.subId = apiClient.subId;
+            if (dbClient.adminId !== resolvedAdminId) changedData.adminId = resolvedAdminId;
             if (dbClient.enable !== enable) {
               changedData.enable = enable;
               if (!enable) {
@@ -615,7 +666,6 @@ export class PanelsService {
             if (dbClient.down !== down) changedData.down = down;
             if (dbClient.total !== total) changedData.total = total;
             if (dbClient.expiryTime !== expiryTime) changedData.expiryTime = expiryTime;
-            if (dbClient.inboundId !== dbInbound.id) changedData.inboundId = dbInbound.id;
             if (dbClient.flow !== apiClient.flow) changedData.flow = apiClient.flow;
 
             if (Object.keys(changedData).length > 0) {
@@ -624,6 +674,43 @@ export class PanelsService {
                 data: changedData
               });
             }
+
+            // Sync ClientInbound relation
+            const clientInboundExists = await this.prisma.clientInbound.findUnique({
+              where: {
+                clientId_inboundId: {
+                  clientId: dbClient.id,
+                  inboundId: dbInbound.id
+                }
+              }
+            });
+            if (!clientInboundExists) {
+              await this.prisma.clientInbound.create({
+                data: {
+                  clientId: dbClient.id,
+                  inboundId: dbInbound.id
+                }
+              }).catch(() => {});
+            }
+          }
+        }
+
+        // Clean up ClientInbound relations for this inbound
+        const inboundApiUuids = new Set(clientsList.map((c: any) => c.id));
+        const dbClientInbounds = await this.prisma.clientInbound.findMany({
+          where: { inboundId: dbInbound.id },
+          include: { client: true }
+        });
+        for (const ci of dbClientInbounds) {
+          if (!inboundApiUuids.has(ci.client.uuid)) {
+            await this.prisma.clientInbound.delete({
+              where: {
+                clientId_inboundId: {
+                  clientId: ci.clientId,
+                  inboundId: ci.inboundId
+                }
+              }
+            }).catch(() => {});
           }
         }
 
@@ -650,43 +737,67 @@ export class PanelsService {
 
         // Orphan Cleanup
         const dbClientsInPanel = await this.prisma.client.findMany({
-        where: { inbound: { panelId: id } },
-        include: { admin: true }
-      });
-
-      for (const dbC of dbClientsInPanel) {
-        if (!apiUuids.has(dbC.uuid)) {
-          // Client was deleted directly on the panel
-          if (dbC.admin && dbC.admin.trafficMode === 'ALLOCATION') {
-            const used = dbC.up + dbC.down;
-            const remaining = dbC.total - used;
-            if (remaining > 0n && dbC.total >= used) {
-              await this.prisma.admin.update({ where: { id: dbC.admin.id }, data: { balance: { increment: Number(remaining) } } });
-              await this.prisma.trafficTransaction.create({
+          where: {
+            inbounds: {
+              some: {
+                inbound: {
+                  panelId: id
+                }
+              }
+            }
+          },
+          include: { admin: true }
+        });
+  
+        for (const dbC of dbClientsInPanel) {
+          const dbCAdmin = (dbC as any).admin;
+          if (!apiUuids.has(dbC.uuid)) {
+            // Client was deleted directly on the panel.
+            // Check if this client is still assigned to other inbounds elsewhere.
+            const remainingCount = await this.prisma.clientInbound.count({
+              where: { clientId: dbC.id }
+            });
+            if (remainingCount === 0) {
+              if (dbCAdmin && dbCAdmin.trafficMode === 'ALLOCATION') {
+                const used = dbC.up + dbC.down;
+                const remaining = dbC.total - used;
+                if (remaining > 0n && dbC.total >= used) {
+                  await this.prisma.admin.update({ where: { id: dbCAdmin.id }, data: { balance: { increment: Number(remaining) } } });
+                  await this.prisma.trafficTransaction.create({
+                    data: {
+                      adminId: dbCAdmin.id,
+                      clientId: dbC.id,
+                      amount: remaining,
+                      type: 'CREDIT',
+                      description: 'Orphaned Client Deletion Refund',
+                    }
+                  });
+                }
+              }
+            
+              await this.prisma.trafficTransaction.deleteMany({ where: { clientId: dbC.id } });
+              await this.prisma.client.delete({ where: { id: dbC.id } });
+              
+              await this.prisma.auditLog.create({
                 data: {
-                  adminId: dbC.admin.id,
-                  clientId: dbC.id,
-                  amount: remaining,
-                  type: 'CREDIT',
-                  description: 'Orphaned Client Deletion Refund',
+                  action: 'SYNC_ORPHAN_DELETED',
+                  entity: 'Client',
+                  entityId: dbC.id,
+                  details: { message: 'Client deleted directly on panel. Removed from DB.' }
+                }
+              });
+            } else {
+              await this.prisma.auditLog.create({
+                data: {
+                  action: 'SYNC_INBOUND_DELETED',
+                  entity: 'Client',
+                  entityId: dbC.id,
+                  details: { message: `Client removed from panel ${id} but remains assigned to other inbounds.` }
                 }
               });
             }
           }
-          
-          await this.prisma.trafficTransaction.deleteMany({ where: { clientId: dbC.id } });
-          await this.prisma.client.delete({ where: { id: dbC.id } });
-          
-          await this.prisma.auditLog.create({
-            data: {
-              action: 'SYNC_ORPHAN_DELETED',
-              entity: 'Client',
-              entityId: dbC.id,
-              details: { message: 'Client deleted directly on panel. Removed from DB.' }
-            }
-          });
         }
-      }
 
       await this.prisma.panel.update({
         where: { id },
@@ -706,7 +817,17 @@ export class PanelsService {
         },
       });
 
-      const dbClientCount = await this.prisma.client.count({ where: { inbound: { panelId: id } } });
+      const dbClientCount = await this.prisma.client.count({
+        where: {
+          inbounds: {
+            some: {
+              inbound: {
+                panelId: id
+              }
+            }
+          }
+        }
+      });
       const discrepancies = dbClientCount - totalSyncedClients;
       const discrepancyMsg = discrepancies === 0 
         ? "Perfect Match" 
@@ -875,47 +996,74 @@ export class PanelsService {
     }
   }
 
-  // --- Group APIs ---
+  // --- Native 3x-ui Group APIs (under /panel/api/clients/groups/*) ---
 
-  async createGroup(panelId: string, name: string) {
+  async assignClientToGroup(panelId: string, emails: string[], groupName: string) {
     const panel = await this.findOne(panelId);
     const apiBaseUrl = panel.apiBaseUrl || panel.url.replace(/\/$/, '');
     try {
-      const response = await axios.post(`${apiBaseUrl}/panel/api/groups/add`, { name }, {
+      const response = await axios.post(`${apiBaseUrl}/panel/api/clients/groups/bulkAdd`, {
+        emails,
+        group: groupName,
+      }, {
         headers: { Authorization: panel.apiToken ? `Bearer ${panel.apiToken}` : undefined },
         timeout: 5000,
       });
       if (!response.data || !response.data.success) {
-        throw new Error(response.data?.msg || 'Panel API rejected createGroup');
+        throw new Error(response.data?.msg || 'Panel API rejected group assignment');
       }
       return response.data;
     } catch (err: any) {
-      throw new BadRequestException(`Failed to create group on panel: ${err.message}`);
+      // Non-fatal: group assignment failure should not block client creation
+      this.logger.warn(`Failed to assign client(s) to group "${groupName}" on panel ${panelId}: ${err.message}`);
     }
   }
 
-  async updateGroup(panelId: string, groupId: string, name: string) {
+  async removeClientFromGroup(panelId: string, emails: string[], groupName: string) {
     const panel = await this.findOne(panelId);
     const apiBaseUrl = panel.apiBaseUrl || panel.url.replace(/\/$/, '');
     try {
-      const response = await axios.post(`${apiBaseUrl}/panel/api/groups/update/${groupId}`, { name }, {
+      const response = await axios.post(`${apiBaseUrl}/panel/api/clients/groups/bulkRemove`, {
+        emails,
+        group: groupName,
+      }, {
         headers: { Authorization: panel.apiToken ? `Bearer ${panel.apiToken}` : undefined },
         timeout: 5000,
       });
       if (!response.data || !response.data.success) {
-        throw new Error(response.data?.msg || 'Panel API rejected updateGroup');
+        throw new Error(response.data?.msg || 'Panel API rejected group removal');
       }
       return response.data;
     } catch (err: any) {
-      throw new BadRequestException(`Failed to update group on panel: ${err.message}`);
+      this.logger.warn(`Failed to remove client(s) from group "${groupName}" on panel ${panelId}: ${err.message}`);
     }
   }
 
-  async deleteGroup(panelId: string, groupId: string) {
+  async listGroups(panelId: string) {
     const panel = await this.findOne(panelId);
     const apiBaseUrl = panel.apiBaseUrl || panel.url.replace(/\/$/, '');
     try {
-      const response = await axios.post(`${apiBaseUrl}/panel/api/groups/del/${groupId}`, {}, {
+      const response = await axios.get(`${apiBaseUrl}/panel/api/clients/groups`, {
+        headers: { Authorization: panel.apiToken ? `Bearer ${panel.apiToken}` : undefined },
+        timeout: 5000,
+      });
+      if (!response.data || !response.data.success) {
+        throw new Error(response.data?.msg || 'Panel API rejected listGroups');
+      }
+      return response.data.obj || [];
+    } catch (err: any) {
+      this.logger.warn(`Failed to list groups from panel ${panelId}: ${err.message}`);
+      return [];
+    }
+  }
+
+  async deleteGroup(panelId: string, groupName: string) {
+    const panel = await this.findOne(panelId);
+    const apiBaseUrl = panel.apiBaseUrl || panel.url.replace(/\/$/, '');
+    try {
+      const response = await axios.post(`${apiBaseUrl}/panel/api/clients/groups/delete`, {
+        name: groupName,
+      }, {
         headers: { Authorization: panel.apiToken ? `Bearer ${panel.apiToken}` : undefined },
         timeout: 5000,
       });
@@ -925,24 +1073,6 @@ export class PanelsService {
       return response.data;
     } catch (err: any) {
       throw new BadRequestException(`Failed to delete group on panel: ${err.message}`);
-    }
-  }
-
-  async listGroups(panelId: string) {
-    const panel = await this.findOne(panelId);
-    const apiBaseUrl = panel.apiBaseUrl || panel.url.replace(/\/$/, '');
-    try {
-      const response = await axios.get(`${apiBaseUrl}/panel/api/groups/list`, {
-        headers: { Authorization: panel.apiToken ? `Bearer ${panel.apiToken}` : undefined },
-        timeout: 5000,
-      });
-      if (!response.data || !response.data.success) {
-        throw new Error(response.data?.msg || 'Panel API rejected listGroups');
-      }
-      return response.data.obj || []; // Array of groups
-    } catch (err: any) {
-      this.logger.warn(`Failed to list groups from panel ${panelId}: ${err.message}`);
-      return []; // Return empty array on failure as unsupported versions might 404
     }
   }
 
@@ -1004,13 +1134,29 @@ export class PanelsService {
       const clientsToReactivate = await this.prisma.client.findMany({
         where: { adminId: admin.id, disableReason: 'BALANCE_EXHAUSTED', enable: false },
         take: 100,
-        include: { inbound: { include: { panel: true } } }
+        include: {
+          inbounds: {
+            include: {
+              inbound: {
+                include: {
+                  panel: true
+                }
+              }
+            }
+          }
+        }
       });
 
       if (clientsToReactivate.length > 0) {
         for (const client of clientsToReactivate) {
           try {
-            await this.updateClient(client.inbound.panelId, client.inbound.port, client.uuid, { enable: true });
+            if (client.inbounds) {
+              for (const ci of client.inbounds) {
+                if (ci.inbound) {
+                  await this.updateClient(ci.inbound.panelId, ci.inbound.port, client.uuid, { enable: true });
+                }
+              }
+            }
             await this.prisma.client.update({
               where: { id: client.id },
               data: { enable: true, disableReason: null }
@@ -1046,13 +1192,29 @@ export class PanelsService {
       const clientsToSuspend = await this.prisma.client.findMany({
         where: { adminId: admin.id, enable: true },
         take: 100,
-        include: { inbound: { include: { panel: true } } }
+        include: {
+          inbounds: {
+            include: {
+              inbound: {
+                include: {
+                  panel: true
+                }
+              }
+            }
+          }
+        }
       });
 
       if (clientsToSuspend.length > 0) {
         for (const client of clientsToSuspend) {
           try {
-            await this.updateClient(client.inbound.panelId, client.inbound.port, client.uuid, { enable: false });
+            if (client.inbounds) {
+              for (const ci of client.inbounds) {
+                if (ci.inbound) {
+                  await this.updateClient(ci.inbound.panelId, ci.inbound.port, client.uuid, { enable: false });
+                }
+              }
+            }
             await this.prisma.client.update({
               where: { id: client.id },
               data: { enable: false, disableReason: 'BALANCE_EXHAUSTED' }

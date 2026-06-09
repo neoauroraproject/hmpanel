@@ -72,7 +72,7 @@ model Inbound {
   updatedAt      DateTime @updatedAt
 
   panel       Panel          @relation(fields: [panelId], references: [id], onDelete: Cascade)
-  clients     Client[]
+  clientInbounds ClientInbound[]
   adminAccess AdminInbound[]
 }
 
@@ -105,8 +105,6 @@ model Admin {
   portalSettings   Json?       @default("{}")
   totalAssigned    Float       @default(0.0) // All-time assigned traffic
   gracePeriodStart DateTime? // When balance hits zero in USAGE mode
-  xuiGroupId       String? // Reference to 3x-ui Group ID
-  xuiGroupName     String? // Human-readable group name
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
 
@@ -140,9 +138,7 @@ model AdminInbound {
 model Client {
   id      String  @id @default(uuid())
   adminId String? // Nullable for Orphaned / Native System Clients
-  brandId String?
-
-  inboundId     String
+  brandId       String?
   email         String // 3x-ui client identity key
   remark        String? // Human-readable display name
   ownerTag      String? // Short label for grouping/filtering (e.g. 'vip', 'trial')
@@ -163,10 +159,23 @@ model Client {
 
   admin         Admin?               @relation(fields: [adminId], references: [id], onDelete: SetNull)
   brand         Brand?               @relation(fields: [brandId], references: [id], onDelete: SetNull)
-  inbound       Inbound              @relation(fields: [inboundId], references: [id], onDelete: Restrict)
+  inbounds      ClientInbound[]
   transactions  TrafficTransaction[]
   createdOrders StoreOrder[]         @relation("CreatedClient")
   renewedOrders StoreOrder[]         @relation("RenewClient")
+}
+
+// ---------------------------------------------------------
+
+model ClientInbound {
+  clientId   String
+  inboundId  String
+  assignedAt DateTime @default(now())
+
+  client  Client  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  inbound Inbound @relation(fields: [inboundId], references: [id], onDelete: Cascade)
+
+  @@id([clientId, inboundId])
 }
 
 // ---------------------------------------------------------

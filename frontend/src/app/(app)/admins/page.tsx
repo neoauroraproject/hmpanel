@@ -226,10 +226,21 @@ export default function AdminsPage() {
                   <div className="md:hidden text-[10px] uppercase text-zinc-500 font-semibold mb-1 tracking-wider">Traffic Status</div>
                   {a.role === "SUPER_ADMIN" ? <span className="text-zinc-600">—</span> : (
                     <div className="text-xs">
-                      <div className="font-medium text-blue-400">
-                        {a.balance === 0 ? "Unlimited" : `${formatBytes(Math.max(0, a.balance - (a.usedTraffic || 0)))} left`}
-                      </div>
-                      <div className="text-zinc-500">out of {a.balance === 0 ? "∞" : formatBytes(a.balance)}</div>
+                      {a.trafficMode === 'USAGE' ? (
+                        <>
+                          <div className="font-medium text-blue-400">
+                            {a.balance > 0 ? `${formatBytes(a.balance)} left` : <span className="text-red-400">Exhausted</span>}
+                          </div>
+                          <div className="text-zinc-500">Used: {formatBytes(a.usedTraffic || 0)} (Usage mode)</div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="font-medium text-blue-400">
+                            {a.balance === 0 ? "Unlimited" : `${formatBytes(Math.max(0, a.balance - (a.usedTraffic || 0)))} left`}
+                          </div>
+                          <div className="text-zinc-500">out of {a.balance === 0 ? "∞" : formatBytes(a.balance)}</div>
+                        </>
+                      )}
                     </div>
                   )}
                 </td>
@@ -702,6 +713,20 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
     onError: () => toast("Failed to update admin", "error"),
   });
 
+  const fixMigration = useMutation({
+    mutationFn: async () => (
+      await api.post(`/admins/${adminId}/fix-migration`, {
+        inboundIds: form.selectedInbounds.length > 0 ? form.selectedInbounds : undefined,
+      })
+    ).data,
+    onSuccess: () => {
+      toast("Migration fix applied — balance synced from pool");
+      qc.invalidateQueries({ queryKey: ["admin", adminId] });
+      qc.invalidateQueries({ queryKey: ["admins"] });
+    },
+    onError: () => toast("Failed to apply migration fix", "error"),
+  });
+
   if (isLoading) return (
     <motion.div {...MOTION_CONFIG.modalOverlay} className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <motion.div {...MOTION_CONFIG.modalContent} className="w-full max-w-4xl rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-12 flex justify-center">
@@ -712,8 +737,12 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
 
   if (!admin) return null;
 
-  const remaining = admin.balance === 0 ? "0 GB" : formatBytes(Math.max(0, admin.balance - admin.usedTraffic));
+  const remaining = admin.balance > 0
+    ? formatBytes(Math.max(0, admin.balance - (admin.usedTraffic || 0)))
+    : admin.trafficMode === 'USAGE' ? formatBytes(0) : "No Limit / Unlimited";
   const expiryDate = admin.expiryTime === 0 ? "Unlimited" : formatDate(new Date(admin.expiryTime).toISOString());
+  // Detect migrated admins: have no adminInbounds set
+  const isMigrated = !admin.adminInbounds || admin.adminInbounds.length === 0;
 
   return (
     <motion.div {...MOTION_CONFIG.modalOverlay} className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
@@ -730,14 +759,29 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
 
           <div className="space-y-4 flex-1">
             <SummaryStat icon={<Users size={16} />} label="Current Clients" value={`${admin._count?.clients ?? 0}`} />
-            <SummaryStat icon={<Activity size={16} />} label="Used Traffic" value={formatBytes(admin.usedTraffic)} />
-            <SummaryStat icon={<Database size={16} />} label="Remaining Traffic" value={remaining} highlight={admin.balance === 0} />
+            <SummaryStat icon={<Activity size={16} />} label="Used Traffic" value={formatBytes(admin.usedTraffic || 0)} />
+            <SummaryStat icon={<Database size={16} />} label="Remaining Traffic" value={remaining} highlight={admin.balance === 0 && admin.trafficMode !== 'USAGE'} />
             <SummaryStat icon={<Shield size={16} />} label="Assigned Inbounds" value={admin.adminInbounds?.length?.toString() ?? "0"} />
             <SummaryStat icon={<Clock size={16} />} label="Expiry Date" value={expiryDate} highlight={admin.expiryTime > 0 && admin.expiryTime < Date.now()} />
+            {isMigrated && (
+              <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 p-3 text-xs text-amber-400">
+                ⚠️ This admin was migrated. Please set a Panel Node and Inbound to complete configuration.
+              </div>
+            )}
           </div>
           
-          <div className="mt-6 pt-6 border-t border-zinc-200 dark:border-zinc-800/50">
+          <div className="mt-6 pt-6 border-t border-zinc-200 dark:border-zinc-800/50 space-y-3">
             <div className="text-xs text-zinc-500">Created At: {formatDate(admin.createdAt)}</div>
+            {isMigrated && (
+              <motion.button
+                whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+                onClick={() => fixMigration.mutate()}
+                disabled={fixMigration.isPending}
+                className="w-full rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 hover:bg-amber-500/20 px-3 py-2 text-xs font-medium transition-colors"
+              >
+                {fixMigration.isPending ? "Fixing..." : "🔧 Fix Migration (Sync Balance)"}
+              </motion.button>
+            )}
           </div>
         </div>
 
@@ -833,10 +877,15 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
                         </div>
                         <div className="col-span-2">
                           <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">Active Panel Node</label>
+                          {isMigrated && !form.selectedPanel && (
+                            <div className="mb-2 text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg p-2">
+                              ⚠️ No panel assigned yet. Select a panel below to configure inbounds.
+                            </div>
+                          )}
                           <select value={form.selectedPanel} onChange={(e) => setForm({ ...form, selectedPanel: e.target.value, selectedInbounds: [] })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors">
-                            <option value="" disabled>Choose a panel...</option>
+                            <option value="">Choose a panel...</option>
                             {(panels ?? []).map(p => (
-                              <option key={p.id} value={p.id} disabled={p.status !== 'online'}>
+                              <option key={p.id} value={p.id}>
                                 {p.name} ({p.status === 'online' ? `v${p.version}` : 'Offline'})
                               </option>
                             ))}
@@ -940,7 +989,7 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
               )}
 
               <div className="flex justify-end pt-4">
-                <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => directEdit.mutate()} disabled={directEdit.isPending || form.selectedInbounds.length === 0} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50 transition-colors shadow-lg shadow-blue-900/20">
+                <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => directEdit.mutate()} disabled={directEdit.isPending} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50 transition-colors shadow-lg shadow-blue-900/20">
                   {directEdit.isPending ? "Saving..." : "Save Changes"}
                 </motion.button>
               </div>

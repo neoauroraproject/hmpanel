@@ -120,8 +120,8 @@ export default function DefaultTheme({ params }: { params: Promise<{ id: string 
 
   const brandName = portalSettings?.portalName || "Subscription Info";
   const platformUrl = typeof window !== "undefined" ? `${window.location.origin}/s/${id}` : "";
-    const getNativeUrl = () => {
-    const sub = subId || email;
+  const getNativeUrl = () => {
+    const sub = encodeURIComponent(subId || email);
     if (inbound?.panel?.subUrl) return `${inbound.panel.subUrl}${sub}`;
     if (inbound?.panel?.url) return `${inbound.panel.url}/sub/${sub}`;
     return `${typeof window !== 'undefined' ? window.location.origin : ''}/sub/${sub}`;

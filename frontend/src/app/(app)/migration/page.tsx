@@ -16,6 +16,7 @@ export default function MigrationPage() {
   const [previewData, setPreviewData] = useState<any>(null);
   const [importReport, setImportReport] = useState<any>(null);
   const [syncReport, setSyncReport] = useState<any>(null);
+  const [createGroups, setCreateGroups] = useState(true);
 
   // Mutations
   const upload = useMutation({
@@ -53,7 +54,7 @@ export default function MigrationPage() {
   });
 
   const runSync = useMutation({
-    mutationFn: async () => (await api.post("/migration/sync")).data,
+    mutationFn: async () => (await api.post("/migration/sync", { createGroups })).data,
     onSuccess: (data) => {
       setSyncReport(data);
       setStep(5);
@@ -194,9 +195,25 @@ export default function MigrationPage() {
                   Imported {importReport.importedPanels} Panels and {importReport.importedAdmins} Admins.
                   Memory mapping loaded for {importReport.legacyClientsToMap} legacy clients.
                 </p>
-                <div className="p-4 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400 text-sm max-w-md text-left">
+                <div className="p-4 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400 text-sm max-w-md text-left mb-4">
                   <strong>Next Phase: Post-Import Sync</strong><br/>
                   The engine will now connect directly to the imported 3x-ui panels to fetch live clients and re-apply ownership boundaries.
+                </div>
+
+                <div className="max-w-md w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg p-4 flex items-center justify-between">
+                  <div className="text-left">
+                    <div className="font-semibold text-zinc-800 dark:text-zinc-100 text-sm">Create Native 3x-ui Groups</div>
+                    <div className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">Automatically assign imported clients to their admin's group.</div>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="sr-only peer"
+                      checked={createGroups}
+                      onChange={(e) => setCreateGroups(e.target.checked)}
+                    />
+                    <div className="w-11 h-6 bg-zinc-200 peer-focus:outline-none rounded-full peer dark:bg-zinc-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-zinc-600 peer-checked:bg-blue-600"></div>
+                  </label>
                 </div>
               </div>
             )}
@@ -207,14 +224,22 @@ export default function MigrationPage() {
                   <CheckCircle2 size={24} />
                   Migration Finished
                 </h3>
-                <div className="grid grid-cols-2 gap-4 mb-6">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                   <div className="p-4 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg">
-                    <div className="text-xs text-zinc-500">Panels Synced</div>
-                    <div className="text-2xl font-black text-zinc-800 dark:text-zinc-100">{syncReport.panelsSynced}</div>
+                    <div className="text-xs text-zinc-500">Admins Imported</div>
+                    <div className="text-2xl font-black text-zinc-800 dark:text-zinc-100">{importReport?.importedAdmins}</div>
                   </div>
                   <div className="p-4 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg">
                     <div className="text-xs text-zinc-500">Clients Synced</div>
                     <div className="text-2xl font-black text-zinc-800 dark:text-zinc-100">{syncReport.clientsImported}</div>
+                  </div>
+                  <div className="p-4 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg">
+                    <div className="text-xs text-emerald-500">Groups Created</div>
+                    <div className="text-2xl font-black text-emerald-400">{syncReport.groupsCreated || 0}</div>
+                  </div>
+                  <div className="p-4 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg">
+                    <div className="text-xs text-blue-500">Clients Grouped</div>
+                    <div className="text-2xl font-black text-blue-400">{syncReport.clientsAssignedToGroups || 0}</div>
                   </div>
                   <div className="p-4 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg">
                     <div className="text-xs text-emerald-500">Clients Matched</div>
@@ -223,6 +248,10 @@ export default function MigrationPage() {
                   <div className="p-4 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg">
                     <div className="text-xs text-amber-500">Missing/Orphaned</div>
                     <div className="text-2xl font-black text-amber-400">{syncReport.clientsMissing}</div>
+                  </div>
+                  <div className="p-4 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg col-span-2">
+                    <div className="text-xs text-red-500">Failed Assignments</div>
+                    <div className="text-2xl font-black text-red-400">{syncReport.failedAssignments || 0}</div>
                   </div>
                 </div>
 

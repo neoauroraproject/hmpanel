@@ -1,0 +1,414 @@
+import React, { useState, useEffect } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { api } from "@/lib/api";
+import { X, Check, AlertTriangle, Users, Loader2 } from "lucide-react";
+import { useToast } from "@/components/toast";
+import { motion } from "framer-motion";
+
+interface BulkCreateModalProps {
+  onClose: () => void;
+  inboundsList: any[];
+}
+
+export function BulkCreateModal({ onClose, inboundsList }: BulkCreateModalProps) {
+  const qc = useQueryClient();
+  const toast = useToast((s) => s.push);
+
+  const [form, setForm] = useState({
+    prefix: "",
+    separator: "-",
+    startNumber: 1,
+    endNumber: 10,
+    trafficGB: "",
+    expiryDays: "",
+    inboundIds: [] as string[],
+    group: "",
+    remark: "",
+    enable: true,
+  });
+
+  const [previewEmails, setPreviewEmails] = useState<string[]>([]);
+  const [validation, setValidation] = useState<{
+    valid: boolean;
+    conflicts?: string[];
+  } | null>(null);
+  const [isValidating, setIsValidating] = useState(false);
+
+  // Fetch groups
+  const { data: groups } = useQuery<string[]>({
+    queryKey: ["xui-groups"],
+    queryFn: async () => (await api.get<string[]>("/clients/groups")).data,
+  });
+
+  // Populate default inbound if empty
+  useEffect(() => {
+    if (inboundsList?.length > 0 && form.inboundIds.length === 0) {
+      setForm(f => ({ ...f, inboundIds: [inboundsList[0].id] }));
+    }
+  }, [inboundsList]);
+
+  // Validation & Preview effect
+  useEffect(() => {
+    // Generate preview
+    const { prefix, separator, startNumber, endNumber } = form;
+    const emails: string[] = [];
+    const maxPreview = 10;
+    
+    if (startNumber > 0 && endNumber >= startNumber) {
+      for (let i = startNumber; i <= Math.min(endNumber, startNumber + maxPreview - 1); i++) {
+        emails.push(`${prefix}${separator}${i}`);
+      }
+      if (endNumber > startNumber + maxPreview - 1) {
+        emails.push("...");
+      }
+    }
+    setPreviewEmails(emails);
+
+    // Validate
+    const validateParams = async () => {
+      if (!prefix || form.inboundIds.length === 0 || startNumber <= 0 || endNumber < startNumber) {
+        setValidation(null);
+        return;
+      }
+      if (endNumber - startNumber > 500) {
+        setValidation({ valid: false, conflicts: ["Cannot create more than 500 clients at once."] });
+        return;
+      }
+
+      setIsValidating(true);
+      try {
+        const res = await api.post("/clients/bulk-create/validate", {
+          prefix,
+          separator,
+          startNumber,
+          endNumber,
+          inboundIds: form.inboundIds,
+        });
+        setValidation(res.data);
+      } catch (err: any) {
+        setValidation({
+          valid: false,
+          conflicts: [err.response?.data?.message || "Validation failed"],
+        });
+      } finally {
+        setIsValidating(false);
+      }
+    };
+
+    const timeoutId = setTimeout(validateParams, 500);
+    return () => clearTimeout(timeoutId);
+  }, [form.prefix, form.separator, form.startNumber, form.endNumber, form.inboundIds]);
+
+  const createMutation = useMutation({
+    mutationFn: async () => {
+      const payload: any = {
+        prefix: form.prefix,
+        separator: form.separator,
+        startNumber: form.startNumber,
+        endNumber: form.endNumber,
+        inboundIds: form.inboundIds,
+        enable: form.enable,
+      };
+
+      if (form.trafficGB) {
+        payload.total = Number(form.trafficGB) * 1024 * 1024 * 1024;
+      }
+      if (form.expiryDays) {
+        payload.expiryTime = Date.now() + Number(form.expiryDays) * 24 * 60 * 60 * 1000;
+      }
+      if (form.group) payload.group = form.group;
+      if (form.remark) payload.remark = form.remark;
+
+      return await api.post("/clients/bulk-create", payload);
+    },
+    onSuccess: () => {
+      toast("Bulk clients created successfully", "success");
+      qc.invalidateQueries({ queryKey: ["clients"] });
+      onClose();
+    },
+    onError: (err: any) => {
+      toast(err?.response?.data?.message || "Failed to create clients", "error");
+    }
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!validation?.valid) return;
+    createMutation.mutate();
+  };
+
+  const count = form.endNumber - form.startNumber + 1;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ scale: 0.95, opacity: 0, y: 20 }}
+        animate={{ scale: 1, opacity: 1, y: 0 }}
+        exit={{ scale: 0.95, opacity: 0, y: 20 }}
+        transition={{ duration: 0.2, ease: "easeOut" }}
+        className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-6 flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="rounded-xl bg-blue-500/10 p-2 text-blue-500">
+              <Users size={20} />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-50">Bulk Create Clients</h3>
+              <p className="text-xs text-zinc-500">Create multiple clients sequentially</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 p-2"><X size={20} /></button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Naming Section */}
+            <div className="space-y-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/50 p-4">
+              <h4 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">Naming Pattern</h4>
+              
+              <div>
+                <label className="mb-1 block text-xs font-medium text-zinc-500">Prefix</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. vip"
+                  value={form.prefix}
+                  onChange={(e) => setForm({ ...form, prefix: e.target.value })}
+                  className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-medium text-zinc-500">Separator</label>
+                <select
+                  value={form.separator}
+                  onChange={(e) => setForm({ ...form, separator: e.target.value })}
+                  className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500"
+                >
+                  <option value="-">Hyphen (-)</option>
+                  <option value="_">Underscore (_)</option>
+                  <option value="*">Asterisk (*)</option>
+                  <option value=".">Dot (.)</option>
+                  <option value="">None</option>
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-zinc-500">Start Number</label>
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    value={form.startNumber}
+                    onChange={(e) => setForm({ ...form, startNumber: parseInt(e.target.value) || 1 })}
+                    className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-zinc-500">End Number</label>
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    value={form.endNumber}
+                    onChange={(e) => setForm({ ...form, endNumber: parseInt(e.target.value) || 1 })}
+                    className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500"
+                  />
+                </div>
+              </div>
+
+              {previewEmails.length > 0 && (
+                <div className="mt-2 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-3">
+                  <span className="text-xs text-zinc-500 mb-1 block">Preview ({count > 0 ? count : 0} clients):</span>
+                  <div className="flex flex-wrap gap-1.5 max-h-[80px] overflow-y-auto">
+                    {previewEmails.map((email, idx) => (
+                      <span key={idx} className="inline-block bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded text-[11px] text-zinc-600 dark:text-zinc-300 font-mono">
+                        {email}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Config Section */}
+            <div className="space-y-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/50 p-4">
+              <h4 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">Configuration</h4>
+              
+              <div>
+                <label className="mb-1 block text-xs font-medium text-zinc-500">Assigned Inbounds</label>
+                <div className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 overflow-hidden">
+                  <div className="max-h-[160px] overflow-y-auto divide-y divide-zinc-200 dark:divide-zinc-800">
+                    {inboundsList?.length === 0 ? (
+                      <div className="px-3 py-4 text-center text-sm text-zinc-500">No Inbounds available</div>
+                    ) : (
+                      inboundsList?.map((i) => {
+                        const isChecked = form.inboundIds.includes(i.id);
+                        return (
+                          <label
+                            key={i.id}
+                            className="flex items-center gap-3 px-3 py-2.5 text-sm text-zinc-850 dark:text-zinc-200 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-850/30 select-none"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => {
+                                const nextIds = isChecked
+                                  ? form.inboundIds.filter(id => id !== i.id)
+                                  : [...form.inboundIds, i.id];
+                                setForm({ ...form, inboundIds: nextIds });
+                              }}
+                              className="h-4 w-4 rounded border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500 focus:ring-offset-white dark:focus:ring-offset-zinc-900 bg-transparent"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex justify-between items-center gap-2">
+                                <span className="font-semibold text-zinc-800 dark:text-zinc-100 truncate">
+                                  {i.remark ? i.remark : i.tag}
+                                </span>
+                                <span className="text-[10px] uppercase tracking-wider text-zinc-400 dark:text-zinc-500 font-bold shrink-0">
+                                  {i.protocol} : {i.port}
+                                </span>
+                              </div>
+                              <div className="text-[10px] text-zinc-400 dark:text-zinc-500 truncate mt-0.5">
+                                Panel: {i.panel?.name || 'Unknown'}{i.remark ? ` | Tag: ${i.tag}` : ''}
+                              </div>
+                            </div>
+                          </label>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-zinc-500">Traffic (GB)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="Unlimited"
+                    value={form.trafficGB}
+                    onChange={(e) => setForm({ ...form, trafficGB: e.target.value })}
+                    className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-zinc-500">Expiry (Days)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="Unlimited"
+                    value={form.expiryDays}
+                    onChange={(e) => setForm({ ...form, expiryDays: e.target.value })}
+                    className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-medium text-zinc-500">Group (Optional)</label>
+                <input
+                  type="text"
+                  list="xui-bulk-groups"
+                  placeholder="Select or type new group..."
+                  value={form.group}
+                  onChange={(e) => setForm({ ...form, group: e.target.value })}
+                  className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500"
+                />
+                <datalist id="xui-bulk-groups">
+                  {groups?.map((g) => (
+                    <option key={g} value={g} />
+                  ))}
+                </datalist>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-medium text-zinc-500">Comment / Remark</label>
+                <input
+                  type="text"
+                  placeholder="Optional internal note"
+                  value={form.remark}
+                  onChange={(e) => setForm({ ...form, remark: e.target.value })}
+                  className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 pt-2">
+                <input
+                  type="checkbox"
+                  id="bulk-enable"
+                  checked={form.enable}
+                  onChange={(e) => setForm({ ...form, enable: e.target.checked })}
+                  className="h-4 w-4 rounded border-zinc-300 text-blue-600 focus:ring-blue-500"
+                />
+                <label htmlFor="bulk-enable" className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                  Enable Clients Immediately
+                </label>
+              </div>
+            </div>
+          </div>
+
+          {/* Validation Status */}
+          <div className="rounded-xl p-4 border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950">
+            {isValidating ? (
+              <div className="flex items-center gap-2 text-zinc-500">
+                <Loader2 size={16} className="animate-spin" />
+                <span className="text-sm">Validating with 3x-ui...</span>
+              </div>
+            ) : validation?.valid ? (
+              <div className="flex items-center gap-2 text-emerald-500">
+                <Check size={18} />
+                <span className="text-sm font-medium">Validation Passed - All generated emails are available.</span>
+              </div>
+            ) : validation?.conflicts && validation.conflicts.length > 0 ? (
+              <div className="flex items-start gap-2 text-red-500">
+                <AlertTriangle size={18} className="mt-0.5 shrink-0" />
+                <div>
+                  <span className="text-sm font-medium">Validation Failed:</span>
+                  <ul className="list-disc pl-5 mt-1 text-xs space-y-1">
+                    {validation.conflicts.map((c, i) => (
+                      <li key={i}>{c}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 text-zinc-500">
+                <AlertTriangle size={18} />
+                <span className="text-sm">Please fill in Prefix, Inbounds, Start, and End number to validate.</span>
+              </div>
+            )}
+          </div>
+
+          <div className="flex justify-end gap-3 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg px-6 py-2.5 text-sm font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={createMutation.isPending || !validation?.valid || count <= 0}
+              className="rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-medium text-white shadow-lg shadow-blue-500/30 hover:bg-blue-500 disabled:opacity-50 disabled:shadow-none transition-all flex items-center gap-2"
+            >
+              {createMutation.isPending && <Loader2 size={16} className="animate-spin" />}
+              {createMutation.isPending ? "Creating..." : `Create ${count > 0 ? count : 0} Clients`}
+            </button>
+          </div>
+        </form>
+      </motion.div>
+    </motion.div>
+  );
+}

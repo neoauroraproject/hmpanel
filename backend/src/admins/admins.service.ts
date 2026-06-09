@@ -41,38 +41,7 @@ export class AdminsService {
       });
     }
 
-    let xuiGroupId = null;
-    let xuiGroupName = null;
 
-    if (admin.role === 'RESELLER') {
-      xuiGroupName = admin.username;
-      // Handle naming conflicts
-      const existingGroups = await this.prisma.admin.count({
-        where: { xuiGroupName: { startsWith: xuiGroupName } }
-      });
-      if (existingGroups > 0) {
-        xuiGroupName = `${xuiGroupName} (${existingGroups + 1})`;
-      }
-
-      // Try to create group in all panels, or at least log
-      const panels = await this.prisma.panel.findMany({ select: { id: true } });
-      xuiGroupId = xuiGroupName; // Fallback to group name as xuiGroupId if panel doesn't return one (useful for Sanaei tgId grouping)
-      for (const panel of panels) {
-        try {
-          const res = await this.panelsService.createGroup(panel.id, xuiGroupName);
-          if (res && res.obj && res.obj.id) {
-            xuiGroupId = String(res.obj.id); // Or use whichever format the panel uses
-          }
-        } catch (err: any) {
-          this.logger.warn(`Failed to create 3x-ui group for reseller ${admin.username} on panel ${panel.id}: ${err.message}`);
-        }
-      }
-
-      await this.prisma.admin.update({
-        where: { id: admin.id },
-        data: { xuiGroupId, xuiGroupName }
-      });
-    }
 
     await this.prisma.auditLog.create({
       data: { action: 'ADMIN_CREATED', entity: 'Admin', entityId: admin.id, adminId: admin.id }
@@ -152,7 +121,6 @@ export class AdminsService {
         id: true, username: true, email: true, role: true,
         balance: true, trafficMode: true, status: true, createdAt: true,
         expiryTime: true, maxClients: true, permissions: true, portalSettings: true,
-        xuiGroupId: true, xuiGroupName: true,
         _count: { select: { clients: true } },
         clients: { select: { up: true, down: true } },
         adminInbounds: { select: { inbound: { select: { id: true, tag: true, port: true, protocol: true, panel: { select: { id: true, name: true } } } } } },
@@ -235,14 +203,77 @@ export class AdminsService {
       data: { action: 'ADMIN_DELETED', entity: 'Admin', entityId: id }
     });
 
-    if (admin.role === 'RESELLER' && (admin as any).xuiGroupId) {
-      this.logger.warn(`Reseller ${admin.username} deleted. Group ${(admin as any).xuiGroupName} in 3x-ui has been orphaned, not deleted per policy.`);
+    if (admin.role === 'RESELLER') {
+      this.logger.warn(`Reseller ${admin.username} deleted. Group ${admin.username} in 3x-ui has been orphaned, not deleted per policy.`);
       await this.prisma.auditLog.create({
-        data: { action: 'GROUP_ORPHANED', entity: 'Admin', entityId: id, details: { groupName: (admin as any).xuiGroupName, message: 'Group was left in panel intentionally.' } }
+        data: { action: 'GROUP_ORPHANED', entity: 'Admin', entityId: id, details: { groupName: admin.username, message: 'Group was left in panel intentionally.' } }
       });
     }
 
     await this.prisma.admin.delete({ where: { id } });
     return { deleted: true };
+  }
+
+  /** Fix a migrated admin: set balance from trafficPool or provided value, set up adminInbounds */
+  async fixMigratedAdmin(id: string, data: { balanceGb?: number; inboundIds?: string[] }) {
+    const admin = await this.findOne(id);
+    const updateData: any = {};
+
+    // Set balance
+    if (data.balanceGb !== undefined && data.balanceGb > 0) {
+      const newBalance = Math.round(data.balanceGb * 1024 * 1024 * 1024);
+      updateData.balance = newBalance;
+
+      // Create a CREDIT transaction if admin has no transactions
+      const existingTx = await this.prisma.trafficTransaction.count({ where: { adminId: id, type: 'CREDIT' } });
+      if (existingTx === 0) {
+        await this.prisma.trafficTransaction.create({
+          data: {
+            adminId: id,
+            amount: BigInt(newBalance),
+            type: 'CREDIT',
+            description: 'Migration Fix — Manual Balance Set',
+          }
+        });
+      }
+    } else if (admin.balance === 0) {
+      // Try to sync from trafficPool
+      const pool = await this.prisma.trafficPool.findFirst({ where: { adminId: id } });
+      if (pool && pool.totalLimit > 0n) {
+        const balanceFromPool = Number(pool.totalLimit);
+        updateData.balance = balanceFromPool;
+        
+        const existingTx = await this.prisma.trafficTransaction.count({ where: { adminId: id, type: 'CREDIT' } });
+        if (existingTx === 0) {
+          await this.prisma.trafficTransaction.create({
+            data: {
+              adminId: id,
+              amount: pool.totalLimit,
+              type: 'CREDIT',
+              description: 'Migration Fix — Balance Synced from TrafficPool',
+            }
+          });
+        }
+      }
+    }
+
+    // Set inbounds
+    if (data.inboundIds?.length) {
+      await this.prisma.adminInbound.deleteMany({ where: { adminId: id } });
+      await this.prisma.adminInbound.createMany({
+        data: data.inboundIds.map((inboundId) => ({ adminId: id, inboundId })),
+        skipDuplicates: true,
+      });
+    }
+
+    if (Object.keys(updateData).length > 0) {
+      await this.prisma.admin.update({ where: { id }, data: updateData });
+    }
+
+    await this.prisma.auditLog.create({
+      data: { action: 'ADMIN_MIGRATION_FIX', entity: 'Admin', entityId: id, adminId: id }
+    });
+
+    return this.findOne(id);
   }
 }
