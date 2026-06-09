@@ -32,7 +32,7 @@ HMray Panel is a modern, fast, and secure monorepo-based web panel designed to m
 You can install HMray Panel in one step using the interactive single-command installer:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/hmray/panel/main/install.sh | sudo bash
+bash <(curl -fsSL https://raw.githubusercontent.com/neoauroraproject/hmpanel/main/install.sh)
 ```
 
 *(Alternatively, clone the repository and run `sudo bash install.sh` locally).*
@@ -152,7 +152,7 @@ This project is released under the MIT License.
 شما می‌توانید پنل HMray را با اجرای یک دستور ساده و به صورت تعاملی نصب کنید:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/hmray/panel/main/install.sh | sudo bash
+bash <(curl -fsSL https://raw.githubusercontent.com/neoauroraproject/hmpanel/main/install.sh)
 ```
 
 *(یا به عنوان جایگزین، مخزن را کلون کرده و فایل `sudo bash install.sh` را به صورت محلی اجرا کنید).*
