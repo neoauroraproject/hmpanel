@@ -500,12 +500,7 @@ step_8_ssl() {
     ensure_package certbot certbot
 
     while true; do
-      info "Checking external HTTP challenge port (80) required by Let's Encrypt..."
-      if ! timeout 5 bash -c "</dev/tcp/${DOMAIN}/80" &>/dev/null; then
-         warn "Port 80 unreachable or closed. Let's Encrypt might fail."
-      else
-         log "Port 80 reachable"
-      fi
+
 
       info "Requesting Let's Encrypt certificate..."
       
@@ -651,12 +646,20 @@ print_success() {
   echo -e "  Edition:      ${CYAN}Community${NC}"
   
   if [[ "$SSL_STATUS" == "letsencrypt" || "$SSL_STATUS" == "self-signed" ]]; then
-    echo -e "  URL:          ${CYAN}https://${DOMAIN}${NC}"
+    local https_suffix=""
+    if [[ "$HTTPS_PORT" != "443" ]]; then
+      https_suffix=":${HTTPS_PORT}"
+    fi
+    echo -e "  URL:          ${CYAN}https://${DOMAIN}${https_suffix}${NC}"
   else
     local SERVER_IP
     SERVER_IP=$(curl -s https://api.ipify.org 2>/dev/null || echo "SERVER_IP")
-    echo -e "  URL:          ${CYAN}http://${SERVER_IP}${NC}"
-    echo -e "  URL:          ${CYAN}http://${DOMAIN}${NC}"
+    local http_suffix=""
+    if [[ "$HTTP_PORT" != "80" ]]; then
+      http_suffix=":${HTTP_PORT}"
+    fi
+    echo -e "  URL:          ${CYAN}http://${SERVER_IP}${http_suffix}${NC}"
+    echo -e "  URL:          ${CYAN}http://${DOMAIN}${http_suffix}${NC}"
   fi
   
   case "${SSL_STATUS:-disabled}" in
