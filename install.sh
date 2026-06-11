@@ -347,7 +347,7 @@ step_2_environment() {
 RELEASE_MODE=COMMUNITY
 
 # Database
-DATABASE_URL="postgresql://panel_user:${POSTGRES_PASSWORD}@postgres:5432/panel_db?schema=public"
+DATABASE_URL=postgresql://panel_user:${POSTGRES_PASSWORD}@postgres:5432/panel_db?schema=public
 POSTGRES_USER=panel_user
 POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
 POSTGRES_DB=panel_db
