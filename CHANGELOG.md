@@ -8,6 +8,13 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.0.1`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [1.0.1] - 2026-06-11
+
+### Fixed
+- **Installer Bug:** Fixed a critical bug in `install.sh` where database password synchronization failed because it targeted the incorrect container name (`postgres` instead of `hmpanel-postgres`). The installer now correctly detects and overrides the PostgreSQL password when a pre-existing volume is present.
+
+---
+
 ## [1.0.0] - Community Edition
 
 ### Added
