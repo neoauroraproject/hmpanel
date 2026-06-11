@@ -6,7 +6,7 @@ import { api } from "@/lib/api";
 import { formatBytes, formatDate } from "@/lib/format";
 import { Card, PageHeader, Badge, Spinner, ErrorBox } from "@/components/ui";
 import { useToast } from "@/components/toast";
-import { Plus, Power, Edit2, Shield, Activity, HardDrive, Cpu, CreditCard, ChevronDown, Check, X, ShieldCheck, Download, Upload, Trash2, Eye, EyeOff, Server, Database, Save, ArrowRight, Store, Users, Clock, Settings2, Zap, Lock } from "lucide-react";
+import { Plus, Power, Edit2, Shield, Activity, HardDrive, Cpu, CreditCard, ChevronDown, Check, X, ShieldCheck, Download, Upload, Trash2, Eye, EyeOff, Server, Database, Save, ArrowRight, Store, Users, Clock, Settings2, Zap, Lock, AlertCircle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface Admin {
@@ -507,7 +507,7 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
                             <p className="text-xs opacity-80 mt-1">Please select a panel from the Basic Information section.</p>
                           </div>
                         </div>
-                      )}    </div>
+                      )}
                     </div>
                   </motion.div>
                 )}
