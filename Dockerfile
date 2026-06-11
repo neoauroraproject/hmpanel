@@ -85,8 +85,8 @@ COPY --from=builder /app/backend/node_modules ./backend/node_modules
 
 # ── Frontend artifacts (standalone) ──────────────────────────────
 COPY --from=builder /app/frontend/.next/standalone ./frontend/
-COPY --from=builder /app/frontend/.next/static ./frontend/.next/static
-COPY --from=builder /app/frontend/public ./frontend/public
+COPY --from=builder /app/frontend/.next/static ./frontend/frontend/.next/static
+COPY --from=builder /app/frontend/public ./frontend/frontend/public
 
 # ── Persistent data directories ───────────────────────────────────
 RUN mkdir -p /app/uploads /app/backups /app/logs && \
