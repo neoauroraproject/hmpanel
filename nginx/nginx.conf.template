@@ -44,12 +44,12 @@ http {
     limit_req_zone $binary_remote_addr zone=login_limit:10m rate=5r/m;
 
     upstream backend {
-        server panel-app:4000;
+        server panel-app:${BACKEND_PORT};
         keepalive 32;
     }
 
     upstream frontend {
-        server panel-app:3000;
+        server panel-app:${APP_PORT};
         keepalive 32;
     }
 
@@ -75,7 +75,8 @@ http {
     # HTTPS — Main application server
     # ─────────────────────────────────────────────────────────────
     server {
-        listen 443 ssl http2;
+        listen 443 ssl;
+        http2 on;
         server_name _;
 
         # SSL certificates (auto-updated by certbot or manual)

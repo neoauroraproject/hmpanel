@@ -20,6 +20,7 @@ services:
       - REDIS_PORT=${REDIS_PORT:-6379}
       - JWT_SECRET=${JWT_SECRET}
       - PORT=${BACKEND_PORT:-4000}
+      - APP_PORT=${APP_PORT:-3000}
       - RELEASE_MODE=${RELEASE_MODE:-COMMUNITY}
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-/api-proxy}
       - NEXT_PUBLIC_RELEASE_MODE=${RELEASE_MODE:-COMMUNITY}
@@ -54,11 +55,15 @@ services:
     ports:
       - "${HTTP_PORT:-80}:80"
       - "${HTTPS_PORT:-443}:443"
+    environment:
+      - APP_PORT=${APP_PORT:-3000}
+      - BACKEND_PORT=${BACKEND_PORT:-4000}
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/nginx.conf.template:/etc/nginx/nginx.conf.template:ro
       - ./nginx/ssl:/etc/nginx/ssl:ro
       - certbot-www:/var/www/certbot:ro
       - certbot-certs:/etc/letsencrypt:ro
+    command: /bin/sh -c "envsubst '$${APP_PORT} $${BACKEND_PORT}' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && exec nginx -g 'daemon off;'"
     depends_on:
       - panel-app
     networks:
