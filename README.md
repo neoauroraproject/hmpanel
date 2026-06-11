@@ -46,14 +46,14 @@ Designed from the ground up for VPN Providers, Resellers, and Administrators man
 
 ## 📸 Screenshots
 
-### Super Admin Dashboard
-![Dashboard](docs/images/dashboard.png)
+### Super Admin Dashboard (Analytics)
+![Dashboard](docs/images/dashboard-1.png)
+
+### Infrastructure Monitoring (Live Nodes)
+![Monitoring](docs/images/dashboard-2.png)
 
 ### Client Management
 ![Clients](docs/images/clients.png)
-
-### Admin & Reseller Control
-![Admins](docs/images/admins.png)
 
 ---
 
