@@ -29,13 +29,13 @@ yarn-debug.log*
 yarn-error.log*
 
 # Docker local data and SSL certs
-nginx/ssl/
-uploads/
-backups/
+/nginx/ssl/
+/uploads/
+/backups/
 /backend/.pgdata/
-postgres data/
-redis data/
-certificates/
+/postgres data/
+/redis data/
+/certificates/
 
 # Testing
 coverage/
