@@ -36,7 +36,7 @@ main() {
   check_root
 
   # Detect installation directory
-  INSTALL_DIR="/opt/hmpanel-panel"
+  INSTALL_DIR="/opt/hmpanel"
   if [[ ! -d "$INSTALL_DIR" ]]; then
     INSTALL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   fi
