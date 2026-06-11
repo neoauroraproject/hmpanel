@@ -3,6 +3,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { RolesGuard, Roles } from '../common/roles.guard';
 import { StatsService } from './stats.service';
+import { PanelsService } from '../panels/panels.service';
 import type { AuthRequest } from '../common/auth-request';
 import { PremiumGuard } from '../common/guards/premium.guard';
 
@@ -12,7 +13,16 @@ import { PremiumGuard } from '../common/guards/premium.guard';
 @Roles('SUPER_ADMIN')
 @Controller('stats')
 export class StatsController {
-  constructor(private stats: StatsService) {}
+  constructor(private stats: StatsService, private panelsService: PanelsService) {}
+
+  @Get('onlines')
+  @Roles('SUPER_ADMIN', 'RESELLER')
+  @ApiOperation({ summary: 'Get live online client emails directly from panels' })
+  async getLiveOnlines(@Query('panelId') panelId?: string) {
+    const panelsToQuery = panelId ? [panelId] : [];
+    const emails = await this.panelsService.getLiveOnlineEmails(panelsToQuery);
+    return { onlines: emails };
+  }
 
   @Get('overview')
   @ApiOperation({ summary: 'Dashboard KPI cards' })
@@ -23,8 +33,8 @@ export class StatsController {
   @Get('reseller-overview')
   @Roles('SUPER_ADMIN', 'RESELLER')
   @ApiOperation({ summary: 'Dashboard KPI cards for resellers' })
-  resellerOverview(@Req() req: AuthRequest) {
-    return this.stats.resellerOverview(req.user.id);
+  resellerOverview(@Req() req: AuthRequest, @Query('panelId') panelId?: string) {
+    return this.stats.resellerOverview(req.user.id, panelId);
   }
 
   @Get('traffic-series')

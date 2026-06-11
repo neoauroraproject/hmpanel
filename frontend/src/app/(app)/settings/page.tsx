@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Save, Settings, Activity, ArchiveX, ChevronRight, Info, ExternalLink } from "lucide-react";
+import { Save, Settings, Activity, ArchiveX, ChevronRight, Info, ExternalLink, Database, Download, Upload } from "lucide-react";
 import { api } from "@/lib/api";
 import { useRouter } from "next/navigation";
 import { Card, PageHeader, Spinner, ErrorBox } from "@/components/ui";
@@ -51,47 +51,51 @@ export default function GlobalSettingsPage() {
       />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Card className="p-6">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="p-2 rounded-lg bg-blue-500/10 text-blue-500">
-              <Settings size={20} />
-            </div>
-            <div>
-              <h3 className="text-lg font-bold text-zinc-800 dark:text-zinc-100">Cleanup Candidate Threshold</h3>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">Determine when expired clients become eligible for cleanup.</p>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-                Days After Expiration
-              </label>
-              <div className="flex items-center gap-3">
-                <input
-                  type="number"
-                  min="0"
-                  value={form.cleanup_threshold_days}
-                  onChange={(e) => setForm({ ...form, cleanup_threshold_days: Number(e.target.value) })}
-                  className="w-full max-w-[120px] rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors"
-                />
-                <span className="text-sm text-zinc-500">Days</span>
+        <div className="space-y-6">
+          <Card className="p-6">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-2 rounded-lg bg-blue-500/10 text-blue-500">
+                <Settings size={20} />
               </div>
-              <p className="text-xs text-zinc-500 mt-2">Clients expired for more than {form.cleanup_threshold_days} days will appear in the Cleanup Candidates list.</p>
+              <div>
+                <h3 className="text-lg font-bold text-zinc-800 dark:text-zinc-100">Cleanup Candidate Threshold</h3>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">Determine when expired clients become eligible for cleanup.</p>
+              </div>
             </div>
 
-            <div className="pt-4 border-t border-zinc-200 dark:border-zinc-800 flex justify-end">
-              <button
-                onClick={() => updateSettings.mutate(form)}
-                disabled={updateSettings.isPending}
-                className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50 transition-colors"
-              >
-                {updateSettings.isPending ? <Spinner className="w-4 h-4" /> : <Save size={16} />}
-                Save Settings
-              </button>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                  Days After Expiration
+                </label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="number"
+                    min="0"
+                    value={form.cleanup_threshold_days}
+                    onChange={(e) => setForm({ ...form, cleanup_threshold_days: Number(e.target.value) })}
+                    className="w-full max-w-[120px] rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors"
+                  />
+                  <span className="text-sm text-zinc-500">Days</span>
+                </div>
+                <p className="text-xs text-zinc-500 mt-2">Clients expired for more than {form.cleanup_threshold_days} days will appear in the Cleanup Candidates list.</p>
+              </div>
+
+              <div className="pt-4 border-t border-zinc-200 dark:border-zinc-800 flex justify-end">
+                <button
+                  onClick={() => updateSettings.mutate(form)}
+                  disabled={updateSettings.isPending}
+                  className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50 transition-colors"
+                >
+                  {updateSettings.isPending ? <Spinner className="w-4 h-4" /> : <Save size={16} />}
+                  Save Settings
+                </button>
+              </div>
             </div>
-          </div>
-        </Card>
+          </Card>
+
+          <BackupRestoreCard />
+        </div>
 
         {/* Quick Links and About */}
         <div className="space-y-4">
@@ -119,10 +123,7 @@ export default function GlobalSettingsPage() {
                 <a href="https://github.com/neoauroraproject/hmpanel" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-zinc-600 dark:text-zinc-400 hover:text-blue-500 transition-colors">
                   <ExternalLink size={14} /> Official GitHub
                 </a>
-                <a href="https://hmray.example.com" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-zinc-600 dark:text-zinc-400 hover:text-blue-500 transition-colors">
-                  <ExternalLink size={14} /> Official Website
-                </a>
-                <a href="https://t.me/hmray_example" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-zinc-600 dark:text-zinc-400 hover:text-blue-500 transition-colors">
+                <a href="https://t.me/hmpanel" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-zinc-600 dark:text-zinc-400 hover:text-blue-500 transition-colors">
                   <ExternalLink size={14} /> Telegram Channel
                 </a>
               </div>
@@ -160,5 +161,92 @@ export default function GlobalSettingsPage() {
         </div>
       </div>
     </motion.div>
+  );
+}
+
+function BackupRestoreCard() {
+  const toast = require("@/components/toast").useToast((s: any) => s.push);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [isBackingUp, setIsBackingUp] = useState(false);
+  
+  const handleBackup = async () => {
+    setIsBackingUp(true);
+    try {
+      const res = await api.post<{ id: string }>("/backups", { type: "postgres" });
+      const backupId = res.data.id;
+      const downloadRes = await api.get(`/backups/${backupId}/download`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([downloadRes.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `backup-${backupId}.gz`);
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode?.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      toast("Backup generated successfully");
+    } catch (e) {
+      toast("Failed to generate backup", "error");
+    } finally {
+      setIsBackingUp(false);
+    }
+  };
+
+  const handleRestore = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    if (!confirm("Warning: Restoring will overwrite all current system data and cannot be undone. Do you want to proceed?")) {
+      e.target.value = "";
+      return;
+    }
+
+    setIsRestoring(true);
+    const formData = new FormData();
+    formData.append("file", file);
+    
+    try {
+      await api.post("/backups/restore-upload", formData, {
+        headers: { "Content-Type": "multipart/form-data" }
+      });
+      toast("System restored successfully. Reloading...");
+      setTimeout(() => window.location.reload(), 2000);
+    } catch (err) {
+      toast("Failed to restore system", "error");
+    } finally {
+      setIsRestoring(false);
+      e.target.value = "";
+    }
+  };
+
+  return (
+    <Card className="p-6">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-500">
+          <Database size={20} />
+        </div>
+        <div>
+          <h3 className="text-lg font-bold text-zinc-800 dark:text-zinc-100">System Backup & Restore</h3>
+          <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">Download a full snapshot of your platform or restore from an existing file.</p>
+        </div>
+      </div>
+
+      <div className="flex flex-col sm:flex-row gap-4">
+        <button
+          onClick={handleBackup}
+          disabled={isBackingUp || isRestoring}
+          className="flex-1 flex items-center justify-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm font-medium text-emerald-600 hover:bg-emerald-500/20 disabled:opacity-50 transition-colors"
+        >
+          {isBackingUp ? <Spinner className="w-5 h-5 text-emerald-500" /> : <Download size={18} />}
+          Download Backup
+        </button>
+
+        <label className="flex-1 flex items-center justify-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm font-medium text-amber-600 hover:bg-amber-500/20 cursor-pointer disabled:opacity-50 transition-colors">
+          {isRestoring ? <Spinner className="w-5 h-5 text-amber-500" /> : <Upload size={18} />}
+          Restore Database
+          <input type="file" accept=".sql,.gz" className="hidden" onChange={handleRestore} disabled={isRestoring || isBackingUp} />
+        </label>
+      </div>
+    </Card>
   );
 }

@@ -40,12 +40,12 @@ export default function AppLayout({
   if (!ready) return null;
 
   return (
-    <div className="flex h-screen overflow-hidden bg-zinc-50 dark:bg-zinc-950">
+    <div className="flex flex-col md:flex-row h-screen overflow-hidden bg-zinc-50 dark:bg-zinc-950">
       <Sidebar />
-      <main className="flex-1 overflow-y-auto p-4 md:p-8 pb-24 md:pb-8 relative">
+      <MobileNav />
+      <main className="flex-1 overflow-y-auto p-4 md:p-8 pb-8 md:pb-8 relative">
         {children}
       </main>
-      <MobileNav />
       <Toaster />
     </div>
   );

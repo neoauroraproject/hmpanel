@@ -259,16 +259,20 @@ export default function AdminsPage() {
                   <div className="md:hidden text-[10px] uppercase text-zinc-500 font-semibold mb-1 tracking-wider">Expiry</div>
                   {a.role === "SUPER_ADMIN" ? <span className="text-zinc-600">—</span> : (
                     <div className="text-xs">
-                      <div className="font-medium text-emerald-400">
-                        {a.expiryTime === 0 ? "Never" : `${Math.max(0, Math.ceil((a.expiryTime - Date.now()) / (1000 * 60 * 60 * 24)))} days`}
+                      <div className={`font-medium ${a.expiryTime === 0 ? 'text-emerald-400' : a.expiryTime > Date.now() ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {a.expiryTime === 0 
+                          ? "Never" 
+                          : a.expiryTime > Date.now() 
+                            ? `${Math.ceil((a.expiryTime - Date.now()) / (1000 * 60 * 60 * 24))} Days Remaining` 
+                            : `Expired ${Math.floor((Date.now() - a.expiryTime) / (1000 * 60 * 60 * 24))} days ago`}
                       </div>
                       <div className="text-zinc-500">{a.expiryTime === 0 ? "Unlimited" : formatDate(new Date(a.expiryTime).toISOString())}</div>
                     </div>
                   )}
                 </td>
 
-                <td className={`px-4 py-3 transition-all duration-300 md:table-cell text-right`} onClick={(e) => e.stopPropagation()}>
-                  <div className="flex items-center justify-end gap-1.5 md:opacity-0 md:group-hover:opacity-100 transition-opacity flex-wrap">
+                <td className="block md:table-cell px-4 py-3 border-t border-zinc-200 dark:border-zinc-800/50 md:border-0 mt-2 md:mt-0 transition-all duration-300 text-right" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center justify-start md:justify-end gap-1.5 md:opacity-0 md:group-hover:opacity-100 transition-opacity flex-wrap w-full">
                     {a.role !== "SUPER_ADMIN" && (
                       <motion.button 
                         whileHover={{ scale: 1.05 }} 
@@ -475,16 +479,18 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
                         <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">Max Clients <span className="text-zinc-500 text-xs">(0 = Unlimited)</span></label>
                         <input type="number" min={0} placeholder="0" value={form.maxClients} onChange={(e) => setForm({ ...form, maxClients: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
                       </div>
-                      <div className="flex items-center justify-between p-3 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/50">
-                        <div>
-                          <div className="text-sm font-medium text-zinc-800 dark:text-zinc-100">Portal Customization</div>
-                          <div className="text-xs text-zinc-500">Allow reseller to customize their subscription portal branding</div>
+                      {process.env.NEXT_PUBLIC_RELEASE_MODE !== 'COMMUNITY' && (
+                        <div className="flex items-center justify-between p-3 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/50">
+                          <div>
+                            <div className="text-sm font-medium text-zinc-800 dark:text-zinc-100">Portal Customization</div>
+                            <div className="text-xs text-zinc-500">Allow reseller to customize their subscription portal branding</div>
+                          </div>
+                          <label className="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" checked={form.canCustomizeBranding} onChange={(e) => setForm({ ...form, canCustomizeBranding: e.target.checked })} className="sr-only peer" />
+                            <div className="w-11 h-6 bg-zinc-200 dark:bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500"></div>
+                          </label>
                         </div>
-                        <label className="relative inline-flex items-center cursor-pointer">
-                          <input type="checkbox" checked={form.canCustomizeBranding} onChange={(e) => setForm({ ...form, canCustomizeBranding: e.target.checked })} className="sr-only peer" />
-                          <div className="w-11 h-6 bg-zinc-200 dark:bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500"></div>
-                        </label>
-                      </div>
+                      )}
                       <div>
                         <label className="mb-2 block text-sm font-medium text-zinc-500 dark:text-zinc-400">Allowed Inbounds</label>
                         <div className="space-y-1 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/50 p-2 max-h-48 overflow-y-auto">
@@ -697,10 +703,12 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
       
       const res = await api.patch(`/admins/${adminId}`, payload);
 
-      if (form.storeEnabled && form.selectedPanel) {
-        await api.post(`/store/admin/${adminId}/activate`, { panelId: form.selectedPanel });
-      } else if (!form.storeEnabled) {
-        await api.delete(`/store/admin/${adminId}/deactivate`);
+      if (process.env.NEXT_PUBLIC_RELEASE_MODE !== 'COMMUNITY') {
+        if (form.storeEnabled && form.selectedPanel) {
+          await api.post(`/store/admin/${adminId}/activate`, { panelId: form.selectedPanel });
+        } else if (!form.storeEnabled) {
+          await api.delete(`/store/admin/${adminId}/deactivate`);
+        }
       }
 
       return res.data;
@@ -746,9 +754,9 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
 
   return (
     <motion.div {...MOTION_CONFIG.modalOverlay} className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-      <motion.div {...MOTION_CONFIG.modalContent} className="w-full max-w-5xl rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex overflow-hidden max-h-[90vh]">
+      <motion.div {...MOTION_CONFIG.modalContent} className="w-full max-w-5xl rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex flex-col md:flex-row overflow-y-auto md:overflow-hidden max-h-[90vh]">
         {/* Admin Statistics (Sidebar) */}
-        <div className="w-1/3 bg-zinc-50 dark:bg-zinc-950/50 p-6 border-r border-zinc-200 dark:border-zinc-800/50 flex flex-col">
+        <div className="w-full md:w-1/3 shrink-0 bg-zinc-50 dark:bg-zinc-950/50 p-6 border-b md:border-b-0 md:border-r border-zinc-200 dark:border-zinc-800/50 flex flex-col">
           <div className="flex justify-between items-start mb-6">
             <div>
               <h2 className="text-xl font-bold text-zinc-800 dark:text-zinc-100">{admin.username}</h2>
@@ -786,7 +794,7 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
         </div>
 
         {/* Edit Actions */}
-        <div className="w-2/3 p-6 overflow-y-auto space-y-8">
+        <div className="w-full md:w-2/3 p-6 overflow-y-auto space-y-8">
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-semibold text-zinc-800 dark:text-zinc-100 flex items-center gap-2">
               <Settings2 size={18} className="text-zinc-500 dark:text-zinc-400" /> Edit Admin
@@ -911,16 +919,18 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
                           <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">Max Clients <span className="text-zinc-500 text-xs">(0 = Unlimited)</span></label>
                           <input type="number" min={0} value={form.maxClients} onChange={(e) => setForm({ ...form, maxClients: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
                         </div>
-                        <div className="flex items-center justify-between p-3 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/50">
-                          <div>
-                            <div className="text-sm font-medium text-zinc-800 dark:text-zinc-100">Portal Customization</div>
-                            <div className="text-xs text-zinc-500">Allow reseller to customize their subscription portal branding</div>
+                        {process.env.NEXT_PUBLIC_RELEASE_MODE !== 'COMMUNITY' && (
+                          <div className="flex items-center justify-between p-3 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/50">
+                            <div>
+                              <div className="text-sm font-medium text-zinc-800 dark:text-zinc-100">Portal Customization</div>
+                              <div className="text-xs text-zinc-500">Allow reseller to customize their subscription portal branding</div>
+                            </div>
+                            <label className="relative inline-flex items-center cursor-pointer">
+                              <input type="checkbox" checked={form.canCustomizeBranding} onChange={(e) => setForm({ ...form, canCustomizeBranding: e.target.checked })} className="sr-only peer" />
+                              <div className="w-11 h-6 bg-zinc-200 dark:bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500"></div>
+                            </label>
                           </div>
-                          <label className="relative inline-flex items-center cursor-pointer">
-                            <input type="checkbox" checked={form.canCustomizeBranding} onChange={(e) => setForm({ ...form, canCustomizeBranding: e.target.checked })} className="sr-only peer" />
-                            <div className="w-11 h-6 bg-zinc-200 dark:bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500"></div>
-                          </label>
-                        </div>
+                        )}
                         <div>
                           <label className="mb-2 block text-sm font-medium text-zinc-500 dark:text-zinc-400">Assigned Inbounds</label>
                           <div className="space-y-1 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/50 p-2 max-h-48 overflow-y-auto">

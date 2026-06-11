@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════
-#  HMray Panel — Interactive Updater v1.0
-#  https://github.com/hmray/panel
+#  HMPanel Panel — Interactive Updater v1.0
+#  https://github.com/HMPanel/panel
 # ═══════════════════════════════════════════════════════════════════
 set -euo pipefail
 
@@ -29,14 +29,14 @@ check_root() {
 }
 
 main() {
-  echo -e "${CYAN}${BOLD}HMray Panel Updater v1.0${NC}"
+  echo -e "${CYAN}${BOLD}HMPanel Panel Updater v1.0${NC}"
   
   check_root
 
   # Detect installation directory
-  INSTALL_DIR="/opt/hmray-panel"
+  INSTALL_DIR="/opt/HMPanel-panel"
   if [[ ! -d "$INSTALL_DIR" ]]; then
-    # Fallback to current script directory if /opt/hmray-panel doesn't exist
+    # Fallback to current script directory if /opt/HMPanel-panel doesn't exist
     INSTALL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   fi
   
@@ -44,7 +44,7 @@ main() {
   cd "$INSTALL_DIR"
 
   if [[ ! -f "docker-compose.yml" ]]; then
-    die "docker-compose.yml not found in ${INSTALL_DIR}. Is HMray Panel installed?"
+    die "docker-compose.yml not found in ${INSTALL_DIR}. Is HMPanel Panel installed?"
   fi
 
   # Pull changes from git if it's a git repo
@@ -75,7 +75,7 @@ main() {
   local attempt=0
   info "Waiting for services to become healthy..."
   while [[ $attempt -lt $max_attempts ]]; do
-    if docker exec hmray-panel curl -sf "http://localhost:4000/health" &>/dev/null; then
+    if docker exec HMPanel-panel curl -sf "http://localhost:4000/health" &>/dev/null; then
       log "Backend API is healthy"
       break
     fi
@@ -88,7 +88,7 @@ main() {
     warn "Health check timeout. Check logs: docker compose logs panel-app"
   else
     echo ""
-    log "HMray Panel successfully updated and verified!"
+    log "HMPanel Panel successfully updated and verified!"
   fi
 }
 

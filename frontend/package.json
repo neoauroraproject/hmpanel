@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
+    "start": "xcopy /E /I /Y .next\\static .next\\standalone\\frontend\\.next\\static >nul 2>&1 & node .next/standalone/frontend/server.js",
     "lint": "eslint"
   },
   "dependencies": {

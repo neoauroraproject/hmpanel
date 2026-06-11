@@ -33,6 +33,17 @@ nginx/ssl/
 uploads/
 backups/
 /backend/.pgdata/
+postgres data/
+redis data/
+certificates/
+
+# Testing
+coverage/
+
+# Temporary files
+temporary files/
+*.tmp
+*.temp
 
 # System / IDE files
 .DS_Store

@@ -37,7 +37,7 @@ function CopyBtn({ text, label }: { text: string; label?: string }) {
 export function ConnectionDetailsModal({ client, portalSettings, onClose }: ConnectionDetailsModalProps) {
   const toast = useToast((s) => s.push);
   const [activeTab, setActiveTab] = useState<"platform" | "native">(
-    portalSettings?.showPlatformQR !== false ? "platform" : "native"
+    portalSettings?.showNativeQR !== false ? "native" : "platform"
   );
 
   const [selectedInboundId, setSelectedInboundId] = useState<string>(

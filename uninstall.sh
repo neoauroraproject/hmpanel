@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════
-#  HMray Panel — Uninstaller v1.0
-#  https://github.com/hmray/panel
+#  HMPanel Panel — Uninstaller v1.0
+#  https://github.com/HMPanel/panel
 # ═══════════════════════════════════════════════════════════════════
 set -euo pipefail
 
@@ -29,14 +29,14 @@ check_root() {
 }
 
 main() {
-  echo -e "${RED}${BOLD}HMray Panel Uninstaller v1.0${NC}"
-  warn "This script will stop and remove HMray Panel."
+  echo -e "${RED}${BOLD}HMPanel Panel Uninstaller v1.0${NC}"
+  warn "This script will stop and remove HMPanel Panel."
   echo ""
 
   check_root
 
   # Detect installation directory
-  INSTALL_DIR="/opt/hmray-panel"
+  INSTALL_DIR="/opt/HMPanel-panel"
   if [[ ! -d "$INSTALL_DIR" ]]; then
     INSTALL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   fi
@@ -44,7 +44,7 @@ main() {
   info "Detected install directory: ${INSTALL_DIR}"
   
   # Ask for confirmation
-  read -rp "  Are you sure you want to uninstall HMray Panel? [y/N]: " CONFIRM_UNINSTALL
+  read -rp "  Are you sure you want to uninstall HMPanel Panel? [y/N]: " CONFIRM_UNINSTALL
   if [[ "${CONFIRM_UNINSTALL,,}" != "y" ]]; then
     die "Uninstall cancelled."
   fi
@@ -54,11 +54,11 @@ main() {
   echo ""
   echo -e "${YELLOW}${BOLD}  WARNING: Removing data is irreversible!${NC}"
   echo -e "  Do you want to delete all persistent data? This includes:"
-  echo -e "    - PostgreSQL Database (hmray_pgdata)"
-  echo -e "    - Redis cache data (hmray_redisdata)"
-  echo -e "    - Uploaded files & logs (hmray_uploads, hmray_logs)"
-  echo -e "    - Backups (hmray_backups)"
-  echo -e "    - SSL Certificates (hmray_certbot_certs)"
+  echo -e "    - PostgreSQL Database (HMPanel_pgdata)"
+  echo -e "    - Redis cache data (HMPanel_redisdata)"
+  echo -e "    - Uploaded files & logs (HMPanel_uploads, HMPanel_logs)"
+  echo -e "    - Backups (HMPanel_backups)"
+  echo -e "    - SSL Certificates (HMPanel_certbot_certs)"
   read -rp "  Delete all persistent data? [y/N]: " REMOVE_DATA_CHOICE
   if [[ "${REMOVE_DATA_CHOICE,,}" == "y" ]]; then
     REMOVE_DATA="y"
@@ -81,11 +81,11 @@ main() {
   fi
 
   step "Removing Systemd Service"
-  if [[ -f /etc/systemd/system/hmray-panel.service ]]; then
+  if [[ -f /etc/systemd/system/HMPanel-panel.service ]]; then
     info "Disabling and removing systemd service..."
-    systemctl stop hmray-panel || true
-    systemctl disable hmray-panel || true
-    rm -f /etc/systemd/system/hmray-panel.service
+    systemctl stop HMPanel-panel || true
+    systemctl disable HMPanel-panel || true
+    rm -f /etc/systemd/system/HMPanel-panel.service
     systemctl daemon-reload
     log "Systemd service removed"
   else
@@ -100,7 +100,7 @@ main() {
 
     # Force delete named volumes just in case they weren't cleaned up by docker compose down -v
     info "Cleaning up leftover Docker volumes..."
-    docker volume rm hmray_pgdata hmray_redisdata hmray_uploads hmray_backups hmray_logs hmray_certbot_certs hmray_certbot_www &>/dev/null || true
+    docker volume rm HMPanel_pgdata HMPanel_redisdata HMPanel_uploads HMPanel_backups HMPanel_logs HMPanel_certbot_certs HMPanel_certbot_www &>/dev/null || true
     log "Docker volumes cleaned"
   else
     step "Keeping Files & Folders"
@@ -109,7 +109,7 @@ main() {
   fi
 
   echo ""
-  log "HMray Panel uninstalled successfully!"
+  log "HMPanel Panel uninstalled successfully!"
 }
 
 main "$@"

@@ -104,13 +104,13 @@ Launch the CLI Manager (`sudo hm`), and select **Create Backup** or **Restore Ba
 ### Manual Database Backup
 To manually back up your database outside of the CLI:
 ```bash
-docker exec -t hmray-postgres pg_dumpall -c -U panel_user > backup.sql
+docker exec -t HMPanel-postgres pg_dumpall -c -U panel_user > backup.sql
 ```
 
 ### Database Restore
 To restore a previously backed up database file:
 ```bash
-cat backup.sql | docker exec -i hmray-postgres psql -U panel_user -d panel_db
+cat backup.sql | docker exec -i HMPanel-postgres psql -U panel_user -d panel_db
 ```
 
 ---
@@ -150,12 +150,12 @@ The **Community Edition** includes all core proxy management features necessary 
 
 ### Check Service Status
 ```bash
-docker compose -f /opt/hmray-panel/docker-compose.yml ps
+docker compose -f /opt/HMPanel-panel/docker-compose.yml ps
 ```
 
 ### View Application Logs
 ```bash
-docker compose -f /opt/hmray-panel/docker-compose.yml logs -f panel-app
+docker compose -f /opt/HMPanel-panel/docker-compose.yml logs -f panel-app
 ```
 
 ### FAQ
@@ -163,19 +163,18 @@ docker compose -f /opt/hmray-panel/docker-compose.yml logs -f panel-app
 A: Ensure your domain's DNS is fully propagated and pointing directly to the server's IP address. Cloudflare Proxy (Orange Cloud) must be disabled during the initial installation.
 
 **Q: Where are my files stored?**
-A: System uploads and backups are mounted on named Docker volumes, typically found at `/var/lib/docker/volumes/hmray_uploads` and `/var/lib/docker/volumes/hmray_backups`.
+A: System uploads and backups are mounted on named Docker volumes, typically found at `/var/lib/docker/volumes/HMPanel_uploads` and `/var/lib/docker/volumes/HMPanel_backups`.
 
 ---
 
 ## 🔗 Official Links & Support
 
 - **Official GitHub**: [neoauroraproject/hmpanel](https://github.com/neoauroraproject/hmpanel)
-- **Official Website**: [https://hmray.example.com](https://hmray.example.com)
-- **Official Telegram Channel**: [@hmray_example](https://t.me/hmray_example)
+- **Official Telegram Channel**: [@hmpanel](https://t.me/hmpanel)
 
 ---
 
 <div align="center">
   <p>Released under the MIT License</p>
-  <p><strong>HMPanel — Crafted with ♥ by HMray</strong></p>
+  <p><strong>HMPanel — Crafted with ♥ by HMPanel</strong></p>
 </div>

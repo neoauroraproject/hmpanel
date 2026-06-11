@@ -23,7 +23,6 @@ export class StatsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   handleConnection(client: Socket) {
     this.logger.log(`Dashboard WS connected: ${client.id}`);
-    client.emit('live-online-clients', this.monitoringService.getLatestOnlineEmails());
     client.emit('live-speed', this.monitoringService.getLatestServerStatus());
   }
 
@@ -36,10 +35,8 @@ export class StatsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       if (!this.server) return;
       
       const speedData = this.monitoringService.getLatestServerStatus();
-      const onlineEmails = this.monitoringService.getLatestOnlineEmails();
       
       this.server.emit('live-speed', speedData);
-      this.server.emit('live-online-clients', onlineEmails);
       
     }, 3000); // Poll cache every 3 seconds and broadcast
   }

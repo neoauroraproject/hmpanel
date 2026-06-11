@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(npx prisma *)",
-      "Bash(npx tsc *)",
-      "Bash(echo \"EXIT: $?\")"
-    ]
-  }
-}

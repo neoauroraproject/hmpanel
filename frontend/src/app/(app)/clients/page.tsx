@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type { Client, Paginated, Admin } from "@/lib/types";
@@ -90,18 +90,13 @@ export default function ClientsPage() {
   const adminUser = useAuth((s) => s.admin);
   const isSuperAdmin = adminUser?.role === "SUPER_ADMIN";
 
-  // Online Clients state
-  const [onlineClients, setOnlineClients] = useState<string[]>([]);
-
-  useEffect(() => {
-    const socket = io("http://localhost:4000", { transports: ["websocket"] });
-    socket.on("live-online-clients", (emails: string[]) => {
-      setOnlineClients(emails);
-    });
-    return () => {
-      socket.disconnect();
-    };
-  }, []);
+  const onlinesQuery = useQuery({
+    queryKey: ["live-onlines"],
+    queryFn: async () => (await api.get<{ onlines: string[] }>("/stats/onlines")).data,
+    refetchInterval: 10000,
+    refetchOnWindowFocus: true
+  });
+  const onlineClients = onlinesQuery.data?.onlines ?? [];
 
   // Filter States
   const [search, setSearch] = useState("");
@@ -122,9 +117,19 @@ export default function ClientsPage() {
   const selectedCount = selectedIds.length;
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  
+  // Instant fetch when opening client details
+  useEffect(() => {
+    if (expandedId) {
+      onlinesQuery.refetch();
+    }
+  }, [expandedId]);
+
   const [editing, setEditing] = useState<Client | null>(null);
   const [connectionDetailsClient, setConnectionDetailsClient] = useState<Client | null>(null);
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
+  const [showStatsMobile, setShowStatsMobile] = useState(false);
+  const [showQuickFilters, setShowQuickFilters] = useState(false);
 
   // Modals state
   const [addOpen, setAddOpen] = useState(false);
@@ -172,14 +177,11 @@ export default function ClientsPage() {
 
   // KPI Overview
   const { data: overviewData } = useQuery({
-    queryKey: ["reseller-overview"],
-    queryFn: async () => (await api.get<any>("/stats/reseller-overview")).data,
+    queryKey: ["reseller-overview", panelId],
+    queryFn: async () => (await api.get<any>(`/stats/reseller-overview${panelId ? `?panelId=${panelId}` : ''}`)).data,
   });
 
-  let displayClients = data?.data ?? [];
-  if (status === 'online') {
-    displayClients = displayClients.filter(c => onlineClients.includes(c.email));
-  }
+  const displayClients = data?.data ?? [];
 
   // Query options lists for filters
   const { data: adminsList } = useQuery<Paginated<Admin>>({
@@ -397,68 +399,104 @@ export default function ClientsPage() {
 
       {/* Global KPI Header */}
       {overviewData && overviewData.admin && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 pb-4 border-b border-zinc-200 dark:border-zinc-800">
-          <div className="bg-white dark:bg-zinc-900/50 rounded-2xl p-4 border border-zinc-200 dark:border-zinc-800 flex items-center gap-4">
-            <div className="p-3 bg-emerald-500/10 text-emerald-400 rounded-xl"><Activity size={20} /></div>
-            <div>
-              <div className="text-xs text-zinc-500 font-medium">Online Clients</div>
-              <div className="text-xl font-bold text-zinc-900 dark:text-white">
-                {isSuperAdmin 
-                  ? <>{onlineClients.length} <span className="text-sm font-normal text-zinc-500">(Global)</span></>
-                  : onlineClients.filter(c => c && overviewData?.clientEmails?.includes(c)).length} 
+        <div className="mb-4">
+          <div className="md:hidden flex justify-between items-center mb-2">
+            <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">Overview Statistics</span>
+          </div>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 pb-4 border-b border-zinc-200 dark:border-zinc-800 transition-all block md:grid">
+            <div className="bg-white dark:bg-zinc-900/50 rounded-2xl p-4 border border-zinc-200 dark:border-zinc-800 flex items-center gap-4">
+              <div className="p-3 bg-emerald-500/10 text-emerald-400 rounded-xl"><Activity size={20} /></div>
+              <div>
+                <div className="text-xs text-zinc-500 font-medium">Online Clients</div>
+                <div className="text-xl font-bold text-zinc-900 dark:text-white">
+                  {isSuperAdmin 
+                    ? <>{onlineClients.length} <span className="text-sm font-normal text-zinc-500">(Global)</span></>
+                    : onlineClients.filter(c => c && overviewData?.clientEmails?.map((e: string) => e.trim().toLowerCase()).includes(c.toLowerCase())).length} 
+                </div>
               </div>
             </div>
-          </div>
-          <div className="bg-white dark:bg-zinc-900/50 rounded-2xl p-4 border border-zinc-200 dark:border-zinc-800 flex items-center gap-4">
-            <div className="p-3 bg-blue-500/10 text-blue-400 rounded-xl"><HardDrive size={20} /></div>
-            <div>
-              <div className="text-xs text-zinc-500 font-medium">Available Traffic</div>
-              <div className="text-xl font-bold text-zinc-900 dark:text-white">{formatBytes(overviewData.admin.availableTraffic)}</div>
-            </div>
-          </div>
-          <div className="bg-white dark:bg-zinc-900/50 rounded-2xl p-4 border border-zinc-200 dark:border-zinc-800 flex items-center gap-4">
-            <div className="p-3 bg-purple-500/10 text-purple-400 rounded-xl"><Users size={20} /></div>
-            <div>
-              <div className="text-xs text-zinc-500 font-medium">Client Capacity</div>
-              <div className="text-xl font-bold text-zinc-900 dark:text-white">
-                {overviewData.admin.clientCapacity === 0 
-                  ? `${overviewData.clientEmails?.length ?? 0} / ∞` 
-                  : `${overviewData.clientEmails?.length ?? 0} / ${overviewData.admin.clientCapacity}`}
+            <div className="bg-white dark:bg-zinc-900/50 rounded-2xl p-4 border border-zinc-200 dark:border-zinc-800 flex items-center gap-4">
+              <div className="p-3 bg-blue-500/10 text-blue-400 rounded-xl"><HardDrive size={20} /></div>
+              <div>
+                <div className="text-xs text-zinc-500 font-medium">Available Traffic</div>
+                <div className="text-xl font-bold text-zinc-900 dark:text-white">{formatBytes(overviewData.admin.availableTraffic)}</div>
               </div>
             </div>
-          </div>
-          <div className="bg-white dark:bg-zinc-900/50 rounded-2xl p-4 border border-zinc-200 dark:border-zinc-800 flex items-center gap-4">
-            <div className="p-3 bg-amber-500/10 text-amber-400 rounded-xl"><CalendarDays size={20} /></div>
-            <div>
-              <div className="text-xs text-zinc-500 font-medium">Subscription Expiry</div>
-              <div className="text-xl font-bold text-zinc-900 dark:text-white">{overviewData.admin.expiryTime > 0 ? formatDate(overviewData.admin.expiryTime) : "Never"}</div>
+            <div className="bg-white dark:bg-zinc-900/50 rounded-2xl p-4 border border-zinc-200 dark:border-zinc-800 flex items-center gap-4">
+              <div className="p-3 bg-purple-500/10 text-purple-400 rounded-xl"><Users size={20} /></div>
+              <div>
+                <div className="text-xs text-zinc-500 font-medium">Client Capacity</div>
+                <div className="text-xl font-bold text-zinc-900 dark:text-white">
+                  {overviewData.admin.clientCapacity === 0 
+                    ? `${overviewData.clientEmails?.length ?? 0} / ∞` 
+                    : `${overviewData.clientEmails?.length ?? 0} / ${overviewData.admin.clientCapacity}`}
+                </div>
+              </div>
+            </div>
+            <div className="bg-white dark:bg-zinc-900/50 rounded-2xl p-4 border border-zinc-200 dark:border-zinc-800 flex items-center gap-4">
+              <div className="p-3 bg-amber-500/10 text-amber-400 rounded-xl"><CalendarDays size={20} /></div>
+              <div>
+                <div className="text-xs text-zinc-500 font-medium">Subscription Expiry</div>
+                <div className="text-xl font-bold text-zinc-900 dark:text-white">{overviewData.admin.expiryTime > 0 ? formatDate(overviewData.admin.expiryTime) : "Never"}</div>
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Quick Filters */}
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="flex items-center gap-2 mr-2 text-sm text-zinc-500 dark:text-zinc-400"><Filter size={16} /> Filters:</div>
-        {[
-          { id: '', label: 'All' },
-          { id: 'online', label: 'Online' },
-          { id: 'traffic-low', label: 'Traffic Nearly Finished' },
-          { id: 'expiring-soon', label: 'Expiring Soon' },
-          { id: 'disabled', label: 'Disabled' },
-          { id: 'expired', label: 'Expired' },
-          { id: 'depleted', label: 'Traffic Finished' }
-        ].map(f => (
+      {/* Search and Quick Filters */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="w-full sm:w-72 relative">
+          <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
+            <svg className="h-4 w-4 text-zinc-500 dark:text-zinc-400" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
+            </svg>
+          </div>
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search clients by name, email or UUID..."
+            className="w-full bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-lg pl-9 pr-4 py-2 text-base md:text-sm text-zinc-800 dark:text-zinc-100 focus:outline-none focus:border-blue-500"
+          />
+        </div>
+      </div>
+
+      <div>
+        <div className="md:hidden flex justify-between items-center mb-2">
           <button
-            key={f.id}
-            onClick={() => { setStatus(f.id); setPage(1); }}
-            className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors border ${
-              status === f.id ? 'bg-zinc-100 text-zinc-900 border-zinc-100' : 'bg-white dark:bg-zinc-900 text-zinc-500 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:bg-zinc-800'
-            }`}
+            onClick={() => setShowQuickFilters(!showQuickFilters)}
+            className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400 font-medium w-full text-left bg-zinc-50 dark:bg-zinc-950 px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-800"
           >
-            {f.label}
+            <Filter size={16} /> Quick Filters
+            {status && <Badge tone="blue">{status}</Badge>}
+            <div className="ml-auto">
+              {showQuickFilters ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+            </div>
           </button>
-        ))}
+        </div>
+        <div className={`flex flex-wrap items-center gap-2 ${showQuickFilters ? 'flex' : 'hidden md:flex'}`}>
+          <div className="hidden md:flex items-center gap-2 mr-2 text-sm text-zinc-500 dark:text-zinc-400"><Filter size={16} /> Filters:</div>
+          {[
+            { id: '', label: 'All' },
+            { id: 'online', label: 'Online' },
+            { id: 'traffic-low', label: 'Low Traffic' },
+            { id: 'expiring-soon', label: 'Expiring Soon' },
+            { id: 'disabled', label: 'Disabled' },
+            { id: 'expired', label: 'Expired' },
+            { id: 'depleted', label: 'No Traffic' }
+          ].map(f => (
+            <button
+              key={f.id}
+              onClick={() => { setStatus(f.id); setPage(1); setShowQuickFilters(false); }}
+              className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors border ${
+                status === f.id ? 'bg-zinc-100 text-zinc-900 border-zinc-100' : 'bg-white dark:bg-zinc-900 text-zinc-500 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:bg-zinc-800'
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Advanced Filters Drawer/Collapsible */}
@@ -594,7 +632,7 @@ export default function ClientsPage() {
               {displayClients.map((c, i) => {
                 const isExpanded = expandedId === c.id;
                 const isSelected = !!selectedClients[c.id];
-                const isOnline = onlineClients.includes(c.email);
+                const isOnline = onlineClients.includes(c.email.trim().toLowerCase());
                 return (
                   <AnimatePresence key={c.id}>
                     <motion.tr
@@ -641,7 +679,7 @@ export default function ClientsPage() {
                             )}
                           </div>
                           
-                          {/* Mobile status indicator */}
+                          {/* Mobile status indicator - always visible */}
                           <div className="md:hidden flex items-center gap-1">
                             {(() => {
                               const used = Number(c.up) + Number(c.down);
@@ -649,10 +687,11 @@ export default function ClientsPage() {
                               const outOfTraffic = cap > 0 && used >= cap;
                               const expired = isExpired(c.expiryTime);
                               
-                              if (!c.enable) return <span className="h-2 w-2 rounded-full bg-zinc-500"></span>;
-                              if (outOfTraffic || expired) return <span className="h-2 w-2 rounded-full bg-red-500"></span>;
-                              if (isOnline) return <span className="h-2 w-2 rounded-full bg-emerald-500"></span>;
-                              return <span className="h-2 w-2 rounded-full bg-blue-500"></span>;
+                              if (!c.enable) return <Badge tone="gray">Disabled</Badge>;
+                              if (outOfTraffic) return <Badge tone="red">No Traffic</Badge>;
+                              if (expired) return <Badge tone="red">Expired</Badge>;
+                              if (isOnline) return <Badge tone="green">Online</Badge>;
+                              return <Badge tone="blue">Active</Badge>;
                             })()}
                           </div>
                         </div>
@@ -663,13 +702,17 @@ export default function ClientsPage() {
                       <td className="hidden md:table-cell px-4 py-3 text-zinc-600 dark:text-zinc-300">
                         {c.admin?.username || <Badge tone="gray">Direct Panel</Badge>}
                       </td>
-                      <td className="block md:table-cell px-4 py-3 border-t border-zinc-200 dark:border-zinc-800/50 md:border-0 mt-2 md:mt-0">
-                        <div className="md:hidden text-[10px] uppercase text-zinc-500 font-semibold mb-1 tracking-wider">Traffic Usage</div>
+                      <td className="hidden md:table-cell px-4 py-3">
                         <UsageBar up={c.up} down={c.down} total={c.total} />
                       </td>
                       <td className="block md:table-cell px-4 py-3 text-zinc-600 dark:text-zinc-300">
-                        <div className="md:hidden text-[10px] uppercase text-zinc-500 font-semibold mb-1 tracking-wider">Expiry Date</div>
-                        <span className={isExpired(c.expiryTime) ? "text-red-400 font-medium" : ""}>
+                        <div className="md:hidden flex items-center justify-between">
+                          <UsageBar up={c.up} down={c.down} total={c.total} />
+                          <span className={`text-xs ml-2 whitespace-nowrap ${isExpired(c.expiryTime) ? "text-red-400 font-medium" : ""}`}>
+                            {formatExpiry(c.expiryTime)}
+                          </span>
+                        </div>
+                        <span className={`hidden md:inline ${isExpired(c.expiryTime) ? "text-red-400 font-medium" : ""}`}>
                           {formatExpiry(c.expiryTime)}
                         </span>
                       </td>
@@ -715,8 +758,8 @@ export default function ClientsPage() {
                           );
                         })()}
                       </td>
-                      <td className={`px-4 py-3 transition-all duration-300 ${isExpanded ? "block md:table-cell border-t border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/40" : "hidden md:table-cell"} text-right`} onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                      <td className="hidden md:table-cell px-4 py-3 border-t border-zinc-200 dark:border-zinc-800/50 md:border-0 mt-2 md:mt-0" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex flex-wrap items-center justify-start md:justify-end gap-1.5 md:gap-1.5 w-full">
                           <motion.button
                             whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
                             onClick={(e) => {
@@ -768,13 +811,74 @@ export default function ClientsPage() {
                           </motion.button>
                         </div>
                       </td>
+                      <AnimatePresence>
+                        {isExpanded && (
+                          <motion.td
+                            initial={{ opacity: 0, height: 0, paddingBottom: 0, paddingTop: 0 }}
+                            animate={{ opacity: 1, height: "auto", paddingBottom: 16, paddingTop: 16 }}
+                            exit={{ opacity: 0, height: 0, paddingBottom: 0, paddingTop: 0 }}
+                            transition={{ duration: 0.25, ease: "easeOut" }}
+                            className="block md:hidden px-4 border-t border-zinc-200 dark:border-zinc-800 mt-2"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <div className="flex flex-wrap items-center justify-center gap-2 w-full">
+                              <motion.button
+                                whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggle.mutate(c);
+                                }}
+                                className={`flex flex-1 justify-center items-center gap-2 px-3 py-2 rounded-lg transition-colors border ${c.enable ? "text-emerald-500 border-emerald-500/20 bg-emerald-500/10" : "text-zinc-500 border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800"}`}
+                              >
+                                <Power size={16} /> <span className="text-sm font-medium">{c.enable ? "Disable" : "Enable"}</span>
+                              </motion.button>
+                              
+                              <motion.button
+                                whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setConnectionDetailsClient(c);
+                                }}
+                                className="flex flex-1 justify-center items-center gap-2 px-3 py-2 text-blue-500 border border-blue-500/20 bg-blue-500/10 rounded-lg transition-colors"
+                              >
+                                <QrCode size={16} /> <span className="text-sm font-medium">QR / Link</span>
+                              </motion.button>
+                              
+                              <motion.button
+                                whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEditing(c);
+                                }}
+                                className="flex flex-1 justify-center items-center gap-2 px-3 py-2 text-zinc-600 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 rounded-lg transition-colors"
+                              >
+                                <Edit2 size={16} /> <span className="text-sm font-medium">Edit</span>
+                              </motion.button>
+
+                              <motion.button
+                                whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (confirm(`Delete client ${c.email}?`)) {
+                                    bulkMutation.mutate({ ids: [c.id], action: 'delete' });
+                                  }
+                                }}
+                                className="flex flex-1 justify-center items-center gap-2 px-3 py-2 text-red-500 border border-red-500/20 bg-red-500/10 rounded-lg transition-colors"
+                              >
+                                <Trash2 size={16} /> <span className="text-sm font-medium">Delete</span>
+                              </motion.button>
+                            </div>
+                          </motion.td>
+                        )}
+                      </AnimatePresence>
                     </motion.tr>
                     {isExpanded && (
                       <motion.tr
                         initial={{ opacity: 0, height: 0 }}
                         animate={{ opacity: 1, height: "auto" }}
                         exit={{ opacity: 0, height: 0 }}
-                        className="bg-white dark:bg-zinc-900/40 border-b border-zinc-200 dark:border-zinc-800"
+                        transition={{ duration: 0.25, ease: "easeOut" }}
+                        className="hidden md:table-row bg-white dark:bg-zinc-900/40 border border-t-0 border-zinc-200 dark:border-zinc-800 md:border-b md:border-x-0"
                       >
                         <td colSpan={7} className="px-4 py-4">
                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
@@ -1072,6 +1176,7 @@ export default function ClientsPage() {
         {editing && (
           <EditClientModal
             client={editing}
+            inboundsList={inboundsList ?? []}
             onClose={() => setEditing(null)}
             onSaved={() => {
               setEditing(null);
@@ -1291,16 +1396,26 @@ function AddClientModal({
   onSaved: (client?: any) => void;
 }) {
   const toast = useToast((s) => s.push);
+  
+  const derivedPanels = useMemo(() => {
+    if (panels && panels.length > 0) return panels;
+    const pMap = new Map();
+    inbounds.forEach(i => {
+      if (i.panel) pMap.set(i.panel.id, { id: i.panel.id, name: i.panel.name });
+    });
+    return Array.from(pMap.values());
+  }, [panels, inbounds]);
+
   const [selectedPanelId, setSelectedPanelId] = useState<string>("");
   
   useEffect(() => {
-    if (!selectedPanelId && panels?.length) {
-      setSelectedPanelId(panels[0].id);
+    if (!selectedPanelId && derivedPanels.length > 0) {
+      setSelectedPanelId(derivedPanels[0].id);
     }
-  }, [panels, selectedPanelId]);
+  }, [derivedPanels, selectedPanelId]);
   
-  const availableInbounds = isSuperAdmin && selectedPanelId
-    ? inbounds.filter(i => i.panel?.id === selectedPanelId)
+  const availableInbounds = (isSuperAdmin && selectedPanelId)
+    ? inbounds.filter(i => i.panel?.id === selectedPanelId || (i as any).panelId === selectedPanelId)
     : inbounds;
 
   const [form, setForm] = useState<AddClientForm>({
@@ -1459,19 +1574,16 @@ function AddClientModal({
               />
             </div>
             
-            {isSuperAdmin && panels && panels.length > 0 && (
+            {isSuperAdmin && derivedPanels.length > 0 && (
               <div>
-                <label className="mb-1 block text-xs text-zinc-500">Panel</label>
+                <label className="mb-1 block text-xs text-zinc-500">Panel (Server)</label>
                 <select
                   value={selectedPanelId}
                   onChange={(e) => setSelectedPanelId(e.target.value)}
                   className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors"
                 >
-                  <option value="">All Panels</option>
-                  {panels.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
+                  {derivedPanels.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
                 </select>
               </div>
@@ -1527,16 +1639,7 @@ function AddClientModal({
               </div>
             </div>
             
-            <div>
-              <label className="mb-1 block text-xs text-zinc-500">Remark (Optional)</label>
-              <input
-                type="text"
-                placeholder="Private note or real name"
-                value={form.remark}
-                onChange={(e) => setForm({ ...form, remark: e.target.value })}
-                className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors"
-              />
-            </div>
+
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1627,10 +1730,12 @@ function AddClientModal({
 
 function EditClientModal({
   client,
+  inboundsList,
   onClose,
   onSaved,
 }: {
   client: Client;
+  inboundsList: InboundRow[];
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -1643,15 +1748,24 @@ function EditClientModal({
   
   const [trafficMode, setTrafficMode] = useState<"set" | "add" | "remove">("set");
   const [trafficInput, setTrafficInput] = useState("");
+  const [expiryMode, setExpiryMode] = useState<"add" | "remove">("add");
   
   const inbound = (client as any).inbound;
   const isReality = inbound?.protocol === "vless" && inbound?.streamSettings?.security === "reality";
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showInbounds, setShowInbounds] = useState(false);
+
+  // Filter inbounds by the client's current panel
+  const clientPanelId = (client as any).inbounds?.[0]?.panelId || inbound?.panelId || (client as any).inbounds?.[0]?.panel?.id || inbound?.panel?.id;
+  const availableInbounds = clientPanelId 
+    ? inboundsList.filter(i => (i as any).panelId === clientPanelId || i.panel?.id === clientPanelId)
+    : inboundsList;
 
   const [form, setForm] = useState({
     expiryDays: "",
     remark: client.remark || "",
     flow: client.flow || "",
+    inboundIds: (client as any).inbounds?.map((i: any) => i.id) || [(client as any).inbound?.id].filter(Boolean),
   });
 
   const usedTraffic = Number(client.up) + Number(client.down);
@@ -1686,12 +1800,14 @@ function EditClientModal({
       let expiryTimestamp = expTime;
       
       if (form.expiryDays) {
-        const addedMs = Number(form.expiryDays) * 24 * 60 * 60 * 1000;
+        const dayVal = Number(form.expiryDays);
+        const addedMs = dayVal * 24 * 60 * 60 * 1000;
         if (isFirstUse) {
-           expiryTimestamp = expTime - addedMs; // Subtract to add days for negative expiry
+           // For first-use, negative expiry encodes duration
+           expiryTimestamp = expiryMode === "add" ? expTime - addedMs : expTime + addedMs;
         } else {
            const baseTime = expTime > 0 ? expTime : Date.now();
-           expiryTimestamp = baseTime + addedMs;
+           expiryTimestamp = expiryMode === "add" ? baseTime + addedMs : baseTime - addedMs;
         }
       }
 
@@ -1701,6 +1817,7 @@ function EditClientModal({
           expiryTime: form.expiryDays ? expiryTimestamp : undefined,
           remark: form.remark ?? "",
           flow: isReality && form.flow ? form.flow : undefined,
+          inboundIds: form.inboundIds,
         })
       ).data;
     },
@@ -1744,7 +1861,7 @@ function EditClientModal({
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 20, scale: 0.95 }}
         transition={{ type: "spring", bounce: 0, duration: 0.4 }}
-        className="w-full max-w-lg rounded-t-2xl sm:rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 max-h-[90vh] overflow-y-auto absolute bottom-0 sm:relative sm:bottom-auto"
+        className="w-full max-w-lg rounded-t-2xl sm:rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 md:p-6 max-h-[90vh] overflow-y-auto absolute bottom-0 sm:relative sm:bottom-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">
@@ -1835,64 +1952,57 @@ function EditClientModal({
           <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/50 p-4">
             <h3 className="mb-3 font-medium text-zinc-700 dark:text-zinc-200 text-sm">Expiry Info</h3>
             
-            <div className="mb-4 space-y-2 text-sm">
+            <div className="mb-3 text-sm">
               {isFirstUse ? (
-                <>
-                  <div className="flex justify-between items-center bg-blue-500/10 text-blue-400 px-3 py-2 rounded border border-blue-500/20">
-                    <span className="font-medium">First Use Expiry:</span>
-                    <span>Enabled</span>
-                  </div>
-                  <div className="flex justify-between items-center text-zinc-600 dark:text-zinc-300 px-1">
-                    <span className="text-zinc-500">Activation:</span>
-                    <span className="font-medium text-amber-400">Not Activated Yet</span>
-                  </div>
-                  <div className="flex justify-between items-center text-zinc-600 dark:text-zinc-300 px-1">
-                    <span className="text-zinc-500">Duration:</span>
-                    <span className="font-medium">{Math.abs(expTime) / (24 * 60 * 60 * 1000)} Days</span>
-                  </div>
-                </>
+                <div className="flex justify-between items-center bg-blue-500/10 text-blue-400 px-3 py-2 rounded border border-blue-500/20">
+                  <span className="font-medium">First Use</span>
+                  <span>{Math.abs(expTime) / (24 * 60 * 60 * 1000)} Days</span>
+                </div>
               ) : expTime > 0 ? (
-                <>
-                  <div className="flex justify-between items-center text-zinc-600 dark:text-zinc-300 px-1">
-                    <span className="text-zinc-500">Expire At:</span>
-                    <span className="font-medium">{formatDate(new Date(expTime).toISOString())}</span>
-                  </div>
-                  <div className="flex justify-between items-center text-zinc-600 dark:text-zinc-300 px-1">
-                    <span className="text-zinc-500">Remaining:</span>
-                    <span className="font-medium text-emerald-400">{Math.max(0, Math.ceil((expTime - Date.now()) / (24 * 60 * 60 * 1000)))} Days</span>
-                  </div>
-                </>
+                <div className="flex justify-between items-center text-zinc-600 dark:text-zinc-300 px-1">
+                  <span className="text-zinc-500">Remaining</span>
+                  <span className="font-medium text-emerald-400">{Math.max(0, Math.ceil((expTime - Date.now()) / (24 * 60 * 60 * 1000)))} Days</span>
+                </div>
               ) : (
                 <div className="flex justify-between items-center text-zinc-600 dark:text-zinc-300 px-1">
-                  <span className="text-zinc-500">Expire At:</span>
-                  <span className="font-medium text-emerald-400">Unlimited (Never)</span>
+                  <span className="text-zinc-500">Expiry</span>
+                  <span className="font-medium text-emerald-400">Unlimited</span>
                 </div>
               )}
             </div>
 
-            <div className="pt-4 border-t border-zinc-200 dark:border-zinc-800/50">
-              <label className="mb-1 block text-xs text-zinc-500">Add Days (Optional)</label>
-              <div className="flex gap-2 mb-2">
-                {[30, 60, 90, 180].map((days) => (
+            <div className="space-y-3 pt-3 border-t border-zinc-200 dark:border-zinc-800/50">
+              <div className="flex gap-2 p-1 bg-white dark:bg-zinc-900 rounded-lg border border-zinc-200 dark:border-zinc-800">
+                <button type="button" onClick={() => { setExpiryMode("add"); setForm({ ...form, expiryDays: "" }); }} className={`flex-1 text-xs py-1.5 rounded-md transition-colors ${expiryMode === "add" ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100" : "text-zinc-500 hover:text-zinc-600 dark:text-zinc-300"}`}>Add Days (+)</button>
+                <button type="button" onClick={() => { setExpiryMode("remove"); setForm({ ...form, expiryDays: "" }); }} className={`flex-1 text-xs py-1.5 rounded-md transition-colors ${expiryMode === "remove" ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100" : "text-zinc-500 hover:text-zinc-600 dark:text-zinc-300"}`}>Remove Days (-)</button>
+              </div>
+
+              <div className="flex gap-2">
+                {[30, 60, 90].map((days) => (
                   <button
                     key={days}
                     type="button"
                     onClick={() => setForm({ ...form, expiryDays: days.toString() })}
                     className="flex-1 py-1.5 rounded-md bg-zinc-100 dark:bg-zinc-800 text-xs text-zinc-600 dark:text-zinc-300 hover:bg-zinc-700 hover:text-white transition-colors"
                   >
-                    +{days}
+                    {expiryMode === "add" ? "+" : "-"}{days}
                   </button>
                 ))}
               </div>
               <input
                 type="number"
                 min={0}
-                placeholder="0"
+                placeholder={expiryMode === "add" ? "Days to add" : "Days to remove"}
                 value={form.expiryDays}
                 onChange={(e) => setForm({ ...form, expiryDays: e.target.value })}
                 className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors"
               />
-              <p className="mt-1 text-xs text-zinc-500">Days to add to the current expiry time.</p>
+              {form.expiryDays && (
+                <div className={`text-xs px-2 py-1.5 rounded flex justify-between items-center ${expiryMode === "remove" ? "bg-amber-500/10 text-amber-500" : "bg-zinc-100 dark:bg-zinc-800/50 text-zinc-500 dark:text-zinc-400"}`}>
+                  <span>Preview:</span>
+                  <span className="font-medium">{expiryMode === "add" ? `+${form.expiryDays} days` : `-${form.expiryDays} days`}</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1925,15 +2035,39 @@ function EditClientModal({
             </div>
           )}
 
-          <div>
-            <label className="mb-1 block text-xs text-zinc-500">Remark</label>
-            <input
-              type="text"
-              placeholder="Private note or real name"
-              value={form.remark}
-              onChange={(e) => setForm({ ...form, remark: e.target.value })}
-              className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500"
-            />
+
+
+          {/* Inbounds Selection */}
+          <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/50 overflow-hidden transition-all">
+            <button
+              type="button"
+              onClick={() => setShowInbounds(!showInbounds)}
+              className="flex w-full items-center justify-between p-4 text-sm font-medium text-zinc-700 dark:text-zinc-200 hover:bg-white dark:hover:bg-zinc-900/50"
+            >
+              <span>Assigned Inbounds ({form.inboundIds.length} Selected)</span>
+              {showInbounds ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+            </button>
+            {showInbounds && (
+              <div className="p-4 pt-0 border-t border-zinc-200 dark:border-zinc-800/50 mt-1">
+                <div className="space-y-1 max-h-48 overflow-y-auto">
+                  {availableInbounds.map((i) => (
+                    <label key={i.id} className="flex items-center justify-between gap-2 text-xs text-zinc-600 dark:text-zinc-300 hover:text-zinc-800 dark:text-zinc-100 cursor-pointer p-2 rounded hover:bg-zinc-100 dark:bg-zinc-800/80 transition-colors">
+                      <div className="flex items-center gap-3">
+                        <input type="checkbox" checked={form.inboundIds.includes(i.id)} onChange={(e) => {
+                          const inb = e.target.checked ? [...form.inboundIds, i.id] : form.inboundIds.filter((x: string) => x !== i.id);
+                          setForm({ ...form, inboundIds: inb });
+                        }} className="rounded border-zinc-600 bg-white dark:bg-zinc-900 text-blue-500 focus:ring-0 focus:ring-offset-0" />
+                        <span className="font-medium text-sm">{i.tag}</span>
+                      </div>
+                      <span className="text-xs bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 rounded text-zinc-500 dark:text-zinc-400 font-mono">{i.protocol}:{i.port}</span>
+                    </label>
+                  ))}
+                </div>
+                {form.inboundIds.length === 0 && (
+                  <p className="mt-2 text-xs text-red-500">Please select at least one inbound.</p>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="flex justify-end gap-2 border-t border-zinc-200 dark:border-zinc-800 pt-4">
@@ -1946,7 +2080,7 @@ function EditClientModal({
             </button>
             <button
               type="submit"
-              disabled={update.isPending || isInvalidTraffic}
+              disabled={update.isPending || isInvalidTraffic || form.inboundIds.length === 0}
               className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {update.isPending ? "Saving…" : "Save Changes"}

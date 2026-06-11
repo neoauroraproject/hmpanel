@@ -182,13 +182,7 @@ function SuperDashboard() {
           parts={[{ label: "active", value: o.clients.active, tone: "text-emerald-400" }, { label: "expired", value: o.clients.expired, tone: "text-red-400" }]} />
         <Kpi icon={Activity} tone="text-cyan-400" label="Today's Usage" value={o.usage?.today != null ? formatBytes(Number(o.usage.today)) : "Unknown"} />
         <Kpi icon={CalendarDays} tone="text-purple-400" label="Monthly Usage" value={o.usage?.monthly != null ? formatBytes(Number(o.usage.monthly)) : "Unknown"} />
-        <Kpi icon={HardDrive} tone="text-cyan-400" label="Remaining Traffic"
-          value={
-            o.traffic?.remaining != null
-              ? formatBytes(Number(o.traffic.remaining))
-              : "No data"
-          }
-        />
+
         <Card className="border-red-500/30 bg-red-500/5">
           <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
             <ArchiveX size={16} className="text-red-400" /> Cleanup Ready
@@ -404,14 +398,13 @@ function ResellerDashboard() {
   const admin = useAuth((s) => s.admin);
   const router = useRouter();
 
-  const [onlineClients, setOnlineClients] = useState<string[]>([]);
-  useEffect(() => {
-    const socket = io("http://localhost:4000", { transports: ["websocket"] });
-    socket.on("live-online-clients", (emails: string[]) => {
-      setOnlineClients(emails);
-    });
-    return () => { socket.disconnect(); };
-  }, []);
+  const onlinesQuery = useQuery({
+    queryKey: ["live-onlines"],
+    queryFn: async () => (await api.get<{ onlines: string[] }>("/stats/onlines")).data,
+    refetchInterval: 10000,
+    refetchOnWindowFocus: true
+  });
+  const onlineClients = onlinesQuery.data?.onlines ?? [];
 
   const overview = useQuery({
     queryKey: ["reseller-overview"],
@@ -611,9 +604,9 @@ function ResellerDashboard() {
             </div>
             <div className="divide-y divide-zinc-800">
               {priorityClients.map((c: any) => (
-                <div key={c.id} className="p-4 flex items-center justify-between hover:bg-zinc-100 dark:bg-zinc-800/50 transition-colors">
+                <div key={c.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-zinc-100 dark:bg-zinc-800/50 transition-colors">
                   <div>
-                    <div className="font-semibold text-white">{c.remark || c.email}</div>
+                    <div className="font-semibold text-zinc-900 dark:text-white">{c.remark || c.email}</div>
                     <div className="flex gap-2 mt-1 flex-wrap">
                       {c.reasons.depleted && <span className="px-2 py-0.5 rounded text-[10px] uppercase font-bold bg-red-500/10 text-red-400">Depleted</span>}
                       {c.reasons.expired && <span className="px-2 py-0.5 rounded text-[10px] uppercase font-bold bg-red-500/10 text-red-400">Expired</span>}
@@ -622,9 +615,9 @@ function ResellerDashboard() {
                       {c.reasons.disabled && <span className="px-2 py-0.5 rounded text-[10px] uppercase font-bold bg-zinc-500/10 text-zinc-500 dark:text-zinc-400">Disabled</span>}
                     </div>
                   </div>
-                  <div className="text-right">
+                  <div className="text-left sm:text-right">
                     <div className="text-sm font-mono text-zinc-600 dark:text-zinc-300">{formatBytes(c.used)} / {c.total === 0 ? "∞" : formatBytes(c.total)}</div>
-                    <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => router.push(`/clients?search=${c.email}`)} className="mt-2 text-xs font-semibold text-blue-400 hover:bg-blue-400/10 px-3 py-1 rounded-full transition-colors">
+                    <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => router.push(`/clients?search=${c.email}`)} className="mt-2 sm:mt-2 text-xs font-semibold text-blue-400 hover:bg-blue-400/10 px-3 py-1 rounded-full transition-colors border border-blue-400/20 sm:border-0">
                       Manage Client
                     </motion.button>
                   </div>

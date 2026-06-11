@@ -31,7 +31,7 @@ export class StatsService {
       this.prisma.admin.count(),
       this.prisma.admin.count({ where: { status: 'active' } }),
       this.prisma.admin.count({ where: { status: 'suspended' } }),
-      this.prisma.client.count({ where: { adminId: { not: null } } }),
+      this.prisma.panel.aggregate({ _sum: { clientCount: true } }),
       this.prisma.client.count({ where: { enable: true, adminId: { not: null } } }),
       this.prisma.client.count({ where: { expiryTime: { gt: 0n, lt: BigInt(now) }, adminId: { not: null } } }),
       // Total traffic ever sold/credited to admins
@@ -69,22 +69,8 @@ export class StatsService {
       select: { serverId: true, netUp: true, netDown: true, recordedAt: true }
     });
 
-    const prevMap = new Map<string, bigint>();
     for (const stat of systemStats) {
-      const currentBytes = stat.netUp + stat.netDown;
-      const prevBytes = prevMap.get(stat.serverId);
-      let delta = 0n;
-      
-      if (prevBytes !== undefined) {
-        if (currentBytes >= prevBytes) {
-          delta = currentBytes - prevBytes;
-        } else {
-          // Server restarted or counters reset
-          delta = currentBytes;
-        }
-      }
-      
-      prevMap.set(stat.serverId, currentBytes);
+      const delta = stat.netUp + stat.netDown;
       
       monthlyUsage += delta;
       if (stat.recordedAt >= startToday) {
@@ -95,7 +81,7 @@ export class StatsService {
     return {
       panels: { total: panelsTotal, online: panelsOnline, offline: panelsTotal - panelsOnline },
       admins: { total: adminsTotal, active: adminsActive, suspended: adminsSuspended },
-      clients: { total: clientsTotal, active: clientsEnabled, expired: clientsExpired, cleanupCandidates },
+      clients: { total: clientsTotal._sum?.clientCount ?? 0, active: clientsEnabled, expired: clientsExpired, cleanupCandidates },
       usage: {
         today: todayUsage.toString(),
         monthly: monthlyUsage.toString(),
@@ -108,7 +94,7 @@ export class StatsService {
     };
   }
 
-  async resellerOverview(adminId: string) {
+  async resellerOverview(adminId: string, panelId?: string) {
     const admin = await this.prisma.admin.findUnique({
       where: { id: adminId },
       select: { balance: true, maxClients: true, expiryTime: true, totalAssigned: true, trafficMode: true, gracePeriodStart: true }
@@ -116,8 +102,17 @@ export class StatsService {
 
     if (!admin) throw new Error('Admin not found');
 
+    const whereClause: any = { adminId };
+    if (panelId) {
+      whereClause.inbounds = {
+        some: {
+          inbound: { panelId }
+        }
+      };
+    }
+
     const clients = await this.prisma.client.findMany({
-      where: { adminId },
+      where: whereClause,
       select: { id: true, email: true, remark: true, up: true, down: true, total: true, expiryTime: true, enable: true }
     });
 

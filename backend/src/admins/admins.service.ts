@@ -142,16 +142,16 @@ export class AdminsService {
 
   async update(id: string, data: { password?: string; email?: string; balance?: number; status?: string; trafficMode?: string; expiryTime?: number; maxClients?: number; permissions?: string[]; inboundIds?: string[]; portalSettings?: any }) {
     const existing = await this.findOne(id);
-    const updateData: any = { ...data };
-    
-    // Explicitly delete protected/special fields
-    delete updateData.username;
-    delete updateData.inboundIds;
+    const updateData: any = {};
+    if (data.email !== undefined) updateData.email = data.email;
+    if (data.balance !== undefined) updateData.balance = data.balance;
+    if (data.status !== undefined) updateData.status = data.status;
+    if (data.maxClients !== undefined) updateData.maxClients = data.maxClients;
+    if (data.permissions !== undefined) updateData.permissions = data.permissions;
     
     if (data.password) {
       updateData.passwordHash = await bcrypt.hash(data.password, 10);
     }
-    delete updateData.password;
 
     if (data.expiryTime !== undefined) updateData.expiryTime = BigInt(data.expiryTime);
     if (data.trafficMode !== undefined) updateData.trafficMode = data.trafficMode as never;
@@ -164,6 +164,13 @@ export class AdminsService {
           data: data.inboundIds.map((inboundId) => ({ adminId: id, inboundId })),
           skipDuplicates: true,
         });
+      }
+    }
+
+    if (data.balance !== undefined && data.balance !== existing.balance) {
+      const diff = data.balance - existing.balance;
+      if (diff > 0) {
+        updateData.totalAssigned = { increment: Math.round(diff) };
       }
     }
 
@@ -182,7 +189,7 @@ export class AdminsService {
       await this.prisma.trafficTransaction.create({
         data: {
           adminId: admin.id,
-          amount: BigInt(Math.abs(diff)),
+          amount: BigInt(Math.round(Math.abs(diff))),
           type: diff > 0 ? 'CREDIT' : 'DEBIT',
           description: diff > 0 ? 'Admin Recharge' : 'Admin Deduction',
         }

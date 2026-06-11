@@ -1,7 +1,7 @@
 version: '3.8'
 
 # ─────────────────────────────────────────────────────────────────
-# HMray Panel — Production Docker Compose
+# HMPanel Panel — Production Docker Compose
 # ─────────────────────────────────────────────────────────────────
 
 services:
@@ -11,8 +11,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: hmray-panel:latest
-    container_name: hmray-panel
+    image: HMPanel-panel:latest
+    container_name: HMPanel-panel
     restart: unless-stopped
     expose:
       - "3000"  # Frontend (served via nginx)
@@ -53,7 +53,7 @@ services:
   # ── Nginx Reverse Proxy ──────────────────────────────────────────
   nginx:
     image: nginx:alpine
-    container_name: hmray-nginx
+    container_name: HMPanel-nginx
     restart: unless-stopped
     ports:
       - "${HTTP_PORT:-80}:80"
@@ -76,7 +76,7 @@ services:
   # ── PostgreSQL Database ──────────────────────────────────────────
   postgres:
     image: postgres:15-alpine
-    container_name: hmray-postgres
+    container_name: HMPanel-postgres
     restart: unless-stopped
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-panel_user}
@@ -101,7 +101,7 @@ services:
   # ── Redis Cache ──────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
-    container_name: hmray-redis
+    container_name: HMPanel-redis
     restart: unless-stopped
     command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis_secret}
     volumes:
@@ -123,7 +123,7 @@ services:
   # ── Certbot (SSL) ────────────────────────────────────────────────
   certbot:
     image: certbot/certbot:latest
-    container_name: hmray-certbot
+    container_name: HMPanel-certbot
     profiles: ["ssl"]
     volumes:
       - certbot-certs:/etc/letsencrypt
@@ -137,24 +137,24 @@ services:
 # ─────────────────────────────────────────────────────────────────
 volumes:
   pgdata:
-    name: hmray_pgdata
+    name: HMPanel_pgdata
   redisdata:
-    name: hmray_redisdata
+    name: HMPanel_redisdata
   uploads:
-    name: hmray_uploads
+    name: HMPanel_uploads
   backups:
-    name: hmray_backups
+    name: HMPanel_backups
   logs:
-    name: hmray_logs
+    name: HMPanel_logs
   certbot-certs:
-    name: hmray_certbot_certs
+    name: HMPanel_certbot_certs
   certbot-www:
-    name: hmray_certbot_www
+    name: HMPanel_certbot_www
 
 # ─────────────────────────────────────────────────────────────────
 # Networks
 # ─────────────────────────────────────────────────────────────────
 networks:
   panel-network:
-    name: hmray_network
+    name: HMPanel_network
     driver: bridge

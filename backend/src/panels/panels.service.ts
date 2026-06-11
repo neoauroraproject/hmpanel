@@ -452,20 +452,6 @@ export class PanelsService {
       const diskTotal = obj.disk?.total ? Number(obj.disk.total) : 1;
       const diskUsage = (diskCurrent / diskTotal) * 100;
 
-      const netUp = obj.netTraffic?.sent ? BigInt(obj.netTraffic.sent) : (obj.netIO?.up ? BigInt(obj.netIO.up) : 0n);
-      const netDown = obj.netTraffic?.recv ? BigInt(obj.netTraffic.recv) : (obj.netIO?.down ? BigInt(obj.netIO.down) : 0n);
-
-      await this.prisma.systemStats.create({
-        data: {
-          serverId: panel.serverId,
-          cpuUsage,
-          ramUsage,
-          diskUsage,
-          netUp,
-          netDown,
-        }
-      });
-
       // --- Group Sync & Conflict Detection ---
       try {
         const apiGroups = await this.listGroups(id);
@@ -517,6 +503,8 @@ export class PanelsService {
 
       let totalSyncedInbounds = 0;
       let totalSyncedClients = 0;
+      let panelUpDelta = 0n;
+      let panelDownDelta = 0n;
       
       const apiUuids = new Set<string>();
 
@@ -619,11 +607,20 @@ export class PanelsService {
                 }
               }
             });
+
+            // We do NOT add the historical `up` and `down` of new clients to `panelUpDelta`.
+            // Otherwise, we would falsely charge the entire lifetime usage of a panel on the first sync.
           } else {
             // Usage Accounting Delta Calculation
-            const usedOld = dbClient.up + dbClient.down;
-            const usedNew = up + down;
-            const delta = usedNew - usedOld;
+            const usedOldUp = dbClient.up;
+            const usedOldDown = dbClient.down;
+            const upDelta = up > usedOldUp ? up - usedOldUp : 0n;
+            const downDelta = down > usedOldDown ? down - usedOldDown : 0n;
+            
+            panelUpDelta += upDelta;
+            panelDownDelta += downDelta;
+            
+            const delta = upDelta + downDelta;
 
             if (delta > 0n && dbClient.admin && dbClient.admin.trafficMode === 'USAGE' && dbClient.adminId) {
               const currentCharge = adminUsageCharges.get(dbClient.adminId) || 0n;
@@ -716,20 +713,36 @@ export class PanelsService {
 
         // Apply Usage Charges for USAGE mode admins
         for (const [adminId, totalDelta] of adminUsageCharges.entries()) {
+          if (totalDelta < 1048576n) continue; // Ignore extremely small entries (< 1MB)
+
           const admin = await this.prisma.admin.findUnique({ where: { id: adminId } });
           if (admin) {
             await this.prisma.admin.update({
               where: { id: adminId },
               data: { balance: { decrement: Number(totalDelta) } }
             });
-            await this.prisma.trafficTransaction.create({
-              data: {
-                adminId,
-                amount: totalDelta,
-                type: 'USAGE_CHARGE',
-                description: `Periodic Sync Usage Charge`
-              }
+            
+            const ONE_DAY = 24 * 60 * 60 * 1000;
+            const latestTx = await this.prisma.trafficTransaction.findFirst({
+              where: { adminId, type: 'USAGE_CHARGE' },
+              orderBy: { createdAt: 'desc' }
             });
+
+            if (latestTx && (Date.now() - latestTx.createdAt.getTime() < ONE_DAY)) {
+              await this.prisma.trafficTransaction.update({
+                where: { id: latestTx.id },
+                data: { amount: latestTx.amount + totalDelta }
+              });
+            } else {
+              await this.prisma.trafficTransaction.create({
+                data: {
+                  adminId,
+                  amount: totalDelta,
+                  type: 'USAGE_CHARGE',
+                  description: `Daily Summarized Usage Charge`
+                }
+              });
+            }
           }
         }
 
@@ -799,6 +812,18 @@ export class PanelsService {
           }
         }
 
+      // Record global traffic deltas for this panel's clients
+      await this.prisma.systemStats.create({
+        data: {
+          serverId: panel.serverId,
+          cpuUsage,
+          ramUsage,
+          diskUsage,
+          netUp: panelUpDelta,
+          netDown: panelDownDelta,
+        }
+      });
+
       await this.prisma.panel.update({
         where: { id },
         data: { 
@@ -807,7 +832,7 @@ export class PanelsService {
           lastOnline: new Date(),
           lastSync: new Date(),
           inboundCount: totalSyncedInbounds,
-          clientCount: totalSyncedClients,
+          clientCount: apiUuids.size,
           syncState: {
             upsert: {
               create: { lastSync: new Date(), status: 'success', latencyMs: latencyMs },
@@ -1234,5 +1259,71 @@ export class PanelsService {
         });
       }
     }
+  }
+  async getLiveOnlineEmails(panelIds?: string[]): Promise<string[]> {
+    const whereClause: any = { status: 'online' };
+    if (panelIds && panelIds.length > 0) {
+      whereClause.id = { in: panelIds };
+    }
+
+    const panels = await this.prisma.panel.findMany({
+      where: whereClause,
+      select: { id: true, apiToken: true, apiBaseUrl: true, url: true }
+    });
+
+    const onlineEmails = new Set<string>();
+
+    await Promise.all(panels.map(async (p) => {
+      try {
+        const apiBaseUrl = p.apiBaseUrl || p.url.replace(/\/$/, '');
+        this.logger.debug(`Fetching live onlines for panel ${p.id}`);
+        const res = await axios.post(`${apiBaseUrl}/panel/api/inbounds/onlines`, {}, {
+          headers: { Authorization: p.apiToken ? `Bearer ${p.apiToken}` : undefined },
+          timeout: 5000,
+        });
+
+        if (res.data && res.data.success && Array.isArray(res.data.obj)) {
+          this.logger.debug(`Panel ${p.id} returned ${res.data.obj.length} online clients.`);
+          res.data.obj.forEach((email: string) => {
+             if (email) onlineEmails.add(email.trim().toLowerCase());
+          });
+          return;
+        } else {
+          this.logger.debug(`Panel ${p.id} onlines API response was not successful or obj is missing:`, res.data);
+        }
+      } catch (err: any) {
+        if (err.response?.status === 404) {
+          this.logger.debug(`Panel ${p.id} doesn't support /onlines API, falling back to /inbounds/list`);
+          try {
+            const apiBaseUrl = p.apiBaseUrl || p.url.replace(/\/$/, '');
+            const listRes = await axios.get(`${apiBaseUrl}/panel/api/inbounds/list`, {
+              headers: { Authorization: p.apiToken ? `Bearer ${p.apiToken}` : undefined },
+              timeout: 8000,
+            });
+            if (listRes.data && listRes.data.success && Array.isArray(listRes.data.obj)) {
+              const now = Date.now();
+              let count = 0;
+              listRes.data.obj.forEach((inb: any) => {
+                if (Array.isArray(inb.clientStats)) {
+                  inb.clientStats.forEach((cs: any) => {
+                    if (cs.email && cs.lastOnline && (now - cs.lastOnline < 120000)) {
+                      onlineEmails.add(cs.email.trim().toLowerCase());
+                      count++;
+                    }
+                  });
+                }
+              });
+              this.logger.debug(`Panel ${p.id} fallback returned ${count} online clients.`);
+            }
+          } catch (fallbackErr: any) {
+            this.logger.warn(`Fallback inbounds/list failed for panel ${p.id}: ${fallbackErr.message}`);
+          }
+        } else {
+          this.logger.warn(`Failed to fetch live onlines for panel ${p.id}: ${err.message}`);
+        }
+      }
+    }));
+
+    return Array.from(onlineEmails);
   }
 }

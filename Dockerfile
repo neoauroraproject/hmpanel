@@ -93,7 +93,7 @@ RUN mkdir -p /app/uploads /app/backups /app/logs && \
     chown -R panelapp:nodejs /app
 
 # ── Startup script ────────────────────────────────────────────────
-RUN printf '#!/bin/sh\nset -e\necho "[HMray] Running database migrations..."\nnpx prisma migrate deploy --schema=/app/prisma/schema.prisma\necho "[HMray] Starting backend API on port ${PORT:-4000}..."\nnode backend/dist/main.js &\necho "[HMray] Starting frontend on port 3000..."\nPORT=3000 HOSTNAME=0.0.0.0 node frontend/server.js &\nwait\n' > /app/start.sh && chmod +x /app/start.sh
+RUN printf '#!/bin/sh\nset -e\necho "[HMPanel] Running database migrations..."\nnpx prisma migrate deploy --schema=/app/prisma/schema.prisma\necho "[HMPanel] Starting backend API on port ${PORT:-4000}..."\nnode backend/dist/main.js &\necho "[HMPanel] Starting frontend on port 3000..."\nPORT=3000 HOSTNAME=0.0.0.0 node frontend/server.js &\nwait\n' > /app/start.sh && chmod +x /app/start.sh
 
 USER panelapp
 

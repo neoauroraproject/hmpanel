@@ -315,33 +315,7 @@ export function BulkCreateModal({ onClose, inboundsList }: BulkCreateModalProps)
                 </div>
               </div>
 
-              <div>
-                <label className="mb-1 block text-xs font-medium text-zinc-500">Group (Optional)</label>
-                <input
-                  type="text"
-                  list="xui-bulk-groups"
-                  placeholder="Select or type new group..."
-                  value={form.group}
-                  onChange={(e) => setForm({ ...form, group: e.target.value })}
-                  className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500"
-                />
-                <datalist id="xui-bulk-groups">
-                  {groups?.map((g) => (
-                    <option key={g} value={g} />
-                  ))}
-                </datalist>
-              </div>
 
-              <div>
-                <label className="mb-1 block text-xs font-medium text-zinc-500">Comment / Remark</label>
-                <input
-                  type="text"
-                  placeholder="Optional internal note"
-                  value={form.remark}
-                  onChange={(e) => setForm({ ...form, remark: e.target.value })}
-                  className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500"
-                />
-              </div>
 
               <div className="flex items-center gap-2 pt-2">
                 <input

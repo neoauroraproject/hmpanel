@@ -19,11 +19,14 @@ export interface ClientFilters {
   trafficRange?: string;
 }
 
+import { MonitoringService } from '../stats/monitoring.service';
+
 @Injectable()
 export class ClientsService {
   constructor(
     private prisma: PrismaService,
-    private panelsService: PanelsService
+    private panelsService: PanelsService,
+    private monitoringService: MonitoringService
   ) {}
 
   async create(callerId: string, data: { email: string; inboundIds: string[]; remark?: string; total?: number; expiryTime?: number; flow?: string; adminId?: string }) {
@@ -232,6 +235,18 @@ export class ClientsService {
       where.OR = [{ expiryTime: 0n }, { expiryTime: { gt: now } }];
     } else if (filters.status === 'disabled') {
       where.enable = false;
+    } else if (filters.status === 'online') {
+      const onlineEmails = await this.panelsService.getLiveOnlineEmails();
+      if (onlineEmails.length === 0) {
+        where.email = { in: ['__none__'] }; // Match nothing if no one is online
+      } else {
+        where.email = { in: onlineEmails };
+      }
+    } else if (filters.status === 'offline') {
+      const onlineEmails = await this.panelsService.getLiveOnlineEmails();
+      if (onlineEmails.length > 0) {
+        where.email = { notIn: onlineEmails };
+      }
     } else if (filters.status === 'expired') {
       where.expiryTime = { gt: 0n, lt: now };
     } else if (filters.status === 'expiring-soon') {
@@ -370,7 +385,7 @@ export class ClientsService {
     }
   }
 
-  async update(id: string, adminId: string, role: string, data: { enable?: boolean; total?: number; expiryTime?: number; remark?: string; flow?: string }) {
+  async update(id: string, adminId: string, role: string, data: { enable?: boolean; total?: number; expiryTime?: number; remark?: string; flow?: string; inboundIds?: string[] }) {
     const existing = await this.findOne(id, adminId, role);
     
     if (data.flow) {
@@ -409,12 +424,50 @@ export class ClientsService {
       tgId: "",
     };
 
-    // Call Panel API First for all attached inbounds
-    for (const inbound of existing.inbounds) {
+    let addedInbounds: any[] = [];
+    let removedInbounds: any[] = [];
+
+    if (data.inboundIds) {
+      const existingInboundIds = existing.inbounds.map((i: any) => i.id);
+      const newInboundIds = data.inboundIds;
+      
+      const toAdd = newInboundIds.filter(idx => !existingInboundIds.includes(idx));
+      const toRemove = existingInboundIds.filter((idx: any) => !newInboundIds.includes(idx));
+
+      if (toAdd.length > 0) {
+        addedInbounds = await this.prisma.inbound.findMany({
+          where: { id: { in: toAdd } },
+          include: { panel: true }
+        });
+      }
+      removedInbounds = existing.inbounds.filter((i: any) => toRemove.includes(i.id));
+    }
+
+    // Process removals FIRST
+    for (const inbound of removedInbounds) {
+      try {
+        await this.panelsService.delClient(inbound.panelId, inbound.port, existing.uuid);
+      } catch (err: any) {
+        console.error(`Failed to remove client ${existing.email} from panel inbound ${inbound.id}:`, err.message);
+      }
+    }
+
+    // Process updates for kept inbounds
+    const keptInbounds = existing.inbounds.filter((i: any) => !removedInbounds.some((r: any) => r.id === i.id));
+    for (const inbound of keptInbounds) {
       try {
         await this.panelsService.updateClient(inbound.panelId, inbound.port, existing.uuid, clientPayload);
       } catch (err: any) {
         console.error(`Failed to update client ${existing.email} on panel inbound ${inbound.id}:`, err.message);
+      }
+    }
+
+    // Process additions
+    for (const inbound of addedInbounds) {
+      try {
+        await this.panelsService.addClient(inbound.panelId, inbound.port, clientPayload);
+      } catch (err: any) {
+        console.error(`Failed to add client ${existing.email} to panel inbound ${inbound.id}:`, err.message);
       }
     }
     
@@ -461,6 +514,25 @@ export class ClientsService {
               }
             });
           }
+        }
+      }
+
+      if (data.inboundIds) {
+        if (removedInbounds.length > 0) {
+          await tx.clientInbound.deleteMany({
+            where: {
+              clientId: id,
+              inboundId: { in: removedInbounds.map((i: any) => i.id) }
+            }
+          });
+        }
+        if (addedInbounds.length > 0) {
+          await tx.clientInbound.createMany({
+            data: addedInbounds.map((i: any) => ({
+              clientId: id,
+              inboundId: i.id
+            }))
+          });
         }
       }
 

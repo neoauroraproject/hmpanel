@@ -17,6 +17,7 @@ export class UpdateClientDto {
   @ApiPropertyOptional() @IsOptional() @IsNumber() expiryTime?: number;
   @ApiPropertyOptional() @IsOptional() @IsString() remark?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() flow?: string;
+  @ApiPropertyOptional({ type: [String] }) @IsOptional() @IsArray() @IsString({ each: true }) inboundIds?: string[];
 }
 
 export class BulkClientDto {

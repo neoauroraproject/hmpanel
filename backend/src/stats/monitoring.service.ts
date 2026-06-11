@@ -22,11 +22,9 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
 
   // Caches
   private serverStatusCache: PanelSpeedData[] = [];
-  private onlineEmailsCache: string[] = [];
 
   // Polling loops
   private serverStatusTimer: NodeJS.Timeout;
-  private clientStatsTimer: NodeJS.Timeout;
 
   // Track previous traffic for speed calculation
   private previousTraffic: Record<string, { up: bigint, down: bigint, time: number }> = {};
@@ -41,24 +39,17 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
     // Initial fetch
     this.pollServerStatus();
 
-    // Client Stats every 30 seconds
-    this.clientStatsTimer = setInterval(() => this.pollClientStats(), 30000);
     // Initial fetch
-    this.pollClientStats();
+    this.pollServerStatus();
   }
 
   onModuleDestroy() {
     if (this.serverStatusTimer) clearInterval(this.serverStatusTimer);
-    if (this.clientStatsTimer) clearInterval(this.clientStatsTimer);
   }
 
   // Getters for WebSocket/Gateway
   public getLatestServerStatus(): PanelSpeedData[] {
     return this.serverStatusCache;
-  }
-
-  public getLatestOnlineEmails(): string[] {
-    return this.onlineEmailsCache;
   }
 
   private async pollServerStatus() {
@@ -145,46 +136,6 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
       this.serverStatusCache = results;
     } catch (err) {
       this.logger.error('Failed to poll server status: ' + err.message);
-    }
-  }
-
-  private async pollClientStats() {
-    try {
-      const panels = await this.prisma.panel.findMany({
-        where: { status: 'online' },
-        select: { id: true, apiToken: true, apiBaseUrl: true, url: true }
-      });
-
-      const onlineEmails = new Set<string>();
-
-      await Promise.all(panels.map(async (p) => {
-        try {
-          const apiBaseUrl = p.apiBaseUrl || p.url.replace(/\/$/, '');
-          const res = await axios.get(`${apiBaseUrl}/panel/api/inbounds/list`, {
-            headers: { Authorization: p.apiToken ? `Bearer ${p.apiToken}` : undefined },
-            timeout: 15000,
-          });
-
-          if (res.data && res.data.success && Array.isArray(res.data.obj)) {
-            res.data.obj.forEach((inbound: any) => {
-              if (inbound.clientStats) {
-                inbound.clientStats.forEach((client: any) => {
-                  // If online within the last 3 minutes
-                  if (client.lastOnline > 0 && Date.now() - client.lastOnline < 180000) {
-                    onlineEmails.add(client.email);
-                  }
-                });
-              }
-            });
-          }
-        } catch (err) {
-          this.logger.warn(`Failed to poll client stats for panel ${p.id}`);
-        }
-      }));
-
-      this.onlineEmailsCache = Array.from(onlineEmails);
-    } catch (err) {
-      this.logger.error('Failed to poll client stats: ' + err.message);
     }
   }
 }

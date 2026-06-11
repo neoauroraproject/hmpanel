@@ -64,10 +64,10 @@ cmd_status() {
   echo -e "  Domain:        ${CYAN}${DOMAIN:-Unknown}${NC}"
   echo ""
   echo -e "  ${BOLD}Containers:${NC}"
-  echo -e "  Frontend/API:  $(get_container_status hmray-panel)"
-  echo -e "  PostgreSQL:    $(get_container_status hmray-postgres)"
-  echo -e "  Redis:         $(get_container_status hmray-redis)"
-  echo -e "  Nginx:         $(get_container_status hmray-nginx)"
+  echo -e "  Frontend/API:  $(get_container_status HMPanel-panel)"
+  echo -e "  PostgreSQL:    $(get_container_status HMPanel-postgres)"
+  echo -e "  Redis:         $(get_container_status HMPanel-redis)"
+  echo -e "  Nginx:         $(get_container_status HMPanel-nginx)"
   pause
 }
 
@@ -80,7 +80,7 @@ cmd_info() {
   echo ""
   echo -e "  Useful Commands:"
   echo -e "  - View raw compose logs: ${YELLOW}docker compose -f ${INSTALL_DIR}/docker-compose.yml logs -f${NC}"
-  echo -e "  - Inspect database:      ${YELLOW}docker exec -it hmray-postgres psql -U panel_user -d panel_db${NC}"
+  echo -e "  - Inspect database:      ${YELLOW}docker exec -it HMPanel-postgres psql -U panel_user -d panel_db${NC}"
   pause
 }
 
@@ -100,7 +100,7 @@ cmd_backup() {
   local filepath="${BACKUP_DIR}/${filename}"
   
   echo -e "Creating database backup..."
-  if docker exec -t hmray-postgres pg_dumpall -c -U panel_user > "$filepath"; then
+  if docker exec -t HMPanel-postgres pg_dumpall -c -U panel_user > "$filepath"; then
     echo -e "${GREEN}✔ Backup completed successfully!${NC}"
     echo -e "Saved to: ${CYAN}${filepath}${NC}"
   else
@@ -137,7 +137,7 @@ cmd_restore() {
   fi
 
   echo -e "\nRestoring database..."
-  if cat "$filepath" | docker exec -i hmray-postgres psql -U panel_user -d panel_db >/dev/null 2>&1; then
+  if cat "$filepath" | docker exec -i HMPanel-postgres psql -U panel_user -d panel_db >/dev/null 2>&1; then
     echo -e "${GREEN}✔ Restore completed successfully!${NC}"
   else
     echo -e "${RED}✘ Restore failed.${NC}"
@@ -178,7 +178,103 @@ cmd_logs() {
   esac
 }
 
-cmd_ssl() {
+ssl_request_le() {
+  echo -e "${BOLD}--- Request Let's Encrypt Certificate ---${NC}\n"
+  if [[ -f "${INSTALL_DIR}/.env" ]]; then
+    source "${INSTALL_DIR}/.env"
+  fi
+  
+  if [[ -z "${DOMAIN:-}" || "$DOMAIN" == "localhost" ]]; then
+    echo -e "${RED}✘ Invalid domain in .env. Let's Encrypt requires a public domain.${NC}"
+    pause
+    return
+  fi
+  
+  echo -e "Attempting to issue Let's Encrypt certificate for ${CYAN}${DOMAIN}${NC}..."
+  
+  # Ensure certbot is installed
+  if ! command -v certbot &>/dev/null; then
+    echo "Installing certbot..."
+    apt-get update -qq >/dev/null 2>&1 && apt-get install -y -qq certbot >/dev/null 2>&1 || true
+  fi
+  
+  # Temporarily stop nginx to free port 80
+  docker stop HMPanel-nginx >/dev/null 2>&1 || true
+  
+  local tmp_out
+  tmp_out=$(mktemp)
+  
+  if certbot certonly \
+      --standalone \
+      --non-interactive \
+      --agree-tos \
+      --register-unsafely-without-email \
+      -d "$DOMAIN" \
+      --http-01-port 80 >"$tmp_out" 2>&1; then
+    
+    if [[ -f "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" && -f "/etc/letsencrypt/live/${DOMAIN}/privkey.pem" ]]; then
+      cp "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" "${INSTALL_DIR}/nginx/ssl/fullchain.pem"
+      cp "/etc/letsencrypt/live/${DOMAIN}/privkey.pem" "${INSTALL_DIR}/nginx/ssl/privkey.pem"
+      chmod 600 "${INSTALL_DIR}/nginx/ssl/privkey.pem"
+      
+      # Enable SSL in nginx if it was disabled
+      sed -i 's/# SSL disabled/listen 443 ssl http2;/' "${INSTALL_DIR}/nginx/nginx.conf" 2>/dev/null || true
+      
+      echo -e "${GREEN}✔ Certificate issued successfully!${NC}"
+    fi
+  else
+    echo -e "${RED}✘ Let's Encrypt failed.${NC}"
+    echo -e "Reason:"
+    cat "$tmp_out"
+  fi
+  rm -f "$tmp_out"
+  
+  echo "Restarting Nginx..."
+  docker start HMPanel-nginx >/dev/null 2>&1 || true
+  # Reload to apply new certs
+  docker exec HMPanel-nginx nginx -s reload >/dev/null 2>&1 || true
+  pause
+}
+
+ssl_install_manual() {
+  echo -e "${BOLD}--- Install Existing Certificate ---${NC}\n"
+  echo "Please provide absolute paths to your certificate files."
+  read -rp "Path to fullchain.pem: " path_cert
+  read -rp "Path to privkey.pem: " path_key
+  
+  if [[ -f "$path_cert" && -f "$path_key" ]]; then
+    cp "$path_cert" "${INSTALL_DIR}/nginx/ssl/fullchain.pem"
+    cp "$path_key" "${INSTALL_DIR}/nginx/ssl/privkey.pem"
+    chmod 600 "${INSTALL_DIR}/nginx/ssl/privkey.pem"
+    
+    # Enable SSL
+    sed -i 's/# SSL disabled/listen 443 ssl http2;/' "${INSTALL_DIR}/nginx/nginx.conf" 2>/dev/null || true
+    
+    echo -e "${GREEN}✔ Certificates installed.${NC}"
+    echo "Reloading Nginx..."
+    docker exec HMPanel-nginx nginx -s reload >/dev/null 2>&1 || true
+  else
+    echo -e "${RED}✘ One or both files not found. Ensure paths are absolute and files exist.${NC}"
+  fi
+  pause
+}
+
+ssl_disable() {
+  echo -e "${BOLD}--- Switch to HTTP Mode ---${NC}\n"
+  echo -e "${YELLOW}⚠ Warning: This will disable HTTPS entirely.${NC}"
+  read -rp "Are you sure? [y/N]: " confirm
+  if [[ "${confirm,,}" == "y" ]]; then
+    sed -i 's/listen 443 ssl http2;/# SSL disabled/' "${INSTALL_DIR}/nginx/nginx.conf" 2>/dev/null || true
+    echo -e "${GREEN}✔ SSL disabled.${NC}"
+    echo "Reloading Nginx..."
+    docker exec HMPanel-nginx nginx -s reload >/dev/null 2>&1 || true
+  else
+    echo "Cancelled."
+  fi
+  pause
+}
+
+ssl_status() {
   echo -e "${BOLD}--- SSL Status ---${NC}\n"
   local cert_file="${INSTALL_DIR}/nginx/ssl/fullchain.pem"
   
@@ -215,6 +311,32 @@ cmd_ssl() {
   pause
 }
 
+cmd_ssl() {
+  while true; do
+    clear
+    print_header
+    echo -e "${BOLD}--- SSL Management ---${NC}\n"
+    echo "  1) Request Let's Encrypt Certificate"
+    echo "  2) Retry Certificate Request"
+    echo "  3) Install Existing Certificate"
+    echo "  4) Switch To HTTP Mode"
+    echo "  5) View SSL Status"
+    echo "  0) Back to Main Menu"
+    echo ""
+    read -rp "  Choice: " choice
+    echo ""
+    
+    case $choice in
+      1|2) ssl_request_le ;;
+      3) ssl_install_manual ;;
+      4) ssl_disable ;;
+      5) ssl_status ;;
+      0) return ;;
+      *) echo -e "${RED}Invalid option!${NC}"; sleep 1 ;;
+    esac
+  done
+}
+
 cmd_uninstall() {
   echo -e "${BOLD}--- Uninstall HMPanel ---${NC}\n"
   if [[ -f "${INSTALL_DIR}/uninstall.sh" ]]; then
@@ -246,7 +368,7 @@ while true; do
   echo -e "  5. Restore Backup"
   echo -e "  6. Restart Services"
   echo -e "  7. View Logs"
-  echo -e "  8. SSL Status"
+  echo -e "  8. SSL Management"
   echo -e "  9. Uninstall HMPanel"
   echo -e "  0. Exit"
   echo ""

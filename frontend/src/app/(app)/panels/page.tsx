@@ -172,7 +172,7 @@ export default function PanelsPage() {
                   )}
                 </td>
                 <td className="block md:table-cell px-4 py-3 border-t border-zinc-200 dark:border-zinc-800/50 md:border-0 mt-2 md:mt-0">
-                  <div className="flex items-center justify-end md:justify-end gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                  <div className="flex flex-wrap items-center justify-start md:justify-end gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity w-full">
                     <IconBtn title="Test Connection" onClick={async () => {
                       try {
                         const { data: r } = await api.post("/panels/test-connection", { url: p.url, panelId: p.id });
@@ -244,7 +244,7 @@ function Modal({ title, onClose, children, hideClose }: { title: string; onClose
           <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">{title}</h2>
           {!hideClose && <button onClick={onClose} className="text-zinc-500 hover:text-zinc-600 dark:text-zinc-300 transition-colors"><X size={18} /></button>}
         </div>
-        <div className="pt-2">
+        <div className="pt-2 overflow-y-auto flex-1">
           {children}
         </div>
       </motion.div>

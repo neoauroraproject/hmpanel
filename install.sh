@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════
-#  HMPanel — Interactive Installer v1.0
+#  HMPanel — Interactive Installer v1.1
 #  https://github.com/neoauroraproject/hmpanel
 # ═══════════════════════════════════════════════════════════════════
 set -euo pipefail
@@ -35,9 +35,51 @@ print_banner() {
   echo "  ██║  ██║██║ ╚═╝ ██║██║     ██║  ██║██║ ╚████║███████╗███████╗"
   echo "  ╚═╝  ╚═╝╚═╝     ╚═╝╚═╝     ╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝╚══════╝"
   echo ""
-  echo "  HMPanel v1.0 — Community Edition"
+  echo "  HMPanel v1.1 — Community Edition"
   echo "  Interactive Installer"
   echo -e "${NC}"
+}
+
+# ─────────────────────────────────────────────────────────────────
+# Spinner & Error Handling
+# ─────────────────────────────────────────────────────────────────
+run_with_spinner() {
+  local msg="$1"
+  shift
+  local cmd=("$@")
+  
+  local tmp_out
+  tmp_out=$(mktemp)
+  
+  # Run command in background
+  "${cmd[@]}" > "$tmp_out" 2>&1 &
+  local pid=$!
+
+  local spin='-\|/'
+  local i=0
+  while kill -0 $pid 2>/dev/null; do
+    i=$(( (i+1) % 4 ))
+    echo -ne "\r  ${YELLOW}${spin:$i:1}${NC}  $msg..."
+    sleep 0.1
+  done
+  echo -ne "\r\033[K" # Clear line
+
+  local exit_code=0
+  wait $pid || exit_code=$?
+
+  if [[ $exit_code -ne 0 ]]; then
+    error "Command failed during: $msg"
+    echo -e "${RED}Exact command:${NC} ${cmd[*]}"
+    echo -e "${RED}Exit code:${NC} $exit_code"
+    echo -e "${RED}Output/Error:${NC}"
+    cat "$tmp_out"
+    rm -f "$tmp_out"
+    return $exit_code
+  fi
+  
+  log "$msg completed"
+  rm -f "$tmp_out"
+  return 0
 }
 
 # ─────────────────────────────────────────────────────────────────
@@ -108,17 +150,19 @@ check_minimum_requirements() {
 # ─────────────────────────────────────────────────────────────────
 install_package() {
   local pkg="$1"
-  info "Installing $pkg..."
-  $PKG_INSTALL "$pkg" >/dev/null 2>&1 || warn "Failed to install $pkg"
+  run_with_spinner "Installing $pkg" $PKG_INSTALL "$pkg" || warn "Failed to install $pkg"
 }
 
 ensure_package() {
   local cmd="$1"
   local pkg="${2:-$1}"
   if ! command -v "$cmd" &>/dev/null; then
+    # Run update once if we are about to install something
+    if [[ "${APT_UPDATED:-0}" == "0" ]]; then
+      run_with_spinner "Updating package lists" $PKG_UPDATE || true
+      APT_UPDATED=1
+    fi
     install_package "$pkg"
-  else
-    log "$cmd is already installed"
   fi
 }
 
@@ -127,25 +171,22 @@ install_docker() {
     log "Docker is already installed ($(docker --version | cut -d' ' -f3 | tr -d ','))"
     return
   fi
-  info "Installing Docker..."
-  $PKG_UPDATE >/dev/null 2>&1 || true
+  
+  if [[ "${APT_UPDATED:-0}" == "0" ]]; then
+    run_with_spinner "Updating package lists" $PKG_UPDATE || true
+    APT_UPDATED=1
+  fi
   install_package "curl"
-  curl -fsSL https://get.docker.com | sh >/dev/null 2>&1
+  run_with_spinner "Installing Docker" bash -c "curl -fsSL https://get.docker.com | sh"
   systemctl enable docker --now >/dev/null 2>&1 || true
-  log "Docker installed successfully"
 }
 
 install_docker_compose() {
-  if docker compose version &>/dev/null 2>&1; then
-    log "Docker Compose (plugin) is already installed"
-    return
-  fi
-  if command -v docker-compose &>/dev/null; then
-    log "Docker Compose (standalone) is already installed"
+  if docker compose version &>/dev/null 2>&1 || command -v docker-compose &>/dev/null; then
+    log "Docker Compose is already installed"
     return
   fi
 
-  info "Installing Docker Compose plugin..."
   COMPOSE_VERSION="v2.24.0"
   ARCH=$(uname -m)
   case "$ARCH" in
@@ -154,52 +195,78 @@ install_docker_compose() {
     *)       COMPOSE_ARCH="x86_64" ;;
   esac
   mkdir -p /usr/local/lib/docker/cli-plugins
-  curl -SL "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-linux-${COMPOSE_ARCH}" \
-    -o /usr/local/lib/docker/cli-plugins/docker-compose >/dev/null 2>&1 || true
+  run_with_spinner "Installing Docker Compose" curl -SL "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-linux-${COMPOSE_ARCH}" -o /usr/local/lib/docker/cli-plugins/docker-compose
   chmod +x /usr/local/lib/docker/cli-plugins/docker-compose 2>/dev/null || true
-  log "Docker Compose installed"
 }
 
 # ─────────────────────────────────────────────────────────────────
 # User input collection
 # ─────────────────────────────────────────────────────────────────
 collect_user_input() {
-  step "Configuration"
   echo ""
-  echo -e "  Please provide the following information to configure your panel."
-  echo -e "  Press ${BOLD}Enter${NC} to accept the default value shown in brackets.\n"
+  echo -e "  ${BOLD}Installation Mode${NC}"
+  echo -e "  ${BOLD}1${NC}) Fast Install (Recommended)"
+  echo -e "  ${BOLD}2${NC}) Advanced Install"
+  read -rp "  Select mode [1]: " INSTALL_MODE || true
+  [[ -z "$INSTALL_MODE" ]] && INSTALL_MODE=1
 
-  read -rp "  Domain name (e.g. panel.yourdomain.com): " DOMAIN || true
-  [[ -z "$DOMAIN" ]] && DOMAIN="localhost"
+  echo ""
+  if [[ "$INSTALL_MODE" == 1 ]]; then
+    info "Fast Install Selected"
+    read -rp "  Domain name (e.g. panel.yourdomain.com): " DOMAIN || true
+    [[ -z "$DOMAIN" ]] && DOMAIN="localhost"
+    
+    read -rp "  Admin username [admin]: " ADMIN_USERNAME || true
+    [[ -z "$ADMIN_USERNAME" ]] && ADMIN_USERNAME="admin"
+    
+    while true; do
+      read -rsp "  Admin password (min 8 chars): " ADMIN_PASSWORD || true
+      echo ""
+      if [[ -z "$ADMIN_PASSWORD" ]] || [[ ${#ADMIN_PASSWORD} -lt 8 ]]; then
+        warn "Password must be at least 8 characters"
+      else
+        break
+      fi
+    done
 
-  read -rp "  Admin username [admin]: " ADMIN_USERNAME || true
-  [[ -z "$ADMIN_USERNAME" ]] && ADMIN_USERNAME="admin"
+    ADMIN_EMAIL=""
+    HTTP_PORT=80
+    HTTPS_PORT=443
+    SSL_CHOICE=1 # Attempt Let's Encrypt automatically afterwards
+  else
+    info "Advanced Install Selected"
+    read -rp "  Domain name (e.g. panel.yourdomain.com): " DOMAIN || true
+    [[ -z "$DOMAIN" ]] && DOMAIN="localhost"
+    
+    read -rp "  Admin username [admin]: " ADMIN_USERNAME || true
+    [[ -z "$ADMIN_USERNAME" ]] && ADMIN_USERNAME="admin"
+    
+    read -rp "  Admin email (optional): " ADMIN_EMAIL || true
+    
+    while true; do
+      read -rsp "  Admin password (min 8 chars): " ADMIN_PASSWORD || true
+      echo ""
+      if [[ -z "$ADMIN_PASSWORD" ]] || [[ ${#ADMIN_PASSWORD} -lt 8 ]]; then
+        warn "Password must be at least 8 characters"
+      else
+        break
+      fi
+    done
 
-  read -rp "  Admin email (optional): " ADMIN_EMAIL || true
+    read -rp "  HTTP port [80]: " HTTP_PORT || true
+    [[ -z "$HTTP_PORT" ]] && HTTP_PORT=80
+    
+    read -rp "  HTTPS port [443]: " HTTPS_PORT || true
+    [[ -z "$HTTPS_PORT" ]] && HTTPS_PORT=443
 
-  while true; do
-    read -rsp "  Admin password (min 8 chars): " ADMIN_PASSWORD || true
     echo ""
-    if [[ -z "$ADMIN_PASSWORD" ]] || [[ ${#ADMIN_PASSWORD} -lt 8 ]]; then
-      warn "Password must be at least 8 characters"
-    else
-      break
-    fi
-  done
-
-  read -rp "  HTTP port [80]: " HTTP_PORT || true
-  [[ -z "$HTTP_PORT" ]] && HTTP_PORT=80
-
-  read -rp "  HTTPS port [443]: " HTTPS_PORT || true
-  [[ -z "$HTTPS_PORT" ]] && HTTPS_PORT=443
-
-  echo ""
-  echo -e "  SSL Configuration:"
-  echo -e "    ${BOLD}1${NC}) Let's Encrypt (automatic, recommended — requires public domain)"
-  echo -e "    ${BOLD}2${NC}) Self-signed certificate (for testing)"
-  echo -e "    ${BOLD}3${NC}) Skip SSL (HTTP only)"
-  read -rp "  SSL method [1]: " SSL_CHOICE || true
-  [[ -z "$SSL_CHOICE" ]] && SSL_CHOICE=1
+    echo -e "  SSL Configuration:"
+    echo -e "    ${BOLD}1${NC}) Let's Encrypt (automatic, recommended — requires public domain)"
+    echo -e "    ${BOLD}2${NC}) Self-signed certificate (for testing)"
+    echo -e "    ${BOLD}3${NC}) Skip SSL (HTTP only)"
+    read -rp "  SSL method [1]: " SSL_CHOICE || true
+    [[ -z "$SSL_CHOICE" ]] && SSL_CHOICE=1
+  fi
 
   echo ""
   echo -e "${BOLD}  Configuration Summary:${NC}"
@@ -214,7 +281,6 @@ collect_user_input() {
   read -rp "  Proceed with installation? [Y/n]: " CONFIRM || true
   [[ "${CONFIRM,,}" == "n" ]] && die "Installation cancelled by user."
   
-  # Return explicitly to prevent falling through silently if set -e acts up
   return 0
 }
 
@@ -231,8 +297,8 @@ ssl_label() {
 # 10 Steps
 # ─────────────────────────────────────────────────────────────────
 
-step_1_repository() {
-  step "[1/10] Repository Setup"
+step_1_configuration() {
+  step "[1/10] Configuration"
   INSTALL_DIR="/opt/hmpanel"
   mkdir -p \
     "${INSTALL_DIR}/nginx/ssl" \
@@ -243,18 +309,14 @@ step_1_repository() {
 
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   if [[ "$SCRIPT_DIR" != "$INSTALL_DIR" ]]; then
-    info "Copying files to installation directory..."
-    rsync -a --exclude='.git' --exclude='node_modules' --exclude='*.env' \
-      "${SCRIPT_DIR}/" "${INSTALL_DIR}/" 2>/dev/null || \
-    cp -r "${SCRIPT_DIR}/." "${INSTALL_DIR}/" 2>/dev/null || true
-    log "Project files copied successfully"
+    run_with_spinner "Copying files to installation directory" rsync -a --exclude='.git' --exclude='node_modules' --exclude='*.env' "${SCRIPT_DIR}/" "${INSTALL_DIR}/" || cp -r "${SCRIPT_DIR}/." "${INSTALL_DIR}/"
   else
     log "Running from install directory, skipping copy"
   fi
 }
 
 step_2_environment() {
-  step "[2/10] Environment Generation"
+  step "[2/10] Environment"
   JWT_SECRET=$(openssl rand -hex 64)
   POSTGRES_PASSWORD=$(openssl rand -hex 24)
   REDIS_PASSWORD=$(openssl rand -hex 24)
@@ -298,137 +360,186 @@ EOF
 
   chmod 600 "${INSTALL_DIR}/.env"
   log ".env file generated successfully"
-}
 
-step_3_ssl_validation() {
-  step "[3/10] SSL Validation"
-  if [[ "$SSL_CHOICE" == 1 ]]; then
-    info "Checking DNS records..."
-    SERVER_IP=$(curl -s https://api.ipify.org 2>/dev/null || echo "unknown")
-    DOMAIN_IP=$(dig +short "$DOMAIN" 2>/dev/null | tail -1 || echo "")
-
-    if [[ "$DOMAIN_IP" == "$SERVER_IP" ]] || [[ "$SERVER_IP" == "unknown" ]]; then
-      log "DNS OK (${SERVER_IP})"
-    else
-      warn "DNS resolution mismatch!"
-      warn "Domain IP: $DOMAIN_IP | Server IP: $SERVER_IP"
-      warn "Let's Encrypt requires the domain to resolve to this server."
-      warn "Falling back to self-signed certificate."
-      SSL_CHOICE=2
-      return
-    fi
-
-    info "Checking port 80 accessibility..."
-    if timeout 5 bash -c "</dev/tcp/${DOMAIN}/80" &>/dev/null; then
-      log "Port 80 OK"
-    else
-      warn "Port 80 unreachable or closed. Let's Encrypt might fail."
-    fi
-  else
-    log "Skipping validation (not using Let's Encrypt)"
-  fi
-}
-
-step_4_ssl_issuance() {
-  step "[4/10] SSL Issuance"
+  # Always create dummy certs so Nginx can start if SSL is enabled
   SSL_DIR="${INSTALL_DIR}/nginx/ssl"
-  
-  if [[ "$SSL_CHOICE" == 1 ]]; then
-    info "Requesting Let's Encrypt certificate..."
-    ensure_package certbot certbot
-    
-    # Run standalone certbot
-    if certbot certonly \
-        --standalone \
-        --non-interactive \
-        --agree-tos \
-        --register-unsafely-without-email \
-        -d "$DOMAIN" \
-        --http-01-port 80 >/dev/null 2>&1; then
-      cp "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" "${SSL_DIR}/fullchain.pem"
-      cp "/etc/letsencrypt/live/${DOMAIN}/privkey.pem" "${SSL_DIR}/privkey.pem"
-      chmod 600 "${SSL_DIR}/privkey.pem"
-      log "Certificate issued successfully"
-      SSL_STATUS="letsencrypt"
-    else
-      error "Let's Encrypt failed"
-      info "Falling back to self-signed certificate"
-      SSL_CHOICE=2
-    fi
-  fi
-
-  if [[ "$SSL_CHOICE" == 2 ]]; then
-    info "Generating self-signed certificate..."
+  if [[ ! -f "${SSL_DIR}/fullchain.pem" ]]; then
+    info "Generating temporary self-signed certificate for initial startup..."
     openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
       -keyout "${SSL_DIR}/privkey.pem" \
       -out "${SSL_DIR}/fullchain.pem" \
       -subj "/CN=${DOMAIN}/O=HMPanel/C=US" >/dev/null 2>&1 || true
     chmod 600 "${SSL_DIR}/privkey.pem" 2>/dev/null || true
-    log "Self-signed certificate created"
-    SSL_STATUS="self-signed"
   fi
 
   if [[ "$SSL_CHOICE" == 3 ]]; then
     sed -i 's/listen 443 ssl http2;/# SSL disabled/' "${INSTALL_DIR}/nginx/nginx.conf" 2>/dev/null || true
+  fi
+}
+
+step_3_docker() {
+  step "[3/10] Docker"
+  ensure_package curl curl
+  ensure_package openssl openssl
+  ensure_package dig dnsutils || ensure_package dig bind-utils || true
+  install_docker
+  install_docker_compose
+}
+
+step_4_database() {
+  step "[4/10] Database"
+  cd "$INSTALL_DIR"
+  if ! run_with_spinner "Starting PostgreSQL container" docker compose up -d postgres; then
+    die "Failed to start database container."
+  fi
+}
+
+step_5_redis() {
+  step "[5/10] Redis"
+  cd "$INSTALL_DIR"
+  if ! run_with_spinner "Starting Redis container" docker compose up -d redis; then
+    die "Failed to start redis container."
+  fi
+}
+
+step_6_application() {
+  step "[6/10] Application"
+  cd "$INSTALL_DIR"
+  if ! run_with_spinner "Building Docker images" docker compose build --no-cache; then
+    die "Docker build failed."
+  fi
+  if ! run_with_spinner "Starting Application services" docker compose up -d; then
+    die "Failed to start application services."
+  fi
+}
+
+step_7_health_check() {
+  step "[7/10] Health Check"
+  local max_attempts=30
+  local attempt=0
+  local spin='-\|/'
+
+  info "Waiting for backend API to become healthy..."
+  while [[ $attempt -lt $max_attempts ]]; do
+    if docker exec HMPanel-panel curl -sf "http://localhost:4000/health" &>/dev/null; then
+      echo -ne "\r\033[K"
+      log "Backend API is fully operational"
+      break
+    fi
+    attempt=$((attempt + 1))
+    local i=$(( attempt % 4 ))
+    echo -ne "\r  ${YELLOW}${spin:$i:1}${NC}  Attempt ${attempt}/${max_attempts}..."
+    sleep 5
+  done
+
+  if [[ $attempt -eq $max_attempts ]]; then
+    echo -ne "\r\033[K"
+    error "Health check timeout"
+    warn "The backend API did not respond in time. You may need to check docker logs:"
+    warn "docker compose logs panel-app"
+  fi
+}
+
+step_8_ssl() {
+  step "[8/10] SSL"
+  SSL_DIR="${INSTALL_DIR}/nginx/ssl"
+  SSL_STATUS="disabled"
+  
+  if [[ "$SSL_CHOICE" == 1 ]]; then
+    ensure_package certbot certbot
+
+    while true; do
+      info "Checking external HTTP challenge port (80) required by Let's Encrypt..."
+      if ! timeout 5 bash -c "</dev/tcp/${DOMAIN}/80" &>/dev/null; then
+         warn "Port 80 unreachable or closed. Let's Encrypt might fail."
+      else
+         log "Port 80 reachable"
+      fi
+
+      info "Requesting Let's Encrypt certificate..."
+      
+      # Stop Nginx temporarily to free port 80
+      docker stop HMPanel-nginx >/dev/null 2>&1 || true
+
+      local le_success=false
+      local certbot_exit=0
+      run_with_spinner "Running Certbot standalone" certbot certonly \
+          --standalone \
+          --non-interactive \
+          --agree-tos \
+          --register-unsafely-without-email \
+          -d "$DOMAIN" \
+          --http-01-port 80 || certbot_exit=$?
+      
+      if [[ $certbot_exit -eq 0 && -f "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" && -f "/etc/letsencrypt/live/${DOMAIN}/privkey.pem" ]]; then
+        cp "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" "${SSL_DIR}/fullchain.pem"
+        cp "/etc/letsencrypt/live/${DOMAIN}/privkey.pem" "${SSL_DIR}/privkey.pem"
+        chmod 600 "${SSL_DIR}/privkey.pem"
+        log "Certificate issued successfully"
+        SSL_STATUS="letsencrypt"
+        le_success=true
+      fi
+      
+      # Restart nginx
+      docker start HMPanel-nginx >/dev/null 2>&1 || true
+
+      if [[ "$le_success" == true ]]; then
+        break
+      fi
+
+      error "Let's Encrypt failed."
+      
+      if [[ "$INSTALL_MODE" == 2 ]]; then
+        echo -e "  ${BOLD}SSL Issuance Failed. Choose an option:${NC}"
+        echo -e "  1) Retry Let's Encrypt"
+        echo -e "  2) Use Self-Signed Certificate"
+        echo -e "  3) Switch to HTTP Only"
+        read -rp "  Choice [2]: " fb_choice || true
+        [[ -z "$fb_choice" ]] && fb_choice=2
+        
+        if [[ "$fb_choice" == 1 ]]; then
+          continue
+        elif [[ "$fb_choice" == 3 ]]; then
+          SSL_CHOICE=3
+          sed -i 's/listen 443 ssl http2;/# SSL disabled/' "${INSTALL_DIR}/nginx/nginx.conf" 2>/dev/null || true
+          docker exec HMPanel-nginx nginx -s reload >/dev/null 2>&1 || true
+          SSL_STATUS="disabled"
+          break
+        else
+          SSL_CHOICE=2
+          SSL_STATUS="self-signed"
+          break
+        fi
+      else
+        warn "SSL failed but installation will continue with self-signed certificate."
+        SSL_CHOICE=2
+        SSL_STATUS="self-signed"
+        break
+      fi
+    done
+  fi
+
+  if [[ "$SSL_CHOICE" == 2 ]]; then
+    # We already generated a dummy self-signed cert in step 2.
+    log "Using self-signed certificate"
+    SSL_STATUS="self-signed"
+  fi
+
+  if [[ "$SSL_CHOICE" == 3 ]]; then
     log "SSL disabled (HTTP only)"
     SSL_STATUS="disabled"
   fi
 }
 
-step_5_docker_build() {
-  step "[5/10] Docker Build"
-  cd "$INSTALL_DIR"
-  info "Building Docker images (this may take a few minutes)..."
-  docker compose build --no-cache >/dev/null 2>&1 || warn "Build logged warnings. Check logs if startup fails."
-  log "Docker build complete"
-}
-
-step_6_database() {
-  step "[6/10] Database Setup"
-  cd "$INSTALL_DIR"
-  info "Starting PostgreSQL container..."
-  docker compose up -d postgres >/dev/null 2>&1
-  log "Database initialized"
-}
-
-step_7_redis() {
-  step "[7/10] Redis Setup"
-  cd "$INSTALL_DIR"
-  info "Starting Redis container..."
-  docker compose up -d redis >/dev/null 2>&1
-  log "Redis initialized"
-}
-
-step_8_service_startup() {
-  step "[8/10] Service Startup"
-  cd "$INSTALL_DIR"
-  info "Bringing up all remaining services..."
-  docker compose up -d >/dev/null 2>&1
-  log "Services started"
-}
-
-step_9_health_check() {
-  step "[9/10] Health Check"
-  local max_attempts=30
-  local attempt=0
-
-  info "Waiting for backend API to become healthy..."
-  while [[ $attempt -lt $max_attempts ]]; do
-    if docker exec hmray-panel curl -sf "http://localhost:4000/health" &>/dev/null; then
-      log "Backend API is fully operational"
-      break
-    fi
-    attempt=$((attempt + 1))
-    echo -ne "  Attempt ${attempt}/${max_attempts}...\r"
-    sleep 5
-  done
-
-  if [[ $attempt -eq $max_attempts ]]; then
-    error "Health check timeout"
-    warn "The backend API did not respond in time. You may need to check docker logs:"
-    warn "docker compose logs panel-app"
+step_9_final_verification() {
+  step "[9/10] Final Verification"
+  local panel_status="Stopped"
+  if docker inspect -f '{{.State.Status}}' HMPanel-panel 2>/dev/null | grep -q "running"; then
+    panel_status="Running"
+    log "Panel Status: ${panel_status}"
+  else
+    error "Panel Status: Not Running"
   fi
-  echo -ne "                                    \r"
 }
 
 step_10_complete() {
@@ -478,20 +589,36 @@ print_success() {
   echo "  ║         HMPanel Installed Successfully            ║"
   echo "  ╚═══════════════════════════════════════════════════╝"
   echo -e "${NC}"
-  echo -e "  Panel URL: ${CYAN}https://${DOMAIN}${NC}"
-  echo -e "  Username:  ${CYAN}${ADMIN_USERNAME}${NC}"
-  echo -e "  Version:   ${CYAN}1.0.0${NC}"
+  
+  if docker inspect -f '{{.State.Status}}' HMPanel-panel 2>/dev/null | grep -q "running"; then
+    echo -e "  Panel Status: ${GREEN}Running${NC}"
+  else
+    echo -e "  Panel Status: ${RED}Stopped/Failed${NC}"
+  fi
+  
+  echo -e "  Version:      ${CYAN}1.0.0${NC}"
+  echo -e "  Edition:      ${CYAN}Community${NC}"
+  
+  if [[ "$SSL_STATUS" == "letsencrypt" || "$SSL_STATUS" == "self-signed" ]]; then
+    echo -e "  URL:          ${CYAN}https://${DOMAIN}${NC}"
+  else
+    local SERVER_IP
+    SERVER_IP=$(curl -s https://api.ipify.org 2>/dev/null || echo "SERVER_IP")
+    echo -e "  URL:          ${CYAN}http://${SERVER_IP}${NC}"
+    echo -e "  URL:          ${CYAN}http://${DOMAIN}${NC}"
+  fi
   
   case "${SSL_STATUS:-disabled}" in
-    letsencrypt) echo -e "  SSL:       ${GREEN}Active (Let's Encrypt)${NC}" ;;
-    self-signed) echo -e "  SSL:       ${YELLOW}Active (Self-Signed)${NC}" ;;
-    disabled)    echo -e "  SSL:       ${RED}Disabled${NC}" ;;
+    letsencrypt) echo -e "  SSL:          ${GREEN}Active (Let's Encrypt)${NC}" ;;
+    self-signed) echo -e "  SSL:          ${YELLOW}Active (Self-Signed)${NC}" ;;
+    disabled)    echo -e "  SSL:          ${RED}Not Configured${NC}" ;;
   esac
   
   echo ""
-  echo -e "  Management: ${CYAN}Type 'hmpanel' or 'hm' anywhere to launch CLI${NC}"
-  echo -e "  Update:     ${CYAN}sudo hmpanel${NC} -> option 3"
-  echo -e "  Uninstall:  ${CYAN}sudo hmpanel${NC} -> option 9"
+  echo -e "  CLI:          ${CYAN}hmpanel${NC}"
+  echo -e "  Update:       ${CYAN}hmpanel${NC} -> Update"
+  echo -e "  Backup:       ${CYAN}hmpanel${NC} -> Backup"
+  echo -e "  SSL:          ${CYAN}hmpanel${NC} -> SSL Management"
   echo ""
 }
 
@@ -507,25 +634,17 @@ main() {
   check_architecture
   check_minimum_requirements
 
-  info "Installing System Dependencies..."
-  $PKG_UPDATE >/dev/null 2>&1 || true
-  ensure_package curl curl
-  ensure_package openssl openssl
-  ensure_package dig dnsutils || ensure_package dig bind-utils || true
-  install_docker
-  install_docker_compose
-
   collect_user_input
 
-  step_1_repository
+  step_1_configuration
   step_2_environment
-  step_3_ssl_validation
-  step_4_ssl_issuance
-  step_5_docker_build
-  step_6_database
-  step_7_redis
-  step_8_service_startup
-  step_9_health_check
+  step_3_docker
+  step_4_database
+  step_5_redis
+  step_6_application
+  step_7_health_check
+  step_8_ssl
+  step_9_final_verification
   step_10_complete
 }
 
