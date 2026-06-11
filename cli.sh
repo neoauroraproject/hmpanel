@@ -64,10 +64,10 @@ cmd_status() {
   echo -e "  Domain:        ${CYAN}${DOMAIN:-Unknown}${NC}"
   echo ""
   echo -e "  ${BOLD}Containers:${NC}"
-  echo -e "  Frontend/API:  $(get_container_status HMPanel-panel)"
-  echo -e "  PostgreSQL:    $(get_container_status HMPanel-postgres)"
-  echo -e "  Redis:         $(get_container_status HMPanel-redis)"
-  echo -e "  Nginx:         $(get_container_status HMPanel-nginx)"
+  echo -e "  Frontend/API:  $(get_container_status hmpanel-panel)"
+  echo -e "  PostgreSQL:    $(get_container_status hmpanel-postgres)"
+  echo -e "  Redis:         $(get_container_status hmpanel-redis)"
+  echo -e "  Nginx:         $(get_container_status hmpanel-nginx)"
   pause
 }
 
@@ -80,7 +80,7 @@ cmd_info() {
   echo ""
   echo -e "  Useful Commands:"
   echo -e "  - View raw compose logs: ${YELLOW}docker compose -f ${INSTALL_DIR}/docker-compose.yml logs -f${NC}"
-  echo -e "  - Inspect database:      ${YELLOW}docker exec -it HMPanel-postgres psql -U panel_user -d panel_db${NC}"
+  echo -e "  - Inspect database:      ${YELLOW}docker exec -it hmpanel-postgres psql -U panel_user -d panel_db${NC}"
   pause
 }
 
@@ -100,7 +100,7 @@ cmd_backup() {
   local filepath="${BACKUP_DIR}/${filename}"
   
   echo -e "Creating database backup..."
-  if docker exec -t HMPanel-postgres pg_dumpall -c -U panel_user > "$filepath"; then
+  if docker exec -t hmpanel-postgres pg_dumpall -c -U panel_user > "$filepath"; then
     echo -e "${GREEN}✔ Backup completed successfully!${NC}"
     echo -e "Saved to: ${CYAN}${filepath}${NC}"
   else
@@ -137,7 +137,7 @@ cmd_restore() {
   fi
 
   echo -e "\nRestoring database..."
-  if cat "$filepath" | docker exec -i HMPanel-postgres psql -U panel_user -d panel_db >/dev/null 2>&1; then
+  if cat "$filepath" | docker exec -i hmpanel-postgres psql -U panel_user -d panel_db >/dev/null 2>&1; then
     echo -e "${GREEN}✔ Restore completed successfully!${NC}"
   else
     echo -e "${RED}✘ Restore failed.${NC}"
@@ -199,7 +199,7 @@ ssl_request_le() {
   fi
   
   # Temporarily stop nginx to free port 80
-  docker stop HMPanel-nginx >/dev/null 2>&1 || true
+  docker stop hmpanel-nginx >/dev/null 2>&1 || true
   
   local tmp_out
   tmp_out=$(mktemp)
@@ -230,9 +230,9 @@ ssl_request_le() {
   rm -f "$tmp_out"
   
   echo "Restarting Nginx..."
-  docker start HMPanel-nginx >/dev/null 2>&1 || true
+  docker start hmpanel-nginx >/dev/null 2>&1 || true
   # Reload to apply new certs
-  docker exec HMPanel-nginx nginx -s reload >/dev/null 2>&1 || true
+  docker exec hmpanel-nginx nginx -s reload >/dev/null 2>&1 || true
   pause
 }
 
@@ -252,7 +252,7 @@ ssl_install_manual() {
     
     echo -e "${GREEN}✔ Certificates installed.${NC}"
     echo "Reloading Nginx..."
-    docker exec HMPanel-nginx nginx -s reload >/dev/null 2>&1 || true
+    docker exec hmpanel-nginx nginx -s reload >/dev/null 2>&1 || true
   else
     echo -e "${RED}✘ One or both files not found. Ensure paths are absolute and files exist.${NC}"
   fi
@@ -267,7 +267,7 @@ ssl_disable() {
     sed -i 's/listen 443 ssl http2;/# SSL disabled/' "${INSTALL_DIR}/nginx/nginx.conf" 2>/dev/null || true
     echo -e "${GREEN}✔ SSL disabled.${NC}"
     echo "Reloading Nginx..."
-    docker exec HMPanel-nginx nginx -s reload >/dev/null 2>&1 || true
+    docker exec hmpanel-nginx nginx -s reload >/dev/null 2>&1 || true
   else
     echo "Cancelled."
   fi

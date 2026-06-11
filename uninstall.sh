@@ -36,7 +36,7 @@ main() {
   check_root
 
   # Detect installation directory
-  INSTALL_DIR="/opt/HMPanel-panel"
+  INSTALL_DIR="/opt/hmpanel-panel"
   if [[ ! -d "$INSTALL_DIR" ]]; then
     INSTALL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   fi
@@ -54,11 +54,11 @@ main() {
   echo ""
   echo -e "${YELLOW}${BOLD}  WARNING: Removing data is irreversible!${NC}"
   echo -e "  Do you want to delete all persistent data? This includes:"
-  echo -e "    - PostgreSQL Database (HMPanel_pgdata)"
-  echo -e "    - Redis cache data (HMPanel_redisdata)"
-  echo -e "    - Uploaded files & logs (HMPanel_uploads, HMPanel_logs)"
-  echo -e "    - Backups (HMPanel_backups)"
-  echo -e "    - SSL Certificates (HMPanel_certbot_certs)"
+  echo -e "    - PostgreSQL Database (hmpanel_pgdata)"
+  echo -e "    - Redis cache data (hmpanel_redisdata)"
+  echo -e "    - Uploaded files & logs (hmpanel_uploads, hmpanel_logs)"
+  echo -e "    - Backups (hmpanel_backups)"
+  echo -e "    - SSL Certificates (hmpanel_certbot_certs)"
   read -rp "  Delete all persistent data? [y/N]: " REMOVE_DATA_CHOICE
   if [[ "${REMOVE_DATA_CHOICE,,}" == "y" ]]; then
     REMOVE_DATA="y"
@@ -81,11 +81,11 @@ main() {
   fi
 
   step "Removing Systemd Service"
-  if [[ -f /etc/systemd/system/HMPanel-panel.service ]]; then
+  if [[ -f /etc/systemd/system/hmpanel-panel.service ]]; then
     info "Disabling and removing systemd service..."
-    systemctl stop HMPanel-panel || true
-    systemctl disable HMPanel-panel || true
-    rm -f /etc/systemd/system/HMPanel-panel.service
+    systemctl stop hmpanel-panel || true
+    systemctl disable hmpanel-panel || true
+    rm -f /etc/systemd/system/hmpanel-panel.service
     systemctl daemon-reload
     log "Systemd service removed"
   else
@@ -100,7 +100,7 @@ main() {
 
     # Force delete named volumes just in case they weren't cleaned up by docker compose down -v
     info "Cleaning up leftover Docker volumes..."
-    docker volume rm HMPanel_pgdata HMPanel_redisdata HMPanel_uploads HMPanel_backups HMPanel_logs HMPanel_certbot_certs HMPanel_certbot_www &>/dev/null || true
+    docker volume rm hmpanel_pgdata hmpanel_redisdata hmpanel_uploads hmpanel_backups hmpanel_logs hmpanel_certbot_certs hmpanel_certbot_www &>/dev/null || true
     log "Docker volumes cleaned"
   else
     step "Keeping Files & Folders"

@@ -430,7 +430,7 @@ step_7_health_check() {
 
   info "Waiting for backend API to become healthy..."
   while [[ $attempt -lt $max_attempts ]]; do
-    if docker exec HMPanel-panel curl -sf "http://localhost:4000/health" &>/dev/null; then
+    if docker exec hmpanel-panel curl -sf "http://localhost:4000/health" &>/dev/null; then
       echo -ne "\r\033[K"
       log "Backend API is fully operational"
       break
@@ -468,7 +468,7 @@ step_8_ssl() {
       info "Requesting Let's Encrypt certificate..."
       
       # Stop Nginx temporarily to free port 80
-      docker stop HMPanel-nginx >/dev/null 2>&1 || true
+      docker stop hmpanel-nginx >/dev/null 2>&1 || true
 
       local le_success=false
       local certbot_exit=0
@@ -490,7 +490,7 @@ step_8_ssl() {
       fi
       
       # Restart nginx
-      docker start HMPanel-nginx >/dev/null 2>&1 || true
+      docker start hmpanel-nginx >/dev/null 2>&1 || true
 
       if [[ "$le_success" == true ]]; then
         break
@@ -511,7 +511,7 @@ step_8_ssl() {
         elif [[ "$fb_choice" == 3 ]]; then
           SSL_CHOICE=3
           sed -i 's/listen 443 ssl http2;/# SSL disabled/' "${INSTALL_DIR}/nginx/nginx.conf" 2>/dev/null || true
-          docker exec HMPanel-nginx nginx -s reload >/dev/null 2>&1 || true
+          docker exec hmpanel-nginx nginx -s reload >/dev/null 2>&1 || true
           SSL_STATUS="disabled"
           break
         else
@@ -543,7 +543,7 @@ step_8_ssl() {
 step_9_final_verification() {
   step "[9/10] Final Verification"
   local panel_status="Stopped"
-  if docker inspect -f '{{.State.Status}}' HMPanel-panel 2>/dev/null | grep -q "running"; then
+  if docker inspect -f '{{.State.Status}}' hmpanel-panel 2>/dev/null | grep -q "running"; then
     panel_status="Running"
     log "Panel Status: ${panel_status}"
   else
@@ -599,7 +599,7 @@ print_success() {
   echo "  ╚═══════════════════════════════════════════════════╝"
   echo -e "${NC}"
   
-  if docker inspect -f '{{.State.Status}}' HMPanel-panel 2>/dev/null | grep -q "running"; then
+  if docker inspect -f '{{.State.Status}}' hmpanel-panel 2>/dev/null | grep -q "running"; then
     echo -e "  Panel Status: ${GREEN}Running${NC}"
   else
     echo -e "  Panel Status: ${RED}Stopped/Failed${NC}"

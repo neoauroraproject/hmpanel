@@ -34,9 +34,9 @@ main() {
   check_root
 
   # Detect installation directory
-  INSTALL_DIR="/opt/HMPanel-panel"
+  INSTALL_DIR="/opt/hmpanel-panel"
   if [[ ! -d "$INSTALL_DIR" ]]; then
-    # Fallback to current script directory if /opt/HMPanel-panel doesn't exist
+    # Fallback to current script directory if /opt/hmpanel-panel doesn't exist
     INSTALL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   fi
   
@@ -75,7 +75,7 @@ main() {
   local attempt=0
   info "Waiting for services to become healthy..."
   while [[ $attempt -lt $max_attempts ]]; do
-    if docker exec HMPanel-panel curl -sf "http://localhost:4000/health" &>/dev/null; then
+    if docker exec hmpanel-panel curl -sf "http://localhost:4000/health" &>/dev/null; then
       log "Backend API is healthy"
       break
     fi
