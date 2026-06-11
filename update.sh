@@ -64,7 +64,24 @@ main() {
 
   step "Pulling Latest Docker Images"
   info "Downloading prebuilt images..."
-  docker compose pull
+  
+  local max_pull=5
+  local pull_attempt=1
+  local pull_success=false
+  while [[ $pull_attempt -le $max_pull ]]; do
+    if docker compose pull; then
+      pull_success=true
+      break
+    else
+      warn "Docker pull failed (Attempt $pull_attempt/$max_pull). Retrying in 5 seconds..."
+      sleep 5
+      pull_attempt=$((pull_attempt + 1))
+    fi
+  done
+
+  if [[ "$pull_success" == false ]]; then
+    die "Failed to pull Docker images after $max_pull attempts. Please check your network connection or configure a Docker registry mirror."
+  fi
 
   step "Restarting Services"
   info "Re-deploying containers..."

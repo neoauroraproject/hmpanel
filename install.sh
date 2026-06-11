@@ -454,8 +454,21 @@ step_6_application() {
   step "[6/10] Application"
   cd "$INSTALL_DIR"
   info "Pulling Docker images (this may take a minute)..."
-  if ! run_with_spinner "Pulling latest images" docker compose pull; then
-    die "Docker pull failed."
+  local max_pull=5
+  local pull_attempt=1
+  local pull_success=false
+  while [[ $pull_attempt -le $max_pull ]]; do
+    if run_with_spinner "Pulling latest images (Attempt $pull_attempt/$max_pull)" docker compose pull; then
+      pull_success=true
+      break
+    else
+      warn "Docker pull failed. Retrying in 5 seconds..."
+      sleep 5
+      pull_attempt=$((pull_attempt + 1))
+    fi
+  done
+  if [[ "$pull_success" == false ]]; then
+    die "Docker pull failed after $max_pull attempts. Please check your network connection or configure a Docker registry mirror."
   fi
   if ! run_with_spinner "Starting Application services" docker compose up -d; then
     die "Failed to start application services."
