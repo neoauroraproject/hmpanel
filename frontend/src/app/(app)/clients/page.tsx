@@ -463,20 +463,10 @@ export default function ClientsPage() {
       </div>
 
       <div>
-        <div className="md:hidden flex justify-between items-center mb-2">
-          <button
-            onClick={() => setShowQuickFilters(!showQuickFilters)}
-            className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400 font-medium w-full text-left bg-zinc-50 dark:bg-zinc-950 px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-800"
-          >
-            <Filter size={16} /> Quick Filters
-            {status && <Badge tone="blue">{status}</Badge>}
-            <div className="ml-auto">
-              {showQuickFilters ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-            </div>
-          </button>
-        </div>
-        <div className={`flex flex-wrap items-center gap-2 ${showQuickFilters ? 'flex' : 'hidden md:flex'}`}>
-          <div className="hidden md:flex items-center gap-2 mr-2 text-sm text-zinc-500 dark:text-zinc-400"><Filter size={16} /> Filters:</div>
+        <div className="flex overflow-x-auto hide-scrollbar items-center gap-2 pb-2 -mx-4 px-4 sm:mx-0 sm:px-0">
+          <div className="hidden sm:flex items-center gap-2 mr-2 text-sm text-zinc-500 dark:text-zinc-400 font-medium">
+            <Filter size={16} /> Filters:
+          </div>
           {[
             { id: '', label: 'All' },
             { id: 'online', label: 'Online' },
@@ -488,9 +478,9 @@ export default function ClientsPage() {
           ].map(f => (
             <button
               key={f.id}
-              onClick={() => { setStatus(f.id); setPage(1); setShowQuickFilters(false); }}
-              className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors border ${
-                status === f.id ? 'bg-zinc-100 text-zinc-900 border-zinc-100' : 'bg-white dark:bg-zinc-900 text-zinc-500 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:bg-zinc-800'
+              onClick={() => { setStatus(f.id); setPage(1); }}
+              className={`whitespace-nowrap px-4 py-1.5 rounded-full text-xs font-semibold transition-colors border ${
+                status === f.id ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/20' : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800'
               }`}
             >
               {f.label}
