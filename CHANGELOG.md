@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## Workflow for Future Versions
+1. After making significant changes, commit and push them to GitHub.
+2. Increment the version number according to Semantic Versioning (e.g., from `1.0.0` to `1.0.1` for bug fixes, or `1.1.0` for new features).
+3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
+4. Create a GitHub Release with the new version tag (e.g., `v1.0.1`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
+
 ## [1.0.0] - Community Edition
 
 ### Added
