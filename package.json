@@ -3,7 +3,6 @@
     "prisma": "^5.22.0"
   },
   "dependencies": {
-    "@prisma/client": "^5.22.0",
-    "sqlite3": "^6.0.1"
+    "@prisma/client": "^5.22.0"
   }
 }
