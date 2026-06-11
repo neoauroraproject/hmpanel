@@ -308,10 +308,19 @@ step_1_configuration() {
   log "Created directories in ${INSTALL_DIR}"
 
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  if [[ "$SCRIPT_DIR" != "$INSTALL_DIR" ]]; then
-    run_with_spinner "Copying files to installation directory" rsync -a --exclude='.git' --exclude='node_modules' --exclude='*.env' "${SCRIPT_DIR}/" "${INSTALL_DIR}/" || cp -r "${SCRIPT_DIR}/." "${INSTALL_DIR}/"
+  if [[ -f "${SCRIPT_DIR}/docker-compose.yml" ]]; then
+    if [[ "$SCRIPT_DIR" != "$INSTALL_DIR" ]]; then
+      run_with_spinner "Copying files to installation directory" rsync -a --exclude='.git' --exclude='node_modules' --exclude='*.env' "${SCRIPT_DIR}/" "${INSTALL_DIR}/" || cp -r "${SCRIPT_DIR}/." "${INSTALL_DIR}/"
+    else
+      log "Running from install directory, skipping copy"
+    fi
   else
-    log "Running from install directory, skipping copy"
+    info "Downloading files from GitHub..."
+    ensure_package git git
+    run_with_spinner "Cloning repository" git clone -b main https://github.com/neoauroraproject/hmpanel.git /tmp/hmpanel_install
+    run_with_spinner "Copying files to installation directory" cp -r /tmp/hmpanel_install/* "${INSTALL_DIR}/"
+    cp /tmp/hmpanel_install/.* "${INSTALL_DIR}/" 2>/dev/null || true
+    rm -rf /tmp/hmpanel_install
   fi
 }
 
