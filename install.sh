@@ -420,7 +420,7 @@ step_4_database() {
 
   info "Testing PostgreSQL credentials..."
   local db_auth_failed=false
-  if ! docker exec -e PGPASSWORD="${POSTGRES_PASSWORD}" hmpanel-postgres psql -U panel_user -d panel_db -c '\q' &>/dev/null; then
+  if ! docker exec -e PGPASSWORD="${POSTGRES_PASSWORD}" hmpanel-postgres psql -h 127.0.0.1 -U panel_user -d panel_db -c '\q' &>/dev/null; then
     warn "Authentication failed! Detecting existing database volume with mismatched password."
     info "Attempting to synchronize database password..."
     # Execute psql as the postgres OS user to bypass password auth via local socket
@@ -432,7 +432,7 @@ step_4_database() {
   fi
 
   # Final check
-  if ! docker exec -e PGPASSWORD="${POSTGRES_PASSWORD}" hmpanel-postgres psql -U panel_user -d panel_db -c '\q' &>/dev/null; then
+  if ! docker exec -e PGPASSWORD="${POSTGRES_PASSWORD}" hmpanel-postgres psql -h 127.0.0.1 -U panel_user -d panel_db -c '\q' &>/dev/null; then
     die "✘ Authentication failed. Installation aborted. Please remove the old database volume if you want a fresh install: docker volume rm hmpanel_pgdata"
   else
     log "Authentication successful."
