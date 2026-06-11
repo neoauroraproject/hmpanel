@@ -414,9 +414,9 @@ step_5_redis() {
 step_6_application() {
   step "[6/10] Application"
   cd "$INSTALL_DIR"
-  info "Building Docker images (this may take several minutes)..."
-  if ! docker compose build --no-cache; then
-    die "Docker build failed."
+  info "Pulling Docker images (this may take a minute)..."
+  if ! run_with_spinner "Pulling latest images" docker compose pull; then
+    die "Docker pull failed."
   fi
   if ! run_with_spinner "Starting Application services" docker compose up -d; then
     die "Failed to start application services."

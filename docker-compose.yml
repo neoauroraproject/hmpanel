@@ -7,10 +7,7 @@ services:
 
   # ── Application (Backend API + Frontend) ─────────────────────────
   panel-app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: hmpanel-panel:latest
+    image: ghcr.io/neoauroraproject/hmpanel:latest
     container_name: hmpanel-panel
     restart: unless-stopped
     expose:

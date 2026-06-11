@@ -62,9 +62,9 @@ main() {
     info "Not a git repository, skipping pull phase"
   fi
 
-  step "Rebuilding Docker Images"
-  info "Building panel app (this may take a few minutes)..."
-  docker compose build --no-cache
+  step "Pulling Latest Docker Images"
+  info "Downloading prebuilt images..."
+  docker compose pull
 
   step "Restarting Services"
   info "Re-deploying containers..."
