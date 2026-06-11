@@ -433,10 +433,19 @@ step_4_database() {
   source "${INSTALL_DIR}/.env"
 
   info "Synchronizing database credentials..."
-  # Force sync the password from .env into the database.
-  # We connect via local socket (trust) using the postgres OS user and panel_user DB role.
-  if ! docker exec -u postgres hmpanel-postgres psql -U panel_user -d panel_db -c "ALTER USER panel_user WITH PASSWORD '${POSTGRES_PASSWORD}';" &>/dev/null; then
-    die "✘ Failed to synchronize database password. Installation aborted."
+  local psql_retries=10
+  local psql_success=false
+  while [ $psql_retries -gt 0 ]; do
+    if docker exec -u postgres hmpanel-postgres psql -U panel_user -d panel_db -c "ALTER USER panel_user WITH PASSWORD '${POSTGRES_PASSWORD}';" &>/dev/null; then
+      psql_success=true
+      break
+    fi
+    sleep 2
+    psql_retries=$((psql_retries-1))
+  done
+
+  if [ "$psql_success" = false ]; then
+    die "✘ Failed to synchronize database password after multiple attempts. Installation aborted."
   fi
   
   log "Database ready."
