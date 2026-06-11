@@ -413,30 +413,32 @@ step_4_database() {
   fi
 
   info "Waiting for database to initialize..."
-  sleep 5
+  local retries=30
+  local ready=false
+  while [ $retries -gt 0 ]; do
+    if docker exec -u postgres hmpanel-postgres pg_isready -U panel_user -d panel_db &>/dev/null; then
+      ready=true
+      break
+    fi
+    sleep 2
+    retries=$((retries-1))
+  done
+
+  if [ "$ready" = false ]; then
+    die "Database failed to initialize in time."
+  fi
 
   # Source .env to get POSTGRES_PASSWORD if we just created/sourced it
   source "${INSTALL_DIR}/.env"
 
-  info "Testing PostgreSQL credentials..."
-  local db_auth_failed=false
-  if ! docker exec -e PGPASSWORD="${POSTGRES_PASSWORD}" hmpanel-postgres psql -h 127.0.0.1 -U panel_user -d panel_db -c '\q' &>/dev/null; then
-    warn "Authentication failed! Detecting existing database volume with mismatched password."
-    info "Attempting to synchronize database password..."
-    # Execute psql as the postgres OS user to bypass password auth via local socket
-    if docker exec -u postgres hmpanel-postgres psql -c "ALTER USER panel_user WITH PASSWORD '${POSTGRES_PASSWORD}';" &>/dev/null; then
-      log "Password synchronized successfully."
-    else
-      db_auth_failed=true
-    fi
+  info "Synchronizing database credentials..."
+  # Force sync the password from .env into the database.
+  # We connect via local socket (trust) using the postgres OS user and panel_user DB role.
+  if ! docker exec -u postgres hmpanel-postgres psql -U panel_user -d panel_db -c "ALTER USER panel_user WITH PASSWORD '${POSTGRES_PASSWORD}';" &>/dev/null; then
+    die "✘ Failed to synchronize database password. Installation aborted."
   fi
-
-  # Final check
-  if ! docker exec -e PGPASSWORD="${POSTGRES_PASSWORD}" hmpanel-postgres psql -h 127.0.0.1 -U panel_user -d panel_db -c '\q' &>/dev/null; then
-    die "✘ Authentication failed. Installation aborted. Please remove the old database volume if you want a fresh install: docker volume rm hmpanel_pgdata"
-  else
-    log "Authentication successful."
-  fi
+  
+  log "Database ready."
 }
 
 step_5_redis() {
