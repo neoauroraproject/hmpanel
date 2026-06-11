@@ -479,7 +479,6 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
                         <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">Max Clients <span className="text-zinc-500 text-xs">(0 = Unlimited)</span></label>
                         <input type="number" min={0} placeholder="0" value={form.maxClients} onChange={(e) => setForm({ ...form, maxClients: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
                       </div>
-                      {process.env.NEXT_PUBLIC_RELEASE_MODE !== 'COMMUNITY' && (
                         <div className="flex items-center justify-between p-3 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/50">
                           <div>
                             <div className="text-sm font-medium text-zinc-800 dark:text-zinc-100">Portal Customization</div>
@@ -490,7 +489,6 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
                             <div className="w-11 h-6 bg-zinc-200 dark:bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500"></div>
                           </label>
                         </div>
-                      )}
                       {form.selectedPanel ? (
                         <div className="mt-4 p-3 rounded-lg border border-blue-500/20 bg-blue-500/10 text-sm text-blue-600 dark:text-blue-400 flex items-start gap-2">
                           <Server size={18} className="shrink-0 mt-0.5" />
@@ -564,50 +562,7 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
               </AnimatePresence>
             </div>
 
-            {/* Section E: Premium Features — hidden in Community mode */}
-            {process.env.NEXT_PUBLIC_RELEASE_MODE !== 'COMMUNITY' && (
-            <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 overflow-hidden">
-              <button type="button" onClick={() => setOpenSection(openSection === 'premium' ? '' : 'premium')} className="w-full flex items-center justify-between p-4 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:bg-zinc-800/80 transition-colors">
-                <div className="flex items-center gap-2 font-medium text-zinc-800 dark:text-zinc-100"><Store size={16} className="text-amber-400"/> Premium Features</div>
-                <ChevronDown size={18} className={`text-zinc-500 transition-transform ${openSection === 'premium' ? 'rotate-180' : ''}`} />
-              </button>
-              <AnimatePresence initial={false}>
-                {openSection === 'premium' && (
-                  <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                    <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 space-y-4">
-                      
-                      <div className="flex items-center justify-between p-3 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/50">
-                        <div>
-                          <div className="text-sm font-medium text-zinc-800 dark:text-zinc-100">Enable Reseller Store</div>
-                          <div className="text-xs text-zinc-500">Allow this reseller to have their own branded store</div>
-                        </div>
-                        <label className="relative inline-flex items-center cursor-pointer">
-                          <input type="checkbox" checked={form.storeEnabled} onChange={(e) => setForm({ ...form, storeEnabled: e.target.checked })} className="sr-only peer" />
-                          <div className="w-11 h-6 bg-zinc-200 dark:bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500"></div>
-                        </label>
-                      </div>
 
-                      {form.storeEnabled && (
-                        <div>
-                          <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">Store Panel Node</label>
-                          <select required={form.storeEnabled} value={form.storePanelId} onChange={(e) => setForm({ ...form, storePanelId: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors">
-                            <option value="" disabled>Choose a panel for the store...</option>
-                            {(panels ?? []).map(p => (
-                              <option key={p.id} value={p.id} disabled={p.status !== 'online'}>
-                                {p.name} ({p.status === 'online' ? `v${p.version}` : 'Offline'})
-                              </option>
-                            ))}
-                          </select>
-                          <p className="text-xs text-zinc-500 mt-1">This panel will be used to host the accounts sold by this reseller.</p>
-                        </div>
-                      )}
-
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-            )}
           </motion.div>
 
           <div className="flex justify-end gap-3 pt-6 mt-6 border-t border-zinc-200 dark:border-zinc-800">
@@ -692,13 +647,7 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
       
       const res = await api.patch(`/admins/${adminId}`, payload);
 
-      if (process.env.NEXT_PUBLIC_RELEASE_MODE !== 'COMMUNITY') {
-        if (form.storeEnabled && form.selectedPanel) {
-          await api.post(`/store/admin/${adminId}/activate`, { panelId: form.selectedPanel });
-        } else if (!form.storeEnabled) {
-          await api.delete(`/store/admin/${adminId}/deactivate`);
-        }
-      }
+
 
       return res.data;
     },
@@ -908,7 +857,6 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
                           <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">Max Clients <span className="text-zinc-500 text-xs">(0 = Unlimited)</span></label>
                           <input type="number" min={0} value={form.maxClients} onChange={(e) => setForm({ ...form, maxClients: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
                         </div>
-                        {process.env.NEXT_PUBLIC_RELEASE_MODE !== 'COMMUNITY' && (
                           <div className="flex items-center justify-between p-3 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/50">
                             <div>
                               <div className="text-sm font-medium text-zinc-800 dark:text-zinc-100">Portal Customization</div>
@@ -919,7 +867,6 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
                               <div className="w-11 h-6 bg-zinc-200 dark:bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500"></div>
                             </label>
                           </div>
-                        )}
                         {form.selectedPanel ? (
                           <div className="mt-4 p-3 rounded-lg border border-blue-500/20 bg-blue-500/10 text-sm text-blue-600 dark:text-blue-400 flex items-start gap-2">
                             <Server size={18} className="shrink-0 mt-0.5" />
@@ -942,39 +889,6 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
                   )}
                 </AnimatePresence>
               </div>
-
-              {/* Section C: Store System — hidden in Community mode */}
-              {process.env.NEXT_PUBLIC_RELEASE_MODE !== 'COMMUNITY' && (
-              <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 overflow-hidden">
-                <button type="button" onClick={() => setOpenSection(openSection === 'store' ? '' : 'store')} className="w-full flex items-center justify-between p-4 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:bg-zinc-800/80 transition-colors">
-                  <div className="flex items-center gap-2 font-medium text-zinc-800 dark:text-zinc-100"><Zap size={16} className="text-amber-400"/> Store System</div>
-                  <ChevronDown size={18} className={`text-zinc-500 transition-transform ${openSection === 'store' ? 'rotate-180' : ''}`} />
-                </button>
-                <AnimatePresence initial={false}>
-                  {openSection === 'store' && (
-                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                      <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 space-y-4">
-                        <div className="flex items-center justify-between p-3 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/50">
-                          <div>
-                            <div className="text-sm font-medium text-zinc-800 dark:text-zinc-100">Enable Premium Store System</div>
-                            <div className="text-xs text-zinc-500">Allow reseller to sell products via their own storefront using the assigned panel.</div>
-                          </div>
-                          <label className="relative inline-flex items-center cursor-pointer">
-                            <input type="checkbox" checked={form.storeEnabled} onChange={(e) => setForm({ ...form, storeEnabled: e.target.checked })} className="sr-only peer" />
-                            <div className="w-11 h-6 bg-zinc-200 dark:bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
-                          </label>
-                        </div>
-                        {form.storeEnabled && !form.selectedPanel && (
-                          <div className="text-xs text-amber-500 p-2 bg-amber-500/10 rounded-lg">
-                            ⚠️ A panel must be selected in Basic Info to activate the store.
-                          </div>
-                        )}
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-              )}
 
               <div className="flex justify-end pt-4">
                 <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => directEdit.mutate()} disabled={directEdit.isPending} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50 transition-colors shadow-lg shadow-blue-900/20">

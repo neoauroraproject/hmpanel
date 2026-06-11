@@ -25,14 +25,7 @@ export default function AppLayout({
       return;
     } 
 
-    const isCommunity = process.env.NEXT_PUBLIC_RELEASE_MODE === 'COMMUNITY';
-    const premiumRoutes = ['/domains', '/store', '/pro', '/backups', '/alerts', '/analytics', '/settings/license'];
-    const isPremiumRoute = premiumRoutes.some(r => pathname.startsWith(r));
 
-    if (isCommunity && isPremiumRoute) {
-      router.replace("/dashboard");
-      return;
-    }
 
     setReady(true);
   }, [token, router, pathname]);

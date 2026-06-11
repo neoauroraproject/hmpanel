@@ -46,21 +46,7 @@ const CORE_NAV: {
   { href: "/settings", label: "Settings", icon: Settings, roles: ["SUPER_ADMIN"] },
 ];
 
-const PREMIUM_NAV: {
-  href: string;
-  label: string;
-  icon: typeof Users;
-  roles?: Role[];
-  premiumFeature?: PremiumFeature;
-}[] = [
-  { href: "/domains", label: "Domains", icon: Globe, roles: ["SUPER_ADMIN"], premiumFeature: "CUSTOM_DOMAINS" },
-  { href: "/settings/portal", label: "Branding", icon: UserCog, roles: ["RESELLER", "SUPER_ADMIN"], premiumFeature: "WHITE_LABEL" },
-  { href: "/settings/portal", label: "Portal Settings", icon: Settings, roles: ["SUPER_ADMIN", "RESELLER"] },
-  { href: "/store/settings", label: "Store", icon: Store, roles: ["RESELLER", "SUPER_ADMIN"] },
-  { href: "/backups", label: "Remote Backup", icon: DatabaseBackup, roles: ["SUPER_ADMIN"] },
-  { href: "/alerts", label: "Alerts", icon: Bell, roles: ["SUPER_ADMIN"], premiumFeature: "SMART_ALERTS" },
-  { href: "/pro/overview", label: "XRAY PRO", icon: Diamond, roles: ["SUPER_ADMIN"], premiumFeature: "XRAY_PRO" },
-];
+
 
 export function MobileNav() {
   const [isOpen, setIsOpen] = useState(false);
@@ -74,15 +60,7 @@ export function MobileNav() {
     (n) => !n.roles || (admin && n.roles.includes(admin.role))
   );
 
-  const isCommunity = process.env.NEXT_PUBLIC_RELEASE_MODE === 'COMMUNITY';
 
-  const premiumItems = isCommunity ? [] : PREMIUM_NAV.filter(
-    (n) => {
-      const hasRole = !n.roles || (admin && n.roles.includes(admin.role));
-      const hasLic = !n.premiumFeature || hasFeature(n.premiumFeature);
-      return hasRole && (isLoading ? !n.premiumFeature : hasLic);
-    }
-  );
 
   return (
     <>
@@ -137,32 +115,7 @@ export function MobileNav() {
                 })}
               </nav>
 
-              {premiumItems.length > 0 && (
-                <div className="mt-6 px-3">
-                  <h4 className="px-3 mb-2 text-xs font-semibold uppercase tracking-wider text-amber-500/80">Premium</h4>
-                  <nav className="space-y-1">
-                    {premiumItems.map(({ href, label, icon: Icon }) => {
-                      const active = pathname.startsWith(href);
-                      return (
-                        <Link
-                          key={href}
-                          href={href}
-                          onClick={() => setIsOpen(false)}
-                          className={clsx(
-                            "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
-                            active
-                              ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-50"
-                              : "text-zinc-500 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-900 hover:text-amber-500/80 dark:hover:text-amber-400/80",
-                          )}
-                        >
-                          <Icon size={18} />
-                          {label}
-                        </Link>
-                      );
-                    })}
-                  </nav>
-                </div>
-              )}
+
             </div>
 
             <div className="border-t border-zinc-200 dark:border-zinc-800 p-3 mt-auto">

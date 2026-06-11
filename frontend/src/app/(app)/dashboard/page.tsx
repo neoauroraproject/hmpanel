@@ -440,16 +440,7 @@ function ResellerDashboard() {
           <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-500 dark:from-blue-400 dark:to-indigo-300">Welcome back, {admin?.username}</h1>
           <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400 font-medium">Actionable overview of your clients and traffic performance.</p>
         </div>
-        {process.env.NEXT_PUBLIC_RELEASE_MODE !== 'COMMUNITY' && (
-        <motion.button 
-          whileHover={{ scale: 1.02 }} 
-          whileTap={{ scale: 0.98 }} 
-          onClick={() => router.push("/settings/portal")}
-          className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-lg shadow-blue-500/30 hover:shadow-blue-500/50"
-        >
-          <UserCog size={16} /> Customize Portal
-        </motion.button>
-        )}
+
       </div>
 
       {a?.gracePeriodStart && (
