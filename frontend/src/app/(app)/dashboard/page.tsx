@@ -130,7 +130,7 @@ function SuperDashboard() {
   const [livePanels, setLivePanels] = useState<any[]>([]);
 
   useEffect(() => {
-    const socket = io("http://localhost:4000", { transports: ["websocket"] });
+    const socket = io({ transports: ["websocket"], path: "/socket.io/" });
     socket.on("live-speed", (data) => {
       if (Array.isArray(data)) {
         // Stable sort by panelName to prevent reordering on each broadcast

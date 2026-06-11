@@ -56,6 +56,12 @@ COPY frontend ./frontend
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN cd frontend && npm run build
 
+# Validate no hardcoded localhost
+RUN if grep -r "localhost:4000" frontend/.next/static/; then \
+      echo "ERROR: Hardcoded localhost:4000 found in production bundle!"; \
+      exit 1; \
+    fi
+
 # ─────────────────────────────────────────────────────────────────
 # Stage 3: Production Runner
 # ─────────────────────────────────────────────────────────────────
