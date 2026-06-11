@@ -1,13 +1,40 @@
-import { Injectable, ConflictException, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, ConflictException, NotFoundException, BadRequestException, Logger, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PanelsService } from '../panels/panels.service';
 import { StoreService } from '../store/store.service';
 import * as bcrypt from 'bcryptjs';
 
 @Injectable()
-export class AdminsService {
+export class AdminsService implements OnModuleInit {
   private readonly logger = new Logger(AdminsService.name);
   constructor(private prisma: PrismaService, private panelsService: PanelsService, private storeService: StoreService) {}
+
+  async onModuleInit() {
+    try {
+      const count = await this.prisma.admin.count();
+      if (count === 0) {
+        const username = process.env.INITIAL_ADMIN_USERNAME || 'admin';
+        const email = process.env.INITIAL_ADMIN_EMAIL || 'admin@example.com';
+        const password = process.env.INITIAL_ADMIN_PASSWORD || 'admin123';
+
+        this.logger.log(`No admins found. Creating initial SUPER_ADMIN (${username})...`);
+        const hash = await bcrypt.hash(password, 10);
+        await this.prisma.admin.create({
+          data: {
+            username,
+            email,
+            passwordHash: hash,
+            role: 'SUPER_ADMIN',
+            balance: 0,
+            status: 'active',
+          },
+        });
+        this.logger.log('Initial SUPER_ADMIN created successfully.');
+      }
+    } catch (error) {
+      this.logger.error('Failed to seed initial admin', error);
+    }
+  }
 
   async create(data: { username: string; email: string; password: string; role?: string; trafficMode?: string; balance?: number; inboundIds?: string[]; expiryTime?: number; maxClients?: number; permissions?: string[]; storeEnabled?: boolean; storePanelId?: string }) {
     // Allow admin creation regardless of sync state since we enforce selection in the UI.
