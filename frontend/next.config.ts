@@ -14,6 +14,30 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  async redirects() {
+    return [
+      {
+        source: "/dash",
+        destination: "/",
+        permanent: false,
+      },
+      {
+        source: "/admin",
+        destination: "/",
+        permanent: false,
+      },
+      {
+        source: "/panel",
+        destination: "/",
+        permanent: false,
+      },
+      {
+        source: "/login",
+        destination: "/auth/login",
+        permanent: false,
+      }
+    ];
+  },
 };
 
 export default nextConfig;
