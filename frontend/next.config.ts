@@ -17,6 +17,11 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [
       {
+        source: "/dash/login",
+        destination: "/login",
+        permanent: true,
+      },
+      {
         source: "/dash",
         destination: "/",
         permanent: false,
