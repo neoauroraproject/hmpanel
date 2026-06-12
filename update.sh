@@ -88,8 +88,9 @@ main() {
   docker compose up -d
 
   step "Cleaning Up"
-  info "Removing old unused Docker images to free up disk space..."
-  docker image prune -f || true
+  info "Removing old unused Docker images and build cache to free up disk space..."
+  docker image prune -a -f || true
+  docker builder prune -f || true
 
   step "Verifying Health"
   local max_attempts=30
