@@ -996,15 +996,23 @@ export class PanelsService {
       const inboundMeta = inboundList.find((i: any) => i.port === inboundPort);
       if (!inboundMeta) throw new Error(`Inbound with port ${inboundPort} not found on panel`);
 
-      // Native 3x-ui client update endpoint requires inbound ID in the body
-      const response = await axios.post(`${apiBaseUrl}/panel/api/inbounds/updateClient/${uuid}`, {
-        id: inboundMeta.id,
-        settings: JSON.stringify({ clients: [clientPayload] })
-      }, {
-        headers, httpsAgent, timeout: 5000
-      });
+      // Native 3x-ui client update endpoint expects application/x-www-form-urlencoded
+      const formData = new URLSearchParams();
+      formData.append('id', inboundMeta.id.toString());
+      formData.append('settings', JSON.stringify({ clients: [clientPayload] }));
 
-      if (!response.data || !response.data.success) {
+      let response: any;
+      try {
+        response = await axios.post(`${apiBaseUrl}/panel/api/inbounds/updateClient/${uuid}`, formData.toString(), {
+          headers: { ...headers, 'Content-Type': 'application/x-www-form-urlencoded' },
+          httpsAgent,
+          timeout: 5000
+        });
+      } catch (err: any) {
+        console.warn(`Native updateClient failed for ${uuid}, falling back... Error: ${err.message}`);
+      }
+
+      if (!response || !response.data || !response.data.success) {
         // Fallback to updateInboundFull if native endpoint fails (e.g. older versions)
         return await this.updateInboundFull(panelId, inboundPort, (inbound) => {
           if (!inbound.settings) return;
