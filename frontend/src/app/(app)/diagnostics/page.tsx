@@ -48,35 +48,35 @@ export default function DiagnosticsPage() {
 
       {/* Core Infrastructure Check */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-        <Card className="flex items-center gap-4 bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800">
-          <div className={`p-4 rounded-xl ${diag.database.status === 'online' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
+        <Card className="flex flex-col sm:flex-row items-start sm:items-center gap-4 bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800">
+          <div className={`p-4 rounded-xl shrink-0 ${diag.database.status === 'online' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
             <Database size={24} />
           </div>
-          <div className="flex-1">
+          <div className="flex-1 w-full">
             <h3 className="text-lg font-bold text-zinc-800 dark:text-zinc-100 flex items-center gap-2">
               PostgreSQL Database
               {diag.database.status === 'online' ? <CheckCircle2 size={16} className="text-emerald-500" /> : <XCircle size={16} className="text-red-500" />}
             </h3>
             <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">Primary transactional datastore</p>
           </div>
-          <div className="text-right">
+          <div className="text-left sm:text-right w-full sm:w-auto pt-3 sm:pt-0 border-t sm:border-t-0 border-zinc-200 dark:border-zinc-800 mt-2 sm:mt-0">
             <div className="text-2xl font-black text-zinc-800 dark:text-zinc-100">{diag.database.latencyMs} <span className="text-sm font-medium text-zinc-500">ms</span></div>
             <div className="text-xs font-semibold text-zinc-500 uppercase tracking-widest mt-1">Raw Ping</div>
           </div>
         </Card>
 
-        <Card className="flex items-center gap-4 bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800">
-          <div className={`p-4 rounded-xl ${diag.redis.status === 'online' ? 'bg-rose-500/10 text-rose-400' : 'bg-zinc-500/10 text-zinc-500 dark:text-zinc-400'}`}>
+        <Card className="flex flex-col sm:flex-row items-start sm:items-center gap-4 bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800">
+          <div className={`p-4 rounded-xl shrink-0 ${diag.redis.status === 'online' ? 'bg-rose-500/10 text-rose-400' : 'bg-zinc-500/10 text-zinc-500 dark:text-zinc-400'}`}>
             <Server size={24} />
           </div>
-          <div className="flex-1">
+          <div className="flex-1 w-full">
             <h3 className="text-lg font-bold text-zinc-800 dark:text-zinc-100 flex items-center gap-2">
               Redis Broker
               {diag.redis.status === 'online' ? <CheckCircle2 size={16} className="text-rose-500" /> : <ShieldAlert size={16} className="text-zinc-500" />}
             </h3>
             <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">Background job orchestrator</p>
           </div>
-          <div className="text-right">
+          <div className="text-left sm:text-right w-full sm:w-auto pt-3 sm:pt-0 border-t sm:border-t-0 border-zinc-200 dark:border-zinc-800 mt-2 sm:mt-0">
             {diag.redis.status === 'online' ? (
               <>
                 <div className="text-2xl font-black text-zinc-800 dark:text-zinc-100">{diag.redis.latencyMs} <span className="text-sm font-medium text-zinc-500">ms</span></div>

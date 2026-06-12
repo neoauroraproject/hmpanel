@@ -625,21 +625,26 @@ export default function ClientsPage() {
                 const isOnline = onlineClients.includes(c.email.trim().toLowerCase());
                 return (
                   <AnimatePresence key={c.id}>
-                    <motion.tr
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.2, delay: i * 0.03 }}
-                      onClick={() => setExpandedId(isExpanded ? null : c.id)}
-                      className={`block md:table-row bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 md:border-b md:border-x-0 md:border-t-0 md:border-zinc-200 dark:border-zinc-800/60 rounded-xl md:rounded-none last:border-b-0 hover:bg-white dark:hover:bg-zinc-900/30 transition-colors cursor-pointer ${
-                        isExpanded ? "bg-white dark:bg-zinc-900/20" : ""
-                      }`}
-                    >
+                      <motion.tr
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.2, delay: i * 0.03 }}
+                        onClick={() => {
+                          if (selectedCount > 0) {
+                            handleSelectOne(c);
+                          } else {
+                            setExpandedId(isExpanded ? null : c.id);
+                          }
+                        }}
+                        className={`block md:table-row bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 md:border-b md:border-x-0 md:border-t-0 md:border-zinc-200 dark:border-zinc-800/60 rounded-xl md:rounded-none last:border-b-0 hover:bg-white dark:hover:bg-zinc-900/30 transition-colors cursor-pointer ${
+                          isExpanded ? "bg-white dark:bg-zinc-900/20" : ""
+                        }`}
+                      >
                       <td
                         className="hidden md:table-cell px-4 py-3 text-center"
-                        onClick={(e) => e.stopPropagation()}
+                        onClick={(e) => { e.stopPropagation(); handleSelectOne(c); }}
                       >
                         <button
-                          onClick={() => handleSelectOne(c)}
                           className="text-zinc-500 hover:text-zinc-600 dark:text-zinc-300 transition-colors"
                         >
                           {isSelected ? (
@@ -1083,19 +1088,64 @@ export default function ClientsPage() {
                 </button>
               </div>
 
-              {/* Mobile Actions Menu Button */}
-              <div className="md:hidden flex items-center gap-2 shrink-0">
+              {/* Mobile Actions (Icons Only) */}
+              <div className="md:hidden flex items-center gap-1.5 overflow-x-auto scrollbar-none py-1 w-full justify-end px-2">
                 <button
-                  onClick={() => setMobileActionsOpen(true)}
-                  className="rounded-full bg-blue-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-blue-500 shadow-md shadow-blue-500/20"
+                  onClick={() => handleBulkAction("addTraffic")}
+                  className="rounded-full p-2 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                  title="Add Traffic"
                 >
-                  Actions
+                  <Database size={18} />
                 </button>
                 <button
-                  onClick={() => setSelectedClients({})}
-                  className="text-zinc-500 hover:text-zinc-600 p-1.5"
+                  onClick={() => handleBulkAction("resetTraffic")}
+                  className="rounded-full p-2 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                  title="Reset Traffic"
                 >
-                  <X size={16} />
+                  <RotateCcw size={18} />
+                </button>
+                <button
+                  onClick={() => handleBulkAction("addDays")}
+                  className="rounded-full p-2 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                  title="Add Days"
+                >
+                  <CalendarDays size={18} />
+                </button>
+                <button
+                  onClick={() => handleBulkAction("enable")}
+                  className="rounded-full p-2 text-emerald-500 hover:bg-emerald-500/10 transition-colors"
+                  title="Enable"
+                >
+                  <Play size={18} />
+                </button>
+                <button
+                  onClick={() => handleBulkAction("disable")}
+                  className="rounded-full p-2 text-amber-500 hover:bg-amber-500/10 transition-colors"
+                  title="Disable"
+                >
+                  <Square size={18} />
+                </button>
+                <button
+                  onClick={() => handleBulkAction("assignGroup")}
+                  className="rounded-full p-2 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                  title="Assign Group"
+                >
+                  <FolderPlus size={18} />
+                </button>
+                <button
+                  onClick={() => handleBulkAction("delete")}
+                  className="rounded-full p-2 text-red-500 hover:bg-red-500/10 transition-colors"
+                  title="Delete"
+                >
+                  <Trash2 size={18} />
+                </button>
+                <div className="w-px h-6 bg-zinc-200 dark:bg-zinc-800 mx-1"></div>
+                <button
+                  onClick={() => setSelectedClients({})}
+                  className="rounded-full p-2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"
+                  title="Clear Selection"
+                >
+                  <X size={18} />
                 </button>
               </div>
             </div>

@@ -108,8 +108,8 @@ export default function CleanupPage() {
         </div>
 
         <div className="w-full overflow-x-auto">
-          <table className="w-full text-left text-sm text-zinc-600 dark:text-zinc-300 min-w-[800px]">
-            <thead className="bg-zinc-50 dark:bg-zinc-900/50 text-xs uppercase text-zinc-500 dark:text-zinc-400 border-b border-zinc-200 dark:border-zinc-800">
+          <table className="w-full text-left text-sm text-zinc-600 dark:text-zinc-300 min-w-full md:min-w-[800px] block md:table">
+            <thead className="hidden md:table-header-group bg-zinc-50 dark:bg-zinc-900/50 text-xs uppercase text-zinc-500 dark:text-zinc-400 border-b border-zinc-200 dark:border-zinc-800">
               <tr>
                 <th className="px-4 py-3 w-10">
                   <input
@@ -126,14 +126,28 @@ export default function CleanupPage() {
                 <th className="px-4 py-3">Expired Since</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800 bg-white dark:bg-zinc-950">
+            <tbody className="block md:table-row-group divide-y divide-zinc-200 dark:divide-zinc-800 bg-white dark:bg-zinc-950">
+              {/* Mobile Select All Header */}
+              <div className="md:hidden p-4 bg-zinc-50 dark:bg-zinc-900/50 flex justify-between items-center border-b border-zinc-200 dark:border-zinc-800">
+                <span className="text-xs font-semibold text-zinc-500 uppercase tracking-widest">Select All Candidates</span>
+                <input
+                  type="checkbox"
+                  checked={filtered.length > 0 && selectedIds.length === filtered.length}
+                  onChange={toggleAll}
+                  className="rounded border-zinc-300 text-blue-600 focus:ring-blue-500 cursor-pointer scale-125"
+                />
+              </div>
               {filtered.map((c) => {
                 const used = Number(c.up) + Number(c.down);
                 const expiredDays = Math.floor((Date.now() - Number(c.expiryTime)) / (1000 * 60 * 60 * 24));
                 
                 return (
-                  <tr key={c.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-900/50 transition-colors">
-                    <td className="px-4 py-4">
+                  <tr 
+                    key={c.id} 
+                    onClick={() => toggleOne(c.id)}
+                    className="block md:table-row hover:bg-zinc-50 dark:hover:bg-zinc-900/50 transition-colors p-4 md:p-0 border-b border-zinc-200 dark:border-zinc-800 md:border-b-0 cursor-pointer"
+                  >
+                    <td className="hidden md:table-cell px-4 py-4" onClick={(e) => e.stopPropagation()}>
                       <input
                         type="checkbox"
                         checked={selectedIds.includes(c.id)}
@@ -141,31 +155,43 @@ export default function CleanupPage() {
                         className="rounded border-zinc-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                       />
                     </td>
-                    <td className="px-4 py-4">
-                      <div className="font-medium text-zinc-900 dark:text-zinc-100">{c.email}</div>
+                    <td className="block md:table-cell px-0 md:px-4 py-1 md:py-4 relative">
+                      {/* Mobile Checkbox Absolute */}
+                      <div className="absolute top-1 right-0 md:hidden" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.includes(c.id)}
+                          onChange={() => toggleOne(c.id)}
+                          className="rounded border-zinc-300 text-blue-600 focus:ring-blue-500 cursor-pointer scale-125"
+                        />
+                      </div>
+                      <div className="font-medium text-zinc-900 dark:text-zinc-100 text-base md:text-sm">{c.email}</div>
                       {c.remark && <div className="text-xs text-zinc-500 mt-0.5">{c.remark}</div>}
                     </td>
-                    <td className="px-4 py-4">
+                    <td className="block md:table-cell px-0 md:px-4 py-1 md:py-4">
+                      <div className="md:hidden text-xs text-zinc-500 mb-1">Owner</div>
                       <Badge tone={c.admin ? "blue" : "zinc"}>{c.admin ? c.admin.username : "Orphaned"}</Badge>
                     </td>
-                    <td className="px-4 py-4 text-xs">
+                    <td className="block md:table-cell px-0 md:px-4 py-1 md:py-4 text-xs">
+                      <div className="md:hidden text-xs text-zinc-500 mb-1">Panel</div>
                       <div className="font-medium text-zinc-700 dark:text-zinc-300">{c.inbound?.panel?.name}</div>
                       <div className="text-zinc-500 mt-0.5">{c.inbound?.tag}</div>
                     </td>
-                    <td className="px-4 py-4 text-xs font-mono">
+                    <td className="block md:table-cell px-0 md:px-4 py-1 md:py-4 text-xs font-mono">
+                      <div className="md:hidden text-xs text-zinc-500 mb-1 font-sans">Traffic</div>
                       <span className="text-zinc-800 dark:text-zinc-200">{formatBytes(used)}</span>
                       <span className="text-zinc-400 mx-1">/</span>
                       <span className="text-zinc-500">{c.total == 0 ? "∞" : formatBytes(Number(c.total))}</span>
                     </td>
-                    <td className="px-4 py-4">
+                    <td className="block md:table-cell px-0 md:px-4 py-1 md:py-4 pt-2 md:pt-4">
                       <Badge tone="red">{expiredDays} Days Ago</Badge>
                     </td>
                   </tr>
                 );
               })}
               {filtered.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center text-zinc-500">
+                <tr className="block md:table-row">
+                  <td colSpan={6} className="block md:table-cell px-4 py-12 text-center text-zinc-500">
                     <div className="flex flex-col items-center justify-center">
                       <ArchiveX size={32} className="mb-3 text-zinc-400 dark:text-zinc-600" />
                       <p>No cleanup candidates found.</p>
