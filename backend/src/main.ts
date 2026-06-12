@@ -43,6 +43,11 @@ async function bootstrap() {
   const prisma = app.get(PrismaService);
   const expressApp = app.getHttpAdapter().getInstance();
 
+  // Create shared agents to reuse connections and avoid TCP/SSL handshake bottlenecks
+  // when the browser requests dozens of assets concurrently.
+  const sharedHttpsAgent = new https.Agent({ rejectUnauthorized: false, keepAlive: true });
+  const sharedHttpAgent = new (require('http').Agent)({ keepAlive: true });
+
   expressApp.use('/sub', async (req: any, res: any, next: any) => {
     // Only handle GET requests for assets
     if (req.method !== 'GET') return next();
@@ -62,6 +67,8 @@ async function bootstrap() {
       if (allPanels.length === 0) {
         return res.status(404).send('No panel available');
       }
+
+      let lastError = null;
 
       for (const panel of allPanels) {
         const panelSubUrl = panel.subUrl || panel.url || '';
@@ -83,9 +90,10 @@ async function bootstrap() {
 
         try {
           const response = await axios.get(assetUrl, {
-            httpsAgent: new https.Agent({ rejectUnauthorized: false }),
+            httpsAgent: sharedHttpsAgent,
+            httpAgent: sharedHttpAgent,
             responseType: 'stream',
-            timeout: 5000,
+            timeout: 15000,
           });
 
           const fwdHeaders = ['content-type', 'content-length', 'cache-control', 'last-modified', 'etag'];
@@ -95,11 +103,15 @@ async function bootstrap() {
             }
           }
           return response.data.pipe(res);
-        } catch {
+        } catch (err: any) {
+          lastError = err;
           // Try next panel
         }
       }
 
+      if (lastError) {
+        logger.error(`Sub asset proxy failed for ${assetPath}: ${lastError.message}`);
+      }
       res.status(404).send('Asset not found');
     } catch (err: any) {
       logger.error('Sub asset proxy error', err.message);
