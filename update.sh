@@ -87,6 +87,10 @@ main() {
   info "Re-deploying containers..."
   docker compose up -d
 
+  step "Cleaning Up"
+  info "Removing old unused Docker images to free up disk space..."
+  docker image prune -f || true
+
   step "Verifying Health"
   local max_attempts=30
   local attempt=0
