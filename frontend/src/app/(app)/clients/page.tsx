@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type { Client, Paginated, Admin } from "@/lib/types";
 import { formatBytes, formatExpiry, isExpired, formatDate } from "@/lib/format";
@@ -157,8 +157,9 @@ export default function ClientsPage() {
   } | null>(null);
 
   // Query Clients
-  const { data, isLoading, error } = useQuery<Paginated<Client>>({
+  const { data, isLoading, isFetching, error } = useQuery<Paginated<Client>>({
     queryKey: ["clients", page, limit, search, adminId, inboundId, panelId, status, expiry, trafficRange],
+    placeholderData: keepPreviousData,
     queryFn: async () => {
       const params = new URLSearchParams();
       params.append("page", String(page));
@@ -455,7 +456,10 @@ export default function ClientsPage() {
           <input
             type="text"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
             placeholder="Search clients by name, email or UUID..."
             className="w-full bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-lg pl-9 pr-4 py-2 text-base md:text-sm text-zinc-800 dark:text-zinc-100 focus:outline-none focus:border-blue-500"
           />
@@ -501,20 +505,6 @@ export default function ClientsPage() {
 
       <Card className={`p-4 space-y-4 ${filterDrawerOpen ? "block" : "hidden md:block"}`}>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-4 lg:grid-cols-6">
-          {/* Search Input */}
-          <div className="relative md:col-span-2">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-zinc-500" />
-            <input
-              type="text"
-              placeholder="Search Client Username..."
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setPage(1);
-              }}
-              className="w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 py-2 pl-9 pr-4 text-sm text-zinc-600 dark:text-zinc-300 outline-none focus:border-blue-500"
-            />
-          </div>
 
           {/* Admin Filter */}
           {isSuperAdmin && (
