@@ -43,10 +43,14 @@ async function bootstrap() {
   const prisma = app.get(PrismaService);
   const expressApp = app.getHttpAdapter().getInstance();
 
-  expressApp.get('/sub/*', async (req: any, res: any) => {
+  expressApp.use('/sub', async (req: any, res: any, next: any) => {
+    // Only handle GET requests for assets
+    if (req.method !== 'GET') return next();
+    
     try {
-      const fullPath = req.originalUrl.replace(/^\/sub\//, '');
-      if (!fullPath) {
+      // req.path is relative to mount point, e.g. "/assets/vendor.js"
+      const assetPath = req.path.replace(/^\//, '');
+      if (!assetPath) {
         return res.status(400).send('No asset path');
       }
 
@@ -75,7 +79,7 @@ async function bootstrap() {
           base = `http://${panelSubUrl.replace(/\/+$/, '')}/sub/`;
         }
 
-        const assetUrl = `${base}${fullPath}`;
+        const assetUrl = `${base}${assetPath}`;
 
         try {
           const response = await axios.get(assetUrl, {
