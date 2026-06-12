@@ -58,6 +58,7 @@ export interface Client {
     streamSettings?: any;
     panel?: { id: string; name: string; url: string; subUrl?: string | null };
   };
+  inbounds?: any[];
 }
 
 export interface Panel {

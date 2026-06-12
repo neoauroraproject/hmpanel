@@ -896,9 +896,16 @@ export default function ClientsPage() {
                               </div>
                               <div className="flex justify-between items-center bg-zinc-50 dark:bg-zinc-950 p-2 rounded border border-zinc-200 dark:border-zinc-800">
                                 <span className="text-zinc-600 dark:text-zinc-400">Protocol</span>
-                                <span className="font-medium text-zinc-900 dark:text-zinc-100 uppercase">
-                                  {c.inbound?.protocol || 'Unknown'}
-                                  {(c.inbound as any)?.streamSettings?.network ? ` ${(c.inbound as any).streamSettings.network.toUpperCase()}` : ''}
+                                <span className="font-medium text-zinc-900 dark:text-zinc-100 uppercase flex items-center gap-1">
+                                  {c.inbounds?.length 
+                                    ? c.inbounds.slice(0, 2).map((i: any) => `${i.protocol}${i.streamSettings?.network ? ` ${i.streamSettings.network}` : ''}`).join(', ')
+                                    : `${c.inbound?.protocol || 'Unknown'}${(c.inbound as any)?.streamSettings?.network ? ` ${(c.inbound as any).streamSettings.network}` : ''}`
+                                  }
+                                  {c.inbounds && c.inbounds.length > 2 && (
+                                    <span className="text-[10px] bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400 px-1.5 py-0.5 rounded font-bold">
+                                      +{c.inbounds.length - 2}
+                                    </span>
+                                  )}
                                 </span>
                               </div>
                             </div>
@@ -1035,12 +1042,21 @@ export default function ClientsPage() {
             className="fixed bottom-6 left-1/2 z-40 w-full max-w-2xl px-4"
           >
             <div className="flex items-center justify-between rounded-full border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/90 px-6 py-3 shadow-2xl backdrop-blur-md">
-              <div className="flex items-center gap-3 shrink-0">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-500 text-[11px] font-bold text-white">
-                  {selectedCount}
-                </span>
+              <button 
+                onClick={() => setSelectedClients({})}
+                className="flex items-center gap-3 shrink-0 group cursor-pointer hover:opacity-80 transition-opacity outline-none"
+                title="Clear selection"
+              >
+                <div className="relative flex h-5 w-5 items-center justify-center rounded-full bg-blue-500 overflow-hidden">
+                  <span className="absolute inset-0 flex items-center justify-center transition-transform duration-200 group-hover:-translate-y-full text-[11px] font-bold text-white">
+                    {selectedCount}
+                  </span>
+                  <span className="absolute inset-0 flex items-center justify-center translate-y-full transition-transform duration-200 group-hover:translate-y-0 bg-red-500 text-white">
+                    <X size={12} strokeWidth={3} />
+                  </span>
+                </div>
                 <span className="text-xs font-medium text-zinc-600 dark:text-zinc-300">Selected</span>
-              </div>
+              </button>
 
               {/* Desktop Actions */}
               <div className="hidden md:flex items-center gap-1.5 sm:gap-2 overflow-x-auto max-w-[80%] scrollbar-none py-1">
