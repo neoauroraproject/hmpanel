@@ -241,7 +241,7 @@ collect_user_input() {
     read -rp "  Admin username [admin]: " ADMIN_USERNAME || true
     [[ -z "$ADMIN_USERNAME" ]] && ADMIN_USERNAME="admin"
     
-    read -rp "  Admin email (optional): " ADMIN_EMAIL || true
+    ADMIN_EMAIL="admin@localhost"
     
     while true; do
       read -rsp "  Admin password (min 8 chars): " ADMIN_PASSWORD || true
