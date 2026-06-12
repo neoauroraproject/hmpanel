@@ -311,26 +311,59 @@ ssl_status() {
   pause
 }
 
+ssl_change_domain() {
+  echo -e "${BOLD}--- Change Domain ---${NC}\n"
+  if [[ -f "${INSTALL_DIR}/.env" ]]; then
+    source "${INSTALL_DIR}/.env"
+  fi
+  
+  echo -e "Current Domain: ${CYAN}${DOMAIN:-None}${NC}"
+  read -rp "Enter new domain (e.g. panel.yourdomain.com): " new_domain
+  if [[ -n "$new_domain" ]]; then
+    if grep -q "^DOMAIN=" "${INSTALL_DIR}/.env"; then
+      sed -i "s/^DOMAIN=.*/DOMAIN=$new_domain/" "${INSTALL_DIR}/.env"
+    else
+      echo "DOMAIN=$new_domain" >> "${INSTALL_DIR}/.env"
+    fi
+    export DOMAIN="$new_domain"
+    echo -e "${GREEN}✔ Domain updated in .env to $new_domain${NC}"
+    
+    read -rp "Do you want to request a new Let's Encrypt SSL for this domain now? [y/N]: " req_ssl
+    if [[ "${req_ssl,,}" == "y" ]]; then
+      ssl_request_le
+    else
+      echo "Restarting containers to apply domain changes..."
+      docker compose -f "${INSTALL_DIR}/docker-compose.yml" up -d
+      pause
+    fi
+  else
+    echo "Domain change cancelled."
+    pause
+  fi
+}
+
 cmd_ssl() {
   while true; do
     clear
     print_header
-    echo -e "${BOLD}--- SSL Management ---${NC}\n"
-    echo "  1) Request Let's Encrypt Certificate"
-    echo "  2) Retry Certificate Request"
-    echo "  3) Install Existing Certificate"
-    echo "  4) Switch To HTTP Mode"
-    echo "  5) View SSL Status"
+    echo -e "${BOLD}--- SSL & Domain Management ---${NC}\n"
+    echo "  1) Change Domain Name"
+    echo "  2) Request Let's Encrypt Certificate"
+    echo "  3) Retry Certificate Request"
+    echo "  4) Install Existing Certificate"
+    echo "  5) Switch To HTTP Mode"
+    echo "  6) View SSL Status"
     echo "  0) Back to Main Menu"
     echo ""
     read -rp "  Choice: " choice
     echo ""
     
     case $choice in
-      1|2) ssl_request_le ;;
-      3) ssl_install_manual ;;
-      4) ssl_disable ;;
-      5) ssl_status ;;
+      1) ssl_change_domain ;;
+      2|3) ssl_request_le ;;
+      4) ssl_install_manual ;;
+      5) ssl_disable ;;
+      6) ssl_status ;;
       0) return ;;
       *) echo -e "${RED}Invalid option!${NC}"; sleep 1 ;;
     esac
