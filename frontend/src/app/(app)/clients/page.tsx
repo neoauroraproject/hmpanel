@@ -1855,8 +1855,7 @@ function EditClientModal({
   }
 
   const isTrafficDecrease = previewDiffBytes < 0;
-  const decreaseForbidden = isTrafficDecrease && usedTraffic > 0;
-  const isInvalidTraffic = (trafficInput ? previewTotalBytes > 0 && previewTotalBytes < usedTraffic : false) || decreaseForbidden;
+  const isInvalidTraffic = trafficInput ? previewTotalBytes > 0 && previewTotalBytes < usedTraffic : false;
 
   const update = useMutation({
     mutationFn: async () => {
@@ -1994,9 +1993,7 @@ function EditClientModal({
                 <div className={`text-xs px-2 py-1.5 rounded flex justify-between items-center ${isInvalidTraffic ? "bg-red-500/10 text-red-400" : "bg-zinc-100 dark:bg-zinc-800/50 text-zinc-500 dark:text-zinc-400"}`}>
                   {isInvalidTraffic ? (
                     <span>
-                      {decreaseForbidden 
-                        ? `Error: Traffic decrease is not allowed for clients that have consumed traffic.` 
-                        : `Error: Allocation cannot be lower than consumed traffic (${formatBytes(usedTraffic)}).`}
+                      {`Error: Allocation cannot be lower than consumed traffic (${formatBytes(usedTraffic)}).`}
                     </span>
                   ) : (
                     <>
