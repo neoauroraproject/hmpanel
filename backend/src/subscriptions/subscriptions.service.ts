@@ -209,7 +209,7 @@ export class SubscriptionsService {
       const response = await axios.get(nativeUrl, {
         headers,
         httpsAgent: new https.Agent({ rejectUnauthorized: false }),
-        responseType: 'arraybuffer',
+        responseType: 'stream',
         timeout: 10000,
       });
 
@@ -228,40 +228,7 @@ export class SubscriptionsService {
         }
       }
 
-      const contentType = String(response.headers['content-type'] || '').toLowerCase();
-
-      // If it's HTML (browser view), rewrite asset paths to point directly to 3x-ui
-      if (contentType.includes('text/html')) {
-        let html = Buffer.from(response.data).toString('utf-8');
-        
-        // Compute the base URL for assets on the 3x-ui panel
-        let assetBase = '';
-        try {
-          const pUrl = new URL(panelSubUrl);
-          const pathname = pUrl.pathname;
-          const subIdx = pathname.indexOf('/sub');
-          if (subIdx !== -1) {
-            assetBase = `${pUrl.origin}${pathname.substring(0, subIdx)}`;
-          } else {
-            assetBase = pUrl.origin;
-          }
-        } catch {
-          assetBase = '';
-        }
-
-        if (assetBase) {
-          // Rewrite absolute paths like /sub/assets/... to absolute URLs
-          html = html.replace(/(["'(])\/(sub\/)/g, `$1${assetBase}/$2`);
-          // Rewrite relative paths like ./assets/ or assets/
-          html = html.replace(/(["'(])\.\/assets\//g, `$1${assetBase}/sub/assets/`);
-        }
-
-        res.setHeader('content-type', 'text/html; charset=utf-8');
-        res.send(html);
-      } else {
-        // Non-HTML (base64 config for apps) - send as-is
-        res.send(Buffer.from(response.data));
-      }
+      response.data.pipe(res);
     } catch (error: any) {
       this.logger.error(`Failed to proxy native subscription from ${nativeUrl}`, error.message);
       res.status(502).send('Bad Gateway');
