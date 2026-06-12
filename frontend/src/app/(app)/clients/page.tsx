@@ -1855,7 +1855,6 @@ function EditClientModal({
   }
 
   const isTrafficDecrease = previewDiffBytes < 0;
-  const isInvalidTraffic = trafficInput ? previewTotalBytes > 0 && previewTotalBytes < usedTraffic : false;
 
   const update = useMutation({
     mutationFn: async () => {
@@ -1907,7 +1906,6 @@ function EditClientModal({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (isInvalidTraffic) return;
     update.mutate();
   };
 
@@ -1985,24 +1983,18 @@ function EditClientModal({
                   placeholder={trafficMode === "set" ? "New Total Allocation (GB)" : trafficMode === "add" ? "Traffic to Add (GB)" : "Traffic to Remove (GB)"}
                   value={trafficInput}
                   onChange={(e) => setTrafficInput(e.target.value)}
-                  className={`w-full rounded-lg border bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none transition-colors ${isInvalidTraffic ? 'border-red-500 focus:border-red-500' : 'border-zinc-300 dark:border-zinc-700 focus:border-blue-500'}`}
+                  className={`w-full rounded-lg border bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none transition-colors border-zinc-300 dark:border-zinc-700 focus:border-blue-500`}
                 />
               </div>
 
               {trafficInput && (
-                <div className={`text-xs px-2 py-1.5 rounded flex justify-between items-center ${isInvalidTraffic ? "bg-red-500/10 text-red-400" : "bg-zinc-100 dark:bg-zinc-800/50 text-zinc-500 dark:text-zinc-400"}`}>
-                  {isInvalidTraffic ? (
-                    <span>
-                      {`Error: Allocation cannot be lower than consumed traffic (${formatBytes(usedTraffic)}).`}
+                <div className={`text-xs px-2 py-1.5 rounded flex justify-between items-center bg-zinc-100 dark:bg-zinc-800/50 text-zinc-500 dark:text-zinc-400`}>
+                  <>
+                    <span>Preview:</span>
+                    <span className="font-medium text-zinc-700 dark:text-zinc-200">
+                      {previewDiffBytes > 0 ? `+${formatBytes(previewDiffBytes)} to add` : previewDiffBytes < 0 ? `${formatBytes(Math.abs(previewDiffBytes))} to return` : "No change"}
                     </span>
-                  ) : (
-                    <>
-                      <span>Preview:</span>
-                      <span className="font-medium text-zinc-700 dark:text-zinc-200">
-                        {previewDiffBytes > 0 ? `+${formatBytes(previewDiffBytes)} to add` : previewDiffBytes < 0 ? `${formatBytes(Math.abs(previewDiffBytes))} to return` : "No change"}
-                      </span>
-                    </>
-                  )}
+                  </>
                 </div>
               )}
             </div>
@@ -2140,7 +2132,7 @@ function EditClientModal({
             </button>
             <button
               type="submit"
-              disabled={update.isPending || isInvalidTraffic || form.inboundIds.length === 0}
+              disabled={update.isPending || form.inboundIds.length === 0}
               className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {update.isPending ? "Saving…" : "Save Changes"}

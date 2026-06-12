@@ -18,17 +18,24 @@ export default function AppLayout({
 
   const pathname = usePathname();
 
-  // Auth guard — zustand reads from localStorage after mount, so wait a tick.
+  // Auth guard — zustand reads from localStorage after mount, wait for hydration.
+  const [isHydrated, setIsHydrated] = useState(false);
+
   useEffect(() => {
+    useAuth.persist.onFinishHydration(() => setIsHydrated(true));
+    setIsHydrated(useAuth.persist.hasHydrated());
+  }, []);
+
+  useEffect(() => {
+    if (!isHydrated) return;
+    
     if (!token) {
       router.replace("/login");
       return;
     } 
 
-
-
     setReady(true);
-  }, [token, router, pathname]);
+  }, [token, router, pathname, isHydrated]);
 
   if (!ready) return null;
 

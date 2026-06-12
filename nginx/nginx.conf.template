@@ -135,9 +135,18 @@ http {
             proxy_set_header X-Forwarded-Proto $scheme;
         }
 
-        # ── Subscription proxy (public) ──────────────────────────
+        # 🛡️ Subscription proxy (public) 🚀
         location /s/ {
             proxy_pass http://backend/s/;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        # 🛡️ Subscription assets proxy (3x-ui static files) 🚀
+        location /sub/ {
+            proxy_pass http://backend/sub/;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

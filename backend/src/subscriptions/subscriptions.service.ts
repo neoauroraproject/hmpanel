@@ -234,4 +234,48 @@ export class SubscriptionsService {
       res.status(502).send('Bad Gateway');
     }
   }
+
+  async proxyAssets(req: Request, res: Response) {
+    const path = req.params[0] || '';
+    
+    // Find an active panel
+    const panels = await this.prisma.panel.findMany({
+      where: { status: 'ONLINE' },
+      take: 1
+    });
+
+    // If no online panel, try any panel
+    const panel = panels.length > 0 ? panels[0] : await this.prisma.panel.findFirst();
+
+    if (!panel) {
+      return res.status(404).send('No panel available to fetch assets');
+    }
+
+    const panelSubUrl = panel.subUrl || panel.url || '';
+    let base = panelSubUrl.endsWith('/') ? panelSubUrl : `${panelSubUrl}/`;
+    if (!base.includes('/sub/')) {
+       base = `${base}sub/`;
+    }
+    
+    const assetUrl = `${base}${path}`;
+
+    try {
+      const response = await axios.get(assetUrl, {
+        httpsAgent: new https.Agent({ rejectUnauthorized: false }),
+        responseType: 'stream',
+        timeout: 10000,
+      });
+
+      const headersToForward = ['content-type', 'content-length', 'cache-control', 'last-modified', 'etag', 'access-control-allow-origin'];
+      for (const h of headersToForward) {
+        if (response.headers[h]) {
+          res.setHeader(h, response.headers[h]);
+        }
+      }
+
+      response.data.pipe(res);
+    } catch (error: any) {
+      res.status(404).send('Asset not found');
+    }
+  }
 }
