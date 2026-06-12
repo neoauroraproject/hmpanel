@@ -151,7 +151,13 @@ export class SubscriptionsService {
 
   async proxySubscription(token: string, res: Response) {
     const client = await this.prisma.client.findFirst({
-      where: { subToken: token },
+      where: { 
+        OR: [
+          { subToken: token },
+          { subId: token },
+          { uuid: token }
+        ]
+      },
       include: {
         inbounds: {
           select: {
