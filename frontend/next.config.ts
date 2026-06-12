@@ -35,11 +35,6 @@ const nextConfig: NextConfig = {
         source: "/panel",
         destination: "/",
         permanent: false,
-      },
-      {
-        source: "/login",
-        destination: "/auth/login",
-        permanent: false,
       }
     ];
   },
