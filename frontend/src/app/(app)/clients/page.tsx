@@ -12,7 +12,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Search, Plus, ChevronDown, ChevronUp, Copy, Check, CheckCircle2,
   Trash2, X, Play, Square, CheckSquare, Eye, MoreVertical, QrCode, Link, Edit2, Power, 
-  Activity, Users, HardDrive, CalendarDays, Filter, FolderPlus, RotateCcw, AlertTriangle
+  Activity, Users, HardDrive, CalendarDays, Filter, FolderPlus, RotateCcw, AlertTriangle, Database
 } from "lucide-react";
 import { io } from "socket.io-client";
 import { ConnectionDetailsModal } from "@/components/ConnectionDetailsModal";
