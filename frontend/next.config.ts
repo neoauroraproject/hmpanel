@@ -12,6 +12,10 @@ const nextConfig: NextConfig = {
         source: "/socket.io/:path*",
         destination: "http://localhost:4000/socket.io/:path*",
       },
+      {
+        source: "/sub/:path*",
+        destination: "http://localhost:4000/sub/:path*",
+      },
     ];
   },
   async redirects() {
