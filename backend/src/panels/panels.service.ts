@@ -953,6 +953,13 @@ export class PanelsService {
 
     modifier(inbound);
 
+    if (typeof inbound.settings === 'object') {
+      inbound.settings = JSON.stringify(inbound.settings);
+    }
+    if (typeof inbound.streamSettings === 'object') {
+      inbound.streamSettings = JSON.stringify(inbound.streamSettings);
+    }
+
     const updateRes = await axios.post(`${apiBaseUrl}/panel/api/inbounds/update/${inbound.id}`, inbound, { headers, httpsAgent, timeout: 5000 });
     if (!updateRes.data || !updateRes.data.success) throw new Error(updateRes.data?.msg || 'Failed to update inbound');
     
@@ -977,16 +984,40 @@ export class PanelsService {
 
   async updateClient(panelId: string, inboundPort: number, uuid: string, clientPayload: any) {
     try {
-      return await this.updateInboundFull(panelId, inboundPort, (inbound) => {
-        if (!inbound.settings) return;
-        if (typeof inbound.settings === 'string') inbound.settings = JSON.parse(inbound.settings);
-        if (!inbound.settings.clients) return;
-        
-        const clientIndex = inbound.settings.clients.findIndex((c: any) => c.id === uuid);
-        if (clientIndex === -1) throw new Error(`Client with UUID ${uuid} not found in inbound`);
-        
-        inbound.settings.clients[clientIndex] = { ...inbound.settings.clients[clientIndex], ...clientPayload };
+      const panel = await this.findOne(panelId);
+      const apiBaseUrl = panel.apiBaseUrl || panel.url.replace(/\/$/, '');
+      const headers = { Authorization: panel.apiToken ? `Bearer ${panel.apiToken}` : undefined };
+      const httpsAgent = this.getHttpsAgent();
+
+      // First, get the inbound ID for this port
+      const listRes = await axios.get(`${apiBaseUrl}/panel/api/inbounds/list`, { headers, httpsAgent, timeout: 5000 });
+      if (!listRes.data || !listRes.data.success) throw new Error('Failed to list inbounds');
+      const inboundList = listRes.data.obj || [];
+      const inboundMeta = inboundList.find((i: any) => i.port === inboundPort);
+      if (!inboundMeta) throw new Error(`Inbound with port ${inboundPort} not found on panel`);
+
+      // Native 3x-ui client update endpoint requires inbound ID in the body
+      const response = await axios.post(`${apiBaseUrl}/panel/api/inbounds/updateClient/${uuid}`, {
+        id: inboundMeta.id,
+        settings: JSON.stringify({ clients: [clientPayload] })
+      }, {
+        headers, httpsAgent, timeout: 5000
       });
+
+      if (!response.data || !response.data.success) {
+        // Fallback to updateInboundFull if native endpoint fails (e.g. older versions)
+        return await this.updateInboundFull(panelId, inboundPort, (inbound) => {
+          if (!inbound.settings) return;
+          if (typeof inbound.settings === 'string') inbound.settings = JSON.parse(inbound.settings);
+          if (!inbound.settings.clients) return;
+          
+          const clientIndex = inbound.settings.clients.findIndex((c: any) => c.id === uuid);
+          if (clientIndex === -1) throw new Error(`Client with UUID ${uuid} not found in inbound`);
+          
+          inbound.settings.clients[clientIndex] = { ...inbound.settings.clients[clientIndex], ...clientPayload };
+        });
+      }
+      return response.data;
     } catch (err: any) {
       throw new BadRequestException(`Failed to update client on panel: ${err.message}`);
     }
