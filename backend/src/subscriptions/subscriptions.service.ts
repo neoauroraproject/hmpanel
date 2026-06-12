@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import axios from 'axios';
 import * as https from 'https';
-import { Response } from 'express';
+import { Response, Request } from 'express';
 
 @Injectable()
 export class SubscriptionsService {
@@ -149,7 +149,7 @@ export class SubscriptionsService {
     }
   }
 
-  async proxySubscription(token: string, res: Response) {
+  async proxySubscription(token: string, req: Request, res: Response) {
     const client = await this.prisma.client.findFirst({
       where: { 
         OR: [
@@ -195,7 +195,13 @@ export class SubscriptionsService {
     }
 
     try {
+      const headers: any = {};
+      if (req.headers['user-agent']) {
+        headers['User-Agent'] = req.headers['user-agent'];
+      }
+
       const response = await axios.get(nativeUrl, {
+        headers,
         httpsAgent: new https.Agent({ rejectUnauthorized: false }),
         responseType: 'stream',
         timeout: 10000,

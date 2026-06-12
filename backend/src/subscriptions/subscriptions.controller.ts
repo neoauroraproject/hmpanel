@@ -1,5 +1,5 @@
-import { Controller, Get, Param, Res } from '@nestjs/common';
-import type { Response } from 'express';
+import { Controller, Get, Param, Res, Req } from '@nestjs/common';
+import type { Response, Request } from 'express';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { SubscriptionsService } from './subscriptions.service';
 
@@ -28,8 +28,8 @@ export class PublicSubController {
 
   @Get(':token')
   @ApiOperation({ summary: 'Get raw native subscription content proxy' })
-  async proxySubscription(@Param('token') token: string, @Res() res: Response) {
-    return this.subscriptionsService.proxySubscription(token, res);
+  async proxySubscription(@Param('token') token: string, @Req() req: Request, @Res() res: Response) {
+    return this.subscriptionsService.proxySubscription(token, req, res);
   }
 }
 
