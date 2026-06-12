@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PanelsService } from '../panels/panels.service';
+import * as os from 'os';
+import * as fs from 'fs';
 
 const DAY = 24 * 60 * 60 * 1000;
 const HOUR = 60 * 60 * 1000;
@@ -467,5 +469,50 @@ export class StatsService {
     diagnostics.stats.importedClients = await this.prisma.client.count();
 
     return diagnostics;
+  }
+
+  /** Live CPU, RAM, and Disk usage of the host machine running the panel */
+  async systemResources() {
+    const totalMem = os.totalmem();
+    const freeMem = os.freemem();
+    const usedMem = totalMem - freeMem;
+    const ramUsagePercent = totalMem > 0 ? (usedMem / totalMem) * 100 : 0;
+
+    const cpus = os.cpus();
+    let user = 0, nice = 0, sys = 0, idle = 0, irq = 0;
+    for (const cpu of cpus) {
+      user += cpu.times.user;
+      nice += cpu.times.nice;
+      sys += cpu.times.sys;
+      idle += cpu.times.idle;
+      irq += cpu.times.irq;
+    }
+    const total = user + nice + sys + idle + irq;
+    const active = total - idle;
+    const cpuUsagePercent = total > 0 ? (active / total) * 100 : 0;
+
+    let diskUsagePercent = 0;
+    let totalDisk = 0;
+    let usedDisk = 0;
+    try {
+      // In Node 19.6.0+, statfsSync returns filesystem stats
+      const statfs = fs.statfsSync('/');
+      totalDisk = statfs.blocks * statfs.bsize;
+      const freeDisk = statfs.bfree * statfs.bsize;
+      usedDisk = totalDisk - freeDisk;
+      diskUsagePercent = totalDisk > 0 ? (usedDisk / totalDisk) * 100 : 0;
+    } catch (e) {
+      // Ignore fallback
+    }
+
+    return {
+      cpu: cpuUsagePercent,
+      ram: ramUsagePercent,
+      disk: diskUsagePercent,
+      totalMem,
+      usedMem,
+      totalDisk,
+      usedDisk,
+    };
   }
 }

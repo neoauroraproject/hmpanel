@@ -55,6 +55,12 @@ export class StatsController {
     return this.stats.monitoring();
   }
 
+  @Get('system')
+  @ApiOperation({ summary: 'Live host machine system resources (CPU, RAM, Disk)' })
+  systemResources() {
+    return this.stats.systemResources();
+  }
+
   @Post('sync')
   @ApiOperation({ summary: 'Run a sync across all online panels' })
   runSync() {

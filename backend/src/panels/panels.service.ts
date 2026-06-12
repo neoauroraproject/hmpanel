@@ -1,13 +1,30 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import axios, { AxiosError } from 'axios';
 import * as https from 'https';
 import * as crypto from 'crypto';
 
 @Injectable()
-export class PanelsService {
+export class PanelsService implements OnModuleInit {
   private readonly logger = new Logger(PanelsService.name);
   constructor(private prisma: PrismaService) {}
+
+  async onModuleInit() {
+    this.logger.log('Starting auto-sync for all panels on boot...');
+    this.syncAllPanelsInBackground();
+  }
+
+  private async syncAllPanelsInBackground() {
+    try {
+      const panels = await this.prisma.panel.findMany();
+      for (const p of panels) {
+        this.sync(p.id).catch(e => this.logger.error(`Boot sync failed for panel ${p.name}:`, e.message));
+      }
+      this.logger.log(`Triggered background sync for ${panels.length} panels.`);
+    } catch (error: any) {
+      this.logger.error('Failed to trigger background sync on boot', error.message);
+    }
+  }
 
   async testConnection(data: { url: string; apiToken?: string; panelId?: string }) {
     if (data.panelId && !data.apiToken) {

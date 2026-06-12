@@ -126,6 +126,7 @@ function SuperDashboard() {
   const series = useQuery({ queryKey: ["series", range], queryFn: async () => (await api.get<SeriesPoint[]>(`/stats/traffic-series?range=${range}`)).data });
   const trends = useQuery({ queryKey: ["trends"], queryFn: async () => (await api.get<Trends>("/stats/trends")).data });
   const mon = useQuery({ queryKey: ["monitoring"], queryFn: async () => (await api.get<Monitoring>("/stats/monitoring")).data, refetchInterval: 15000 });
+  const sysQuery = useQuery({ queryKey: ["system"], queryFn: async () => (await api.get<any>("/stats/system")).data, refetchInterval: 5000 });
 
   const [livePanels, setLivePanels] = useState<any[]>([]);
 
@@ -149,14 +150,39 @@ function SuperDashboard() {
   const seriesData = (series.data ?? []).map((p) => ({ label: p.label, bytes: p.bytes }));
   const adminData = (trends.data?.byAdmin ?? []).map((d) => ({ name: d.name, bytes: d.bytes }));
   const inboundData = (trends.data?.byInbound ?? []).map((d) => ({ name: d.name.replace("inbound-", ""), bytes: d.bytes }));
+  
+  const sys = sysQuery.data;
 
   return (
     <div className="space-y-6">
-      <div className="flex items-end justify-between">
+      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">Dashboard</h1>
           <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Platform-wide overview across all panels, resellers and clients.</p>
         </div>
+        
+        {sys && (
+          <div className="flex gap-5 items-center rounded-xl bg-white dark:bg-zinc-950/50 border border-zinc-200 dark:border-zinc-800/80 p-3.5 shadow-sm max-w-max">
+            <div className="flex items-center gap-2 text-zinc-500 dark:text-zinc-400 border-r border-zinc-200 dark:border-zinc-800 pr-5">
+              <Server size={18} />
+              <span className="text-xs font-semibold uppercase tracking-wider text-zinc-700 dark:text-zinc-300">Host Node</span>
+            </div>
+            <div className="flex items-center gap-6">
+              <div className="flex flex-col gap-1.5 w-[72px]">
+                <div className="flex justify-between text-[10px] text-zinc-500 font-medium"><span>CPU</span><span>{sys.cpu.toFixed(0)}%</span></div>
+                <div className="h-1.5 w-full bg-zinc-100 dark:bg-zinc-900 rounded-full overflow-hidden"><div className="h-full bg-blue-500" style={{ width: `${sys.cpu}%` }} /></div>
+              </div>
+              <div className="flex flex-col gap-1.5 w-[72px]">
+                <div className="flex justify-between text-[10px] text-zinc-500 font-medium"><span>RAM</span><span>{sys.ram.toFixed(0)}%</span></div>
+                <div className="h-1.5 w-full bg-zinc-100 dark:bg-zinc-900 rounded-full overflow-hidden"><div className="h-full bg-purple-500" style={{ width: `${sys.ram}%` }} /></div>
+              </div>
+              <div className="flex flex-col gap-1.5 w-[72px]">
+                <div className="flex justify-between text-[10px] text-zinc-500 font-medium"><span>DISK</span><span>{sys.disk.toFixed(0)}%</span></div>
+                <div className="h-1.5 w-full bg-zinc-100 dark:bg-zinc-900 rounded-full overflow-hidden"><div className="h-full bg-amber-500" style={{ width: `${sys.disk}%` }} /></div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* System Alerts */}
