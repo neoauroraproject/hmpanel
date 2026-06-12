@@ -397,20 +397,26 @@ export class ClientsService {
       }
     }
 
-    // Prepare new values for panel API
-    const newEnable = data.enable !== undefined ? data.enable : existing.enable;
     const newTotal = data.total !== undefined ? BigInt(data.total) : existing.total;
     const newExpiry = data.expiryTime !== undefined ? BigInt(data.expiryTime) : existing.expiryTime;
     const newFlow = data.flow !== undefined ? data.flow : existing.flow;
-
+    const now = BigInt(Date.now());
     const usedTraffic = existing.up + existing.down;
-    
-    if (newTotal > 0n && newTotal < usedTraffic) {
-      throw new BadRequestException('Traffic allocation cannot be lower than consumed traffic.');
+
+    let autoEnable = false;
+    if (data.enable === undefined && !existing.enable) {
+      const isNotExpired = newExpiry === 0n || newExpiry > now;
+      const isNotExhausted = newTotal === 0n || newTotal > usedTraffic;
+      
+      if (isNotExpired && isNotExhausted && (newTotal > existing.total || (existing.expiryTime !== 0n && (newExpiry === 0n || newExpiry > existing.expiryTime)))) {
+        autoEnable = true;
+      }
     }
 
-    if (newTotal < existing.total && usedTraffic > 0n) {
-      throw new BadRequestException('Traffic decrease is not allowed because the client has already consumed traffic.');
+    const newEnable = data.enable !== undefined ? data.enable : (autoEnable ? true : existing.enable);
+
+    if (newTotal > 0n && newTotal < usedTraffic) {
+      throw new BadRequestException('Traffic allocation cannot be lower than consumed traffic.');
     }
 
     const clientPayload: any = {
