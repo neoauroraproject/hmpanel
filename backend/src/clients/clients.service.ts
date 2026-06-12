@@ -415,10 +415,6 @@ export class ClientsService {
 
     const newEnable = data.enable !== undefined ? data.enable : (autoEnable ? true : existing.enable);
 
-    if (newTotal > 0n && newTotal < usedTraffic) {
-      throw new BadRequestException('Traffic allocation cannot be lower than consumed traffic.');
-    }
-
     const clientPayload: any = {
       id: existing.uuid,
       subId: existing.subId || "",

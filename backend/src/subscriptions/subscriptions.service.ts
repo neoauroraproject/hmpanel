@@ -199,6 +199,12 @@ export class SubscriptionsService {
       if (req.headers['user-agent']) {
         headers['User-Agent'] = req.headers['user-agent'];
       }
+      if (req.headers['accept']) {
+        headers['Accept'] = req.headers['accept'];
+      }
+      if (req.headers['accept-language']) {
+        headers['Accept-Language'] = req.headers['accept-language'];
+      }
 
       const response = await axios.get(nativeUrl, {
         headers,
