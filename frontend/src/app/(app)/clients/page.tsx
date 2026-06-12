@@ -1862,6 +1862,16 @@ function EditClientModal({
         }
       }
 
+      const newTotalBytes = trafficInput ? previewTotalBytes : totalTraffic;
+      const hasTraffic = newTotalBytes === 0 || usedTraffic < newTotalBytes;
+      const newExpiryTime = form.expiryDays ? expiryTimestamp : expTime;
+      const hasTime = isFirstUse || newExpiryTime === 0 || newExpiryTime > Date.now();
+      
+      let enableOverride = undefined;
+      if (!client.enable && hasTraffic && hasTime) {
+         enableOverride = true;
+      }
+
       return (
         await api.patch(`/clients/${client.id}`, {
           total: trafficInput ? previewTotalBytes : undefined,
@@ -1869,6 +1879,7 @@ function EditClientModal({
           remark: form.remark ?? "",
           flow: isReality && form.flow ? form.flow : undefined,
           inboundIds: form.inboundIds,
+          enable: enableOverride,
         })
       ).data;
     },

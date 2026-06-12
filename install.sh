@@ -417,7 +417,7 @@ step_4_database() {
   local retries=30
   local ready=false
   while [ $retries -gt 0 ]; do
-    if docker exec -u postgres hmpanel-postgres pg_isready -h 127.0.0.1 -U panel_user -d panel_db &>/dev/null; then
+    if docker exec -u postgres hmpanel-postgres pg_isready -U panel_user -d panel_db &>/dev/null; then
       ready=true
       break
     fi
