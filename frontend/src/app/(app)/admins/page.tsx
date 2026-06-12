@@ -692,9 +692,9 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
 
   return (
     <motion.div {...MOTION_CONFIG.modalOverlay} className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-      <motion.div {...MOTION_CONFIG.modalContent} className="w-full max-w-5xl rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex flex-col md:flex-row overflow-y-auto md:overflow-hidden max-h-[90vh]">
+      <motion.div {...MOTION_CONFIG.modalContent} className="w-full max-w-5xl rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex flex-col-reverse md:flex-row overflow-y-auto md:overflow-hidden max-h-[90vh]">
         {/* Admin Statistics (Sidebar) */}
-        <div className="w-full md:w-1/3 shrink-0 bg-zinc-50 dark:bg-zinc-950/50 p-6 border-b md:border-b-0 md:border-r border-zinc-200 dark:border-zinc-800/50 flex flex-col">
+        <div className="w-full md:w-1/3 shrink-0 bg-zinc-50 dark:bg-zinc-950/50 p-6 border-t md:border-t-0 md:border-r border-zinc-200 dark:border-zinc-800/50 flex flex-col">
           <div className="flex justify-between items-start mb-6">
             <div>
               <h2 className="text-xl font-bold text-zinc-800 dark:text-zinc-100">{admin.username}</h2>
@@ -732,7 +732,7 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
         </div>
 
         {/* Edit Actions */}
-        <div className="w-full md:w-2/3 p-6 overflow-y-auto space-y-8">
+        <div className="w-full md:w-2/3 p-6 overflow-y-visible md:overflow-y-auto space-y-8">
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-semibold text-zinc-800 dark:text-zinc-100 flex items-center gap-2">
               <Settings2 size={18} className="text-zinc-500 dark:text-zinc-400" /> Edit Admin
