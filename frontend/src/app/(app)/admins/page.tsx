@@ -414,7 +414,7 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
   const filteredInbounds = (inbounds ?? []).filter(i => i.panel.id === form.selectedPanel);
 
   return (
-    <motion.div {...MOTION_CONFIG.modalOverlay} className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+    <motion.div {...MOTION_CONFIG.modalOverlay} className="fixed inset-0 z-[100] flex items-start sm:items-center justify-center bg-black/60 pt-[10dvh] px-4 sm:pt-0 sm:p-4 backdrop-blur-sm">
       <motion.div {...MOTION_CONFIG.modalContent} className="w-full max-w-3xl max-h-[90vh] flex flex-col rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-2xl overflow-hidden">
         <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between bg-zinc-50 dark:bg-zinc-950/30">
           <h2 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50 flex items-center gap-2">
@@ -674,7 +674,7 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
   });
 
   if (isLoading) return (
-    <motion.div {...MOTION_CONFIG.modalOverlay} className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+    <motion.div {...MOTION_CONFIG.modalOverlay} className="fixed inset-0 z-[100] flex items-start sm:items-center justify-center bg-black/60 pt-[10dvh] px-4 sm:pt-0 sm:p-4">
       <motion.div {...MOTION_CONFIG.modalContent} className="w-full max-w-4xl rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-12 flex justify-center">
         <Spinner />
       </motion.div>
@@ -691,7 +691,7 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
   const isMigrated = !admin.adminInbounds || admin.adminInbounds.length === 0;
 
   return (
-    <motion.div {...MOTION_CONFIG.modalOverlay} className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+    <motion.div {...MOTION_CONFIG.modalOverlay} className="fixed inset-0 z-[100] flex items-start sm:items-center justify-center bg-black/60 pt-[10dvh] px-4 sm:pt-0 sm:p-4 backdrop-blur-sm">
       <motion.div {...MOTION_CONFIG.modalContent} className="w-full max-w-5xl rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex flex-col-reverse md:flex-row overflow-y-auto md:overflow-hidden max-h-[90vh]">
         {/* Admin Statistics (Sidebar) */}
         <div className="w-full md:w-1/3 shrink-0 bg-zinc-50 dark:bg-zinc-950/50 p-6 border-t md:border-t-0 md:border-r border-zinc-200 dark:border-zinc-800/50 flex flex-col">

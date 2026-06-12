@@ -252,9 +252,23 @@ export class SubscriptionsService {
     }
 
     const panelSubUrl = panel.subUrl || panel.url || '';
-    let base = panelSubUrl.endsWith('/') ? panelSubUrl : `${panelSubUrl}/`;
-    if (!base.includes('/sub/')) {
-       base = `${base}sub/`;
+    let base = '';
+    try {
+      const pUrl = new URL(panelSubUrl);
+      const pathname = pUrl.pathname;
+      const subIndex = pathname.indexOf('/sub/');
+      if (subIndex !== -1) {
+         base = `${pUrl.origin}${pathname.substring(0, subIndex + 5)}`;
+      } else {
+         base = `${pUrl.origin}${pathname.endsWith('/') ? pathname : pathname + '/'}sub/`;
+      }
+    } catch {
+      let cleanUrl = panelSubUrl;
+      const subIndex = cleanUrl.indexOf('/sub/');
+      if (subIndex !== -1) {
+         cleanUrl = cleanUrl.substring(0, subIndex);
+      }
+      base = `http://${cleanUrl.endsWith('/') ? cleanUrl : cleanUrl + '/'}sub/`;
     }
     
     const assetUrl = `${base}${path}`;
@@ -275,7 +289,8 @@ export class SubscriptionsService {
 
       response.data.pipe(res);
     } catch (error: any) {
-      res.status(404).send('Asset not found');
+      this.logger.error(`Asset fetch failed: ${assetUrl}`, error.message);
+      res.status(404).send(`Asset not found: ${error.message} (${assetUrl})`);
     }
   }
 }

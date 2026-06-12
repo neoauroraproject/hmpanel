@@ -238,8 +238,8 @@ function IconBtn({ children, title, onClick, danger }: { children: React.ReactNo
 
 function Modal({ title, onClose, children, hideClose }: { title: string; onClose: () => void; children: React.ReactNode; hideClose?: boolean }) {
   return (
-    <motion.div {...MOTION_CONFIG.modalOverlay} className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm md:p-4 p-0 md:items-center items-end">
-      <motion.div {...MOTION_CONFIG.modalContent} className="w-full max-w-md rounded-t-2xl md:rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 shadow-2xl relative overflow-hidden flex flex-col max-h-[90vh]">
+    <motion.div {...MOTION_CONFIG.modalOverlay} className="fixed inset-0 z-[100] flex items-start sm:items-center justify-center bg-black/60 pt-[10dvh] px-4 sm:pt-0 sm:p-4 backdrop-blur-sm">
+        <motion.div {...MOTION_CONFIG.modalContent} className="w-full max-w-md rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 shadow-2xl relative overflow-hidden flex flex-col max-h-[85dvh]">
         <div className="mb-4 flex items-center justify-between sticky top-0 bg-white dark:bg-zinc-900 z-10 pb-2 border-b border-zinc-200 dark:border-zinc-800/50">
           <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">{title}</h2>
           {!hideClose && <button onClick={onClose} className="text-zinc-500 hover:text-zinc-600 dark:text-zinc-300 transition-colors"><X size={18} /></button>}

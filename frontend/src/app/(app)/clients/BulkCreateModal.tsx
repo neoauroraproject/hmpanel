@@ -144,7 +144,7 @@ export function BulkCreateModal({ onClose, inboundsList }: BulkCreateModalProps)
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      className="fixed inset-0 z-[100] flex items-start sm:items-center justify-center bg-black/60 pt-[10dvh] px-4 sm:pt-0 sm:p-4"
       onClick={onClose}
     >
       <motion.div

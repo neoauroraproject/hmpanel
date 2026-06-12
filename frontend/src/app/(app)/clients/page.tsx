@@ -1272,7 +1272,7 @@ export default function ClientsPage() {
 
       {/* Bulk Delete Custom Confirmation Dialog */}
       {deleteConfirmOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+        <div className="fixed inset-0 z-[100] flex items-start sm:items-center justify-center bg-black/60 pt-[10dvh] px-4 sm:pt-0 sm:p-4">
           <div className="w-full max-w-sm rounded-2xl border border-red-500/20 bg-white dark:bg-zinc-900 p-6 shadow-2xl">
             <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-50 mb-2">Confirm Bulk Deletion</h3>
             <p className="text-sm text-zinc-500 mb-4">
@@ -1311,7 +1311,7 @@ export default function ClientsPage() {
 
       {/* Bulk Reset Traffic Confirmation Dialog */}
       {resetConfirmOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+        <div className="fixed inset-0 z-[100] flex items-start sm:items-center justify-center bg-black/60 pt-[10dvh] px-4 sm:pt-0 sm:p-4">
           <div className="w-full max-w-sm rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 shadow-2xl">
             <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-50 mb-2">Reset Traffic Counters</h3>
             <p className="text-sm text-zinc-500 mb-4">
@@ -1341,7 +1341,7 @@ export default function ClientsPage() {
       {/* Bulk Value Input Modal (Traffic / Days) */}
       {bulkValueModal && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          className="fixed inset-0 z-[100] flex items-start sm:items-center justify-center bg-black/60 pt-[10dvh] px-4 sm:pt-0 sm:p-4"
         >
           <div
             className="w-full max-w-sm rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6"
@@ -1564,7 +1564,7 @@ function AddClientModal({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+        className="fixed inset-0 z-[100] flex items-start sm:items-center justify-center bg-black/60 pt-[10dvh] px-4 sm:pt-0 sm:p-4"
       >
         <motion.div
           initial={{ opacity: 0, scale: 0.95, y: 20 }}
@@ -1604,14 +1604,14 @@ function AddClientModal({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 sm:p-4"
+      className="fixed inset-0 z-[100] flex items-start sm:items-center justify-center bg-black/60 pt-[10dvh] px-4 sm:pt-0 sm:p-4"
     >
       <motion.div
         initial={{ opacity: 0, y: 20, scale: 0.95 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 20, scale: 0.95 }}
         transition={{ type: "spring", bounce: 0, duration: 0.4 }}
-        className="w-full max-w-md rounded-t-2xl sm:rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 max-h-[90vh] overflow-y-auto absolute bottom-0 sm:relative sm:bottom-auto"
+        className="w-full max-w-md rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 max-h-[85dvh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">
@@ -1914,14 +1914,14 @@ function EditClientModal({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 sm:p-4"
+      className="fixed inset-0 z-[100] flex items-start sm:items-center justify-center bg-black/60 pt-[10dvh] px-4 sm:pt-0 sm:p-4"
     >
       <motion.div
         initial={{ opacity: 0, y: 20, scale: 0.95 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 20, scale: 0.95 }}
         transition={{ type: "spring", bounce: 0, duration: 0.4 }}
-        className="w-full max-w-lg rounded-t-2xl sm:rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 md:p-6 max-h-[90vh] overflow-y-auto absolute bottom-0 sm:relative sm:bottom-auto"
+        className="w-full max-w-lg rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 md:p-6 max-h-[85dvh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">
@@ -2152,7 +2152,7 @@ function BulkResultModal({
   onClose: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+    <div className="fixed inset-0 z-[100] flex items-start sm:items-center justify-center bg-black/60 pt-[10dvh] px-4 sm:pt-0 sm:p-4">
       <div className="w-full max-w-md rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 shadow-2xl">
         <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-50 mb-2">Bulk Operation Summary</h3>
         <p className="text-sm text-zinc-500 mb-4 capitalize">Action: {result.action}</p>
@@ -2209,7 +2209,7 @@ function BulkGroupAssignModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+    <div className="fixed inset-0 z-[100] flex items-start sm:items-center justify-center bg-black/60 pt-[10dvh] px-4 sm:pt-0 sm:p-4">
       <div className="w-full max-w-sm rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 shadow-2xl">
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">Assign Group ({selectedCount} Clients)</h3>
@@ -2271,15 +2271,15 @@ function MobileActionsSheet({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 md:hidden"
+      className="fixed inset-0 z-[100] flex items-start justify-center bg-black/60 md:hidden pt-[10dvh] px-4"
       onClick={onClose}
     >
       <motion.div
-        initial={{ y: "100%" }}
+        initial={{ y: "-100%" }}
         animate={{ y: 0 }}
-        exit={{ y: "100%" }}
+        exit={{ y: "-100%" }}
         transition={{ type: "spring", damping: 25, stiffness: 250 }}
-        className="w-full rounded-t-3xl bg-white dark:bg-zinc-900 p-6 space-y-4 max-h-[80vh] overflow-y-auto"
+        className="w-full rounded-2xl bg-white dark:bg-zinc-900 p-6 space-y-4 max-h-[85dvh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex justify-between items-center pb-2 border-b border-zinc-200 dark:border-zinc-800">
