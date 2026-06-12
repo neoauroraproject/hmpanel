@@ -885,7 +885,14 @@ export default function ClientsPage() {
                               </div>
                               <div className="flex justify-between items-center bg-zinc-50 dark:bg-zinc-950 p-2 rounded border border-zinc-200 dark:border-zinc-800">
                                 <span className="text-zinc-600 dark:text-zinc-400">Inbound</span>
-                                <span className="font-medium text-zinc-900 dark:text-zinc-100">{c.inbound?.tag || 'Unknown'}</span>
+                                <span className="font-medium text-zinc-900 dark:text-zinc-100 flex items-center gap-1">
+                                  {c.inbounds?.length ? c.inbounds.slice(0, 2).map((i: any) => i.tag).join(', ') : (c.inbound?.tag || 'Unknown')}
+                                  {c.inbounds && c.inbounds.length > 2 && (
+                                    <span className="text-[10px] bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400 px-1.5 py-0.5 rounded font-bold">
+                                      +{c.inbounds.length - 2}
+                                    </span>
+                                  )}
+                                </span>
                               </div>
                               <div className="flex justify-between items-center bg-zinc-50 dark:bg-zinc-950 p-2 rounded border border-zinc-200 dark:border-zinc-800">
                                 <span className="text-zinc-600 dark:text-zinc-400">Protocol</span>
