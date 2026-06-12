@@ -209,7 +209,7 @@ export class SubscriptionsService {
       const response = await axios.get(nativeUrl, {
         headers,
         httpsAgent: new https.Agent({ rejectUnauthorized: false }),
-        responseType: 'stream',
+        responseType: 'arraybuffer',
         timeout: 10000,
       });
 
@@ -228,73 +228,43 @@ export class SubscriptionsService {
         }
       }
 
-      response.data.pipe(res);
+      const contentType = String(response.headers['content-type'] || '').toLowerCase();
+
+      // If it's HTML (browser view), rewrite asset paths to point directly to 3x-ui
+      if (contentType.includes('text/html')) {
+        let html = Buffer.from(response.data).toString('utf-8');
+        
+        // Compute the base URL for assets on the 3x-ui panel
+        let assetBase = '';
+        try {
+          const pUrl = new URL(panelSubUrl);
+          const pathname = pUrl.pathname;
+          const subIdx = pathname.indexOf('/sub');
+          if (subIdx !== -1) {
+            assetBase = `${pUrl.origin}${pathname.substring(0, subIdx)}`;
+          } else {
+            assetBase = pUrl.origin;
+          }
+        } catch {
+          assetBase = '';
+        }
+
+        if (assetBase) {
+          // Rewrite absolute paths like /sub/assets/... to absolute URLs
+          html = html.replace(/(["'(])\/(sub\/)/g, `$1${assetBase}/$2`);
+          // Rewrite relative paths like ./assets/ or assets/
+          html = html.replace(/(["'(])\.\/assets\//g, `$1${assetBase}/sub/assets/`);
+        }
+
+        res.setHeader('content-type', 'text/html; charset=utf-8');
+        res.send(html);
+      } else {
+        // Non-HTML (base64 config for apps) - send as-is
+        res.send(Buffer.from(response.data));
+      }
     } catch (error: any) {
       this.logger.error(`Failed to proxy native subscription from ${nativeUrl}`, error.message);
       res.status(502).send('Bad Gateway');
     }
-  }
-
-  async proxyAssets(req: Request, res: Response) {
-    const path = req.params[0] || '';
-    
-    let panels = await this.prisma.panel.findMany({
-      where: { status: 'ONLINE' }
-    });
-
-    if (panels.length === 0) {
-      panels = await this.prisma.panel.findMany();
-    }
-
-    if (panels.length === 0) {
-      return res.status(404).send('No panel available to fetch assets');
-    }
-
-    let lastError = null;
-
-    for (const panel of panels) {
-      const panelSubUrl = panel.subUrl || panel.url || '';
-      let base = '';
-      try {
-        const pUrl = new URL(panelSubUrl);
-        const pathname = pUrl.pathname;
-        const subIndex = pathname.indexOf('/sub/');
-        if (subIndex !== -1) {
-           base = `${pUrl.origin}${pathname.substring(0, subIndex + 5)}`;
-        } else {
-           base = `${pUrl.origin}${pathname.endsWith('/') ? pathname : pathname + '/'}sub/`;
-        }
-      } catch {
-        let cleanUrl = panelSubUrl;
-        const subIndex = cleanUrl.indexOf('/sub/');
-        if (subIndex !== -1) {
-           cleanUrl = cleanUrl.substring(0, subIndex);
-        }
-        base = `http://${cleanUrl.endsWith('/') ? cleanUrl : cleanUrl + '/'}sub/`;
-      }
-      
-      const assetUrl = `${base}${path}`;
-
-      try {
-        const response = await axios.get(assetUrl, {
-          httpsAgent: new https.Agent({ rejectUnauthorized: false }),
-          responseType: 'stream',
-          timeout: 4000,
-        });
-
-        const headersToForward = ['content-type', 'content-length', 'cache-control', 'last-modified', 'etag', 'access-control-allow-origin'];
-        for (const h of headersToForward) {
-          if (response.headers[h]) {
-            res.setHeader(h, response.headers[h]);
-          }
-        }
-        return response.data.pipe(res);
-      } catch (error: any) {
-        lastError = error;
-      }
-    }
-
-    this.logger.error(`Asset fetch failed on all panels for path: ${path}`, lastError?.message);
-    res.status(404).send(`Asset not found: ${lastError?.message}`);
   }
 }

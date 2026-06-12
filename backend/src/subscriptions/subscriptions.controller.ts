@@ -32,16 +32,3 @@ export class PublicSubController {
     return this.subscriptionsService.proxySubscription(token, req, res);
   }
 }
-
-@ApiTags('Subscriptions Assets (3x-ui Proxy)')
-@Controller('sub')
-export class SubAssetsController {
-  constructor(private readonly subscriptionsService: SubscriptionsService) {}
-
-  @Get('*')
-  @ApiOperation({ summary: 'Proxy 3x-ui assets' })
-  async proxyAssets(@Req() req: Request, @Res() res: Response) {
-    return this.subscriptionsService.proxyAssets(req, res);
-  }
-}
-
