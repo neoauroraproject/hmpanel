@@ -119,7 +119,7 @@ export default function DefaultTheme({ params }: { params: Promise<{ id: string 
   let statusText = isExpired ? "Expired" : !enable ? "Disabled" : total > 0 && used >= total ? "Depleted" : "Active";
 
   const brandName = portalSettings?.portalName || "Subscription Info";
-  const platformUrl = typeof window !== "undefined" ? `${window.location.origin}/s/${id}` : "";
+  const platformUrl = typeof window !== "undefined" ? `${window.location.origin}/p/${id}` : "";
   const getNativeUrl = () => {
     const sub = encodeURIComponent(subId || email);
     if (inbound?.panel?.subUrl) return `${inbound.panel.subUrl}${sub}`;
