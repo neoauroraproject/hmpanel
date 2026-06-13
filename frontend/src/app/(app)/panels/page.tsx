@@ -458,6 +458,17 @@ function PanelWizard({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
                               <div className="flex gap-2"><span className="text-zinc-600 min-w-[50px]">Code:</span> <span className={test.debugLog.responseStatus >= 200 && test.debugLog.responseStatus < 300 ? "text-emerald-500 font-bold" : "text-red-500 font-bold"}>{test.debugLog.responseStatus || "TCP Error"}</span></div>
                             </div>
                           )}
+                          {test.capabilities && (
+                            <div className="mt-2 pt-2 border-t border-zinc-200 dark:border-zinc-800/50">
+                              <div className="text-zinc-500 mb-1 font-semibold uppercase text-[9px] tracking-wider">Detected Capabilities</div>
+                              <div className="grid grid-cols-2 gap-x-2 gap-y-1">
+                                <div className="flex gap-1 items-center"><span className={test.capabilities.clientsApi ? "text-emerald-400" : "text-zinc-600"}>{test.capabilities.clientsApi ? "✓" : "✗"}</span> <span className="text-zinc-400">Clients API</span></div>
+                                <div className="flex gap-1 items-center"><span className={test.capabilities.pagination ? "text-emerald-400" : "text-zinc-600"}>{test.capabilities.pagination ? "✓" : "✗"}</span> <span className="text-zinc-400">Pagination</span></div>
+                                <div className="flex gap-1 items-center"><span className={test.capabilities.slimInbounds ? "text-emerald-400" : "text-zinc-600"}>{test.capabilities.slimInbounds ? "✓" : "✗"}</span> <span className="text-zinc-400">Slim Inbounds</span></div>
+                                <div className="flex gap-1 items-center"><span className={test.capabilities.observatory ? "text-emerald-400" : "text-zinc-600"}>{test.capabilities.observatory ? "✓" : "✗"}</span> <span className="text-zinc-400">Observatory</span></div>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </details>
                     )}

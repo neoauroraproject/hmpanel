@@ -51,6 +51,14 @@ model Panel {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
+  // API Capability Flags
+  capClientsApi   Boolean   @default(false)
+  capPagination   Boolean   @default(false)
+  capApiToken     Boolean   @default(false)
+  capSlimInbounds Boolean   @default(false)
+  capObservatory  Boolean   @default(false)
+  capWebsocket    Boolean   @default(false)
+
   server        Server         @relation(fields: [serverId], references: [id], onDelete: Cascade)
   inbounds      Inbound[]
   syncState     SyncState?

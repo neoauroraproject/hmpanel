@@ -26,6 +26,40 @@ export class PanelsService implements OnModuleInit {
     }
   }
 
+  private async discoverCapabilities(apiBaseUrl: string, apiToken?: string) {
+    const caps = {
+      clientsApi: false,
+      pagination: false,
+      apiToken: !!apiToken,
+      slimInbounds: false,
+      observatory: false,
+      websocket: false,
+    };
+    const headers = { Authorization: apiToken ? `Bearer ${apiToken}` : undefined };
+
+    try {
+      const cRes = await axios.get(`${apiBaseUrl}/panel/api/clients/list`, { headers, timeout: 3000 });
+      if (cRes.data && cRes.data.success !== undefined) caps.clientsApi = true;
+    } catch {}
+
+    try {
+      const pRes = await axios.get(`${apiBaseUrl}/panel/api/clients/list/paged`, { headers, timeout: 3000 });
+      if (pRes.data && pRes.data.success !== undefined) caps.pagination = true;
+    } catch {}
+
+    try {
+      const oRes = await axios.get(`${apiBaseUrl}/panel/api/inbounds/options`, { headers, timeout: 3000 });
+      if (oRes.data && oRes.data.success !== undefined) caps.slimInbounds = true;
+    } catch {}
+
+    try {
+      const obsRes = await axios.get(`${apiBaseUrl}/panel/api/server/xrayObservatory`, { headers, timeout: 3000 });
+      if (obsRes.data && obsRes.data.success !== undefined) caps.observatory = true;
+    } catch {}
+
+    return caps;
+  }
+
   async testConnection(data: { url: string; apiToken?: string; panelId?: string }) {
     if (data.panelId && !data.apiToken) {
       const panel = await this.prisma.panel.findUnique({ where: { id: data.panelId } });
@@ -127,11 +161,14 @@ export class PanelsService implements OnModuleInit {
           // Soft failure on inbounds
         }
 
+        const capabilities = await this.discoverCapabilities(apiBaseUrl, data.apiToken);
+
         return {
           ok: true,
           checklist,
           version: panelVersion,
           xrayVersion: xrayVersion,
+          capabilities,
           pingMs,
           status: 'online',
           inboundCount,
@@ -262,6 +299,16 @@ export class PanelsService implements OnModuleInit {
       throw new BadRequestException('Subscription URL is required');
     }
 
+    const testResult = await this.testConnection({ url: data.url, apiToken: data.apiToken });
+    const caps = testResult.capabilities || {
+      clientsApi: false,
+      pagination: false,
+      apiToken: !!data.apiToken,
+      slimInbounds: false,
+      observatory: false,
+      websocket: false,
+    };
+
     const panel = await this.prisma.panel.create({
       data: {
         serverId,
@@ -277,6 +324,12 @@ export class PanelsService implements OnModuleInit {
         panelType: '3x-ui',
         webBasePath,
         apiBaseUrl,
+        capClientsApi: caps.clientsApi,
+        capPagination: caps.pagination,
+        capApiToken: caps.apiToken,
+        capSlimInbounds: caps.slimInbounds,
+        capObservatory: caps.observatory,
+        capWebsocket: caps.websocket,
       },
     });
 
@@ -468,6 +521,21 @@ export class PanelsService implements OnModuleInit {
       const diskCurrent = obj.disk?.current ? Number(obj.disk.current) : 0;
       const diskTotal = obj.disk?.total ? Number(obj.disk.total) : 1;
       const diskUsage = (diskCurrent / diskTotal) * 100;
+
+      // Feature discovery
+      const caps = await this.discoverCapabilities(apiBaseUrl, panel.apiToken || undefined);
+      await this.prisma.panel.update({
+        where: { id: panel.id },
+        data: {
+          capClientsApi: caps.clientsApi,
+          capPagination: caps.pagination,
+          capApiToken: caps.apiToken,
+          capSlimInbounds: caps.slimInbounds,
+          capObservatory: caps.observatory,
+          capWebsocket: caps.websocket,
+          version,
+        }
+      });
 
       // --- Group Sync & Conflict Detection ---
       try {
