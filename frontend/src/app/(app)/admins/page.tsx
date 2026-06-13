@@ -389,8 +389,8 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
         balance: form.balanceGb ? Math.round(Number(form.balanceGb) * 1024 * 1024 * 1024) : 0,
         expiryTime: form.expiryDays ? Date.now() + Number(form.expiryDays) * 24 * 60 * 60 * 1000 : 0,
         maxClients: form.maxClients ? Number(form.maxClients) : 0,
-        inboundIds: inbounds ? inbounds.map((i: any) => i.id) : [],
-        permissions: form.canCustomizeBranding ? ["canCustomizeBranding"] : [],
+        inboundIds: form.selectedInbounds,
+        permissions: [],
         storeEnabled: form.storeEnabled,
         storePanelId: form.storePanelId,
       };
@@ -479,33 +479,41 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
                         <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">Max Clients <span className="text-zinc-500 text-xs">(0 = Unlimited)</span></label>
                         <input type="number" min={0} placeholder="0" value={form.maxClients} onChange={(e) => setForm({ ...form, maxClients: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
                       </div>
-                        <div className="flex items-center justify-between p-3 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/50">
-                          <div>
-                            <div className="text-sm font-medium text-zinc-800 dark:text-zinc-100">Portal Customization</div>
-                            <div className="text-xs text-zinc-500">Allow reseller to customize their subscription portal branding</div>
+                        {form.selectedPanel ? (
+                          <div className="mt-4">
+                            <label className="mb-2 flex text-sm font-medium text-zinc-800 dark:text-zinc-100 justify-between">
+                              <span>Allowed Inbounds</span>
+                              <button type="button" onClick={() => setForm(f => ({...f, selectedInbounds: inbounds?.map((i: any) => i.id) || []}))} className="text-xs text-blue-500 hover:underline">Select All</button>
+                            </label>
+                            {inboundsLoading ? <div className="text-xs text-zinc-500">Loading inbounds...</div> : (
+                              <div className="space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+                                {(inbounds ?? []).map((i: any) => (
+                                  <label key={i.id} className="flex items-center gap-3 p-2 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer">
+                                    <input type="checkbox" checked={form.selectedInbounds.includes(i.id)} 
+                                      onChange={(e) => {
+                                        if (e.target.checked) setForm(f => ({ ...f, selectedInbounds: [...f.selectedInbounds, i.id] }));
+                                        else setForm(f => ({ ...f, selectedInbounds: f.selectedInbounds.filter(id => id !== i.id) }));
+                                      }}
+                                      className="w-4 h-4 rounded text-blue-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-blue-500" />
+                                    <div className="flex flex-col">
+                                      <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{i.remark || i.tag}</span>
+                                      <span className="text-xs text-zinc-500">{i.protocol} - Port {i.port}</span>
+                                    </div>
+                                  </label>
+                                ))}
+                                {inbounds?.length === 0 && <div className="text-xs text-zinc-500 p-2 text-center border rounded-lg border-dashed border-zinc-300 dark:border-zinc-700">No inbounds found on this panel.</div>}
+                              </div>
+                            )}
                           </div>
-                          <label className="relative inline-flex items-center cursor-pointer">
-                            <input type="checkbox" checked={form.canCustomizeBranding} onChange={(e) => setForm({ ...form, canCustomizeBranding: e.target.checked })} className="sr-only peer" />
-                            <div className="w-11 h-6 bg-zinc-200 dark:bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500"></div>
-                          </label>
-                        </div>
-                      {form.selectedPanel ? (
-                        <div className="mt-4 p-3 rounded-lg border border-blue-500/20 bg-blue-500/10 text-sm text-blue-600 dark:text-blue-400 flex items-start gap-2">
-                          <Server size={18} className="shrink-0 mt-0.5" />
-                          <div>
-                            <strong>Panel Assigned</strong>
-                            <p className="text-xs opacity-80 mt-1">This admin will automatically have access to all inbounds on the selected panel.</p>
+                        ) : (
+                          <div className="mt-4 p-3 rounded-lg border border-amber-500/20 bg-amber-500/10 text-sm text-amber-600 dark:text-amber-400 flex items-start gap-2">
+                            <AlertCircle size={18} className="shrink-0 mt-0.5" />
+                            <div>
+                              <strong>No Panel Selected</strong>
+                              <p className="text-xs opacity-80 mt-1">Please select a panel from the Basic Information section to view and select allowed inbounds.</p>
+                            </div>
                           </div>
-                        </div>
-                      ) : (
-                        <div className="mt-4 p-3 rounded-lg border border-amber-500/20 bg-amber-500/10 text-sm text-amber-600 dark:text-amber-400 flex items-start gap-2">
-                          <AlertCircle size={18} className="shrink-0 mt-0.5" />
-                          <div>
-                            <strong>No Panel Selected</strong>
-                            <p className="text-xs opacity-80 mt-1">Please select a panel from the Basic Information section.</p>
-                          </div>
-                        </div>
-                      )}
+                        )}
                     </div>
                   </motion.div>
                 )}
@@ -637,8 +645,8 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
       const payload: any = {
         status: form.status,
         trafficMode: form.trafficMode,
-        inboundIds: inbounds ? inbounds.map((i: any) => i.id) : [],
-        permissions: form.canCustomizeBranding ? ["canCustomizeBranding"] : [],
+        inboundIds: form.selectedInbounds,
+        permissions: [],
       };
       if (form.balanceGb) payload.balance = Math.round(Number(form.balanceGb) * 1024 * 1024 * 1024);
       if (form.maxClients) payload.maxClients = Number(form.maxClients);
@@ -857,33 +865,41 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
                           <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">Max Clients <span className="text-zinc-500 text-xs">(0 = Unlimited)</span></label>
                           <input type="number" min={0} value={form.maxClients} onChange={(e) => setForm({ ...form, maxClients: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
                         </div>
-                          <div className="flex items-center justify-between p-3 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/50">
-                            <div>
-                              <div className="text-sm font-medium text-zinc-800 dark:text-zinc-100">Portal Customization</div>
-                              <div className="text-xs text-zinc-500">Allow reseller to customize their subscription portal branding</div>
+                          {form.selectedPanel ? (
+                            <div className="mt-4">
+                              <label className="mb-2 flex text-sm font-medium text-zinc-800 dark:text-zinc-100 justify-between">
+                                <span>Allowed Inbounds</span>
+                                <button type="button" onClick={() => setForm(f => ({...f, selectedInbounds: inbounds?.map((i: any) => i.id) || []}))} className="text-xs text-blue-500 hover:underline">Select All</button>
+                              </label>
+                              {inboundsLoading ? <div className="text-xs text-zinc-500">Loading inbounds...</div> : (
+                                <div className="space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+                                  {(inbounds ?? []).map((i: any) => (
+                                    <label key={i.id} className="flex items-center gap-3 p-2 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer">
+                                      <input type="checkbox" checked={form.selectedInbounds.includes(i.id)} 
+                                        onChange={(e) => {
+                                          if (e.target.checked) setForm(f => ({ ...f, selectedInbounds: [...f.selectedInbounds, i.id] }));
+                                          else setForm(f => ({ ...f, selectedInbounds: f.selectedInbounds.filter(id => id !== i.id) }));
+                                        }}
+                                        className="w-4 h-4 rounded text-blue-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-blue-500" />
+                                      <div className="flex flex-col">
+                                        <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{i.remark || i.tag}</span>
+                                        <span className="text-xs text-zinc-500">{i.protocol} - Port {i.port}</span>
+                                      </div>
+                                    </label>
+                                  ))}
+                                  {inbounds?.length === 0 && <div className="text-xs text-zinc-500 p-2 text-center border rounded-lg border-dashed border-zinc-300 dark:border-zinc-700">No inbounds found on this panel.</div>}
+                                </div>
+                              )}
                             </div>
-                            <label className="relative inline-flex items-center cursor-pointer">
-                              <input type="checkbox" checked={form.canCustomizeBranding} onChange={(e) => setForm({ ...form, canCustomizeBranding: e.target.checked })} className="sr-only peer" />
-                              <div className="w-11 h-6 bg-zinc-200 dark:bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500"></div>
-                            </label>
-                          </div>
-                        {form.selectedPanel ? (
-                          <div className="mt-4 p-3 rounded-lg border border-blue-500/20 bg-blue-500/10 text-sm text-blue-600 dark:text-blue-400 flex items-start gap-2">
-                            <Server size={18} className="shrink-0 mt-0.5" />
-                            <div>
-                              <strong>Panel Assigned</strong>
-                              <p className="text-xs opacity-80 mt-1">This admin automatically has access to all inbounds on the selected panel.</p>
+                          ) : (
+                            <div className="mt-4 p-3 rounded-lg border border-amber-500/20 bg-amber-500/10 text-sm text-amber-600 dark:text-amber-400 flex items-start gap-2">
+                              <AlertCircle size={18} className="shrink-0 mt-0.5" />
+                              <div>
+                                <strong>No Panel Selected</strong>
+                                <p className="text-xs opacity-80 mt-1">Please select a panel from the Basic Information section to view and select allowed inbounds.</p>
+                              </div>
                             </div>
-                          </div>
-                        ) : (
-                          <div className="mt-4 p-3 rounded-lg border border-amber-500/20 bg-amber-500/10 text-sm text-amber-600 dark:text-amber-400 flex items-start gap-2">
-                            <AlertCircle size={18} className="shrink-0 mt-0.5" />
-                            <div>
-                              <strong>No Panel Selected</strong>
-                              <p className="text-xs opacity-80 mt-1">Please select a panel from the Basic Information section.</p>
-                            </div>
-                          </div>
-                        )}
+                          )}
                       </div>
                     </motion.div>
                   )}
