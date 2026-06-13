@@ -1354,6 +1354,29 @@ export default function ClientsPage() {
         </div>
       )}
 
+      {/* Bulk Processing Loading Overlay */}
+      <AnimatePresence>
+        {bulkMutation.isPending && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          >
+            <div className="bg-white dark:bg-zinc-900 rounded-2xl p-8 flex flex-col items-center shadow-2xl max-w-sm mx-4 text-center border border-zinc-200 dark:border-zinc-800">
+              <svg className="animate-spin h-12 w-12 text-blue-600 mb-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              <h3 className="text-zinc-900 dark:text-zinc-100 font-semibold text-lg">Processing...</h3>
+              <p className="text-zinc-500 dark:text-zinc-400 text-sm mt-2">
+                Please wait while the action completes. This may take a moment depending on the number of clients selected.
+              </p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Edit Client Modal */}
       <AnimatePresence>
         {editing && (

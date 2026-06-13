@@ -1034,7 +1034,29 @@ export class PanelsService implements OnModuleInit {
     return new https.Agent({ rejectUnauthorized: false });
   }
 
+  private updateQueues = new Map<string, Promise<any>>();
+
   async updateInboundFull(panelId: string, inboundPort: number, modifier: (inbound: any) => void) {
+    const lockKey = `${panelId}:${inboundPort}`;
+    const prev = this.updateQueues.get(lockKey) || Promise.resolve();
+    
+    const next = (async () => {
+      try { await prev; } catch (e) {} // Wait for previous task regardless of its outcome
+      return await this._doUpdateInboundFull(panelId, inboundPort, modifier);
+    })();
+    
+    this.updateQueues.set(lockKey, next);
+    
+    next.finally(() => {
+      if (this.updateQueues.get(lockKey) === next) {
+        this.updateQueues.delete(lockKey);
+      }
+    });
+
+    return next;
+  }
+
+  private async _doUpdateInboundFull(panelId: string, inboundPort: number, modifier: (inbound: any) => void) {
     const panel = await this.findOne(panelId);
     const apiBaseUrl = panel.apiBaseUrl || panel.url.replace(/\/$/, '');
     const headers = { Authorization: panel.apiToken ? `Bearer ${panel.apiToken}` : undefined };
