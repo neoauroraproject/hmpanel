@@ -575,16 +575,69 @@ export class PanelsService implements OnModuleInit {
       }
       // --- End Group Sync ---
 
-      const inboundsRes = await axios.get(`${apiBaseUrl}/panel/api/inbounds/list`, {
-        headers: { Authorization: panel.apiToken ? `Bearer ${panel.apiToken}` : undefined },
-        timeout: 8000,
-      });
+      let apiInbounds = [];
+      let unifiedClients: any[] = [];
 
-      if (!inboundsRes.data || !inboundsRes.data.success) {
-        throw new Error(inboundsRes.data?.msg || 'Failed to fetch inbounds');
+      const headers = { Authorization: panel.apiToken ? `Bearer ${panel.apiToken}` : undefined };
+
+      if (caps.clientsApi) {
+        const inboundsUrl = caps.slimInbounds ? '/panel/api/inbounds/list/slim' : '/panel/api/inbounds/list';
+        const inboundsRes = await axios.get(`${apiBaseUrl}${inboundsUrl}`, { headers, timeout: 8000 });
+        if (!inboundsRes.data || !inboundsRes.data.success) throw new Error(inboundsRes.data?.msg || 'Failed to fetch inbounds');
+        apiInbounds = inboundsRes.data.obj || [];
+
+        const clientsRes = await axios.get(`${apiBaseUrl}/panel/api/clients/list`, { headers, timeout: 8000 });
+        if (!clientsRes.data || !clientsRes.data.success) throw new Error(clientsRes.data?.msg || 'Failed to fetch clients');
+        const apiClientsList = clientsRes.data.obj || [];
+        
+        for (const c of apiClientsList) {
+          unifiedClients.push({
+            uuid: c.uuid || c.id,
+            subId: c.subId,
+            email: c.email,
+            group: c.group,
+            flow: c.flow,
+            enable: c.enable !== false,
+            up: c.traffic?.up || 0,
+            down: c.traffic?.down || 0,
+            total: c.totalGB || 0,
+            expiryTime: c.expiryTime || 0,
+            inboundIds: c.inboundIds || []
+          });
+        }
+      } else {
+        const inboundsRes = await axios.get(`${apiBaseUrl}/panel/api/inbounds/list`, { headers, timeout: 8000 });
+        if (!inboundsRes.data || !inboundsRes.data.success) throw new Error(inboundsRes.data?.msg || 'Failed to fetch inbounds');
+        apiInbounds = inboundsRes.data.obj || [];
+
+        for (const apiInbound of apiInbounds) {
+          const settings = typeof apiInbound.settings === 'string' ? JSON.parse(apiInbound.settings) : apiInbound.settings;
+          const clientsList = settings?.clients || [];
+          const clientStats = apiInbound.clientStats || [];
+          const statsMap = new Map();
+          for (const stat of clientStats) {
+            if (stat.email) statsMap.set(stat.email.trim(), stat);
+          }
+
+          for (const c of clientsList) {
+            const trimmedEmail = (c.email || '').trim() || `client-${(c.id || '').slice(0, 8)}`;
+            const stats = statsMap.get(trimmedEmail) || {};
+            unifiedClients.push({
+              uuid: c.id,
+              subId: c.subId || stats.subId,
+              email: trimmedEmail,
+              group: c.group,
+              flow: c.flow,
+              enable: stats.enable !== false,
+              up: stats.up || 0,
+              down: stats.down || 0,
+              total: stats.total || 0,
+              expiryTime: stats.expiryTime || 0,
+              inboundIds: [apiInbound.id]
+            });
+          }
+        }
       }
-
-      const apiInbounds = inboundsRes.data.obj || [];
 
       let totalSyncedInbounds = 0;
       let totalSyncedClients = 0;
@@ -593,22 +646,17 @@ export class PanelsService implements OnModuleInit {
       
       const apiUuids = new Set<string>();
 
-      const admins = await this.prisma.admin.findMany({
-        select: { id: true, username: true }
-      });
+      const admins = await this.prisma.admin.findMany({ select: { id: true, username: true } });
       const adminMap = new Map<string, string>();
-      for (const admin of admins) {
-        adminMap.set(admin.username.toLowerCase(), admin.id);
-      }
+      for (const admin of admins) { adminMap.set(admin.username.toLowerCase(), admin.id); }
 
+      const apiInboundIdToDbId = new Map<number, string>();
+
+      // 1. Sync Inbounds
       for (const apiInbound of apiInbounds) {
         totalSyncedInbounds++;
-        const settings = typeof apiInbound.settings === 'string'
-          ? JSON.parse(apiInbound.settings)
-          : apiInbound.settings;
-        const streamSettings = typeof apiInbound.streamSettings === 'string'
-          ? JSON.parse(apiInbound.streamSettings)
-          : apiInbound.streamSettings;
+        const settings = typeof apiInbound.settings === 'string' ? JSON.parse(apiInbound.settings || '{}') : (apiInbound.settings || {});
+        const streamSettings = typeof apiInbound.streamSettings === 'string' ? JSON.parse(apiInbound.streamSettings || '{}') : (apiInbound.streamSettings || {});
 
         let dbInbound = await this.prisma.inbound.findFirst({
           where: { panelId: panel.id, port: apiInbound.port }
@@ -621,8 +669,8 @@ export class PanelsService implements OnModuleInit {
               tag: apiInbound.remark || `inbound-${apiInbound.port}`,
               port: apiInbound.port,
               protocol: apiInbound.protocol,
-              settings: settings || {},
-              streamSettings: streamSettings || {},
+              settings,
+              streamSettings,
             }
           });
         } else {
@@ -631,207 +679,173 @@ export class PanelsService implements OnModuleInit {
             data: {
               tag: apiInbound.remark || dbInbound.tag,
               protocol: apiInbound.protocol,
-              settings: settings || {},
-              streamSettings: streamSettings || {},
+              settings,
+              streamSettings,
             }
           });
         }
+        apiInboundIdToDbId.set(apiInbound.id, dbInbound.id);
+      }
 
-        const clientsList = settings?.clients || [];
-        const clientStats = apiInbound.clientStats || [];
-        const statsMap = new Map();
-        for (const stat of clientStats) {
-          if (stat.email) {
-            statsMap.set(stat.email.trim(), stat);
-          }
-        }
+      // 2. Sync Clients
+      const adminUsageCharges = new Map<string, bigint>();
 
-        const adminUsageCharges = new Map<string, bigint>();
-
-        for (const apiClient of clientsList) {
-          totalSyncedClients++;
-          apiUuids.add(apiClient.id);
-          
-          let dbClient = await this.prisma.client.findUnique({
-            where: { uuid: apiClient.id },
-            include: { admin: true }
-          });
-
-          const trimmedEmail = (apiClient.email || '').trim() || `client-${apiClient.id.slice(0, 8)}`;
-          const stats = statsMap.get(trimmedEmail) || {};
-
-          const up = BigInt(stats.up || 0);
-          const down = BigInt(stats.down || 0);
-          const total = BigInt(stats.total || 0);
-          const expiryTime = BigInt(stats.expiryTime || 0);
-          const enable = stats.enable !== false;
-
-          let resolvedAdminId = dbClient?.adminId || null;
-          if (apiClient.group) {
-            resolvedAdminId = adminMap.get(apiClient.group.toLowerCase()) || null;
-          }
-
-          if (!dbClient) {
-            await this.prisma.client.create({
-              data: {
-                uuid: apiClient.id,
-                subId: apiClient.subId || null,
-                subToken: crypto.randomBytes(5).toString('hex'),
-                email: trimmedEmail,
-                adminId: resolvedAdminId, // Nullable for Orphaned / Native System Clients
-                enable,
-                up,
-                down,
-                total,
-                expiryTime,
-                flow: apiClient.flow || null,
-                inbounds: {
-                  create: {
-                    inboundId: dbInbound.id
-                  }
-                }
-              }
-            });
-
-            // We do NOT add the historical `up` and `down` of new clients to `panelUpDelta`.
-            // Otherwise, we would falsely charge the entire lifetime usage of a panel on the first sync.
-          } else {
-            // Usage Accounting Delta Calculation
-            const usedOldUp = dbClient.up;
-            const usedOldDown = dbClient.down;
-            const upDelta = up > usedOldUp ? up - usedOldUp : 0n;
-            const downDelta = down > usedOldDown ? down - usedOldDown : 0n;
-            
-            panelUpDelta += upDelta;
-            panelDownDelta += downDelta;
-            
-            const delta = upDelta + downDelta;
-
-            if (delta > 0n && dbClient.admin && dbClient.admin.trafficMode === 'USAGE' && dbClient.adminId) {
-              const currentCharge = adminUsageCharges.get(dbClient.adminId) || 0n;
-              adminUsageCharges.set(dbClient.adminId, currentCharge + delta);
-            }
-
-            // Conflict Detection (Ignore up/down normal usage)
-            const changes = [];
-            if (dbClient.enable !== enable) changes.push(`enable: ${dbClient.enable} -> ${enable}`);
-            if (dbClient.total !== total) changes.push(`total: ${dbClient.total} -> ${total}`);
-            if (dbClient.expiryTime !== expiryTime) changes.push(`expiryTime: ${dbClient.expiryTime} -> ${expiryTime}`);
-
-            if (changes.length > 0) {
-              await this.prisma.auditLog.create({
-                data: {
-                  action: 'SYNC_CONFLICT_RESOLVED',
-                  entity: 'Client',
-                  entityId: dbClient.id,
-                  details: { message: 'Panel state overwrote DB state', changes }
-                }
-              });
-            }
-
-            const changedData: any = {};
-            if (dbClient.email !== trimmedEmail) changedData.email = trimmedEmail;
-            if (apiClient.subId && dbClient.subId !== apiClient.subId) changedData.subId = apiClient.subId;
-            if (dbClient.adminId !== resolvedAdminId) changedData.adminId = resolvedAdminId;
-            if (dbClient.enable !== enable) {
-              changedData.enable = enable;
-              if (!enable) {
-                const usedNew = up + down;
-                if (total > 0n && usedNew >= total) changedData.disableReason = 'TRAFFIC_LIMIT';
-                else if (expiryTime > 0n && BigInt(Date.now()) >= expiryTime) changedData.disableReason = 'EXPIRED';
-                else changedData.disableReason = 'MANUAL';
-              } else {
-                changedData.disableReason = null;
-              }
-            }
-            if (dbClient.up !== up) changedData.up = up;
-            if (dbClient.down !== down) changedData.down = down;
-            if (dbClient.total !== total) changedData.total = total;
-            if (dbClient.expiryTime !== expiryTime) changedData.expiryTime = expiryTime;
-            if (dbClient.flow !== apiClient.flow) changedData.flow = apiClient.flow;
-
-            if (Object.keys(changedData).length > 0) {
-              await this.prisma.client.update({
-                where: { id: dbClient.id },
-                data: changedData
-              });
-            }
-
-            // Sync ClientInbound relation
-            const clientInboundExists = await this.prisma.clientInbound.findUnique({
-              where: {
-                clientId_inboundId: {
-                  clientId: dbClient.id,
-                  inboundId: dbInbound.id
-                }
-              }
-            });
-            if (!clientInboundExists) {
-              await this.prisma.clientInbound.create({
-                data: {
-                  clientId: dbClient.id,
-                  inboundId: dbInbound.id
-                }
-              }).catch(() => {});
-            }
-          }
-        }
-
-        // Clean up ClientInbound relations for this inbound
-        const inboundApiUuids = new Set(clientsList.map((c: any) => c.id));
-        const dbClientInbounds = await this.prisma.clientInbound.findMany({
-          where: { inboundId: dbInbound.id },
-          include: { client: true }
+      for (const unifiedClient of unifiedClients) {
+        totalSyncedClients++;
+        if (!unifiedClient.uuid) continue; // safety check
+        apiUuids.add(unifiedClient.uuid);
+        
+        let dbClient = await this.prisma.client.findUnique({
+          where: { uuid: unifiedClient.uuid },
+          include: { admin: true, inbounds: true }
         });
-        for (const ci of dbClientInbounds) {
-          if (!inboundApiUuids.has(ci.client.uuid)) {
-            await this.prisma.clientInbound.delete({
-              where: {
-                clientId_inboundId: {
-                  clientId: ci.clientId,
-                  inboundId: ci.inboundId
-                }
-              }
-            }).catch(() => {});
-          }
+
+        const trimmedEmail = unifiedClient.email || `client-${unifiedClient.uuid.slice(0, 8)}`;
+        const up = BigInt(unifiedClient.up || 0);
+        const down = BigInt(unifiedClient.down || 0);
+        const total = BigInt(unifiedClient.total || 0);
+        const expiryTime = BigInt(unifiedClient.expiryTime || 0);
+        const enable = unifiedClient.enable;
+
+        let resolvedAdminId = dbClient?.adminId || null;
+        if (unifiedClient.group) {
+          resolvedAdminId = adminMap.get(unifiedClient.group.toLowerCase()) || null;
         }
 
-        // Apply Usage Charges for USAGE mode admins
-        for (const [adminId, totalDelta] of adminUsageCharges.entries()) {
-          if (totalDelta < 1048576n) continue; // Ignore extremely small entries (< 1MB)
+        const localInboundIds = (unifiedClient.inboundIds || [])
+          .map((id: number) => apiInboundIdToDbId.get(id))
+          .filter(Boolean) as string[];
 
-          const admin = await this.prisma.admin.findUnique({ where: { id: adminId } });
-          if (admin) {
-            await this.prisma.admin.update({
-              where: { id: adminId },
-              data: { balance: { decrement: Number(totalDelta) } }
-            });
-            
-            const ONE_DAY = 24 * 60 * 60 * 1000;
-            const latestTx = await this.prisma.trafficTransaction.findFirst({
-              where: { adminId, type: 'USAGE_CHARGE' },
-              orderBy: { createdAt: 'desc' }
-            });
+        // If client doesn't exist locally at all:
+        if (!dbClient) {
+          await this.prisma.client.create({
+            data: {
+              uuid: unifiedClient.uuid,
+              subId: unifiedClient.subId || null,
+              subToken: crypto.randomBytes(5).toString('hex'),
+              email: trimmedEmail,
+              adminId: resolvedAdminId,
+              enable, up, down, total, expiryTime,
+              flow: unifiedClient.flow || null,
+              inbounds: {
+                create: localInboundIds.map((id: string) => ({ inboundId: id }))
+              }
+            }
+          });
+        } else {
+          // Usage Accounting Delta Calculation
+          const usedOldUp = dbClient.up;
+          const usedOldDown = dbClient.down;
+          const upDelta = up > usedOldUp ? up - usedOldUp : 0n;
+          const downDelta = down > usedOldDown ? down - usedOldDown : 0n;
+          
+          panelUpDelta += upDelta;
+          panelDownDelta += downDelta;
+          
+          const delta = upDelta + downDelta;
 
-            if (latestTx && (Date.now() - latestTx.createdAt.getTime() < ONE_DAY)) {
-              await this.prisma.trafficTransaction.update({
-                where: { id: latestTx.id },
-                data: { amount: latestTx.amount + totalDelta }
-              });
+          if (delta > 0n && dbClient.admin && dbClient.admin.trafficMode === 'USAGE' && dbClient.adminId) {
+            const currentCharge = adminUsageCharges.get(dbClient.adminId) || 0n;
+            adminUsageCharges.set(dbClient.adminId, currentCharge + delta);
+          }
+
+          // Conflict Detection (Ignore up/down normal usage)
+          const changes = [];
+          if (dbClient.enable !== enable) changes.push(`enable: ${dbClient.enable} -> ${enable}`);
+          if (dbClient.total !== total) changes.push(`total: ${dbClient.total} -> ${total}`);
+          if (dbClient.expiryTime !== expiryTime) changes.push(`expiryTime: ${dbClient.expiryTime} -> ${expiryTime}`);
+
+          if (changes.length > 0) {
+            await this.prisma.auditLog.create({
+              data: {
+                action: 'SYNC_CONFLICT_RESOLVED',
+                entity: 'Client',
+                entityId: dbClient.id,
+                details: { message: 'Panel state overwrote DB state', changes }
+              }
+            });
+          }
+
+          const changedData: any = {};
+          if (dbClient.email !== trimmedEmail) changedData.email = trimmedEmail;
+          if (unifiedClient.subId && dbClient.subId !== unifiedClient.subId) changedData.subId = unifiedClient.subId;
+          if (dbClient.adminId !== resolvedAdminId) changedData.adminId = resolvedAdminId;
+          if (dbClient.enable !== enable) {
+            changedData.enable = enable;
+            if (!enable) {
+              const usedNew = up + down;
+              if (total > 0n && usedNew >= total) changedData.disableReason = 'TRAFFIC_LIMIT';
+              else if (expiryTime > 0n && BigInt(Date.now()) >= expiryTime) changedData.disableReason = 'EXPIRED';
+              else changedData.disableReason = 'MANUAL';
             } else {
-              await this.prisma.trafficTransaction.create({
-                data: {
-                  adminId,
-                  amount: totalDelta,
-                  type: 'USAGE_CHARGE',
-                  description: `Daily Summarized Usage Charge`
-                }
-              });
+              changedData.disableReason = null;
             }
           }
-        }
+          if (dbClient.up !== up) changedData.up = up;
+          if (dbClient.down !== down) changedData.down = down;
+          if (dbClient.total !== total) changedData.total = total;
+          if (dbClient.expiryTime !== expiryTime) changedData.expiryTime = expiryTime;
+          if (dbClient.flow !== unifiedClient.flow) changedData.flow = unifiedClient.flow;
 
+          if (Object.keys(changedData).length > 0) {
+            await this.prisma.client.update({
+              where: { id: dbClient.id },
+              data: changedData
+            });
+          }
+
+          // Sync ClientInbound relations
+          const existingInbounds = dbClient.inbounds.map(i => i.inboundId);
+          const toAdd = localInboundIds.filter((id: string) => !existingInbounds.includes(id));
+          const toRemove = existingInbounds.filter(id => !localInboundIds.includes(id));
+
+          if (toRemove.length > 0) {
+            await this.prisma.clientInbound.deleteMany({
+              where: { clientId: dbClient.id, inboundId: { in: toRemove } }
+            });
+          }
+          if (toAdd.length > 0) {
+            await this.prisma.clientInbound.createMany({
+              data: toAdd.map((id: string) => ({ clientId: dbClient.id!, inboundId: id }))
+            });
+          }
         }
+      }
+
+      // Apply Usage Charges for USAGE mode admins
+      for (const [adminId, totalDelta] of adminUsageCharges.entries()) {
+        if (totalDelta < 1048576n) continue; // Ignore extremely small entries (< 1MB)
+
+        const admin = await this.prisma.admin.findUnique({ where: { id: adminId } });
+        if (admin) {
+          await this.prisma.admin.update({
+            where: { id: adminId },
+            data: { balance: { decrement: Number(totalDelta) } }
+          });
+          
+          const ONE_DAY = 24 * 60 * 60 * 1000;
+          const latestTx = await this.prisma.trafficTransaction.findFirst({
+            where: { adminId, type: 'USAGE_CHARGE' },
+            orderBy: { createdAt: 'desc' }
+          });
+
+          if (latestTx && (Date.now() - latestTx.createdAt.getTime() < ONE_DAY)) {
+            await this.prisma.trafficTransaction.update({
+              where: { id: latestTx.id },
+              data: { amount: latestTx.amount + totalDelta }
+            });
+          } else {
+            await this.prisma.trafficTransaction.create({
+              data: {
+                adminId,
+                amount: totalDelta,
+                type: 'USAGE_CHARGE',
+                description: `Daily Summarized Usage Charge`
+              }
+            });
+          }
+        }
+      }
 
         // Orphan Cleanup
         const dbClientsInPanel = await this.prisma.client.findMany({
