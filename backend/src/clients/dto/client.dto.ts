@@ -22,11 +22,12 @@ export class UpdateClientDto {
 
 export class BulkClientDto {
   @ApiProperty({ type: [String] }) @IsArray() @IsString({ each: true }) ids: string[];
-  @ApiProperty({ enum: ['enable', 'disable', 'delete', 'cleanup', 'addTraffic', 'addDays', 'resetUsage', 'resetTraffic', 'assignGroup'] })
-  @IsIn(['enable', 'disable', 'delete', 'cleanup', 'addTraffic', 'addDays', 'resetUsage', 'resetTraffic', 'assignGroup'])
-  action: 'enable' | 'disable' | 'delete' | 'cleanup' | 'addTraffic' | 'addDays' | 'resetUsage' | 'resetTraffic' | 'assignGroup';
+  @ApiProperty({ enum: ['enable', 'disable', 'delete', 'cleanup', 'addTraffic', 'addDays', 'resetUsage', 'resetTraffic', 'assignGroup', 'assignInbounds'] })
+  @IsIn(['enable', 'disable', 'delete', 'cleanup', 'addTraffic', 'addDays', 'resetUsage', 'resetTraffic', 'assignGroup', 'assignInbounds'])
+  action: 'enable' | 'disable' | 'delete' | 'cleanup' | 'addTraffic' | 'addDays' | 'resetUsage' | 'resetTraffic' | 'assignGroup' | 'assignInbounds';
   @ApiPropertyOptional() @IsOptional() @IsNumber() value?: number;
   @ApiPropertyOptional() @IsOptional() @IsString() groupName?: string;
+  @ApiPropertyOptional({ type: [String] }) @IsOptional() @IsArray() @IsString({ each: true }) inboundIds?: string[];
 }
 
 export class BulkCreateClientDto {

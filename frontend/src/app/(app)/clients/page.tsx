@@ -12,7 +12,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Search, Plus, ChevronDown, ChevronUp, Copy, Check, CheckCircle2,
   Trash2, X, Play, Square, CheckSquare, Eye, MoreVertical, QrCode, Link, Edit2, Power, 
-  Activity, Users, HardDrive, CalendarDays, Filter, FolderPlus, RotateCcw, AlertTriangle, Database
+  Activity, Users, HardDrive, CalendarDays, Filter, FolderPlus, RotateCcw, AlertTriangle, Database, Network
 } from "lucide-react";
 import { io } from "socket.io-client";
 import { ConnectionDetailsModal } from "@/components/ConnectionDetailsModal";
@@ -139,6 +139,9 @@ export default function ClientsPage() {
   
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+  const [pendingBulkAction, setPendingBulkAction] = useState<"enable" | "disable" | "delete" | "cleanup" | "resetUsage" | "resetTraffic" | null>(null);
+  const [assignInboundsModalOpen, setAssignInboundsModalOpen] = useState(false);
+  const [assignInboundIds, setAssignInboundIds] = useState<string[]>([]);
 
   const [bulkValueModal, setBulkValueModal] = useState<{
     action: "addTraffic" | "addDays";
@@ -322,7 +325,9 @@ export default function ClientsPage() {
     } else if (action === "resetUsage" || action === "resetTraffic") {
       setResetConfirmOpen(true);
     } else if (action === "enable" || action === "disable") {
-      bulkMutation.mutate({ ids: selectedIds, action: action as any });
+      setPendingBulkAction(action as any);
+    } else if (action === "assignInbounds") {
+      setAssignInboundsModalOpen(true);
     } else if (action === "addTraffic") {
       setBulkValueModal({
         action,
@@ -1085,6 +1090,12 @@ export default function ClientsPage() {
                   Disable
                 </button>
                 <button
+                  onClick={() => handleBulkAction("assignInbounds")}
+                  className="rounded-full border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:bg-zinc-800 whitespace-nowrap"
+                >
+                  Inbounds
+                </button>
+                <button
                   onClick={() => handleBulkAction("assignGroup")}
                   className="rounded-full border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:bg-zinc-800 whitespace-nowrap"
                 >
@@ -1141,6 +1152,13 @@ export default function ClientsPage() {
                   title="Disable"
                 >
                   <Square size={18} />
+                </button>
+                <button
+                  onClick={() => handleBulkAction("assignInbounds")}
+                  className="rounded-full p-2 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                  title="Assign Inbounds"
+                >
+                  <Network size={18} />
                 </button>
                 <button
                   onClick={() => handleBulkAction("assignGroup")}
@@ -1228,6 +1246,110 @@ export default function ClientsPage() {
             });
           }}
         />
+      )}
+
+      {/* Generic Bulk Confirm Modal */}
+      {pendingBulkAction && (
+        <div className="fixed inset-0 z-[100] flex items-start sm:items-center justify-center bg-black/60 pt-[10dvh] px-4 sm:pt-0 sm:p-4">
+          <div className="w-full max-w-sm rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 shadow-2xl">
+            <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-50 mb-2 capitalize">Confirm {pendingBulkAction}</h3>
+            <p className="text-sm text-zinc-500 mb-6">
+              Are you sure you want to {pendingBulkAction} {selectedCount} selected clients?
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setPendingBulkAction(null)}
+                className="flex-1 rounded-xl bg-zinc-100 dark:bg-zinc-800 py-3 font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  bulkMutation.mutate({ ids: selectedIds, action: pendingBulkAction });
+                  setPendingBulkAction(null);
+                }}
+                className="flex-1 rounded-xl bg-blue-600 py-3 font-semibold text-white hover:bg-blue-500 transition-colors capitalize"
+              >
+                {pendingBulkAction}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Assign Inbounds Modal */}
+      {assignInboundsModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-start sm:items-center justify-center bg-black/60 pt-[10dvh] px-4 sm:pt-0 sm:p-4">
+          <div className="w-full max-w-md rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-2xl overflow-hidden flex flex-col max-h-[80vh]">
+            <div className="p-6 pb-4 border-b border-zinc-200 dark:border-zinc-800">
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-50 mb-1">Assign Additional Inbounds</h3>
+              <p className="text-sm text-zinc-500">
+                Select inbounds to add to the {selectedCount} selected clients. Existing inbounds will not be removed.
+              </p>
+            </div>
+            <div className="p-4 overflow-y-auto space-y-2 flex-1">
+              {(inboundsList || []).map(inbound => {
+                const isSelected = assignInboundIds.includes(inbound.id);
+                return (
+                  <button
+                    key={inbound.id}
+                    onClick={() => {
+                      if (isSelected) setAssignInboundIds(assignInboundIds.filter(id => id !== inbound.id));
+                      else setAssignInboundIds([...assignInboundIds, inbound.id]);
+                    }}
+                    className={clsx(
+                      "w-full text-left p-3 rounded-xl border transition-all flex items-start gap-3",
+                      isSelected 
+                        ? "border-blue-500 bg-blue-50 dark:bg-blue-500/10" 
+                        : "border-zinc-200 dark:border-zinc-800 hover:border-blue-300 dark:hover:border-blue-500/50"
+                    )}
+                  >
+                    <div className={clsx("mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border", isSelected ? "border-blue-500 bg-blue-500" : "border-zinc-300 dark:border-zinc-600")}>
+                      {isSelected && <Check size={12} className="text-white" />}
+                    </div>
+                    <div>
+                      <div className="font-medium text-sm text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                        {inbound.remark}
+                        <span className="text-[10px] uppercase font-bold text-zinc-400 bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded">{inbound.protocol}</span>
+                      </div>
+                      <div className="text-xs text-zinc-500 mt-0.5 flex gap-2">
+                        <span>Panel: {inbound.panel?.name || 'Unknown'}</span>
+                        <span>•</span>
+                        <span>Port: {inbound.port}</span>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 flex gap-2">
+              <button
+                onClick={() => {
+                  setAssignInboundsModalOpen(false);
+                  setAssignInboundIds([]);
+                }}
+                className="flex-1 rounded-xl bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 py-2.5 font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                disabled={assignInboundIds.length === 0}
+                onClick={() => {
+                  bulkMutation.mutate({ 
+                    ids: selectedIds, 
+                    action: "assignInbounds" as any, 
+                    inboundIds: assignInboundIds,
+                  });
+                  setAssignInboundsModalOpen(false);
+                  setAssignInboundIds([]);
+                }}
+                className="flex-1 rounded-xl bg-blue-600 py-2.5 font-semibold text-white hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                Assign Inbounds
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Edit Client Modal */}

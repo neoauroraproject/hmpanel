@@ -45,14 +45,7 @@ export class ClientsService {
     });
     if (!inbounds || inbounds.length === 0) throw new BadRequestException('No valid inbounds found');
     
-    if (data.flow) {
-      for (const inbound of inbounds) {
-        const streamSettings = inbound.streamSettings as any;
-        if (inbound.protocol !== 'vless' || streamSettings?.security !== 'reality') {
-          throw new BadRequestException('Flow is only supported on VLESS Reality inbounds');
-        }
-      }
-    }
+    // Flow is dynamically assigned per inbound later.
     const caller = await this.prisma.admin.findUnique({ 
       where: { id: callerId },
       include: { _count: { select: { clients: true } } }
@@ -96,13 +89,11 @@ export class ClientsService {
 
     const clientSubId = require('crypto').randomBytes(8).toString('hex');
 
-    // Attempt to add client to panel API first
-    const clientPayload: any = {
+    const baseClientPayload: any = {
       id: clientUuid,
       subId: clientSubId,
       email: data.email,
       enable: true,
-      flow: data.flow || "",
       totalGB: Number(data.total) || 0,
       expiryTime: data.expiryTime || 0,
       limitIp: 0,
@@ -112,6 +103,12 @@ export class ClientsService {
     };
 
     for (const inbound of inbounds) {
+      const isReality = inbound.protocol === 'vless' && (inbound.streamSettings as any)?.security === 'reality';
+      const clientPayload = {
+        ...baseClientPayload,
+        flow: isReality ? (data.flow || "") : ""
+      };
+
       await this.panelsService.addClient(inbound.panelId, inbound.port, {
         clients: [clientPayload]
       });
@@ -392,14 +389,7 @@ export class ClientsService {
   async update(id: string, adminId: string, role: string, data: { enable?: boolean; total?: number; expiryTime?: number; remark?: string; flow?: string; inboundIds?: string[] }) {
     const existing = await this.findOne(id, adminId, role);
     
-    if (data.flow) {
-      for (const inbound of existing.inbounds) {
-        const streamSettings = inbound?.streamSettings as any;
-        if (inbound?.protocol !== 'vless' || streamSettings?.security !== 'reality') {
-          throw new BadRequestException('Flow is only supported on VLESS Reality inbounds');
-        }
-      }
-    }
+    // Flow is dynamically assigned per inbound later.
 
     const newTotal = data.total !== undefined ? BigInt(data.total) : existing.total;
     const newExpiry = data.expiryTime !== undefined ? BigInt(data.expiryTime) : existing.expiryTime;
@@ -419,12 +409,11 @@ export class ClientsService {
 
     const newEnable = data.enable !== undefined ? data.enable : (autoEnable ? true : existing.enable);
 
-    const clientPayload: any = {
+    const baseClientPayload: any = {
       id: existing.uuid,
       subId: existing.subId || "",
       email: existing.email.trim(),
       enable: newEnable,
-      flow: newFlow || "",
       totalGB: Number(newTotal),
       expiryTime: Number(newExpiry),
       tgId: "",
@@ -465,6 +454,8 @@ export class ClientsService {
     const keptInbounds = existing.inbounds.filter((i: any) => !removedInbounds.some((r: any) => r.id === i.id));
     for (const inbound of keptInbounds) {
       try {
+        const isReality = inbound.protocol === 'vless' && (inbound.streamSettings as any)?.security === 'reality';
+        const clientPayload = { ...baseClientPayload, flow: isReality ? (newFlow || "") : "" };
         await this.panelsService.updateClient(inbound.panelId, inbound.port, existing.uuid, clientPayload);
       } catch (err: any) {
         console.error(`Failed to update client ${existing.email} on panel inbound ${inbound.id}:`, err.message);
@@ -474,7 +465,9 @@ export class ClientsService {
     // Process additions
     for (const inbound of addedInbounds) {
       try {
-        await this.panelsService.addClient(inbound.panelId, inbound.port, clientPayload);
+        const isReality = inbound.protocol === 'vless' && (inbound.streamSettings as any)?.security === 'reality';
+        const clientPayload = { ...baseClientPayload, flow: isReality ? (newFlow || "") : "" };
+        await this.panelsService.addClient(inbound.panelId, inbound.port, { clients: [clientPayload] });
       } catch (err: any) {
         console.error(`Failed to add client ${existing.email} to panel inbound ${inbound.id}:`, err.message);
       }
@@ -746,14 +739,7 @@ export class ClientsService {
       }
     }
 
-    if (dto.flow) {
-      for (const inbound of inbounds) {
-        const streamSettings = inbound.streamSettings as any;
-        if (inbound.protocol !== 'vless' || streamSettings?.security !== 'reality') {
-          throw new BadRequestException('Flow is only supported on VLESS Reality inbounds');
-        }
-      }
-    }
+    // Flow is dynamically assigned per inbound later.
 
     const emails = [];
     const sep = dto.separator === 'None' ? '' : (dto.separator || '');
@@ -781,34 +767,37 @@ export class ClientsService {
         subId: clientSubId,
         email: email,
         enable: dto.enable !== false,
-        flow: dto.flow || "",
         totalGB: Number(dto.total) || 0,
         expiryTime: dto.expiryTime || 0,
         limitIp: 0,
         tgId: 0,
         comment: dto.remark || "",
         reset: 0,
-        security: "auto",
       });
 
       clientsDbData.push({
         adminId: targetAdminId,
         email: email,
-        remark: dto.remark,
+        remark: dto.remark || "",
         uuid: clientUuid,
         subId: clientSubId,
         subToken: clientSubToken,
-        flow: dto.flow,
+        flow: dto.flow || "",
         total: totalBytesPerClient,
         expiryTime: BigInt(dto.expiryTime || 0),
         enable: dto.enable !== false,
       });
     }
 
-    // 1. Add to Panel
     for (const inbound of inbounds) {
+      const isReality = inbound.protocol === 'vless' && (inbound.streamSettings as any)?.security === 'reality';
+      const payloadsForInbound = clientPayloads.map(p => ({
+        ...p,
+        flow: isReality ? (dto.flow || "") : ""
+      }));
+
       await this.panelsService.addClient(inbound.panelId, inbound.port, {
-        clients: clientPayloads
+        clients: payloadsForInbound
       });
 
       // 2. Assign to reseller Group
@@ -959,6 +948,14 @@ export class ClientsService {
                 case 'cleanup':
                   await this.remove(t.id, adminId, role, true);
                   break;
+                case 'assignInbounds': {
+                  if (!dto.inboundIds || dto.inboundIds.length === 0) throw new BadRequestException('No inbounds selected');
+                  const currentInbounds = await this.prisma.clientInbound.findMany({ where: { clientId: t.id } });
+                  const existingIds = currentInbounds.map(i => i.inboundId);
+                  const combined = Array.from(new Set([...existingIds, ...dto.inboundIds]));
+                  await this.update(t.id, adminId, role, { inboundIds: combined });
+                  break;
+                }
                 case 'addTraffic': {
                   const bytes = BigInt(Math.round((dto.value ?? 0) * GB));
                   if (bytes > 0n) {
