@@ -372,6 +372,13 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
     enabled: !!form.selectedPanel,
   });
 
+  // Auto-select all inbounds on initial load
+  useEffect(() => {
+    if (inbounds && inbounds.length > 0 && form.selectedInbounds.length === 0) {
+      setForm(f => ({ ...f, selectedInbounds: inbounds.map(i => i.id) }));
+    }
+  }, [inbounds]);
+
   const { data: panels } = useQuery<PanelRow[]>({
     queryKey: ["panels"],
     queryFn: async () => (await api.get<PanelRow[]>("/panels")).data,
@@ -639,6 +646,15 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
       }));
     }
   }, [admin]);
+
+  // Auto-select all inbounds if none were originally assigned (legacy migration fallback)
+  useEffect(() => {
+    if (inbounds && inbounds.length > 0 && form.selectedPanel) {
+      if (form.selectedInbounds.length === 0) {
+        setForm(f => ({ ...f, selectedInbounds: inbounds.map(i => i.id) }));
+      }
+    }
+  }, [inbounds]);
 
   const directEdit = useMutation({
     mutationFn: async () => {
