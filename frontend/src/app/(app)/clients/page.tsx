@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import { clsx } from "clsx";
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type { Client, Paginated, Admin } from "@/lib/types";
@@ -250,9 +251,10 @@ export default function ClientsPage() {
   const bulkMutation = useMutation({
     mutationFn: async (dto: {
       ids: string[];
-      action: "enable" | "disable" | "delete" | "cleanup" | "addTraffic" | "addDays" | "resetUsage" | "resetTraffic" | "assignGroup";
+      action: "enable" | "disable" | "delete" | "cleanup" | "addTraffic" | "addDays" | "resetUsage" | "resetTraffic" | "assignGroup" | "assignInbounds";
       value?: number;
       groupName?: string;
+      inboundIds?: string[];
     }) => (await api.post<any>("/clients/bulk", dto)).data,
     onSuccess: (d, vars) => {
       if (d.failed > 0) {

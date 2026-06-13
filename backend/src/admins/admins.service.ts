@@ -1,13 +1,12 @@
 import { Injectable, ConflictException, NotFoundException, BadRequestException, Logger, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PanelsService } from '../panels/panels.service';
-import { StoreService } from '../store/store.service';
 import * as bcrypt from 'bcryptjs';
 
 @Injectable()
 export class AdminsService implements OnModuleInit {
   private readonly logger = new Logger(AdminsService.name);
-  constructor(private prisma: PrismaService, private panelsService: PanelsService, private storeService: StoreService) {}
+  constructor(private prisma: PrismaService, private panelsService: PanelsService) {}
 
   async onModuleInit() {
     try {
@@ -36,7 +35,7 @@ export class AdminsService implements OnModuleInit {
     }
   }
 
-  async create(data: { username: string; email: string; password: string; role?: string; trafficMode?: string; balance?: number; inboundIds?: string[]; expiryTime?: number; maxClients?: number; permissions?: string[]; storeEnabled?: boolean; storePanelId?: string }) {
+  async create(data: { username: string; email: string; password: string; role?: string; trafficMode?: string; balance?: number; inboundIds?: string[]; expiryTime?: number; maxClients?: number; permissions?: string[] }) {
     // Allow admin creation regardless of sync state since we enforce selection in the UI.
 
     const exists = await this.prisma.admin.findFirst({
@@ -83,10 +82,6 @@ export class AdminsService implements OnModuleInit {
           description: 'Initial Allocation',
         }
       });
-    }
-
-    if (data.storeEnabled && data.storePanelId) {
-      await this.storeService.activateStoreForAdmin(admin.id, { panelId: data.storePanelId });
     }
 
     return { ...admin, expiryTime: Number(admin.expiryTime) };
