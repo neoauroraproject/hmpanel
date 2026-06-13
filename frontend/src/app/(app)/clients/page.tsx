@@ -227,9 +227,11 @@ export default function ClientsPage() {
       api.patch(`/clients/${c.id}`, { enable: !c.enable }),
     onSuccess: () => {
       toast("Client status updated");
-      qc.invalidateQueries({ queryKey: ["clients"] });
-      qc.invalidateQueries({ queryKey: ["reseller-overview"] });
-      qc.invalidateQueries({ queryKey: ["overview"] });
+      setTimeout(() => {
+        qc.invalidateQueries({ queryKey: ["clients"] });
+        qc.invalidateQueries({ queryKey: ["reseller-overview"] });
+        qc.invalidateQueries({ queryKey: ["overview"] });
+      }, 1500);
     },
     onError: (err, variables, context) => {
       if (context?.previous) {
@@ -264,9 +266,11 @@ export default function ClientsPage() {
       setBulkValueModal(null);
       setBulkInputValue("");
       setGroupAssignModalOpen(false);
-      qc.invalidateQueries({ queryKey: ["clients"] });
-      qc.invalidateQueries({ queryKey: ["reseller-overview"] });
-      qc.invalidateQueries({ queryKey: ["overview"] });
+      setTimeout(() => {
+        qc.invalidateQueries({ queryKey: ["clients"] });
+        qc.invalidateQueries({ queryKey: ["reseller-overview"] });
+        qc.invalidateQueries({ queryKey: ["overview"] });
+      }, 1500);
     },
     onError: (err: any) => {
       toast(err.response?.data?.message || "Bulk action failed", "error");
@@ -1188,9 +1192,11 @@ export default function ClientsPage() {
             onClose={() => setAddOpen(false)}
             onSaved={(client) => {
               setAddOpen(false);
-              qc.invalidateQueries({ queryKey: ["clients"] });
-              qc.invalidateQueries({ queryKey: ["reseller-overview"] });
-              qc.invalidateQueries({ queryKey: ["overview"] });
+              setTimeout(() => {
+                qc.invalidateQueries({ queryKey: ["clients"] });
+                qc.invalidateQueries({ queryKey: ["overview"] });
+                qc.invalidateQueries({ queryKey: ["reseller-overview"] });
+              }, 1500);
               if (client) {
                 setConnectionDetailsClient(client);
               }

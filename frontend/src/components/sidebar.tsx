@@ -27,7 +27,6 @@ import {
 import { useAuth } from "@/store/auth";
 import type { Role } from "@/lib/types";
 import { ThemeToggle } from "./ThemeToggle";
-import { useLicense, PremiumFeature } from "@/hooks/useLicense";
 
 const CORE_NAV: {
   href: string;
@@ -51,7 +50,6 @@ export function Sidebar() {
   const router = useRouter();
   const admin = useAuth((s) => s.admin);
   const logout = useAuth((s) => s.logout);
-  const { hasFeature, isLoading } = useLicense();
 
   const coreItems = CORE_NAV.filter(
     (n) => !n.roles || (admin && n.roles.includes(admin.role))

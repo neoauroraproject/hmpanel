@@ -10,13 +10,9 @@ import { TrafficModule } from './traffic/traffic.module';
 import { StatsModule } from './stats/stats.module';
 import { MigrationModule } from './migration/migration.module';
 import { ScheduleModule } from '@nestjs/schedule';
-import { BackupsModule } from './backups/backups.module';
 import { SettingsModule } from './settings/settings.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { InboundsModule } from './inbounds/inbounds.module';
-import { DomainsModule } from './domains/domains.module';
-import { StoreModule } from './store/store.module';
-import { ProModule } from './pro/pro.module';
 
 @Module({
   imports: [
@@ -30,13 +26,9 @@ import { ProModule } from './pro/pro.module';
     TrafficModule,
     StatsModule,
     MigrationModule,
-    BackupsModule,
     SettingsModule,
     SubscriptionsModule,
     InboundsModule,
-    DomainsModule,
-    StoreModule,
-    ProModule,
   ],
   controllers: [AppController],
   providers: [],

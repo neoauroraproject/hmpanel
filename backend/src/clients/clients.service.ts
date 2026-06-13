@@ -35,11 +35,15 @@ export class ClientsService {
     const clientUuid = randomUUID();
     
     // Preliminary check
+    if (!data.inboundIds || data.inboundIds.length === 0) {
+      throw new BadRequestException('At least one inbound must be selected');
+    }
+
     const inbounds = await this.prisma.inbound.findMany({
       where: { id: { in: data.inboundIds } },
       include: { panel: true }
     });
-    if (!inbounds || inbounds.length === 0) throw new BadRequestException('No inbounds found');
+    if (!inbounds || inbounds.length === 0) throw new BadRequestException('No valid inbounds found');
     
     if (data.flow) {
       for (const inbound of inbounds) {
@@ -430,6 +434,9 @@ export class ClientsService {
     let removedInbounds: any[] = [];
 
     if (data.inboundIds) {
+      if (data.inboundIds.length === 0) {
+        throw new BadRequestException('At least one inbound must be selected');
+      }
       const existingInboundIds = existing.inbounds.map((i: any) => i.id);
       const newInboundIds = data.inboundIds;
       
@@ -687,6 +694,10 @@ export class ClientsService {
   }
 
   async bulkCreate(callerId: string, role: string, dto: BulkCreateClientDto) {
+    if (!dto.inboundIds || dto.inboundIds.length === 0) {
+      throw new BadRequestException('At least one inbound must be selected for bulk creation');
+    }
+
     const inbounds = await this.prisma.inbound.findMany({
       where: { id: { in: dto.inboundIds } },
       include: { panel: true }
