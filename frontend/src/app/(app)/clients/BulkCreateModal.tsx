@@ -44,7 +44,17 @@ export function BulkCreateModal({ onClose, inboundsList }: BulkCreateModalProps)
   // Populate default inbound if empty
   useEffect(() => {
     if (inboundsList?.length > 0 && form.inboundIds.length === 0) {
-      setForm(f => ({ ...f, inboundIds: [inboundsList[0].id] }));
+      try {
+        const cached = JSON.parse(localStorage.getItem("lastSelectedInboundIds") || "[]");
+        const validCached = cached.filter((id: string) => inboundsList.some(i => i.id === id));
+        if (validCached.length > 0) {
+          setForm(f => ({ ...f, inboundIds: validCached }));
+        } else {
+          setForm(f => ({ ...f, inboundIds: [inboundsList[0].id] }));
+        }
+      } catch {
+        setForm(f => ({ ...f, inboundIds: [inboundsList[0].id] }));
+      }
     }
   }, [inboundsList]);
 
@@ -268,6 +278,7 @@ export function BulkCreateModal({ onClose, inboundsList }: BulkCreateModalProps)
                                   ? form.inboundIds.filter(id => id !== i.id)
                                   : [...form.inboundIds, i.id];
                                 setForm({ ...form, inboundIds: nextIds });
+                                localStorage.setItem("lastSelectedInboundIds", JSON.stringify(nextIds));
                               }}
                               className="h-4 w-4 rounded border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500 focus:ring-offset-white dark:focus:ring-offset-zinc-900 bg-transparent"
                             />

@@ -3,6 +3,8 @@
 # HMPanel
 **Advanced 3x-ui Management Platform**
 
+![Visitors](https://api.visitorbadge.io/api/visitors?path=neoauroraproject.hmpanel&countColor=%23263759)
+
 Multi-Panel • Resellers • Traffic Accounting • Bulk Operations • Subscription Management
 
 [Installation](#installation) • [Features](#features) • [Screenshots](#screenshots) • [Architecture](#architecture)
