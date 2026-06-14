@@ -29,7 +29,7 @@ export class ClientsService {
     private monitoringService: MonitoringService
   ) {}
 
-  async create(callerId: string, data: { email: string; inboundIds: string[]; remark?: string; total?: number; expiryTime?: number; flow?: string; adminId?: string }) {
+  async create(callerId: string, data: { email: string; inboundIds: string[]; remark?: string; total?: number; expiryTime?: number; flow?: string; adminId?: string; limitIp?: number }) {
     if (data.email) data.email = data.email.trim();
     const totalBytes = BigInt(data.total || 0);
     const clientUuid = randomUUID();
@@ -96,7 +96,7 @@ export class ClientsService {
       enable: true,
       totalGB: Number(data.total) || 0,
       expiryTime: data.expiryTime || 0,
-      limitIp: 0,
+      limitIp: data.limitIp || 0,
       tgId: "",
       comment: "",
       reset: 0,
@@ -150,6 +150,7 @@ export class ClientsService {
           flow: data.flow,
           total: totalBytes,
           expiryTime: BigInt(data.expiryTime || 0),
+          limitIp: data.limitIp || 0,
           inbounds: {
             create: data.inboundIds.map(inboundId => ({ inboundId }))
           }
@@ -296,7 +297,7 @@ export class ClientsService {
         skip: (page - 1) * limit,
         take: limit,
         select: {
-          id: true, email: true, remark: true, ownerTag: true, uuid: true, subId: true, enable: true, flow: true,
+          id: true, email: true, remark: true, ownerTag: true, uuid: true, subId: true, enable: true, flow: true, limitIp: true,
           up: true, down: true, total: true, expiryTime: true, createdAt: true,
           admin: { select: { id: true, username: true } },
           inbounds: {
@@ -386,7 +387,7 @@ export class ClientsService {
     }
   }
 
-  async update(id: string, adminId: string, role: string, data: { enable?: boolean; total?: number; expiryTime?: number; remark?: string; flow?: string; inboundIds?: string[] }) {
+  async update(id: string, adminId: string, role: string, data: { enable?: boolean; total?: number; expiryTime?: number; remark?: string; flow?: string; inboundIds?: string[]; limitIp?: number }) {
     const existing = await this.findOne(id, adminId, role);
     
     // Flow is dynamically assigned per inbound later.
@@ -416,6 +417,7 @@ export class ClientsService {
       enable: newEnable,
       totalGB: Number(newTotal),
       expiryTime: Number(newExpiry),
+      limitIp: data.limitIp !== undefined ? data.limitIp : (existing as any).limitIp || 0,
       tgId: "",
     };
 
@@ -444,7 +446,7 @@ export class ClientsService {
     // Process removals FIRST
     for (const inbound of removedInbounds) {
       try {
-        await this.panelsService.delClient(inbound.panelId, inbound.port, existing.uuid);
+        await this.panelsService.delClient(inbound.panelId, inbound.port, existing.uuid, existing.email);
       } catch (err: any) {
         console.error(`Failed to remove client ${existing.email} from panel inbound ${inbound.id}:`, err.message);
       }
@@ -485,6 +487,7 @@ export class ClientsService {
       if (data.expiryTime !== undefined) updateData.expiryTime = newExpiry;
       if (data.remark !== undefined) updateData.remark = data.remark;
       if (data.flow !== undefined) updateData.flow = data.flow;
+      if (data.limitIp !== undefined) updateData.limitIp = data.limitIp;
 
       let diff = 0n;
       let previousAllocation = existing.total;
@@ -561,7 +564,7 @@ export class ClientsService {
     
     for (const inbound of existing.inbounds) {
       try {
-        await this.panelsService.delClient(inbound.panelId, inbound.port, existing.uuid);
+        await this.panelsService.delClient(inbound.panelId, inbound.port, existing.uuid, existing.email);
       } catch (err: any) {
         console.error(`Failed to delete client ${existing.email} from panel inbound ${inbound.id}:`, err.message);
       }
@@ -769,7 +772,7 @@ export class ClientsService {
         enable: dto.enable !== false,
         totalGB: Number(dto.total) || 0,
         expiryTime: dto.expiryTime || 0,
-        limitIp: 0,
+        limitIp: dto.limitIp || 0,
         tgId: 0,
         comment: dto.remark || "",
         reset: 0,
@@ -785,6 +788,7 @@ export class ClientsService {
         flow: dto.flow || "",
         total: totalBytesPerClient,
         expiryTime: BigInt(dto.expiryTime || 0),
+        limitIp: dto.limitIp || 0,
         enable: dto.enable !== false,
       });
     }

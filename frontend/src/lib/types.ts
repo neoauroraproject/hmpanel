@@ -46,6 +46,7 @@ export interface Client {
   down: string;
   total: string;
   expiryTime: string;
+  limitIp?: number;
   createdAt: string;
   updatedAt: string;
 

@@ -165,7 +165,7 @@ function SuperDashboard() {
           <div className="flex gap-5 items-center rounded-xl bg-white dark:bg-zinc-950/50 border border-zinc-200 dark:border-zinc-800/80 p-3.5 shadow-sm max-w-max">
             <div className="flex items-center gap-2 text-zinc-500 dark:text-zinc-400 border-r border-zinc-200 dark:border-zinc-800 pr-5">
               <Server size={18} />
-              <span className="text-xs font-semibold uppercase tracking-wider text-zinc-700 dark:text-zinc-300">Host Node</span>
+              <span className="hidden sm:inline text-xs font-semibold uppercase tracking-wider text-zinc-700 dark:text-zinc-300">Host Node</span>
             </div>
             <div className="flex items-center gap-6">
               <div className="flex flex-col gap-1.5 w-[72px]">

@@ -1152,8 +1152,24 @@ export class PanelsService implements OnModuleInit {
     }
   }
 
-  async delClient(panelId: string, inboundPort: number, uuid: string) {
+  async delClient(panelId: string, inboundPort: number, uuid: string, email?: string) {
     try {
+      const panel = await this.findOne(panelId);
+      const apiBaseUrl = panel.apiBaseUrl || panel.url.replace(/\/$/, '');
+      const headers = { Authorization: panel.apiToken ? `Bearer ${panel.apiToken}` : undefined };
+      const httpsAgent = this.getHttpsAgent();
+
+      if (panel.capClientsApi && email) {
+        try {
+          const response = await axios.post(`${apiBaseUrl}/panel/api/clients/del/${encodeURIComponent(email)}`, {}, { headers, httpsAgent, timeout: 5000 });
+          if (response.data && response.data.success) {
+            return response.data;
+          }
+        } catch (err: any) {
+          // fallback to updateInboundFull
+        }
+      }
+
       return await this.updateInboundFull(panelId, inboundPort, (inbound) => {
         if (!inbound.settings) return;
         if (typeof inbound.settings === 'string') inbound.settings = JSON.parse(inbound.settings);

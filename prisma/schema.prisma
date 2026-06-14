@@ -157,6 +157,8 @@ model Client {
   enable        Boolean @default(true)
   disableReason String? // MANUAL | EXPIRED | TRAFFIC_LIMIT | BALANCE_EXHAUSTED
 
+  limitIp    Int    @default(0) // 0 = unlimited
+
   up         BigInt @default(0) // Bytes uploaded
   down       BigInt @default(0) // Bytes downloaded
   total      BigInt @default(0) // Max bytes allowed (0 = unlimited)

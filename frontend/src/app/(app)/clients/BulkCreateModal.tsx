@@ -25,6 +25,7 @@ export function BulkCreateModal({ onClose, inboundsList }: BulkCreateModalProps)
     group: "",
     remark: "",
     enable: true,
+    limitIp: "",
   });
 
   const [previewEmails, setPreviewEmails] = useState<string[]>([]);
@@ -108,6 +109,7 @@ export function BulkCreateModal({ onClose, inboundsList }: BulkCreateModalProps)
         endNumber: form.endNumber,
         inboundIds: form.inboundIds,
         enable: form.enable,
+        limitIp: form.limitIp ? Number(form.limitIp) : 0,
       };
 
       if (form.trafficGB) {
@@ -315,7 +317,17 @@ export function BulkCreateModal({ onClose, inboundsList }: BulkCreateModalProps)
                 </div>
               </div>
 
-
+              <div className="mt-2">
+                <label className="mb-1 block text-xs font-medium text-zinc-500">کاربر فعال (IP Limit)</label>
+                <input
+                  type="number"
+                  min="0"
+                  placeholder="0 for unlimited"
+                  value={form.limitIp}
+                  onChange={(e) => setForm({ ...form, limitIp: e.target.value })}
+                  className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500"
+                />
+              </div>
 
               <div className="flex items-center gap-2 pt-2">
                 <input

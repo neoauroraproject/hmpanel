@@ -1584,6 +1584,7 @@ interface AddClientForm {
   expiryDays: string;
   remark: string;
   flow?: string;
+  limitIp?: string;
 }
 
 function AddClientModal({
@@ -1631,6 +1632,7 @@ function AddClientModal({
     expiryDays: "",
     remark: "",
     flow: "",
+    limitIp: "",
   });
 
   useEffect(() => {
@@ -1678,6 +1680,7 @@ function AddClientModal({
         enable: true,
         remark: form.remark || undefined,
         flow: form.flow || undefined,
+        limitIp: form.limitIp ? Number(form.limitIp) : 0,
       };
 
       const res = await api.post<Client>("/clients", dto);
@@ -1864,6 +1867,17 @@ function AddClientModal({
                 />
                 <p className="mt-1 text-[10px] text-zinc-500 dark:text-zinc-400">If Allocation Mode is active, this is deducted immediately.</p>
               </div>
+              <div className="mt-4">
+                <label className="mb-1 block text-xs text-zinc-500">کاربر فعال (IP Limit)</label>
+                <input
+                  type="number"
+                  min={0}
+                  placeholder="0 for unlimited"
+                  value={form.limitIp}
+                  onChange={(e) => setForm({ ...form, limitIp: e.target.value })}
+                  className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors"
+                />
+              </div>
             </div>
 
             {/* Expiry Section */}
@@ -1971,6 +1985,7 @@ function EditClientModal({
     expiryDays: "",
     remark: client.remark || "",
     flow: client.flow || "",
+    limitIp: client.limitIp?.toString() || "",
     inboundIds: (client as any).inbounds?.map((i: any) => i.id) || [(client as any).inbound?.id].filter(Boolean),
   });
 
@@ -2151,6 +2166,18 @@ function EditClientModal({
                   </>
                 </div>
               )}
+
+              <div className="mt-4">
+                <label className="mb-1 block text-xs text-zinc-500">کاربر فعال (IP Limit)</label>
+                <input
+                  type="number"
+                  min={0}
+                  placeholder="0 for unlimited"
+                  value={form.limitIp}
+                  onChange={(e) => setForm({ ...form, limitIp: e.target.value })}
+                  className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors"
+                />
+              </div>
             </div>
           </div>
 

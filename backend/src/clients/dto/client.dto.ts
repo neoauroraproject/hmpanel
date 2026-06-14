@@ -9,6 +9,7 @@ export class CreateClientDto {
   @ApiPropertyOptional() @IsOptional() @IsNumber() expiryTime?: number;
   @ApiPropertyOptional() @IsOptional() @IsString() flow?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() adminId?: string; // Target owner (for super-admin only)
+  @ApiPropertyOptional() @IsOptional() @IsNumber() limitIp?: number;
 }
 
 export class UpdateClientDto {
@@ -18,6 +19,7 @@ export class UpdateClientDto {
   @ApiPropertyOptional() @IsOptional() @IsString() remark?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() flow?: string;
   @ApiPropertyOptional({ type: [String] }) @IsOptional() @IsArray() @IsString({ each: true }) inboundIds?: string[];
+  @ApiPropertyOptional() @IsOptional() @IsNumber() limitIp?: number;
 }
 
 export class BulkClientDto {
@@ -43,4 +45,5 @@ export class BulkCreateClientDto {
   @ApiPropertyOptional() @IsOptional() @IsString() flow?: string;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() enable?: boolean;
   @ApiPropertyOptional() @IsOptional() @IsString() adminId?: string; // Target owner (for super-admin only)
+  @ApiPropertyOptional() @IsOptional() @IsNumber() limitIp?: number;
 }
