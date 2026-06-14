@@ -329,7 +329,7 @@ export function BulkCreateModal({ onClose, inboundsList }: BulkCreateModalProps)
               </div>
 
               <div className="mt-2">
-                <label className="mb-1 block text-xs font-medium text-zinc-500">کاربر فعال (IP Limit)</label>
+                <label className="mb-1 block text-xs font-medium text-zinc-500">IP Limit</label>
                 <input
                   type="number"
                   min="0"

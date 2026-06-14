@@ -1879,7 +1879,7 @@ function AddClientModal({
                 <p className="mt-1 text-[10px] text-zinc-500 dark:text-zinc-400">If Allocation Mode is active, this is deducted immediately.</p>
               </div>
               <div className="mt-4">
-                <label className="mb-1 block text-xs text-zinc-500">کاربر فعال (IP Limit)</label>
+                <label className="mb-1 block text-xs text-zinc-500">IP Limit</label>
                 <input
                   type="number"
                   min={0}
@@ -2179,7 +2179,7 @@ function EditClientModal({
               )}
 
               <div className="mt-4">
-                <label className="mb-1 block text-xs text-zinc-500">کاربر فعال (IP Limit)</label>
+                <label className="mb-1 block text-xs text-zinc-500">IP Limit</label>
                 <input
                   type="number"
                   min={0}
