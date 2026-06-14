@@ -48,12 +48,12 @@ export function BulkCreateModal({ onClose, inboundsList }: BulkCreateModalProps)
         const cached = JSON.parse(localStorage.getItem("lastSelectedInboundIds") || "[]");
         const validCached = cached.filter((id: string) => inboundsList.some(i => i.id === id));
         if (validCached.length > 0) {
-          setForm(f => ({ ...f, inboundIds: validCached }));
+          setTimeout(() => setForm(f => ({ ...f, inboundIds: validCached })), 0);
         } else {
-          setForm(f => ({ ...f, inboundIds: [inboundsList[0].id] }));
+          setTimeout(() => setForm(f => ({ ...f, inboundIds: [inboundsList[0].id] })), 0);
         }
       } catch {
-        setForm(f => ({ ...f, inboundIds: [inboundsList[0].id] }));
+        setTimeout(() => setForm(f => ({ ...f, inboundIds: [inboundsList[0].id] })), 0);
       }
     }
   }, [inboundsList]);

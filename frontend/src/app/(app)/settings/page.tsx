@@ -8,7 +8,6 @@ import { useRouter } from "next/navigation";
 import { ErrorBox, PageHeader, Spinner, Card } from "@/components/ui";
 import { useToast } from "@/components/toast";
 import { motion } from "framer-motion";
-import packageJson from "../../../../../package.json";
 
 export default function GlobalSettingsPage() {
   const qc = useQueryClient();
@@ -108,18 +107,18 @@ export default function GlobalSettingsPage() {
               <h3 className="text-lg font-bold text-zinc-800 dark:text-zinc-100">About HMPanel</h3>
             </div>
             <div className="space-y-3 text-sm">
-              <div className="flex justify-between border-b border-zinc-200 dark:border-zinc-800/60 pb-2">
-                <span className="text-zinc-500">Panel Version</span>
-                <span className="font-medium text-zinc-800 dark:text-zinc-200">v{packageJson.version}</span>
-              </div>
-              <div className="flex justify-between border-b border-zinc-200 dark:border-zinc-800/60 pb-2">
-                <span className="text-zinc-500">Edition</span>
-                <span className="font-medium text-blue-500">Community Edition</span>
-              </div>
-              <div className="flex justify-between border-b border-zinc-200 dark:border-zinc-800/60 pb-2">
-                <span className="text-zinc-500">Build</span>
-                <span className="font-mono text-xs text-zinc-600 dark:text-zinc-400 mt-0.5">v{packageJson.version}</span>
-              </div>
+                <div className="flex justify-between border-b border-zinc-200 dark:border-zinc-800/60 pb-2">
+                  <span className="text-zinc-500">Panel Version</span>
+                  <span className="font-medium text-zinc-800 dark:text-zinc-200">v{process.env.NEXT_PUBLIC_APP_VERSION || "1.0.6"}</span>
+                </div>
+                <div className="flex justify-between border-b border-zinc-200 dark:border-zinc-800/60 pb-2">
+                  <span className="text-zinc-500">Edition</span>
+                  <span className="font-medium text-zinc-800 dark:text-zinc-200">Professional Edition</span>
+                </div>
+                <div className="flex justify-between border-b border-zinc-200 dark:border-zinc-800/60 pb-2">
+                  <span className="text-zinc-500">Build</span>
+                  <span className="font-mono text-xs text-zinc-600 dark:text-zinc-400 mt-0.5">v{process.env.NEXT_PUBLIC_APP_VERSION || "1.0.6"}</span>
+                </div>
               <div className="pt-2 space-y-2">
                 <a href="https://github.com/neoauroraproject/hmpanel" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-zinc-600 dark:text-zinc-400 hover:text-blue-500 transition-colors">
                   <ExternalLink size={14} /> Official GitHub

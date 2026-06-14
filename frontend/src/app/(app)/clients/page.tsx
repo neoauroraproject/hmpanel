@@ -1644,15 +1644,15 @@ function AddClientModal({
           const cached = JSON.parse(localStorage.getItem("lastSelectedInboundIds") || "[]");
           const validCached = cached.filter((id: string) => availableInbounds.some(i => i.id === id));
           if (validCached.length > 0) {
-            setForm(f => ({ ...f, inboundIds: validCached }));
+            setTimeout(() => setForm(f => ({ ...f, inboundIds: validCached })), 0);
           } else {
-            setForm(f => ({ ...f, inboundIds: [availableInbounds[0].id] }));
+            setTimeout(() => setForm(f => ({ ...f, inboundIds: [availableInbounds[0].id] })), 0);
           }
         } catch {
-          setForm(f => ({ ...f, inboundIds: [availableInbounds[0].id] }));
+          setTimeout(() => setForm(f => ({ ...f, inboundIds: [availableInbounds[0].id] })), 0);
         }
       } else if (stillAvailable.length !== form.inboundIds.length) {
-        setForm(f => ({ ...f, inboundIds: stillAvailable }));
+        setTimeout(() => setForm(f => ({ ...f, inboundIds: stillAvailable })), 0);
       }
     }
   }, [availableInbounds, form.inboundIds]);
