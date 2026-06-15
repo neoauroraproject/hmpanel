@@ -1040,9 +1040,9 @@ export default function ClientsPage() {
             initial={{ y: 50, x: "-50%", opacity: 0 }}
             animate={{ y: 0, x: "-50%", opacity: 1 }}
             exit={{ y: 50, x: "-50%", opacity: 0 }}
-            className="fixed bottom-6 left-1/2 z-40 w-full max-w-2xl px-4"
+            className="fixed bottom-6 left-1/2 z-40 w-max max-w-[95vw] px-4"
           >
-            <div className="flex items-center justify-between rounded-full border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/90 px-6 py-3 shadow-2xl backdrop-blur-md">
+            <div className="flex items-center justify-between gap-4 rounded-full border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/90 px-6 py-3 shadow-2xl backdrop-blur-md">
               <button 
                 onClick={() => setSelectedClients({})}
                 className="flex items-center gap-3 shrink-0 group cursor-pointer hover:opacity-80 transition-opacity outline-none"
@@ -1060,7 +1060,7 @@ export default function ClientsPage() {
               </button>
 
               {/* Desktop Actions */}
-              <div className="hidden md:flex items-center gap-1.5 sm:gap-2 overflow-x-auto max-w-[80%] scrollbar-none py-1">
+              <div className="hidden md:flex items-center gap-1.5 sm:gap-2 overflow-x-auto scrollbar-none py-1">
                 <button
                   onClick={() => handleBulkAction("addTraffic")}
                   className="rounded-full border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:bg-zinc-800 whitespace-nowrap"
@@ -2059,6 +2059,7 @@ function EditClientModal({
           flow: isReality && form.flow ? form.flow : undefined,
           inboundIds: form.inboundIds,
           enable: enableOverride,
+          limitIp: form.limitIp ? Number(form.limitIp) : 0,
         })
       ).data;
     },
@@ -2116,21 +2117,19 @@ function EditClientModal({
           <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/50 p-4">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="font-medium text-zinc-700 dark:text-zinc-200 text-sm">Traffic Info</h3>
-              {sessionAdmin?.role === 'SUPER_ADMIN' && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const confirmMsg = `SUPER ADMIN ACTION:\n\nAre you sure you want to reset this client's usage?\n\nUsed Traffic: ${formatBytes(usedTraffic)}\nEquivalent traffic will be restored to their remaining balance.`;
-                    if (confirm(confirmMsg)) {
-                      resetUsage.mutate();
-                    }
-                  }}
-                  disabled={resetUsage.isPending || usedTraffic === 0}
-                  className="text-xs text-red-400 hover:text-red-300 bg-red-400/10 hover:bg-red-400/20 px-2 py-1 rounded transition-colors disabled:opacity-50 font-medium"
-                >
-                  {resetUsage.isPending ? "Resetting..." : "Reset Usage"}
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => {
+                  const confirmMsg = `Are you sure you want to reset this client's usage?\n\nUsed Traffic: ${formatBytes(usedTraffic)}\nEquivalent traffic will be restored to their remaining balance, which will be deducted from your pool.`;
+                  if (confirm(confirmMsg)) {
+                    resetUsage.mutate();
+                  }
+                }}
+                disabled={resetUsage.isPending || usedTraffic === 0}
+                className="text-xs text-red-400 hover:text-red-300 bg-red-400/10 hover:bg-red-400/20 px-2 py-1 rounded transition-colors disabled:opacity-50 font-medium"
+              >
+                {resetUsage.isPending ? "Resetting..." : "Reset Usage"}
+              </button>
             </div>
             
             <div className="grid grid-cols-3 gap-4 text-sm mb-4">

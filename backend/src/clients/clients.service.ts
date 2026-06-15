@@ -567,6 +567,7 @@ export class ClientsService {
         await this.panelsService.delClient(inbound.panelId, inbound.port, existing.uuid, existing.email);
       } catch (err: any) {
         console.error(`Failed to delete client ${existing.email} from panel inbound ${inbound.id}:`, err.message);
+        throw new BadRequestException(`Failed to delete client from panel: ${err.message}. Aborting deletion.`);
       }
     }
     
@@ -584,7 +585,7 @@ export class ClientsService {
                 clientId: id,
                 amount: remaining,
                 type: 'CREDIT',
-                description: 'Client Deletion Refund',
+                description: `Client Deletion Refund (${existing.email})`,
               }
             });
           }
@@ -605,7 +606,6 @@ export class ClientsService {
   }
 
   async resetUsage(id: string, adminId: string, role: string) {
-    if (role !== 'SUPER_ADMIN') throw new BadRequestException('Only Super Admin can reset traffic usage');
     const existing = await this.findOne(id, adminId, role);
     
     for (const inbound of existing.inbounds) {
@@ -613,21 +613,42 @@ export class ClientsService {
         await this.panelsService.resetClientTraffic(inbound.panelId, inbound.port, existing.email);
       } catch (err: any) {
         console.error(`Failed to reset traffic for client ${existing.email} on panel inbound ${inbound.id}:`, err.message);
+        throw new BadRequestException(`Failed to reset traffic on panel: ${err.message}`);
       }
     }
     
     return this.prisma.$transaction(async (tx) => {
       const used = existing.up + existing.down;
-      if (used > 0n) {
-        await tx.trafficTransaction.create({
-          data: {
-            adminId: existing.adminId || adminId,
-            clientId: id,
-            amount: used,
-            type: 'USAGE_CHARGE',
-            description: 'Historical Usage Archived via Reset',
-          }
-        });
+      
+      if (used > 0n && existing.adminId) {
+        const admin = await tx.admin.findUnique({ where: { id: existing.adminId } });
+        if (admin) {
+           if (admin.trafficMode === 'ALLOCATION') {
+               if (admin.balance < Number(used)) {
+                   throw new BadRequestException(`Insufficient traffic balance to reset this client. You need ${used} bytes.`);
+               }
+               await tx.admin.update({ where: { id: admin.id }, data: { balance: admin.balance - Number(used) } });
+               await tx.trafficTransaction.create({
+                 data: {
+                   adminId: admin.id,
+                   clientId: id,
+                   amount: used,
+                   type: 'DEBIT',
+                   description: `Client Usage Reset Charge (${existing.email})`,
+                 }
+               });
+           } else if (admin.trafficMode === 'USAGE') {
+               await tx.trafficTransaction.create({
+                 data: {
+                   adminId: admin.id,
+                   clientId: id,
+                   amount: used,
+                   type: 'USAGE_CHARGE',
+                   description: `Historical Usage Archived via Reset (${existing.email})`,
+                 }
+               });
+           }
+        }
       }
 
       await tx.client.update({ where: { id }, data: { up: 0n, down: 0n } });
