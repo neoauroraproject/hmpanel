@@ -270,9 +270,7 @@ export class PanelsService implements OnModuleInit {
         server = await this.prisma.server.create({
           data: {
             name: 'Local Server',
-            ip: '127.0.0.1',
-            sshPort: 22,
-            sshUser: 'root'
+            ipAddress: '127.0.0.1'
           },
           select: { id: true }
         });
@@ -1105,10 +1103,17 @@ export class PanelsService implements OnModuleInit {
         if (!inbound.settings.clients) inbound.settings.clients = [];
         
         if (settingsPayload && settingsPayload.clients) {
+          for (const newClient of settingsPayload.clients) {
+            const exists = inbound.settings.clients.some((c: any) => c.email === newClient.email);
+            if (exists) {
+              throw new BadRequestException(`Client "${newClient.email}" already exists on this server. Please use a different name.`);
+            }
+          }
           inbound.settings.clients.push(...settingsPayload.clients);
         }
       });
     } catch (err: any) {
+      if (err instanceof BadRequestException) throw err;
       throw new BadRequestException(`Failed to add client to panel: ${err.message}`);
     }
   }
