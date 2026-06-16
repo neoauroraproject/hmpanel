@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
+import { EditClientModal } from "../clients/page";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AreaChart, Area, BarChart, Bar,
@@ -423,6 +424,12 @@ function SuperDashboard() {
 function ResellerDashboard() {
   const admin = useAuth((s) => s.admin);
   const router = useRouter();
+  const [editing, setEditing] = useState<any>(null);
+
+  const inboundsQuery = useQuery({
+    queryKey: ["inbounds-list"],
+    queryFn: async () => (await api.get<any[]>("/inbounds")).data,
+  });
 
   const onlinesQuery = useQuery({
     queryKey: ["live-onlines"],
@@ -634,7 +641,7 @@ function ResellerDashboard() {
                   </div>
                   <div className="text-left sm:text-right">
                     <div className="text-sm font-mono text-zinc-600 dark:text-zinc-300">{formatBytes(c.used)} / {c.total === 0 ? "∞" : formatBytes(c.total)}</div>
-                    <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => router.push(`/clients?search=${c.email}`)} className="mt-2 sm:mt-2 text-xs font-semibold text-blue-400 hover:bg-blue-400/10 px-3 py-1 rounded-full transition-colors border border-blue-400/20 sm:border-0">
+                    <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => setEditing(c)} className="mt-2 sm:mt-2 text-xs font-semibold text-blue-400 hover:bg-blue-400/10 px-3 py-1 rounded-full transition-colors border border-blue-400/20 sm:border-0">
                       Manage Client
                     </motion.button>
                   </div>
@@ -644,6 +651,20 @@ function ResellerDashboard() {
           </motion.div>
         )}
       </div>
+
+      <AnimatePresence>
+        {editing && inboundsQuery.data && (
+          <EditClientModal
+            client={editing}
+            inboundsList={inboundsQuery.data}
+            onClose={() => setEditing(null)}
+            onSaved={() => {
+              setEditing(null);
+              overview.refetch();
+            }}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

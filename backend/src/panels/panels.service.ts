@@ -265,8 +265,18 @@ export class PanelsService implements OnModuleInit {
 
     let serverId = data.serverId;
     if (!serverId) {
-      const server = await this.prisma.server.findFirst({ select: { id: true } });
-      if (!server) throw new BadRequestException('No server available to attach the panel to');
+      let server = await this.prisma.server.findFirst({ select: { id: true } });
+      if (!server) {
+        server = await this.prisma.server.create({
+          data: {
+            name: 'Local Server',
+            ip: '127.0.0.1',
+            sshPort: 22,
+            sshUser: 'root'
+          },
+          select: { id: true }
+        });
+      }
       serverId = server.id;
     }
 

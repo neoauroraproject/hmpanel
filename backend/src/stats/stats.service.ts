@@ -115,7 +115,7 @@ export class StatsService {
 
     const clients = await this.prisma.client.findMany({
       where: whereClause,
-      select: { id: true, email: true, remark: true, up: true, down: true, total: true, expiryTime: true, enable: true }
+      select: { id: true, email: true, remark: true, up: true, down: true, total: true, expiryTime: true, enable: true, flow: true, limitIp: true, inbounds: { include: { inbound: { include: { panel: true } } } } }
     });
 
     const thresholdSetting = await this.prisma.systemSetting.findUnique({ where: { key: 'cleanup_threshold_days' } });
@@ -180,10 +180,15 @@ export class StatsService {
           id: c.id,
           email: c.email,
           remark: c.remark,
+          up: Number(c.up),
+          down: Number(c.down),
           used,
           total,
           expiryTime: Number(c.expiryTime),
           enable: c.enable,
+          flow: c.flow,
+          limitIp: c.limitIp,
+          inbounds: c.inbounds,
           reasons: {
             depleted: isDepleted,
             disabled: isDisabled,

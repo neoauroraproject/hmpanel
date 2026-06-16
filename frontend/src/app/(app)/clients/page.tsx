@@ -1959,7 +1959,7 @@ function AddClientModal({
   );
 }
 
-function EditClientModal({
+export function EditClientModal({
   client,
   inboundsList,
   onClose,
