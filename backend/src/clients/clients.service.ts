@@ -67,6 +67,9 @@ export class ClientsService {
     }
     
     if (caller.role !== 'SUPER_ADMIN') {
+      if (caller.balance > 0 && totalBytes === 0n) {
+        throw new BadRequestException('Cannot create an unlimited client when your account has a traffic limit.');
+      }
       if (caller.trafficMode === 'ALLOCATION') {
         if (caller.balance < Number(totalBytes)) {
           throw new BadRequestException('Insufficient traffic balance');
@@ -398,6 +401,13 @@ export class ClientsService {
     const newFlow = data.flow !== undefined ? data.flow : existing.flow;
     const now = BigInt(Date.now());
     const usedTraffic = existing.up + existing.down;
+
+    if (role !== 'SUPER_ADMIN' && newTotal === 0n && existing.total !== 0n) {
+      const caller = await this.prisma.admin.findUnique({ where: { id: adminId } });
+      if (caller && caller.balance > 0) {
+        throw new BadRequestException('Cannot set an unlimited client when your account has a traffic limit.');
+      }
+    }
 
     let autoEnable = false;
     if (data.enable === undefined && !existing.enable) {
@@ -759,6 +769,9 @@ export class ClientsService {
     const totalBytesRequired = totalBytesPerClient * BigInt(count);
 
     if (caller.role !== 'SUPER_ADMIN') {
+      if (caller.balance > 0 && totalBytesPerClient === 0n) {
+        throw new BadRequestException('Cannot create unlimited clients when your account has a traffic limit.');
+      }
       if (caller.trafficMode === 'ALLOCATION') {
         if (caller.balance < Number(totalBytesRequired)) {
           throw new BadRequestException('Insufficient traffic balance');

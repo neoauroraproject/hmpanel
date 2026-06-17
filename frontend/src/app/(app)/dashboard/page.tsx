@@ -151,12 +151,22 @@ function SuperDashboard() {
 
   const seriesData = (series.data ?? []).map((p) => ({ label: p.label, bytes: p.bytes }));
   
+  const processPieData = (data: any[], max: number = 5) => {
+    const raw = data.map((d: any) => ({ name: d.name.replace("inbound-", ""), bytes: d.bytes })).sort((a, b) => b.bytes - a.bytes);
+    if (raw.length <= max) return raw;
+    const top = raw.slice(0, max);
+    const other = raw.slice(max).reduce((sum, d) => sum + d.bytes, 0);
+    return [...top, { name: "Other", bytes: other }];
+  };
+
   const trendsData = trends.data?.[pieRange === "24h" ? "last24h" : "allTime"];
-  const adminData = (trendsData?.byAdmin ?? []).map((d: any) => ({ name: d.name, bytes: d.bytes }));
-  const inboundData = (trendsData?.byInbound ?? []).map((d: any) => ({ name: d.name.replace("inbound-", ""), bytes: d.bytes }));
-  const modeData = (trendsData?.byTrafficMode ?? []).map((d: any) => ({ name: d.name, bytes: d.bytes }));
+  const adminData = processPieData(trendsData?.byAdmin ?? []);
+  const inboundData = processPieData(trendsData?.byInbound ?? []);
+  const modeData = processPieData(trendsData?.byTrafficMode ?? []);
   
   const sys = sysQuery.data;
+
+  const totalRangeTraffic = seriesData.reduce((sum, p) => sum + p.bytes, 0);
 
   return (
     <div className="space-y-6">
@@ -228,7 +238,13 @@ function SuperDashboard() {
       {/* Traffic chart with range toggle */}
       <Card>
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="font-medium text-zinc-800 dark:text-zinc-100">Traffic volume</h2>
+          <div>
+            <h2 className="font-medium text-zinc-800 dark:text-zinc-100">Traffic volume</h2>
+            <div className="mt-1 flex items-center gap-2">
+              <span className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">{formatBytes(totalRangeTraffic)}</span>
+              <span className="text-xs text-zinc-500 dark:text-zinc-400">Total in selected period</span>
+            </div>
+          </div>
           <div className="flex gap-1 rounded-lg border border-zinc-200 dark:border-zinc-800 p-0.5">
             {(["24h", "7d", "30d"] as const).map((r) => (
               <button key={r} onClick={() => setRange(r)}
@@ -298,11 +314,11 @@ function SuperDashboard() {
             </div>
           </div>
           {adminData.length === 0 ? (
-            <div className="h-[200px] flex items-center justify-center text-zinc-500 text-sm">No data available</div>
+            <div className="h-[280px] flex items-center justify-center text-zinc-500 text-sm">No data available</div>
           ) : (
-          <ResponsiveContainer width="100%" height={200}>
+          <ResponsiveContainer width="100%" height={280}>
             <PieChart margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-              <Pie data={adminData} dataKey="bytes" nameKey="name" cx="50%" cy="45%" innerRadius={45} outerRadius={65} paddingAngle={2} stroke="none">
+              <Pie data={adminData} dataKey="bytes" nameKey="name" cx="50%" cy="45%" innerRadius={60} outerRadius={85} paddingAngle={2} stroke="none">
                 {adminData.map((entry, index) => (
                   <Cell key={`cell-${index}`} fill={['#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#ef4444', '#ec4899'][index % 6]} />
                 ))}
@@ -328,11 +344,11 @@ function SuperDashboard() {
             <div className="h-8 w-8 rounded-full bg-amber-500/10 flex items-center justify-center"><Server size={16} className="text-amber-500"/></div>
           </div>
           {inboundData.length === 0 ? (
-            <div className="h-[200px] flex items-center justify-center text-zinc-500 text-sm">No data available</div>
+            <div className="h-[280px] flex items-center justify-center text-zinc-500 text-sm">No data available</div>
           ) : (
-          <ResponsiveContainer width="100%" height={200}>
+          <ResponsiveContainer width="100%" height={280}>
             <PieChart margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-              <Pie data={inboundData} dataKey="bytes" nameKey="name" cx="50%" cy="45%" innerRadius={45} outerRadius={65} paddingAngle={2} stroke="none">
+              <Pie data={inboundData} dataKey="bytes" nameKey="name" cx="50%" cy="45%" innerRadius={60} outerRadius={85} paddingAngle={2} stroke="none">
                 {inboundData.map((entry, index) => (
                   <Cell key={`cell-${index}`} fill={['#f59e0b', '#ef4444', '#10b981', '#3b82f6', '#8b5cf6', '#06b6d4'][index % 6]} />
                 ))}
