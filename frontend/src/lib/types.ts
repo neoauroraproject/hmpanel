@@ -115,11 +115,17 @@ export interface NamedBytes {
   bytes: number;
 }
 
-export interface Trends {
-  newClients: { date: string; count: number }[];
+export interface TrendsData {
+  newClients?: { date: string; count: number }[];
   byAdmin: NamedBytes[];
-  byInbound: NamedBytes[];
-  byPanel: NamedBytes[];
+  byInbound?: NamedBytes[];
+  byPanel?: NamedBytes[];
+  byTrafficMode?: NamedBytes[];
+}
+
+export interface Trends {
+  allTime: TrendsData;
+  last24h: TrendsData;
 }
 
 export interface Monitoring {
