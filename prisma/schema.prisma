@@ -113,6 +113,8 @@ model Admin {
   portalSettings   Json?       @default("{}")
   totalAssigned    Float       @default(0.0) // All-time assigned traffic
   gracePeriodStart DateTime? // When balance hits zero in USAGE mode
+  refundOnDelete   Boolean     @default(true)
+  refundOnEdit     Boolean     @default(true)
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
 
@@ -163,6 +165,8 @@ model Client {
   down       BigInt @default(0) // Bytes downloaded
   total      BigInt @default(0) // Max bytes allowed (0 = unlimited)
   expiryTime BigInt @default(0) // Unix ms timestamp (0 = no expiry)
+
+  createdWithTrafficMode TrafficMode @default(ALLOCATION)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

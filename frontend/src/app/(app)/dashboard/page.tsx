@@ -122,6 +122,7 @@ function SuperDashboard() {
   const qc = useQueryClient();
   const toast = useToast((s) => s.push);
   const [range, setRange] = useState<"24h" | "7d" | "30d">("24h");
+  const [pieRange, setPieRange] = useState<"allTime" | "24h">("allTime");
 
   const overview = useQuery({ queryKey: ["overview"], queryFn: async () => (await api.get<any>("/stats/overview")).data });
   const series = useQuery({ queryKey: ["series", range], queryFn: async () => (await api.get<SeriesPoint[]>(`/stats/traffic-series?range=${range}`)).data });
@@ -149,8 +150,11 @@ function SuperDashboard() {
   const o = overview.data!;
 
   const seriesData = (series.data ?? []).map((p) => ({ label: p.label, bytes: p.bytes }));
-  const adminData = (trends.data?.byAdmin ?? []).map((d) => ({ name: d.name, bytes: d.bytes }));
-  const inboundData = (trends.data?.byInbound ?? []).map((d) => ({ name: d.name.replace("inbound-", ""), bytes: d.bytes }));
+  
+  const trendsData = trends.data?.[pieRange === "24h" ? "last24h" : "allTime"];
+  const adminData = (trendsData?.byAdmin ?? []).map((d: any) => ({ name: d.name, bytes: d.bytes }));
+  const inboundData = (trendsData?.byInbound ?? []).map((d: any) => ({ name: d.name.replace("inbound-", ""), bytes: d.bytes }));
+  const modeData = (trendsData?.byTrafficMode ?? []).map((d: any) => ({ name: d.name, bytes: d.bytes }));
   
   const sys = sysQuery.data;
 
@@ -265,7 +269,7 @@ function SuperDashboard() {
             <div className="h-8 w-8 rounded-full bg-purple-500/10 flex items-center justify-center"><Users size={16} className="text-purple-500"/></div>
           </div>
           <ResponsiveContainer width="100%" height={180}>
-            <BarChart data={trends.data?.newClients ?? []} margin={{ top: 0, right: 0, left: -25, bottom: 0 }}>
+            <BarChart data={trends.data?.allTime?.newClients ?? []} margin={{ top: 0, right: 0, left: -25, bottom: 0 }}>
               <CartesianGrid vertical={false} stroke="#27272a" strokeOpacity={0.3} />
               <XAxis dataKey="date" tick={{ fill: "#71717a", fontSize: 10 }} axisLine={false} tickLine={false} dy={8} />
               <YAxis tick={{ fill: "#71717a", fontSize: 10 }} allowDecimals={false} axisLine={false} tickLine={false} />
@@ -281,8 +285,17 @@ function SuperDashboard() {
 
         <Card className="border-zinc-200 dark:border-zinc-800/60 shadow-sm">
           <div className="mb-2 flex items-center justify-between">
-            <h2 className="font-semibold text-zinc-800 dark:text-zinc-100">Usage by Admin</h2>
-            <div className="h-8 w-8 rounded-full bg-emerald-500/10 flex items-center justify-center"><UserCog size={16} className="text-emerald-500"/></div>
+            <h2 className="font-semibold text-zinc-800 dark:text-zinc-100 flex items-center gap-2">
+              Usage by Admin
+            </h2>
+            <div className="flex gap-1 rounded-lg border border-zinc-200 dark:border-zinc-800 p-0.5">
+              {(["allTime", "24h"] as const).map((r) => (
+                <button key={r} onClick={() => setPieRange(r)}
+                  className={`rounded-md px-2 py-0.5 text-[10px] ${pieRange === r ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100" : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-300"}`}>
+                  {r === "allTime" ? "All Time" : "24h"}
+                </button>
+              ))}
+            </div>
           </div>
           {adminData.length === 0 ? (
             <div className="h-[200px] flex items-center justify-center text-zinc-500 text-sm">No data available</div>

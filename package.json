@@ -1,9 +1,9 @@
 {
-  "devDependencies": {
-    "prisma": "^5.22.0"
-  },
-  "dependencies": {
-    "@prisma/client": "^5.22.0"
-  },
-  "version": "1.0.8"
+    "devDependencies":  {
+                            "prisma":  "^5.22.0"
+                        },
+    "dependencies":  {
+                         "@prisma/client":  "^5.22.0"
+                     },
+    "version":  "1.0.9"
 }

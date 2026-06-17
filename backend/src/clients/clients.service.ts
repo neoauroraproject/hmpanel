@@ -151,6 +151,7 @@ export class ClientsService {
           total: totalBytes,
           expiryTime: BigInt(data.expiryTime || 0),
           limitIp: data.limitIp || 0,
+          createdWithTrafficMode: targetAdmin.trafficMode,
           inbounds: {
             create: data.inboundIds.map(inboundId => ({ inboundId }))
           }
@@ -461,6 +462,7 @@ export class ClientsService {
         await this.panelsService.updateClient(inbound.panelId, inbound.port, existing.uuid, clientPayload);
       } catch (err: any) {
         console.error(`Failed to update client ${existing.email} on panel inbound ${inbound.id}:`, err.message);
+        throw new BadRequestException(`Failed to update client on panel: ${err.message}`);
       }
     }
 
@@ -472,6 +474,7 @@ export class ClientsService {
         await this.panelsService.addClient(inbound.panelId, inbound.port, { clients: [clientPayload] });
       } catch (err: any) {
         console.error(`Failed to add client ${existing.email} to panel inbound ${inbound.id}:`, err.message);
+        throw new BadRequestException(`Failed to add client to panel: ${err.message}`);
       }
     }
     
@@ -504,20 +507,24 @@ export class ClientsService {
               if (admin.balance < Number(diff)) throw new BadRequestException('Insufficient traffic balance');
               await tx.admin.update({ where: { id: admin.id }, data: { balance: admin.balance - Number(diff) } });
             } else if (diff < 0n) {
-              await tx.admin.update({ where: { id: admin.id }, data: { balance: admin.balance + Math.abs(Number(diff)) } });
+              if (admin.refundOnEdit) {
+                await tx.admin.update({ where: { id: admin.id }, data: { balance: admin.balance + Math.abs(Number(diff)) } });
+              }
             }
           }
 
           if (admin && admin.trafficMode === 'ALLOCATION' && diff !== 0n) {
-            await tx.trafficTransaction.create({
-              data: {
-                adminId: admin.id,
-                clientId: id,
-                amount: diff > 0n ? diff : -diff,
-                type: diff > 0n ? 'DEBIT' : 'CREDIT',
-                description: diff > 0n ? 'Client Traffic Increase' : 'Client Traffic Decrease',
-              }
-            });
+            if (!(diff < 0n && !admin.refundOnEdit)) {
+              await tx.trafficTransaction.create({
+                data: {
+                  adminId: admin.id,
+                  clientId: id,
+                  amount: diff > 0n ? diff : -diff,
+                  type: diff > 0n ? 'DEBIT' : 'CREDIT',
+                  description: diff > 0n ? 'Client Traffic Increase' : 'Client Traffic Decrease',
+                }
+              });
+            }
           }
         }
       }
@@ -574,7 +581,7 @@ export class ClientsService {
     return this.prisma.$transaction(async (tx) => {
       if (existing.adminId && !skipRefund) {
         const admin = await tx.admin.findUnique({ where: { id: existing.adminId } });
-        if (admin && admin.trafficMode === 'ALLOCATION') {
+        if (admin && admin.trafficMode === 'ALLOCATION' && existing.createdWithTrafficMode === 'ALLOCATION' && admin.refundOnDelete) {
           const used = existing.up + existing.down;
           const remaining = existing.total - used;
           if (remaining > 0n) {
@@ -811,6 +818,7 @@ export class ClientsService {
         expiryTime: BigInt(dto.expiryTime || 0),
         limitIp: dto.limitIp || 0,
         enable: dto.enable !== false,
+        createdWithTrafficMode: targetAdmin.trafficMode,
       });
     }
 

@@ -35,7 +35,7 @@ export class AdminsService implements OnModuleInit {
     }
   }
 
-  async create(data: { username: string; email: string; password: string; role?: string; trafficMode?: string; balance?: number; inboundIds?: string[]; expiryTime?: number; maxClients?: number; permissions?: string[] }) {
+  async create(data: { username: string; email: string; password: string; role?: string; trafficMode?: string; balance?: number; inboundIds?: string[]; expiryTime?: number; maxClients?: number; permissions?: string[]; refundOnDelete?: boolean; refundOnEdit?: boolean }) {
     // Allow admin creation regardless of sync state since we enforce selection in the UI.
 
     const exists = await this.prisma.admin.findFirst({
@@ -56,8 +56,10 @@ export class AdminsService implements OnModuleInit {
         expiryTime: data.expiryTime ? BigInt(data.expiryTime) : 0n,
         maxClients: data.maxClients || 0,
         permissions: data.permissions || [],
+        refundOnDelete: data.refundOnDelete ?? true,
+        refundOnEdit: data.refundOnEdit ?? true,
       },
-      select: { id: true, username: true, email: true, role: true, balance: true, trafficMode: true, status: true, expiryTime: true, maxClients: true, permissions: true, createdAt: true },
+      select: { id: true, username: true, email: true, role: true, balance: true, trafficMode: true, status: true, expiryTime: true, maxClients: true, permissions: true, refundOnDelete: true, refundOnEdit: true, createdAt: true },
     });
 
     if (data.inboundIds?.length) {
@@ -111,7 +113,7 @@ export class AdminsService implements OnModuleInit {
         select: {
           id: true, username: true, email: true, role: true,
           balance: true, trafficMode: true, status: true, createdAt: true,
-          expiryTime: true, maxClients: true, permissions: true, portalSettings: true,
+          expiryTime: true, maxClients: true, permissions: true, portalSettings: true, refundOnDelete: true, refundOnEdit: true,
           _count: { select: { clients: true } },
           clients: { select: { up: true, down: true } },
           transactions: { where: { type: 'CREDIT' }, select: { amount: true } }
@@ -142,7 +144,7 @@ export class AdminsService implements OnModuleInit {
       select: {
         id: true, username: true, email: true, role: true,
         balance: true, trafficMode: true, status: true, createdAt: true,
-        expiryTime: true, maxClients: true, permissions: true, portalSettings: true,
+        expiryTime: true, maxClients: true, permissions: true, portalSettings: true, refundOnDelete: true, refundOnEdit: true,
         _count: { select: { clients: true } },
         clients: { select: { up: true, down: true } },
         adminInbounds: { select: { inbound: { select: { id: true, tag: true, port: true, protocol: true, panel: { select: { id: true, name: true } } } } } },
@@ -162,7 +164,7 @@ export class AdminsService implements OnModuleInit {
     };
   }
 
-  async update(id: string, data: { password?: string; email?: string; balance?: number; status?: string; trafficMode?: string; expiryTime?: number; maxClients?: number; permissions?: string[]; inboundIds?: string[]; portalSettings?: any }) {
+  async update(id: string, data: { password?: string; email?: string; balance?: number; status?: string; trafficMode?: string; expiryTime?: number; maxClients?: number; permissions?: string[]; inboundIds?: string[]; portalSettings?: any; refundOnDelete?: boolean; refundOnEdit?: boolean }) {
     const existing = await this.findOne(id);
     const updateData: any = {};
     if (data.email !== undefined) updateData.email = data.email;
@@ -170,6 +172,8 @@ export class AdminsService implements OnModuleInit {
     if (data.status !== undefined) updateData.status = data.status;
     if (data.maxClients !== undefined) updateData.maxClients = data.maxClients;
     if (data.permissions !== undefined) updateData.permissions = data.permissions;
+    if (data.refundOnDelete !== undefined) updateData.refundOnDelete = data.refundOnDelete;
+    if (data.refundOnEdit !== undefined) updateData.refundOnEdit = data.refundOnEdit;
     
     if (data.password) {
       updateData.passwordHash = await bcrypt.hash(data.password, 10);
@@ -199,7 +203,7 @@ export class AdminsService implements OnModuleInit {
     const admin = await this.prisma.admin.update({
       where: { id },
       data: updateData,
-      select: { id: true, username: true, email: true, role: true, balance: true, trafficMode: true, status: true, expiryTime: true, maxClients: true, permissions: true },
+      select: { id: true, username: true, email: true, role: true, balance: true, trafficMode: true, status: true, expiryTime: true, maxClients: true, permissions: true, refundOnDelete: true, refundOnEdit: true },
     });
 
     await this.prisma.auditLog.create({

@@ -7,6 +7,9 @@ import * as crypto from 'crypto';
 @Injectable()
 export class PanelsService implements OnModuleInit {
   private readonly logger = new Logger(PanelsService.name);
+  private panelOnlineCache: Record<string, { emails: string[], timestamp: number }> = {};
+  private onlineIpsCache: { data: Record<string, number>, timestamp: number } = { data: {}, timestamp: 0 };
+
   constructor(private prisma: PrismaService) {}
 
   async onModuleInit() {
@@ -949,6 +952,15 @@ export class PanelsService implements OnModuleInit {
         },
       });
 
+      await this.prisma.auditLog.create({
+        data: {
+          action: 'SYNC_COMPLETED',
+          entity: 'Panel',
+          entityId: id,
+          details: { message: 'Panel synchronization completed successfully', inboundCount: totalSyncedInbounds, clientCount: apiUuids.size }
+        }
+      });
+
       const dbClientCount = await this.prisma.client.count({
         where: {
           inbounds: {
@@ -1465,8 +1477,11 @@ export class PanelsService implements OnModuleInit {
     const onlineEmails = new Set<string>();
 
     await Promise.all(panels.map(async (p) => {
+      let panelEmails: string[] = [];
+      let success = false;
+      const apiBaseUrl = p.apiBaseUrl || p.url.replace(/\/$/, '');
+
       try {
-        const apiBaseUrl = p.apiBaseUrl || p.url.replace(/\/$/, '');
         this.logger.debug(`Fetching live onlines for panel ${p.id}`);
         const res = await axios.post(`${apiBaseUrl}/panel/api/inbounds/onlines`, {}, {
           headers: { Authorization: p.apiToken ? `Bearer ${p.apiToken}` : undefined },
@@ -1474,37 +1489,30 @@ export class PanelsService implements OnModuleInit {
         });
 
         if (res.data && res.data.success && Array.isArray(res.data.obj)) {
-          this.logger.debug(`Panel ${p.id} returned ${res.data.obj.length} online clients.`);
-          res.data.obj.forEach((email: string) => {
-             if (email) onlineEmails.add(email.trim().toLowerCase());
-          });
-          return;
+          panelEmails = res.data.obj.map((e: string) => e?.trim().toLowerCase()).filter(Boolean);
+          success = true;
         } else {
-          this.logger.debug(`Panel ${p.id} onlines API response was not successful or obj is missing:`, res.data);
+          this.logger.debug(`Panel ${p.id} onlines API response was not successful:`, res.data);
         }
       } catch (err: any) {
         if (err.response?.status === 404) {
-          this.logger.debug(`Panel ${p.id} doesn't support /onlines API, falling back to /inbounds/list`);
           try {
-            const apiBaseUrl = p.apiBaseUrl || p.url.replace(/\/$/, '');
             const listRes = await axios.get(`${apiBaseUrl}/panel/api/inbounds/list`, {
               headers: { Authorization: p.apiToken ? `Bearer ${p.apiToken}` : undefined },
               timeout: 8000,
             });
             if (listRes.data && listRes.data.success && Array.isArray(listRes.data.obj)) {
               const now = Date.now();
-              let count = 0;
               listRes.data.obj.forEach((inb: any) => {
                 if (Array.isArray(inb.clientStats)) {
                   inb.clientStats.forEach((cs: any) => {
                     if (cs.email && cs.lastOnline && (now - cs.lastOnline < 120000)) {
-                      onlineEmails.add(cs.email.trim().toLowerCase());
-                      count++;
+                      panelEmails.push(cs.email.trim().toLowerCase());
                     }
                   });
                 }
               });
-              this.logger.debug(`Panel ${p.id} fallback returned ${count} online clients.`);
+              success = true;
             }
           } catch (fallbackErr: any) {
             this.logger.warn(`Fallback inbounds/list failed for panel ${p.id}: ${fallbackErr.message}`);
@@ -1513,8 +1521,56 @@ export class PanelsService implements OnModuleInit {
           this.logger.warn(`Failed to fetch live onlines for panel ${p.id}: ${err.message}`);
         }
       }
+
+      if (success) {
+        this.panelOnlineCache[p.id] = { emails: panelEmails, timestamp: Date.now() };
+        panelEmails.forEach(e => onlineEmails.add(e));
+      } else {
+        const cached = this.panelOnlineCache[p.id];
+        if (cached && Date.now() - cached.timestamp < 90000) {
+          this.logger.debug(`Using cache fallback for panel ${p.id} onlines`);
+          cached.emails.forEach(e => onlineEmails.add(e));
+        }
+      }
     }));
 
     return Array.from(onlineEmails);
+  }
+
+  async getOnlineClientIps(): Promise<Record<string, number>> {
+    const now = Date.now();
+    if (now - this.onlineIpsCache.timestamp < 30000) {
+      return this.onlineIpsCache.data;
+    }
+
+    const panels = await this.prisma.panel.findMany({
+      where: { status: 'online' },
+      select: { id: true, apiToken: true, apiBaseUrl: true, url: true }
+    });
+
+    const result: Record<string, number> = {};
+
+    await Promise.all(panels.map(async (p) => {
+      try {
+        const apiBaseUrl = p.apiBaseUrl || p.url.replace(/\/$/, '');
+        const res = await axios.post(`${apiBaseUrl}/panel/api/inbounds/clientIps`, {}, {
+          headers: { Authorization: p.apiToken ? `Bearer ${p.apiToken}` : undefined },
+          timeout: 5000,
+        });
+        if (res.data && res.data.success && typeof res.data.obj === 'object') {
+          for (const [email, ips] of Object.entries(res.data.obj)) {
+            if (Array.isArray(ips)) {
+              const normalizedEmail = email.trim().toLowerCase();
+              result[normalizedEmail] = (result[normalizedEmail] || 0) + ips.length;
+            }
+          }
+        }
+      } catch (err) {
+        // Soft fail
+      }
+    }));
+
+    this.onlineIpsCache = { data: result, timestamp: Date.now() };
+    return result;
   }
 }

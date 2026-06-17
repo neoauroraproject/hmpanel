@@ -268,13 +268,14 @@ export class StatsService {
 
   /** Trend datasets for the dashboard charts. */
   async trends() {
-    const since = new Date(Date.now() - 30 * DAY);
+    const since30d = new Date(Date.now() - 30 * DAY);
+    const since24h = new Date(Date.now() - 24 * HOUR);
 
     const clients = await this.prisma.client.findMany({
       where: { adminId: { not: null } },
       select: {
         up: true, down: true, createdAt: true,
-        admin: { select: { username: true } },
+        admin: { select: { username: true, trafficMode: true, id: true } },
         inbounds: {
           select: {
             inbound: {
@@ -296,7 +297,7 @@ export class StatsService {
     // New clients per day (last 30d)
     const byDay = new Map<string, number>();
     for (const c of mappedClients) {
-      if (c.createdAt < since) continue;
+      if (c.createdAt < since30d) continue;
       const key = c.createdAt.toISOString().slice(0, 10);
       byDay.set(key, (byDay.get(key) ?? 0) + 1);
     }
@@ -305,20 +306,52 @@ export class StatsService {
       count,
     }));
 
-    const agg = (keyFn: (c: (typeof mappedClients)[number]) => string) => {
+    const aggTop10 = (m: Map<string, number>) => {
+      const sorted = [...m.entries()].sort((a, b) => b[1] - a[1]);
+      const top10 = sorted.slice(0, 10).map(([name, bytes]) => ({ name, bytes }));
+      const othersBytes = sorted.slice(10).reduce((sum, [, bytes]) => sum + bytes, 0);
+      if (othersBytes > 0) {
+        top10.push({ name: 'Other', bytes: othersBytes });
+      }
+      return top10;
+    };
+
+    const aggAllTime = (keyFn: (c: (typeof mappedClients)[number]) => string) => {
       const m = new Map<string, number>();
       for (const c of mappedClients) {
         const used = Number(c.up) + Number(c.down);
         m.set(keyFn(c), (m.get(keyFn(c)) ?? 0) + used);
       }
-      return [...m.entries()].sort((a, b) => b[1] - a[1]).map(([name, bytes]) => ({ name, bytes }));
+      return aggTop10(m);
     };
 
+    // Calculate 24h usage using TrafficTransaction for USAGE and approximating for ALLOCATION if needed,
+    // or just computing what's available. For simplicity, we use USAGE_CHARGE transactions.
+    const tx24h = await this.prisma.trafficTransaction.findMany({
+      where: { 
+        createdAt: { gte: since24h },
+        type: 'USAGE_CHARGE'
+      },
+      select: { amount: true, admin: { select: { username: true, trafficMode: true } } }
+    });
+
+    const admin24hMap = new Map<string, number>();
+    for (const tx of tx24h) {
+      const key = `${tx.admin.username} (${tx.admin.trafficMode})`;
+      admin24hMap.set(key, (admin24hMap.get(key) ?? 0) + Number(tx.amount));
+    }
+
     return {
-      newClients,
-      byAdmin: agg((c) => c.admin?.username || 'Unassigned'),
-      byInbound: agg((c) => c.inbound?.tag || 'Unknown'),
-      byPanel: agg((c) => c.inbound?.panel?.name || 'Unknown'),
+      allTime: {
+        newClients,
+        byAdmin: aggAllTime((c) => c.admin ? `${c.admin.username} (${c.admin.trafficMode})` : 'Unassigned'),
+        byInbound: aggAllTime((c) => c.inbound?.tag || 'Unknown'),
+        byPanel: aggAllTime((c) => c.inbound?.panel?.name || 'Unknown'),
+        byTrafficMode: aggAllTime((c) => c.admin?.trafficMode || 'Unassigned'),
+      },
+      last24h: {
+        byAdmin: aggTop10(admin24hMap),
+      }
     };
   }
 

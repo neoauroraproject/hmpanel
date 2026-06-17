@@ -364,6 +364,8 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
     canCustomizeBranding: true,
     storeEnabled: false,
     storePanelId: "",
+    refundOnDelete: true,
+    refundOnEdit: true,
   });
 
   const { data: inbounds, isLoading: inboundsLoading } = useQuery<InboundRow[]>({
@@ -400,6 +402,8 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
         permissions: [],
         storeEnabled: form.storeEnabled,
         storePanelId: form.storePanelId,
+        refundOnDelete: form.refundOnDelete,
+        refundOnEdit: form.refundOnEdit,
       };
       return (await api.post("/admins", payload)).data;
     },
@@ -571,6 +575,22 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
                         <option value="ALLOCATION">Allocation Based (Deduct on Creation)</option>
                         <option value="USAGE">Usage Based (Charge Real Consumption)</option>
                       </select>
+                      <div className="mt-4 space-y-3 pt-4 border-t border-zinc-200 dark:border-zinc-800">
+                        <label className="flex items-center gap-3 p-2 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer">
+                          <input type="checkbox" checked={form.refundOnDelete} onChange={(e) => setForm({ ...form, refundOnDelete: e.target.checked })} className="w-4 h-4 rounded text-blue-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-blue-500" />
+                          <div className="flex flex-col">
+                            <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Refund on Delete</span>
+                            <span className="text-xs text-zinc-500">Refund traffic when client is deleted</span>
+                          </div>
+                        </label>
+                        <label className="flex items-center gap-3 p-2 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer">
+                          <input type="checkbox" checked={form.refundOnEdit} onChange={(e) => setForm({ ...form, refundOnEdit: e.target.checked })} className="w-4 h-4 rounded text-blue-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-blue-500" />
+                          <div className="flex flex-col">
+                            <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Refund on Edit</span>
+                            <span className="text-xs text-zinc-500">Refund traffic difference when client limits are reduced</span>
+                          </div>
+                        </label>
+                      </div>
                     </div>
                   </motion.div>
                 )}
@@ -618,6 +638,8 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
     selectedInbounds: [] as string[],
     canCustomizeBranding: true,
     storeEnabled: false,
+    refundOnDelete: true,
+    refundOnEdit: true,
   });
 
   const { data: panels } = useQuery<PanelRow[]>({
@@ -643,6 +665,8 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
         selectedPanel: admin.adminInbounds?.[0]?.inbound?.panel?.id || "",
         canCustomizeBranding: admin.permissions ? admin.permissions.includes("canCustomizeBranding") : true,
         storeEnabled: admin.storeEnabled || false,
+        refundOnDelete: (admin as any).refundOnDelete ?? true,
+        refundOnEdit: (admin as any).refundOnEdit ?? true,
       }));
     }
   }, [admin]);
@@ -663,6 +687,8 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
         trafficMode: form.trafficMode,
         inboundIds: form.selectedInbounds,
         permissions: [],
+        refundOnDelete: form.refundOnDelete,
+        refundOnEdit: form.refundOnEdit,
       };
       if (form.balanceGb) payload.balance = Math.round(Number(form.balanceGb) * 1024 * 1024 * 1024);
       if (form.maxClients) payload.maxClients = Number(form.maxClients);
@@ -816,6 +842,23 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
                               <option value="ALLOCATION">Allocation Based (Deduct on Creation)</option>
                               <option value="USAGE">Usage Based (Charge Real Consumption)</option>
                             </select>
+                            
+                            <div className="mt-4 space-y-3 pt-4 border-t border-zinc-200 dark:border-zinc-800">
+                              <label className="flex items-center gap-3 p-2 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer">
+                                <input type="checkbox" checked={form.refundOnDelete} onChange={(e) => setForm({ ...form, refundOnDelete: e.target.checked })} className="w-4 h-4 rounded text-blue-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-blue-500" />
+                                <div className="flex flex-col">
+                                  <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Refund on Delete</span>
+                                  <span className="text-xs text-zinc-500">Refund traffic when client is deleted</span>
+                                </div>
+                              </label>
+                              <label className="flex items-center gap-3 p-2 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer">
+                                <input type="checkbox" checked={form.refundOnEdit} onChange={(e) => setForm({ ...form, refundOnEdit: e.target.checked })} className="w-4 h-4 rounded text-blue-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-blue-500" />
+                                <div className="flex flex-col">
+                                  <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Refund on Edit</span>
+                                  <span className="text-xs text-zinc-500">Refund traffic difference when client limits are reduced</span>
+                                </div>
+                              </label>
+                            </div>
                           </div>
                         </div>
                       </div>

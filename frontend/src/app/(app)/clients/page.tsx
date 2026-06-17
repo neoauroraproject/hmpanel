@@ -99,6 +99,13 @@ export default function ClientsPage() {
   });
   const onlineClients = onlinesQuery.data?.onlines ?? [];
 
+  const onlineIpsQuery = useQuery({
+    queryKey: ["online-ips"],
+    queryFn: async () => (await api.get<Record<string, number>>("/panels/online-ips")).data,
+    refetchInterval: 15000,
+  });
+  const onlineIps = onlineIpsQuery.data ?? {};
+
   // Filter States
   const [search, setSearch] = useState("");
   const [adminId, setAdminId] = useState("");
@@ -624,6 +631,7 @@ export default function ClientsPage() {
                 const isExpanded = expandedId === c.id;
                 const isSelected = !!selectedClients[c.id];
                 const isOnline = onlineClients.includes(c.email.trim().toLowerCase());
+                const ipCount = onlineIps[c.email.trim()] || 0;
                 return (
                   <AnimatePresence key={c.id}>
                       <motion.tr
@@ -668,10 +676,17 @@ export default function ClientsPage() {
                             </div>
                             <div className="font-semibold text-zinc-800 dark:text-zinc-100">{c.remark || c.email}</div>
                             {isOnline && (
-                              <span className="relative flex h-2.5 w-2.5" title="Online">
-                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]"></span>
-                              </span>
+                              <div className="flex items-center gap-1">
+                                <span className="relative flex h-2.5 w-2.5" title="Online">
+                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]"></span>
+                                </span>
+                                {ipCount > 0 && (
+                                  <span className="text-[10px] font-bold text-emerald-500 bg-emerald-500/10 px-1.5 py-0.5 rounded-md" title={`${ipCount} IP(s) connected`}>
+                                    {ipCount} IP
+                                  </span>
+                                )}
+                              </div>
                             )}
                           </div>
                           
@@ -742,7 +757,7 @@ export default function ClientsPage() {
                                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                                   <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                                 </span>
-                                <span className="text-xs text-emerald-400">Online</span>
+                                <span className="text-xs text-emerald-400">Online {ipCount > 0 ? `(${ipCount})` : ''}</span>
                               </div>
                             );
                           }

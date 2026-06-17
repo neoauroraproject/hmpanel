@@ -18,6 +18,13 @@ export class PanelsController {
     return this.panelsService.testConnection(dto);
   }
 
+  @Get('online-ips')
+  @Roles('SUPER_ADMIN', 'RESELLER')
+  @ApiOperation({ summary: 'Get active IP counts for online clients' })
+  getOnlineIps() {
+    return this.panelsService.getOnlineClientIps();
+  }
+
   @Post()
   @ApiOperation({ summary: 'Register a 3x-ui panel' })
   register(@Body() dto: { serverId?: string; name: string; url: string; subUrl?: string; apiToken?: string; username?: string; password?: string }) {
