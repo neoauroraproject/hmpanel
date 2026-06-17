@@ -97,7 +97,7 @@ main() {
   local attempt=0
   info "Waiting for services to become healthy..."
   while [[ $attempt -lt $max_attempts ]]; do
-    if docker exec hmpanel-panel curl -sf "http://localhost:4000/health" &>/dev/null; then
+    if docker exec hmpanel-panel curl -sf "http://127.0.0.1:4000/health" &>/dev/null; then
       log "Backend API is healthy"
       break
     fi

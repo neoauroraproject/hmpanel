@@ -57,8 +57,8 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN cd frontend && npm run build
 
 # Validate no hardcoded localhost
-RUN if grep -r "localhost:4000" frontend/.next/static/; then \
-      echo "ERROR: Hardcoded localhost:4000 found in production bundle!"; \
+RUN if grep -r "127.0.0.1:4000" frontend/.next/static/; then \
+      echo "ERROR: Hardcoded 127.0.0.1:4000 found in production bundle!"; \
       exit 1; \
     fi
 
@@ -106,7 +106,7 @@ USER panelapp
 EXPOSE 3000 4000
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-  CMD curl -f http://localhost:4000/health || exit 1
+  CMD curl -f http://127.0.0.1:4000/health || exit 1
 
 # Use tini for proper signal handling
 ENTRYPOINT ["/sbin/tini", "--"]
