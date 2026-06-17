@@ -105,24 +105,34 @@ export class ClientsService {
       reset: 0,
     };
 
-    for (const inbound of inbounds) {
-      const isReality = inbound.protocol === 'vless' && (inbound.streamSettings as any)?.security === 'reality';
-      const clientPayload = {
-        ...baseClientPayload,
-        flow: isReality ? (data.flow || "") : ""
-      };
+    const createdOnPanels: any[] = [];
+    try {
+      for (const inbound of inbounds) {
+        const isReality = inbound.protocol === 'vless' && (inbound.streamSettings as any)?.security === 'reality';
+        const clientPayload = {
+          ...baseClientPayload,
+          flow: isReality ? (data.flow || "") : ""
+        };
 
-      await this.panelsService.addClient(inbound.panelId, inbound.port, {
-        clients: [clientPayload]
-      });
+        await this.panelsService.addClient(inbound.panelId, inbound.port, {
+          clients: [clientPayload]
+        });
 
-      // Assign client to reseller's native 3x-ui group (auto-creates group if needed)
-      await this.panelsService.assignClientToGroup(
-        inbound.panelId, [data.email], targetAdmin.username
-      );
+        // Assign client to reseller's native 3x-ui group (auto-creates group if needed)
+        await this.panelsService.assignClientToGroup(
+          inbound.panelId, [data.email], targetAdmin.username
+        );
+        createdOnPanels.push(inbound);
+      }
+    } catch (e: any) {
+      for (const inbound of createdOnPanels) {
+        await this.panelsService.delClient(inbound.panelId, inbound.port, clientUuid, data.email).catch(console.error);
+      }
+      throw new BadRequestException('Failed to create client on remote panel: ' + e.message);
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
       // Re-fetch caller to lock balance during transaction
       const lockedCaller = await tx.admin.findUnique({ where: { id: callerId } });
       if (!lockedCaller) throw new BadRequestException('Admin not found');
@@ -207,6 +217,12 @@ export class ClientsService {
 
       return mappedClient;
     });
+    } catch (dbError) {
+      for (const inbound of createdOnPanels) {
+        await this.panelsService.delClient(inbound.panelId, inbound.port, clientUuid, data.email).catch(console.error);
+      }
+      throw dbError;
+    }
   }
 
   async findAll(adminId: string, role: string, page = 1, limit = 50, filters: ClientFilters = {}) {
@@ -454,41 +470,39 @@ export class ClientsService {
       removedInbounds = existing.inbounds.filter((i: any) => toRemove.includes(i.id));
     }
 
-    // Process removals FIRST
-    for (const inbound of removedInbounds) {
-      try {
-        await this.panelsService.delClient(inbound.panelId, inbound.port, existing.uuid, existing.email);
-      } catch (err: any) {
-        console.error(`Failed to remove client ${existing.email} from panel inbound ${inbound.id}:`, err.message);
-      }
-    }
+    const successfullyRemoved: any[] = [];
+    const successfullyUpdated: any[] = [];
+    const successfullyAdded: any[] = [];
 
-    // Process updates for kept inbounds
-    const keptInbounds = existing.inbounds.filter((i: any) => !removedInbounds.some((r: any) => r.id === i.id));
-    for (const inbound of keptInbounds) {
-      try {
+    try {
+      // Process removals FIRST
+      for (const inbound of removedInbounds) {
+        await this.panelsService.delClient(inbound.panelId, inbound.port, existing.uuid, existing.email);
+        successfullyRemoved.push(inbound);
+      }
+
+      // Process updates for kept inbounds
+      const keptInbounds = existing.inbounds.filter((i: any) => !removedInbounds.some((r: any) => r.id === i.id));
+      for (const inbound of keptInbounds) {
         const isReality = inbound.protocol === 'vless' && (inbound.streamSettings as any)?.security === 'reality';
         const clientPayload = { ...baseClientPayload, flow: isReality ? (newFlow || "") : "" };
         await this.panelsService.updateClient(inbound.panelId, inbound.port, existing.uuid, clientPayload);
-      } catch (err: any) {
-        console.error(`Failed to update client ${existing.email} on panel inbound ${inbound.id}:`, err.message);
-        throw new BadRequestException(`Failed to update client on panel: ${err.message}`);
+        successfullyUpdated.push(inbound);
       }
-    }
 
-    // Process additions
-    for (const inbound of addedInbounds) {
-      try {
+      // Process additions
+      for (const inbound of addedInbounds) {
         const isReality = inbound.protocol === 'vless' && (inbound.streamSettings as any)?.security === 'reality';
         const clientPayload = { ...baseClientPayload, flow: isReality ? (newFlow || "") : "" };
         await this.panelsService.addClient(inbound.panelId, inbound.port, { clients: [clientPayload] });
-      } catch (err: any) {
-        console.error(`Failed to add client ${existing.email} to panel inbound ${inbound.id}:`, err.message);
-        throw new BadRequestException(`Failed to add client to panel: ${err.message}`);
+        successfullyAdded.push(inbound);
       }
+    } catch (e: any) {
+      throw new BadRequestException(`Failed to modify client on panel: ${e.message}`);
     }
     
-    return this.prisma.$transaction(async (tx) => {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
       const updateData: Prisma.ClientUpdateInput = {};
       if (existing.email !== existing.email.trim()) {
         updateData.email = existing.email.trim();
@@ -574,6 +588,33 @@ export class ClientsService {
       });
       return client;
     });
+    } catch (dbError) {
+      // Rollback panel modifications
+      for (const inbound of successfullyAdded) {
+         await this.panelsService.delClient(inbound.panelId, inbound.port, existing.uuid, existing.email).catch(console.error);
+      }
+      
+      const revertPayload = {
+        id: existing.uuid,
+        subId: existing.subId || "",
+        email: existing.email.trim(),
+        enable: existing.enable,
+        totalGB: Number(existing.total),
+        expiryTime: Number(existing.expiryTime),
+        limitIp: (existing as any).limitIp || 0,
+        tgId: "",
+      };
+
+      for (const inbound of successfullyRemoved) {
+         const isReality = inbound.protocol === 'vless' && (inbound.streamSettings as any)?.security === 'reality';
+         await this.panelsService.addClient(inbound.panelId, inbound.port, { clients: [{...revertPayload, flow: isReality ? (existing.flow || "") : ""}] }).catch(console.error);
+      }
+      for (const inbound of successfullyUpdated) {
+         const isReality = inbound.protocol === 'vless' && (inbound.streamSettings as any)?.security === 'reality';
+         await this.panelsService.updateClient(inbound.panelId, inbound.port, existing.uuid, {...revertPayload, flow: isReality ? (existing.flow || "") : ""}).catch(console.error);
+      }
+      throw dbError;
+    }
   }
 
   async remove(id: string, adminId: string, role: string, skipRefund: boolean = false) {
@@ -835,26 +876,38 @@ export class ClientsService {
       });
     }
 
-    for (const inbound of inbounds) {
-      const isReality = inbound.protocol === 'vless' && (inbound.streamSettings as any)?.security === 'reality';
-      const payloadsForInbound = clientPayloads.map(p => ({
-        ...p,
-        flow: isReality ? (dto.flow || "") : ""
-      }));
+    const createdOnPanels: any[] = [];
+    try {
+      for (const inbound of inbounds) {
+        const isReality = inbound.protocol === 'vless' && (inbound.streamSettings as any)?.security === 'reality';
+        const payloadsForInbound = clientPayloads.map(p => ({
+          ...p,
+          flow: isReality ? (dto.flow || "") : ""
+        }));
 
-      await this.panelsService.addClient(inbound.panelId, inbound.port, {
-        clients: payloadsForInbound
-      });
+        await this.panelsService.addClient(inbound.panelId, inbound.port, {
+          clients: payloadsForInbound
+        });
 
-      // 2. Assign to reseller Group
-      const groupName = dto.group || targetAdmin.username;
-      await this.panelsService.assignClientToGroup(
-        inbound.panelId, emails, groupName
-      );
+        // 2. Assign to reseller Group
+        const groupName = dto.group || targetAdmin.username;
+        await this.panelsService.assignClientToGroup(
+          inbound.panelId, emails, groupName
+        );
+        createdOnPanels.push(inbound);
+      }
+    } catch (e: any) {
+      for (const inbound of createdOnPanels) {
+        await Promise.all(clientPayloads.map(p => 
+          this.panelsService.delClient(inbound.panelId, inbound.port, p.id, p.email).catch(console.error)
+        ));
+      }
+      throw new BadRequestException('Failed to bulk create clients on remote panel: ' + e.message);
     }
 
-    // 3. Save to local DB in transaction
-    const createdClients = await this.prisma.$transaction(async (tx) => {
+    try {
+      // 3. Save to local DB in transaction
+      const createdClients = await this.prisma.$transaction(async (tx) => {
       if (caller.role !== 'SUPER_ADMIN' && caller.trafficMode === 'ALLOCATION') {
         const lockedCaller = await tx.admin.findUnique({ where: { id: callerId } });
         if (!lockedCaller) throw new BadRequestException('Admin not found');
@@ -904,6 +957,14 @@ export class ClientsService {
     });
 
     return { success: true, count: createdClients.length };
+    } catch (dbError) {
+      for (const inbound of createdOnPanels) {
+        await Promise.all(clientPayloads.map(p => 
+          this.panelsService.delClient(inbound.panelId, inbound.port, p.id, p.email).catch(console.error)
+        ));
+      }
+      throw dbError;
+    }
   }
 
   /** Bulk operations, scoped to the caller's ownership when a reseller. */
