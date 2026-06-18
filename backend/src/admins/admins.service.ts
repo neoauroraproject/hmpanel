@@ -81,7 +81,10 @@ export class AdminsService implements OnModuleInit {
           adminId: admin.id,
           amount: BigInt(data.balance),
           type: 'CREDIT',
+          action: 'ADMIN_INITIAL_ALLOCATION',
           description: 'Initial Allocation',
+          balanceBefore: 0,
+          balanceAfter: data.balance,
         }
       });
     }
@@ -217,7 +220,10 @@ export class AdminsService implements OnModuleInit {
           adminId: admin.id,
           amount: BigInt(Math.round(Math.abs(diff))),
           type: diff > 0 ? 'CREDIT' : 'DEBIT',
+          action: diff > 0 ? 'ADMIN_RECHARGE' : 'ADMIN_DEDUCTION',
           description: diff > 0 ? 'Admin Recharge' : 'Admin Deduction',
+          balanceBefore: existing.balance,
+          balanceAfter: data.balance,
         }
       });
     }
@@ -265,7 +271,10 @@ export class AdminsService implements OnModuleInit {
             adminId: id,
             amount: BigInt(newBalance),
             type: 'CREDIT',
+            action: 'MIGRATION_FIX_BALANCE',
             description: 'Migration Fix — Manual Balance Set',
+            balanceBefore: admin.balance,
+            balanceAfter: newBalance,
           }
         });
       }
@@ -283,7 +292,10 @@ export class AdminsService implements OnModuleInit {
               adminId: id,
               amount: pool.totalLimit,
               type: 'CREDIT',
+              action: 'MIGRATION_SYNC_BALANCE',
               description: 'Migration Fix — Balance Synced from TrafficPool',
+              balanceBefore: admin.balance,
+              balanceAfter: balanceFromPool,
             }
           });
         }

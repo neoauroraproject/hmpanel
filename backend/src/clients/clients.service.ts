@@ -204,9 +204,13 @@ export class ClientsService {
           data: {
             adminId: callerId,
             clientId: client.id,
+            targetClientUuid: client.id,
             amount: totalBytes,
             type: 'DEBIT',
+            action: 'CLIENT_CREATION_ALLOCATION',
             description: 'Client Creation Allocation',
+            balanceBefore: lockedCaller.balance,
+            balanceAfter: lockedCaller.balance - Number(totalBytes),
           }
         });
       }
@@ -543,9 +547,13 @@ export class ClientsService {
                 data: {
                   adminId: admin.id,
                   clientId: id,
+                  targetClientUuid: id,
                   amount: diff > 0n ? diff : -diff,
                   type: diff > 0n ? 'DEBIT' : 'CREDIT',
+                  action: diff > 0n ? 'CLIENT_TRAFFIC_INCREASE' : 'CLIENT_TRAFFIC_DECREASE',
                   description: diff > 0n ? 'Client Traffic Increase' : 'Client Traffic Decrease',
+                  balanceBefore: admin.balance,
+                  balanceAfter: diff > 0n ? admin.balance - Number(diff) : admin.balance + Math.abs(Number(diff)),
                 }
               });
             }
@@ -636,16 +644,28 @@ export class ClientsService {
           const used = existing.up + existing.down;
           const remaining = existing.total - used;
           if (remaining > 0n) {
-            await tx.admin.update({ where: { id: admin.id }, data: { balance: admin.balance + Number(remaining) } });
-            await tx.trafficTransaction.create({
-              data: {
-                adminId: admin.id,
-                clientId: id,
-                amount: remaining,
-                type: 'CREDIT',
-                description: `Client Deletion Refund (${existing.email})`,
+            const existingRefund = await tx.trafficTransaction.findFirst({
+              where: {
+                targetClientUuid: id,
+                action: 'CLIENT_DELETION_REFUND'
               }
             });
+            if (!existingRefund) {
+              await tx.admin.update({ where: { id: admin.id }, data: { balance: admin.balance + Number(remaining) } });
+              await tx.trafficTransaction.create({
+                data: {
+                  adminId: admin.id,
+                  clientId: id,
+                  targetClientUuid: id,
+                  amount: remaining,
+                  type: 'CREDIT',
+                  action: 'CLIENT_DELETION_REFUND',
+                  description: `Client Deletion Refund (${existing.email})`,
+                  balanceBefore: admin.balance,
+                  balanceAfter: admin.balance + Number(remaining),
+                }
+              });
+            }
           }
         }
       }
@@ -690,9 +710,13 @@ export class ClientsService {
                  data: {
                    adminId: admin.id,
                    clientId: id,
+                   targetClientUuid: id,
                    amount: used,
                    type: 'DEBIT',
+                   action: 'CLIENT_USAGE_RESET_CHARGE',
                    description: `Client Usage Reset Charge (${existing.email})`,
+                   balanceBefore: admin.balance,
+                   balanceAfter: admin.balance - Number(used),
                  }
                });
            } else if (admin.trafficMode === 'USAGE') {
@@ -700,9 +724,13 @@ export class ClientsService {
                  data: {
                    adminId: admin.id,
                    clientId: id,
+                   targetClientUuid: id,
                    amount: used,
                    type: 'USAGE_CHARGE',
+                   action: 'HISTORICAL_USAGE_ARCHIVED',
                    description: `Historical Usage Archived via Reset (${existing.email})`,
+                   balanceBefore: admin.balance,
+                   balanceAfter: admin.balance,
                  }
                });
            }

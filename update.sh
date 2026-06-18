@@ -112,6 +112,10 @@ main() {
     echo ""
     log "HMPanel Panel successfully updated and verified!"
   fi
+
+  step "Final Cleanup"
+  info "Running final prune to remove dangling images..."
+  docker image prune -a -f || true
 }
 
 main "$@"

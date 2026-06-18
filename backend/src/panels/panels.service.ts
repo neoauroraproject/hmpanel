@@ -843,7 +843,10 @@ export class PanelsService implements OnModuleInit {
           if (latestTx && (Date.now() - latestTx.createdAt.getTime() < ONE_DAY)) {
             await this.prisma.trafficTransaction.update({
               where: { id: latestTx.id },
-              data: { amount: latestTx.amount + totalDelta }
+              data: { 
+                amount: latestTx.amount + totalDelta,
+                balanceAfter: admin.balance - Number(totalDelta)
+              }
             });
           } else {
             await this.prisma.trafficTransaction.create({
@@ -851,7 +854,10 @@ export class PanelsService implements OnModuleInit {
                 adminId,
                 amount: totalDelta,
                 type: 'USAGE_CHARGE',
-                description: `Daily Summarized Usage Charge`
+                action: 'DAILY_USAGE_CHARGE',
+                description: `Daily Summarized Usage Charge`,
+                balanceBefore: admin.balance,
+                balanceAfter: admin.balance - Number(totalDelta)
               }
             });
           }
@@ -881,25 +887,38 @@ export class PanelsService implements OnModuleInit {
               where: { clientId: dbC.id }
             });
             if (remainingCount === 0) {
-              if (dbCAdmin && dbCAdmin.trafficMode === 'ALLOCATION') {
-                const used = dbC.up + dbC.down;
-                const remaining = dbC.total - used;
-                if (remaining > 0n && dbC.total >= used) {
-                  await this.prisma.admin.update({ where: { id: dbCAdmin.id }, data: { balance: { increment: Number(remaining) } } });
-                  await this.prisma.trafficTransaction.create({
-                    data: {
-                      adminId: dbCAdmin.id,
-                      clientId: dbC.id,
-                      amount: remaining,
-                      type: 'CREDIT',
-                      description: 'Orphaned Client Deletion Refund',
+              await this.prisma.$transaction(async (tx) => {
+                const stillExists = await tx.client.findUnique({ where: { id: dbC.id } });
+                if (!stillExists) return;
+
+                if (dbCAdmin && dbCAdmin.trafficMode === 'ALLOCATION') {
+                  const used = dbC.up + dbC.down;
+                  const remaining = dbC.total - used;
+                  if (remaining > 0n && dbC.total >= used) {
+                    const existingRefund = await tx.trafficTransaction.findFirst({
+                      where: {
+                        clientId: dbC.id,
+                        type: 'CREDIT',
+                        description: { contains: 'Refund' }
+                      }
+                    });
+                    if (!existingRefund) {
+                      await tx.admin.update({ where: { id: dbCAdmin.id }, data: { balance: { increment: Number(remaining) } } });
+                      await tx.trafficTransaction.create({
+                        data: {
+                          adminId: dbCAdmin.id,
+                          clientId: dbC.id,
+                          amount: remaining,
+                          type: 'CREDIT',
+                          description: 'Orphaned Client Deletion Refund',
+                        }
+                      });
                     }
-                  });
+                  }
                 }
-              }
-            
-              await this.prisma.trafficTransaction.deleteMany({ where: { clientId: dbC.id } });
-              await this.prisma.client.delete({ where: { id: dbC.id } });
+              
+                await tx.client.delete({ where: { id: dbC.id } });
+              });
               
               await this.prisma.auditLog.create({
                 data: {

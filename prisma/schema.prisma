@@ -215,18 +215,23 @@ enum TransactionType {
   USAGE_CHARGE
 }
 
-// Used for "Usage Mode" billing, top-ups, and ownership ledger entries
 model TrafficTransaction {
-  id          String          @id @default(uuid())
-  adminId     String
-  clientId    String? // Which client triggered this transaction (nullable for top-ups)
-  amount      BigInt // Bytes moved (positive = credit, negative = debit)
-  type        TransactionType
-  description String?
-  createdAt   DateTime        @default(now())
+  id               String          @id @default(uuid())
+  adminId          String
+  clientId         String? // Which client triggered this transaction (nullable for top-ups)
+  targetClientUuid String? // Persistent reference to client UUID
+  amount           BigInt // Bytes moved (positive = credit, negative = debit)
+  type             TransactionType
+  action           String? // E.g., 'CLIENT_DELETION_REFUND'
+  description      String?
+  balanceBefore    Float? // Admin balance before transaction
+  balanceAfter     Float? // Admin balance after transaction
+  createdAt        DateTime        @default(now())
 
   admin  Admin   @relation(fields: [adminId], references: [id], onDelete: Cascade)
   client Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+
+  @@unique([targetClientUuid, action])
 }
 
 // ---------------------------------------------------------

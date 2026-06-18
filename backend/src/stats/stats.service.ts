@@ -423,7 +423,7 @@ export class StatsService {
 
   /** Quick action: simulate creating a manual backup. */
   async createBackup() {
-    return this.prisma.backup.create({
+    const backup = await this.prisma.backup.create({
       data: {
         type: 'postgres',
         filePath: `/backups/pg/manual-${Date.now()}.sql.gz`,
@@ -434,6 +434,10 @@ export class StatsService {
         status: 'completed',
       },
     });
+    return {
+      ...backup,
+      fileSize: backup.fileSize.toString(),
+    };
   }
 
   /** Real-time system diagnostics without any mock data. */

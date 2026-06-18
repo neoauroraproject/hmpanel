@@ -166,7 +166,10 @@ export class MigrationService {
                 adminId: admin.id,
                 amount: totalTraffic,
                 type: 'CREDIT',
+                action: 'MIGRATION_INITIAL_ALLOCATION',
                 description: 'Migration Import — Initial Allocation',
+                balanceBefore: 0,
+                balanceAfter: Number(balanceBytes),
               }
             }).catch(() => {});
           }

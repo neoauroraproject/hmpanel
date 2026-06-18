@@ -20,7 +20,10 @@ export class TrafficService {
           adminId,
           amount: amountBytes,
           type: 'CREDIT',
+          action: 'BALANCE_TOPUP',
           description: description || 'Balance top-up',
+          balanceBefore: admin.balance - Number(amountBytes),
+          balanceAfter: admin.balance,
         },
       });
 
@@ -47,9 +50,13 @@ export class TrafficService {
         data: {
           adminId,
           clientId,
+          targetClientUuid: clientId,
           amount: amountBytes,
           type: 'DEBIT',
+          action: 'CLIENT_PROVISIONING',
           description: 'Client provisioned',
+          balanceBefore: admin.balance,
+          balanceAfter: admin.trafficMode === 'ALLOCATION' ? admin.balance - Number(amountBytes) : admin.balance,
         },
       });
     });
@@ -61,7 +68,7 @@ export class TrafficService {
     if (remaining <= 0n) return; // Nothing to refund — all consumed
 
     return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      await tx.admin.update({
+      const admin = await tx.admin.update({
         where: { id: adminId },
         data: { balance: { increment: Number(remaining) } },
       });
@@ -70,9 +77,13 @@ export class TrafficService {
         data: {
           adminId,
           clientId,
+          targetClientUuid: clientId,
           amount: remaining,
           type: 'CREDIT',
+          action: 'CLIENT_DELETION_REFUND',
           description: 'Client deleted — remaining traffic refunded',
+          balanceBefore: admin.balance - Number(remaining),
+          balanceAfter: admin.balance,
         },
       });
     });
