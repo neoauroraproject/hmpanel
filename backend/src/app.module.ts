@@ -13,6 +13,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { SettingsModule } from './settings/settings.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { InboundsModule } from './inbounds/inbounds.module';
+import { BackupsModule } from './backups/backups.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { InboundsModule } from './inbounds/inbounds.module';
     SettingsModule,
     SubscriptionsModule,
     InboundsModule,
+    BackupsModule,
   ],
   controllers: [AppController],
   providers: [],

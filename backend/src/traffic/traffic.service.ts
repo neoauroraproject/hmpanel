@@ -111,6 +111,7 @@ export class TrafficService {
         take: limit,
         select: {
           id: true, amount: true, type: true, description: true, createdAt: true,
+          balanceBefore: true, balanceAfter: true, action: true, targetClientUuid: true,
           client: { select: { id: true, email: true, uuid: true } },
         },
         orderBy: { createdAt: 'desc' },

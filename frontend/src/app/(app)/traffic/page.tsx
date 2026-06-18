@@ -160,6 +160,7 @@ export default function TrafficPage() {
                     <tr className="border-b border-zinc-200 dark:border-zinc-800 text-left text-xs uppercase tracking-wide text-zinc-500">
                       <th className="px-4 py-3 font-medium">Type</th>
                       <th className="px-4 py-3 font-medium">Amount</th>
+                      <th className="px-4 py-3 font-medium">Balance</th>
                       <th className="px-4 py-3 font-medium">Description</th>
                       <th className="px-4 py-3 font-medium">Client</th>
                       <th className="px-4 py-3 font-medium">Date</th>
@@ -185,6 +186,16 @@ export default function TrafficPage() {
                               {credit ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
                               {formatBytes(t.amount)}
                             </span>
+                          </td>
+                          <td className="px-4 py-3 text-zinc-500 dark:text-zinc-400 text-xs">
+                            {t.balanceBefore != null && t.balanceAfter != null ? (
+                              <div className="flex flex-col">
+                                <span className="text-zinc-400">{formatBytes(t.balanceBefore)} &rarr;</span>
+                                <span className="font-medium text-zinc-700 dark:text-zinc-200">{formatBytes(t.balanceAfter)}</span>
+                              </div>
+                            ) : (
+                              "—"
+                            )}
                           </td>
                           <td className="px-4 py-3 text-zinc-700 dark:text-zinc-300">{t.description}</td>
                           <td className="px-4 py-3 text-zinc-500 dark:text-zinc-400">

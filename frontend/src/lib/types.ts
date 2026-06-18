@@ -86,7 +86,11 @@ export interface Transaction {
   id: string;
   amount: string;
   type: TransactionType;
+  action?: string | null;
   description: string | null;
+  balanceBefore?: number | null;
+  balanceAfter?: number | null;
+  targetClientUuid?: string | null;
   createdAt: string;
   client: { id: string; email: string; uuid: string } | null;
 }

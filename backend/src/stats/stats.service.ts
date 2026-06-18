@@ -421,24 +421,6 @@ export class StatsService {
     return { restarted, message: `Xray restart issued on ${restarted} online panel(s)` };
   }
 
-  /** Quick action: simulate creating a manual backup. */
-  async createBackup() {
-    const backup = await this.prisma.backup.create({
-      data: {
-        type: 'postgres',
-        filePath: `/backups/pg/manual-${Date.now()}.sql.gz`,
-        fileSize: BigInt(Math.round(1.1 * 1024 ** 3)),
-        checksum: `sha256:${Math.random().toString(16).slice(2, 10)}`,
-        tier: 'hourly',
-        isManual: true,
-        status: 'completed',
-      },
-    });
-    return {
-      ...backup,
-      fileSize: backup.fileSize.toString(),
-    };
-  }
 
   /** Real-time system diagnostics without any mock data. */
   async getDiagnostics() {

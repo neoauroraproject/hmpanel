@@ -73,11 +73,6 @@ export class StatsController {
     return this.stats.restartXray();
   }
 
-  @Post('backup')
-  @ApiOperation({ summary: 'Create a manual backup' })
-  createBackup() {
-    return this.stats.createBackup();
-  }
 
   @Get('diagnostics')
   @ApiOperation({ summary: 'Run system diagnostics' })
