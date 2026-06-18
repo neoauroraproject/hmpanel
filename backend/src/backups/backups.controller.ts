@@ -3,7 +3,7 @@ import { ApiTags, ApiBearerAuth, ApiOperation, ApiConsumes, ApiBody } from '@nes
 import { AuthGuard } from '@nestjs/passport';
 import { RolesGuard, Roles } from '../common/roles.guard';
 import { BackupsService } from './backups.service';
-import { Response } from 'express';
+import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 
 @ApiTags('Backups')
