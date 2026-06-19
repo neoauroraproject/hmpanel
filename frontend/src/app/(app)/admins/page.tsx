@@ -238,7 +238,7 @@ export default function AdminsPage() {
                           <div className="font-medium text-blue-400">
                             {a.balance === 0 ? "Unlimited" : `${formatBytes(Math.max(0, a.balance - (a.usedTraffic || 0)))} left`}
                           </div>
-                          <div className="text-zinc-500">out of {a.balance === 0 ? "∞" : formatBytes(a.balance)}</div>
+                          <div className="text-zinc-500">out of {a.balance === 0 ? "∞" : (a.totalAssigned ? formatBytes(a.totalAssigned) : formatBytes(a.balance))}</div>
                         </>
                       )}
                     </div>

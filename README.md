@@ -5,178 +5,92 @@
 
 ![Visitors](https://api.visitorbadge.io/api/visitors?path=neoauroraproject.hmpanel&countColor=%23263759)
 
-Multi-Panel • Resellers • Traffic Accounting • Bulk Operations • Subscription Management
-
-[Installation](#installation) • [Features](#features) • [Screenshots](#screenshots) • [Architecture](#architecture)
+[English](#english) | [فارسی](#فارسی)
 
 </div>
 
 ---
 
-HMPanel is not a generic web panel—it is a **professional management layer built specifically on top of native 3x-ui**. 
-Designed from the ground up for VPN Providers, Resellers, and Administrators managing large client bases across multi-panel deployments.
+<h2 id="english">🇬🇧 English</h2>
 
----
+HMPanel is a **professional management layer built specifically on top of native 3x-ui**. Designed for VPN Providers, Resellers, and Administrators managing large client bases across multi-panel deployments.
 
-## ⚡ Features
+### 🚀 Installation
 
-- **Multi-Panel Management:** Control multiple distributed 3x-ui nodes from a single centralized dashboard.
-- **Reseller Management:** Multi-tier permission models (Super Admin vs Reseller) with traffic limits and client capacities.
-- **Traffic Accounting:** Highly accurate real-time traffic collection, grace periods, and automatic depletion enforcement.
-- **Native 3x-ui Groups Integration:** Map clients cleanly into native 3x-ui Groups without disrupting existing inbounds.
-- **Subscription Management:** Clean, universal subscription links with automated configuration generation.
-- **Multi-Inbound Clients:** Effortlessly assign a single client to multiple independent inbounds simultaneously.
-- **Bulk Operations:** Execute bulk additions, deletions, and modifications efficiently.
-- **Migration Engine:** Built-in seamless migration from legacy panels (e.g., WhalePanel), preserving all user configurations.
-- **Database Backup & Restore:** Native tools to snapshot and restore your PostgreSQL data safely.
-- **Custom Branding Portal:** Full white-labeling capabilities (Community Edition includes core branding features).
+Execute the following on a fresh Ubuntu (20.04+) or Debian server:
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/neoauroraproject/hmpanel/main/install.sh)
+```
+*(Requires: Direct public IP for Let's Encrypt SSL, 1GB RAM, 5GB Disk)*
 
----
+<details>
+<summary><b>📸 Screenshots (Click to expand)</b></summary>
 
-## 📊 Feature Comparison
-
-| Feature | HMPanel (Community Edition) | Native 3x-ui |
-| :--- | :---: | :---: |
-| **Multi-Panel Management** | ✓ | ✗ |
-| **Reseller Management** | ✓ | ✗ |
-| **Traffic Accounting & Enforcement** | ✓ | ✗ |
-| **Bulk Operations** | ✓ | Limited |
-| **Migration Tools** | ✓ | ✗ |
-| **Centralized Subscription Links** | ✓ | ✗ |
-
----
-
-## 📸 Screenshots
-
-### Super Admin Dashboard (Analytics)
+### Super Admin Dashboard
 ![Dashboard](docs/images/dashboard-1.png)
 
-### Infrastructure Monitoring (Live Nodes)
+### Infrastructure Monitoring
 ![Monitoring](docs/images/dashboard-2.png)
 
 ### Client Management
 ![Clients](docs/images/clients.png)
 
+</details>
+
+### ⚡ Key Features
+- **Multi-Panel & Reseller Management:** Control multiple 3x-ui nodes, manage resellers with multi-tier permissions, and set traffic/client limits.
+- **Advanced Traffic Accounting:** Real-time collection, automated grace periods, usage-based & allocation-based modes, and secure refund auditing.
+- **Native 3x-ui Integration:** Cleanly maps clients to native 3x-ui groups. Attach one client to multiple inbounds seamlessly.
+- **Automated Backup System:** Download, upload, and restore PostgreSQL database backups directly from the Web UI.
+- **Bulk Operations & Migration Engine:** Efficiently manage clients in bulk and migrate easily from legacy panels (e.g., WhalePanel).
+
+### 💾 Backup & Restore
+- **Web UI (New!):** Go to *Settings > System Maintenance* to download, upload, or restore backups with one click.
+- **CLI Manager:** Run `sudo hm` to create or restore backups safely via the terminal.
+
 ---
 
-## 🚀 Installation
+<h2 id="فارسی">🇮🇷 فارسی</h2>
 
-HMPanel provides an interactive, one-line installation script that automatically provisions Docker, configures your database, generates secure JWT secrets, and issues a Let's Encrypt SSL certificate.
+اچ‌ام‌پنل (HMPanel) یک **لایه مدیریت حرفه‌ای و پیشرفته برای پنل‌های 3x-ui** است که منحصراً برای ارائه‌دهندگان VPN و ادمین‌هایی که چندین سرور و تعداد زیادی کاربر دارند طراحی شده است.
 
-### One-Line Install Command
-Execute the following on any fresh Ubuntu (20.04+) or Debian server:
+### 🚀 نصب و راه‌اندازی
 
+دستور زیر را در یک سرور اوبونتو (20.04+) یا دبیان جدید و خام وارد کنید:
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/neoauroraproject/hmpanel/main/install.sh)
 ```
+*(پیش‌نیازها: آی‌پی پابلیک مستقیم برای دریافت SSL، حداقل 1 گیگابایت رم، 5 گیگابایت فضای ذخیره‌سازی)*
 
-### System Requirements
-- **OS**: Ubuntu (20.04+ recommended), Debian (10+).
-- **Architecture**: `amd64` / `x86_64` or `arm64` / `aarch64`.
-- **Hardware**: Minimum 1GB RAM and 5GB free disk space.
-- **Network**: Direct public IP (A/AAAA records pointing to the server for Let's Encrypt SSL).
+<details>
+<summary><b>📸 تصاویر پنل (برای مشاهده کلیک کنید)</b></summary>
 
-### Quick Start
-1. Ensure your domain's DNS A/AAAA records point to your server IP.
-2. Run the One-Line Install Command above as `root`.
-3. Follow the interactive prompts to define your admin credentials and ports.
-4. Log into `https://<your-domain>` and start attaching your 3x-ui nodes!
+### داشبورد سوپر ادمین
+![Dashboard](docs/images/dashboard-1.png)
 
----
+### مانیتورینگ زیرساخت
+![Monitoring](docs/images/dashboard-2.png)
 
-## 🔄 Management Commands
+### مدیریت کاربران
+![Clients](docs/images/clients.png)
 
-HMPanel includes a unified, interactive **Global CLI Manager** that can be executed from anywhere on your server.
+</details>
 
-To launch the CLI Manager, simply type:
-```bash
-sudo hmpanel
-```
-*(You can also use the alias `sudo hm`)*
+### ⚡ ویژگی‌های کلیدی
+- **مدیریت چند پنل و ریسلرها:** کنترل چندین پنل 3x-ui به‌صورت همزمان، تعریف ریسلر با سطوح دسترسی مختلف، همراه با محدودیت ترافیک و تعداد کاربر.
+- **حسابداری پیشرفته ترافیک:** محاسبه لحظه‌ای، اعمال قطعی خودکار، حالت‌های مصرفی/تخصیصی، و سیستم امن لاگ و استرداد (Refund Audit) برای جلوگیری از باگ‌های مالی.
+- **یکپارچگی با گروه‌های 3x-ui:** تخصیص کاربران به گروه‌های نیتیو و اتصال یک کلاینت به چندین کانفیگ (Inbound) بدون قطعی.
+- **سیستم بکاپ‌گیری خودکار:** امکان دانلود، آپلود، و ری‌استور دیتابیس مستقیماً از طریق رابط کاربری (Web UI).
+- **عملیات گروهی و مهاجرت آسان:** ابزار حرفه‌ای برای ویرایش و حذف گروهی، به همراه موتور مهاجرت (Migration) قدرتمند از پنل‌های قدیمی (مانند WhalePanel).
 
-From the interactive menu, you can check panel status, update, restart services, tail logs, create backups, restore databases, check SSL status, and uninstall.
-
----
-
-## 💾 Backup & Restore
-
-### Automated via CLI (Recommended)
-Launch the CLI Manager (`sudo hm`), and select **Create Backup** or **Restore Backup**. Backups are automatically timestamped and saved safely to `/opt/hmpanel/backups`.
-
-### Manual Database Backup
-To manually back up your database outside of the CLI:
-```bash
-docker exec -t HMPanel-postgres pg_dumpall -c -U panel_user > backup.sql
-```
-
-### Database Restore
-To restore a previously backed up database file:
-```bash
-cat backup.sql | docker exec -i HMPanel-postgres psql -U panel_user -d panel_db
-```
-
----
-
-## 🏗️ Architecture
-
-HMPanel is built using a modern, scalable, and secure technology stack:
-
-- **Frontend**: Next.js (React) with TailwindCSS for a highly responsive, dynamic UI.
-- **Backend**: NestJS (TypeScript) providing a robust, type-safe API architecture.
-- **Database**: PostgreSQL for reliable, relational data storage and traffic accounting.
-- **Cache / Events**: Redis for high-speed job queues and WebSocket synchronization.
-- **Reverse Proxy**: Nginx handling SSL termination and request routing.
-- **Deployment**: Multi-stage Docker & Docker Compose for isolated, reproducible environments.
-
----
-
-## 📦 Migration Tools
-
-HMPanel includes a built-in migration engine specifically designed to upgrade from legacy systems like WhalePanel smoothly:
-
-1. **Admin Import:** Imports all legacy Admins and Resellers.
-2. **Client Import:** Imports all Clients, transferring their UUIDs, expiry dates, and usage limits precisely.
-3. **Native Groups Assignment:** Safely maps legacy clients into Native 3x-ui Groups seamlessly, allowing multi-inbound attachments without breaking active connections.
-
----
-
-## 🌟 Community Edition
-
-The **Community Edition** includes all core proxy management features necessary to run a highly scalable VPN operation. It provides unhindered access to multi-panel routing, traffic accounting, reseller tiers, and the migration engine. 
-
-*Note: Premium enterprise modules (e.g., Domain Management, Store Billing, and Smart Alerts) are not included in the Community Edition.*
-
----
-
-## 🛠️ Troubleshooting & FAQ
-
-### Check Service Status
-```bash
-docker compose -f /opt/HMPanel-panel/docker-compose.yml ps
-```
-
-### View Application Logs
-```bash
-docker compose -f /opt/HMPanel-panel/docker-compose.yml logs -f panel-app
-```
-
-### FAQ
-**Q: My Let's Encrypt SSL failed during installation?**
-A: Ensure your domain's DNS is fully propagated and pointing directly to the server's IP address. Cloudflare Proxy (Orange Cloud) must be disabled during the initial installation.
-
-**Q: Where are my files stored?**
-A: System uploads and backups are mounted on named Docker volumes, typically found at `/var/lib/docker/volumes/HMPanel_uploads` and `/var/lib/docker/volumes/HMPanel_backups`.
-
----
-
-## 🔗 Official Links & Support
-
-- **Official GitHub**: [neoauroraproject/hmpanel](https://github.com/neoauroraproject/hmpanel)
-- **Official Telegram Channel**: [@hmpanel](https://t.me/hmpanel)
+### 💾 بکاپ و بازگردانی
+- **از طریق پنل کاربری (جدید):** با مراجعه به بخش *تنظیمات > نگهداری سیستم* به راحتی بکاپ‌ها را دانلود، آپلود یا بازگردانی کنید.
+- **از طریق ترمینال (CLI):** دستور `sudo hm` را وارد کنید تا به منوی مدیریت سرور و بخش بکاپ دسترسی داشته باشید.
 
 ---
 
 <div align="center">
   <p>Released under the MIT License</p>
-  <p><strong>HMPanel — Crafted with ♥ by HMPanel</strong></p>
+  <p><strong>Crafted with ♥ by the HMPanel Team</strong></p>
+  <p>Official Telegram: <a href="https://t.me/hmpanel">@hmpanel</a> | GitHub: <a href="https://github.com/neoauroraproject/hmpanel">neoauroraproject/hmpanel</a></p>
 </div>

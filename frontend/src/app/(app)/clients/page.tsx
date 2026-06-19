@@ -456,7 +456,13 @@ export default function ClientsPage() {
               <div className="p-3 bg-amber-500/10 text-amber-400 rounded-xl"><CalendarDays size={20} /></div>
               <div>
                 <div className="text-xs text-zinc-500 font-medium">Subscription Expiry</div>
-                <div className="text-xl font-bold text-zinc-900 dark:text-white">{overviewData.admin.expiryTime > 0 ? formatDate(overviewData.admin.expiryTime) : "Never"}</div>
+                <div className="text-xl font-bold text-zinc-900 dark:text-white">
+                  {overviewData.admin.expiryTime > 0 
+                    ? (overviewData.admin.expiryTime < Date.now() 
+                        ? "Expired" 
+                        : `${Math.ceil((overviewData.admin.expiryTime - Date.now()) / (1000 * 60 * 60 * 24))} Days`) 
+                    : "Never"}
+                </div>
               </div>
             </div>
           </div>
