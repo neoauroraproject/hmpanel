@@ -321,4 +321,57 @@ export class AdminsService implements OnModuleInit {
 
     return this.findOne(id);
   }
+  async auditRefunds() {
+    const resellers = await this.prisma.admin.findMany({
+      where: { role: 'RESELLER' },
+      select: { id: true, username: true, email: true, balance: true, totalAssigned: true }
+    });
+
+    const report = [];
+
+    for (const admin of resellers) {
+      const transactions = await this.prisma.trafficTransaction.findMany({
+        where: { adminId: admin.id }
+      });
+
+      let allocated = 0n;
+      let refunded = 0n;
+      let netConsumed = 0n;
+
+      for (const tx of transactions) {
+        if (tx.type === 'CREDIT' && !tx.action?.includes('REFUND')) {
+          allocated += tx.amount;
+        } else if (tx.type === 'CREDIT' && tx.action?.includes('REFUND')) {
+          refunded += tx.amount;
+        } else if (tx.type === 'DEBIT') {
+          netConsumed += tx.amount;
+        }
+      }
+
+      const expectedBalance = allocated + refunded - netConsumed;
+      const currentBalance = admin.balance;
+      const difference = currentBalance - Number(expectedBalance);
+      
+      const suspicious = refunded > allocated || currentBalance > Number(expectedBalance) + 1048576; // 1MB tolerance
+      
+      report.push({
+        adminId: admin.id,
+        username: admin.username,
+        email: admin.email,
+        allocated: Number(allocated),
+        refunded: Number(refunded),
+        netConsumed: Number(netConsumed),
+        currentBalance,
+        expectedBalance: Number(expectedBalance),
+        difference,
+        suspicious,
+      });
+    }
+
+    return {
+      totalResellers: report.length,
+      suspiciousAccounts: report.filter(r => r.suspicious).length,
+      report,
+    };
+  }
 }

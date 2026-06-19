@@ -207,7 +207,7 @@ export class ClientsService {
             targetClientUuid: client.id,
             amount: totalBytes,
             type: 'DEBIT',
-            action: 'CLIENT_CREATION_ALLOCATION',
+            action: `CLIENT_CREATION_ALLOCATION_${Date.now()}`,
             description: 'Client Creation Allocation',
             balanceBefore: lockedCaller.balance,
             balanceAfter: lockedCaller.balance - Number(totalBytes),
@@ -550,7 +550,7 @@ export class ClientsService {
                   targetClientUuid: id,
                   amount: diff > 0n ? diff : -diff,
                   type: diff > 0n ? 'DEBIT' : 'CREDIT',
-                  action: diff > 0n ? 'CLIENT_TRAFFIC_INCREASE' : 'CLIENT_TRAFFIC_DECREASE',
+                  action: diff > 0n ? `CLIENT_TRAFFIC_INCREASE_${Date.now()}` : `CLIENT_TRAFFIC_DECREASE_${Date.now()}`,
                   description: diff > 0n ? 'Client Traffic Increase' : 'Client Traffic Decrease',
                   balanceBefore: admin.balance,
                   balanceAfter: diff > 0n ? admin.balance - Number(diff) : admin.balance + Math.abs(Number(diff)),
@@ -628,59 +628,120 @@ export class ClientsService {
   async remove(id: string, adminId: string, role: string, skipRefund: boolean = false) {
     const existing = await this.findOne(id, adminId, role);
     
-    for (const inbound of existing.inbounds) {
-      try {
-        await this.panelsService.delClient(inbound.panelId, inbound.port, existing.uuid, existing.email);
-      } catch (err: any) {
-        console.error(`Failed to delete client ${existing.email} from panel inbound ${inbound.id}:`, err.message);
-        throw new BadRequestException(`Failed to delete client from panel: ${err.message}. Aborting deletion.`);
-      }
+    if ((existing as any).isDeleting) {
+      throw new BadRequestException('Client deletion is already in progress');
     }
     
-    return this.prisma.$transaction(async (tx) => {
-      if (existing.adminId && !skipRefund) {
-        const admin = await tx.admin.findUnique({ where: { id: existing.adminId } });
-        if (admin && admin.trafficMode === 'ALLOCATION' && existing.createdWithTrafficMode === 'ALLOCATION' && admin.refundOnDelete) {
-          const used = existing.up + existing.down;
-          const remaining = existing.total - used;
-          if (remaining > 0n) {
-            const existingRefund = await tx.trafficTransaction.findFirst({
-              where: {
-                targetClientUuid: id,
-                action: 'CLIENT_DELETION_REFUND'
-              }
-            });
-            if (!existingRefund) {
-              await tx.admin.update({ where: { id: admin.id }, data: { balance: admin.balance + Number(remaining) } });
-              await tx.trafficTransaction.create({
-                data: {
-                  adminId: admin.id,
-                  clientId: id,
-                  targetClientUuid: id,
-                  amount: remaining,
-                  type: 'CREDIT',
-                  action: 'CLIENT_DELETION_REFUND',
-                  description: `Client Deletion Refund (${existing.email})`,
-                  balanceBefore: admin.balance,
-                  balanceAfter: admin.balance + Number(remaining),
+    await this.prisma.client.update({ where: { id }, data: { isDeleting: true } });
+
+    let deletedSuccessfully = false;
+    let panelResponse = 'Success';
+
+    try {
+      let verifiedDeleted = true;
+
+      for (const inbound of existing.inbounds) {
+        try {
+          await this.panelsService.delClient(inbound.panelId, inbound.port, existing.uuid, existing.email);
+          const isDeleted = await this.panelsService.verifyClientDeleted(inbound.panelId, inbound.port, existing.uuid, existing.email);
+          if (!isDeleted) {
+            verifiedDeleted = false;
+            panelResponse = 'Failed Verification';
+            break;
+          }
+        } catch (err: any) {
+          console.error(`Failed to delete client ${existing.email} from panel inbound ${inbound.id}:`, err.message);
+          verifiedDeleted = false;
+          panelResponse = `Error: ${err.message}`;
+          break;
+        }
+      }
+      
+      if (!verifiedDeleted) {
+        await this.prisma.auditLog.create({
+          data: {
+            action: 'CLIENT_DELETION_FAILED',
+            entity: 'Client',
+            entityId: id,
+            adminId,
+            details: { 
+              clientEmail: existing.email,
+              panelResponse,
+              verified: false,
+              message: 'Refund blocked because client was not successfully verified as deleted on the panel.'
+            }
+          }
+        });
+        throw new BadRequestException(`Failed to delete client from panel completely. Aborting deletion.`);
+      }
+
+      const result = await this.prisma.$transaction(async (tx) => {
+        let refundGranted = false;
+        let refundedAmount = 0n;
+
+        if (existing.adminId && !skipRefund) {
+          const admin = await tx.admin.findUnique({ where: { id: existing.adminId } });
+          if (admin && admin.trafficMode === 'ALLOCATION' && existing.createdWithTrafficMode === 'ALLOCATION' && admin.refundOnDelete) {
+            const used = existing.up + existing.down;
+            const remaining = existing.total - used;
+            if (remaining > 0n) {
+              const existingRefund = await tx.trafficTransaction.findFirst({
+                where: {
+                  targetClientUuid: existing.uuid,
+                  action: 'CLIENT_DELETION_REFUND'
                 }
               });
+              if (!existingRefund) {
+                await tx.admin.update({ where: { id: admin.id }, data: { balance: admin.balance + Number(remaining) } });
+                await tx.trafficTransaction.create({
+                  data: {
+                    adminId: admin.id,
+                    clientId: id,
+                    targetClientUuid: existing.uuid,
+                    amount: remaining,
+                    type: 'CREDIT',
+                    action: 'CLIENT_DELETION_REFUND',
+                    description: `Client Deletion Refund (${existing.email})`,
+                    balanceBefore: admin.balance,
+                    balanceAfter: admin.balance + Number(remaining),
+                  }
+                });
+                refundGranted = true;
+                refundedAmount = remaining;
+              }
             }
           }
         }
-      }
 
-      await tx.client.delete({ where: { id } });
-      await tx.auditLog.create({ 
-        data: { 
-          action: skipRefund ? 'CLIENT_CLEANUP' : 'CLIENT_DELETED', 
-          entity: 'Client', 
-          entityId: id, 
-          adminId 
-        } 
+        await tx.client.delete({ where: { id } });
+        await tx.auditLog.create({ 
+          data: { 
+            action: skipRefund ? 'CLIENT_CLEANUP' : 'CLIENT_DELETED', 
+            entity: 'Client', 
+            entityId: id, 
+            adminId,
+            details: {
+              clientEmail: existing.email,
+              adminUsername: existing.admin?.username,
+              trafficBefore: existing.total.toString(),
+              trafficRefunded: refundedAmount.toString(),
+              panelResponse,
+              verified: true,
+              refundGranted
+            }
+          } 
+        });
+        return { deleted: true };
       });
-      return { deleted: true };
-    });
+      
+      deletedSuccessfully = true;
+      return result;
+    } finally {
+      if (!deletedSuccessfully) {
+        // Unlock the deletion flag if it failed midway
+        await this.prisma.client.update({ where: { id }, data: { isDeleting: false } }).catch(() => {});
+      }
+    }
   }
 
   async resetUsage(id: string, adminId: string, role: string) {
@@ -713,7 +774,7 @@ export class ClientsService {
                    targetClientUuid: id,
                    amount: used,
                    type: 'DEBIT',
-                   action: 'CLIENT_USAGE_RESET_CHARGE',
+                   action: `CLIENT_USAGE_RESET_CHARGE_${Date.now()}`,
                    description: `Client Usage Reset Charge (${existing.email})`,
                    balanceBefore: admin.balance,
                    balanceAfter: admin.balance - Number(used),
@@ -727,7 +788,7 @@ export class ClientsService {
                    targetClientUuid: id,
                    amount: used,
                    type: 'USAGE_CHARGE',
-                   action: 'HISTORICAL_USAGE_ARCHIVED',
+                   action: `HISTORICAL_USAGE_ARCHIVED_${Date.now()}`,
                    description: `Historical Usage Archived via Reset (${existing.email})`,
                    balanceBefore: admin.balance,
                    balanceAfter: admin.balance,

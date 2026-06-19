@@ -34,6 +34,13 @@ export class AdminsController {
     return this.adminsService.findAll(Number(page) || 1, Number(limit) || 50, { search, status, inboundId, panelId });
   }
 
+  @Get('audit-refunds')
+  @Roles('SUPER_ADMIN')
+  @ApiOperation({ summary: 'Generate a refund audit report for all resellers' })
+  auditRefunds() {
+    return this.adminsService.auditRefunds();
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get admin details' })
   findOne(@Req() req: AuthRequest, @Param('id') id: string) {

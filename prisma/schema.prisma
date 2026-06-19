@@ -158,6 +158,7 @@ model Client {
   flow          String? // XTLS Flow (e.g. xtls-rprx-vision)
   enable        Boolean @default(true)
   disableReason String? // MANUAL | EXPIRED | TRAFFIC_LIMIT | BALANCE_EXHAUSTED
+  isDeleting    Boolean @default(false)
 
   limitIp    Int    @default(0) // 0 = unlimited
 

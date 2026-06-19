@@ -891,31 +891,8 @@ export class PanelsService implements OnModuleInit {
                 const stillExists = await tx.client.findUnique({ where: { id: dbC.id } });
                 if (!stillExists) return;
 
-                if (dbCAdmin && dbCAdmin.trafficMode === 'ALLOCATION') {
-                  const used = dbC.up + dbC.down;
-                  const remaining = dbC.total - used;
-                  if (remaining > 0n && dbC.total >= used) {
-                    const existingRefund = await tx.trafficTransaction.findFirst({
-                      where: {
-                        clientId: dbC.id,
-                        type: 'CREDIT',
-                        description: { contains: 'Refund' }
-                      }
-                    });
-                    if (!existingRefund) {
-                      await tx.admin.update({ where: { id: dbCAdmin.id }, data: { balance: { increment: Number(remaining) } } });
-                      await tx.trafficTransaction.create({
-                        data: {
-                          adminId: dbCAdmin.id,
-                          clientId: dbC.id,
-                          amount: remaining,
-                          type: 'CREDIT',
-                          description: 'Orphaned Client Deletion Refund',
-                        }
-                      });
-                    }
-                  }
-                }
+                // Orphan Cleanup Refund has been permanently disabled to prevent billing exploits.
+                // The system will only delete the orphaned client record from the database.
               
                 await tx.client.delete({ where: { id: dbC.id } });
               });
@@ -1225,6 +1202,44 @@ export class PanelsService implements OnModuleInit {
       });
     } catch (err: any) {
       throw new BadRequestException(`Failed to delete client from panel: ${err.message}`);
+    }
+  }
+
+  async verifyClientDeleted(panelId: string, inboundPort: number, uuid: string, email: string): Promise<boolean> {
+    try {
+      const panel = await this.findOne(panelId);
+      const apiBaseUrl = panel.apiBaseUrl || panel.url.replace(/\/$/, '');
+      const headers = { Authorization: panel.apiToken ? `Bearer ${panel.apiToken}` : undefined };
+      const httpsAgent = this.getHttpsAgent();
+
+      const listRes = await axios.get(`${apiBaseUrl}/panel/api/inbounds/list`, { headers, httpsAgent, timeout: 5000 });
+      if (!listRes.data || !listRes.data.success) {
+        throw new Error('Failed to list inbounds during verification');
+      }
+      const inboundList = listRes.data.obj || [];
+      const inboundMeta = inboundList.find((i: any) => i.port === inboundPort);
+      
+      // If the inbound itself doesn't exist anymore, the client is certainly gone.
+      if (!inboundMeta) return true;
+
+      const getRes = await axios.get(`${apiBaseUrl}/panel/api/inbounds/get/${inboundMeta.id}`, { headers, httpsAgent, timeout: 5000 });
+      if (!getRes.data || !getRes.data.success) {
+        throw new Error('Failed to fetch full inbound data during verification');
+      }
+      
+      const inbound = getRes.data.obj;
+      if (!inbound || !inbound.settings) return true;
+      
+      const settings = typeof inbound.settings === 'string' ? JSON.parse(inbound.settings) : inbound.settings;
+      if (!settings.clients || !Array.isArray(settings.clients)) return true;
+      
+      // Verification must check BOTH UUID not found AND Email not found
+      const uuidFound = settings.clients.some((c: any) => c.id === uuid);
+      const emailFound = settings.clients.some((c: any) => c.email === email);
+      
+      return !uuidFound && !emailFound;
+    } catch (err: any) {
+      throw new BadRequestException(`Verification failed: ${err.message}`);
     }
   }
 
