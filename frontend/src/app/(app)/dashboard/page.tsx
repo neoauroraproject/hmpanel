@@ -531,57 +531,29 @@ function ResellerDashboard() {
           </div>
         </motion.div>
 
-        {a.trafficMode === 'USAGE' ? (
-          <>
-            <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="w-full">
-              <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all duration-300 group border-b-4 border-b-purple-500">
-                <div className="absolute -right-6 -top-6 w-32 h-32 bg-purple-500/10 rounded-full blur-3xl group-hover:bg-purple-500/20 transition-all"></div>
-                <HardDrive size={80} className="absolute -bottom-4 -right-4 text-purple-500/5 group-hover:text-purple-500/10 transition-all transform group-hover:scale-110" />
-                <div className="flex items-center gap-3 text-sm font-semibold text-purple-600 dark:text-purple-400 mb-4 relative z-10">
-                  <div className="p-2.5 bg-purple-500/10 rounded-xl shadow-inner"><HardDrive size={20} /></div> Purchased Traffic
-                </div>
-                <div className="text-4xl font-extrabold text-zinc-900 dark:text-white relative z-10">{formatBytes(a.allTimeTraffic)}</div>
-                <div className="mt-3 text-sm text-zinc-500 dark:text-zinc-400 font-medium relative z-10">All-time Allocation</div>
-              </div>
-            </motion.div>
-
-            <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }} className="w-full">
-              <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all duration-300 group border-b-4 border-b-amber-500">
-                <div className="absolute -right-6 -top-6 w-32 h-32 bg-amber-500/10 rounded-full blur-3xl group-hover:bg-amber-500/20 transition-all"></div>
-                <Activity size={80} className="absolute -bottom-4 -right-4 text-amber-500/5 group-hover:text-amber-500/10 transition-all transform group-hover:scale-110" />
-                <div className="flex items-center gap-3 text-sm font-semibold text-amber-600 dark:text-amber-400 mb-4 relative z-10">
-                  <div className="p-2.5 bg-amber-500/10 rounded-xl shadow-inner"><Activity size={20} /></div> Consumed Traffic
-                </div>
-                <div className="text-4xl font-extrabold text-zinc-900 dark:text-white relative z-10">{formatBytes(a.usedTraffic || 0)}</div>
-                <div className="mt-3 text-sm text-zinc-500 dark:text-zinc-400 font-medium relative z-10">Across all clients</div>
-              </div>
-            </motion.div>
-
-            <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.14 }} className="w-full">
-              <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all duration-300 group border-b-4 border-b-blue-500">
-                <div className="absolute -right-6 -top-6 w-32 h-32 bg-blue-500/10 rounded-full blur-3xl group-hover:bg-blue-500/20 transition-all"></div>
-                <HardDrive size={80} className="absolute -bottom-4 -right-4 text-blue-500/5 group-hover:text-blue-500/10 transition-all transform group-hover:scale-110" />
-                <div className="flex items-center gap-3 text-sm font-semibold text-blue-600 dark:text-blue-400 mb-4 relative z-10">
-                  <div className="p-2.5 bg-blue-500/10 rounded-xl shadow-inner"><HardDrive size={20} /></div> Remaining Traffic
-                </div>
-                <div className="text-4xl font-extrabold text-zinc-900 dark:text-white relative z-10">{formatBytes(a.availableTraffic)}</div>
-                <div className="mt-3 text-sm text-zinc-500 dark:text-zinc-400 font-medium relative z-10">Available balance</div>
-              </div>
-            </motion.div>
-          </>
-        ) : (
-          <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="w-full">
-            <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all duration-300 group border-b-4 border-b-blue-500">
-              <div className="absolute -right-6 -top-6 w-32 h-32 bg-blue-500/10 rounded-full blur-3xl group-hover:bg-blue-500/20 transition-all"></div>
-              <HardDrive size={80} className="absolute -bottom-4 -right-4 text-blue-500/5 group-hover:text-blue-500/10 transition-all transform group-hover:scale-110" />
-              <div className="flex items-center gap-3 text-sm font-semibold text-blue-600 dark:text-blue-400 mb-4 relative z-10">
-                <div className="p-2.5 bg-blue-500/10 rounded-xl shadow-inner"><HardDrive size={20} /></div> Available Traffic
-              </div>
-              <div className="text-4xl font-extrabold text-zinc-900 dark:text-white relative z-10">{formatBytes(a.availableTraffic)}</div>
-              <div className="mt-3 text-sm text-zinc-500 dark:text-zinc-400 font-medium relative z-10">Out of {formatBytes(a.allTimeTraffic)}</div>
+        <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="w-full">
+          <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all duration-300 group border-b-4 border-b-blue-500">
+            <div className="absolute -right-6 -top-6 w-32 h-32 bg-blue-500/10 rounded-full blur-3xl group-hover:bg-blue-500/20 transition-all"></div>
+            <HardDrive size={80} className="absolute -bottom-4 -right-4 text-blue-500/5 group-hover:text-blue-500/10 transition-all transform group-hover:scale-110" />
+            <div className="flex items-center gap-3 text-sm font-semibold text-blue-600 dark:text-blue-400 mb-4 relative z-10">
+              <div className="p-2.5 bg-blue-500/10 rounded-xl shadow-inner"><HardDrive size={20} /></div> Available Traffic
             </div>
-          </motion.div>
-        )}
+            <div className="text-4xl font-extrabold text-zinc-900 dark:text-white relative z-10">{formatBytes(a.availableTraffic)}</div>
+            <div className="mt-3 text-sm text-zinc-500 dark:text-zinc-400 font-medium relative z-10">Out of {formatBytes(a.allTimeTraffic)}</div>
+          </div>
+        </motion.div>
+
+        <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }} className="w-full">
+          <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all duration-300 group border-b-4 border-b-amber-500">
+            <div className="absolute -right-6 -top-6 w-32 h-32 bg-amber-500/10 rounded-full blur-3xl group-hover:bg-amber-500/20 transition-all"></div>
+            <Activity size={80} className="absolute -bottom-4 -right-4 text-amber-500/5 group-hover:text-amber-500/10 transition-all transform group-hover:scale-110" />
+            <div className="flex items-center gap-3 text-sm font-semibold text-amber-600 dark:text-amber-400 mb-4 relative z-10">
+              <div className="p-2.5 bg-amber-500/10 rounded-xl shadow-inner"><Activity size={20} /></div> Used Traffic
+            </div>
+            <div className="text-4xl font-extrabold text-zinc-900 dark:text-white relative z-10">{formatBytes(a.usedTraffic || 0)}</div>
+            <div className="mt-3 text-sm text-zinc-500 dark:text-zinc-400 font-medium relative z-10">Consumed from allocation</div>
+          </div>
+        </motion.div>
 
         <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }} className="w-full">
           <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all duration-300 group border-b-4 border-b-purple-500">

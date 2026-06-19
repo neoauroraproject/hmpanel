@@ -168,6 +168,7 @@ function BackupRestoreCard() {
   const toast = require("@/components/toast").useToast((s: any) => s.push);
   const [isRestoring, setIsRestoring] = useState(false);
   const [isBackingUp, setIsBackingUp] = useState(false);
+  const [restoreAnalysis, setRestoreAnalysis] = useState<any>(null);
   
   const handleBackup = async () => {
     setIsBackingUp(true);
@@ -192,30 +193,38 @@ function BackupRestoreCard() {
     }
   };
 
-  const handleRestore = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleRestoreUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     
-    if (!confirm("Warning: Restoring will overwrite all current system data and cannot be undone. Do you want to proceed?")) {
-      e.target.value = "";
-      return;
-    }
-
     setIsRestoring(true);
     const formData = new FormData();
     formData.append("file", file);
     
     try {
-      await api.post("/backups/restore-upload", formData, {
+      const res = await api.post("/backups/analyze-upload", formData, {
         headers: { "Content-Type": "multipart/form-data" }
       });
-      toast("System restored successfully. Reloading...");
-      setTimeout(() => window.location.reload(), 2000);
+      setRestoreAnalysis(res.data);
     } catch (err) {
-      toast("Failed to restore system", "error");
+      toast("Failed to analyze backup file", "error");
     } finally {
       setIsRestoring(false);
       e.target.value = "";
+    }
+  };
+
+  const confirmRestore = async () => {
+    if (!restoreAnalysis) return;
+    setIsRestoring(true);
+    try {
+      await api.post(`/backups/restore-apply/${restoreAnalysis.id}`, { fileName: restoreAnalysis.fileName });
+      toast("System restored successfully. Reloading...");
+      setTimeout(() => window.location.reload(), 2000);
+    } catch (err) {
+      toast("Failed to apply backup", "error");
+      setIsRestoring(false);
+      setRestoreAnalysis(null);
     }
   };
 
@@ -242,11 +251,62 @@ function BackupRestoreCard() {
         </button>
 
         <label className="flex-1 flex items-center justify-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm font-medium text-amber-600 hover:bg-amber-500/20 cursor-pointer disabled:opacity-50 transition-colors">
-          {isRestoring ? <Spinner className="w-5 h-5 text-amber-500" /> : <Upload size={18} />}
+          {isRestoring && !restoreAnalysis ? <Spinner className="w-5 h-5 text-amber-500" /> : <Upload size={18} />}
           Restore Database
-          <input type="file" accept=".sql,.gz" className="hidden" onChange={handleRestore} disabled={isRestoring || isBackingUp} />
+          <input type="file" accept=".sql,.gz" className="hidden" onChange={handleRestoreUpload} disabled={isRestoring || isBackingUp} />
         </label>
       </div>
+
+      {restoreAnalysis && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="w-full max-w-md rounded-2xl bg-white dark:bg-zinc-900 p-6 shadow-2xl border border-zinc-200 dark:border-zinc-800"
+          >
+            <h3 className="text-xl font-bold text-zinc-900 dark:text-white mb-2">Confirm Restore</h3>
+            <p className="text-sm text-zinc-500 mb-6">
+              This backup contains the following data. Applying it will completely overwrite your current database. This action cannot be undone.
+            </p>
+
+            <div className="bg-zinc-50 dark:bg-zinc-950 rounded-xl p-4 mb-6 space-y-3">
+              <div className="flex justify-between items-center pb-2 border-b border-zinc-200 dark:border-zinc-800/50">
+                <span className="text-zinc-500">Admins</span>
+                <span className="font-semibold text-zinc-800 dark:text-zinc-200">{restoreAnalysis.counts.admins}</span>
+              </div>
+              <div className="flex justify-between items-center pb-2 border-b border-zinc-200 dark:border-zinc-800/50">
+                <span className="text-zinc-500">Panels</span>
+                <span className="font-semibold text-zinc-800 dark:text-zinc-200">{restoreAnalysis.counts.panels}</span>
+              </div>
+              <div className="flex justify-between items-center pb-2 border-b border-zinc-200 dark:border-zinc-800/50">
+                <span className="text-zinc-500">Clients</span>
+                <span className="font-semibold text-zinc-800 dark:text-zinc-200">{restoreAnalysis.counts.clients}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-zinc-500">Inbounds</span>
+                <span className="font-semibold text-zinc-800 dark:text-zinc-200">{restoreAnalysis.counts.inbounds}</span>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setRestoreAnalysis(null)}
+                className="flex-1 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-4 py-2.5 font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors"
+                disabled={isRestoring}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmRestore}
+                className="flex-1 rounded-xl bg-red-600 px-4 py-2.5 font-medium text-white hover:bg-red-500 transition-colors shadow-lg shadow-red-600/20 flex justify-center items-center gap-2"
+                disabled={isRestoring}
+              >
+                {isRestoring ? <Spinner className="w-5 h-5" /> : "Confirm and Apply"}
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </Card>
   );
 }

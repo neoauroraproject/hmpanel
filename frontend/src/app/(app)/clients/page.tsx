@@ -439,6 +439,7 @@ export default function ClientsPage() {
               <div>
                 <div className="text-xs text-zinc-500 font-medium">Available Traffic</div>
                 <div className="text-xl font-bold text-zinc-900 dark:text-white">{formatBytes(overviewData.admin.availableTraffic)}</div>
+                <div className="text-[10px] text-zinc-400 mt-1">out of {formatBytes(overviewData.admin.allTimeTraffic || 0)}</div>
               </div>
             </div>
             <div className="bg-white dark:bg-zinc-900/50 rounded-2xl p-4 border border-zinc-200 dark:border-zinc-800 flex items-center gap-4">

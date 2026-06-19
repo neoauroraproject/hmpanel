@@ -1,4 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Cache } from 'cache-manager';
+import { calculateAdminTrafficSummary } from '../common/utils/traffic.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { PanelsService } from '../panels/panels.service';
 import * as os from 'os';
@@ -154,13 +157,11 @@ export class StatsService {
     let disabledCount = 0;
     let depletedCount = 0;
     let cleanupCandidatesCount = 0;
-    let totalUsedTraffic = 0;
 
     const attentionClients = [];
 
     for (const c of clients) {
       const used = Number(c.up) + Number(c.down);
-      totalUsedTraffic += used;
       const total = Number(c.total);
       const isDepleted = total > 0 && used >= total;
       const isTrafficLow = total > 0 && !isDepleted && (used / total) >= 0.8;
@@ -214,14 +215,16 @@ export class StatsService {
       return score(b) - score(a);
     });
 
+    const summary = calculateAdminTrafficSummary(admin.totalAssigned, admin.balance);
+
     return {
       admin: {
-        availableTraffic: admin.balance,
-        allTimeTraffic: admin.totalAssigned,
+        availableTraffic: summary.availableTraffic,
+        allTimeTraffic: summary.totalAllocated,
         clientCapacity: admin.maxClients,
         expiryTime: Number(admin.expiryTime),
         trafficMode: admin.trafficMode,
-        usedTraffic: totalUsedTraffic,
+        usedTraffic: summary.usedTraffic,
         gracePeriodStart: admin.gracePeriodStart,
       },
       usage: {

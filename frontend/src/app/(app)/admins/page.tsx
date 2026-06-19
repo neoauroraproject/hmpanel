@@ -226,19 +226,18 @@ export default function AdminsPage() {
                   <div className="md:hidden text-[10px] uppercase text-zinc-500 font-semibold mb-1 tracking-wider">Traffic Status</div>
                   {a.role === "SUPER_ADMIN" ? <span className="text-zinc-600">—</span> : (
                     <div className="text-xs">
-                      {a.trafficMode === 'USAGE' ? (
+                      {a.balance === 0 && a.trafficMode !== 'USAGE' ? (
                         <>
-                          <div className="font-medium text-blue-400">
-                            {a.balance > 0 ? `${formatBytes(a.balance)} left` : <span className="text-red-400">Exhausted</span>}
-                          </div>
-                          <div className="text-zinc-500">Used: {formatBytes(a.usedTraffic || 0)} (Usage mode)</div>
+                          <div className="font-medium text-blue-400">Unlimited</div>
+                          <div className="text-zinc-500 mt-0.5">Used: {formatBytes(a.usedTraffic || 0)}</div>
                         </>
                       ) : (
                         <>
                           <div className="font-medium text-blue-400">
-                            {a.balance === 0 ? "Unlimited" : `${formatBytes(Math.max(0, a.balance - (a.usedTraffic || 0)))} left`}
+                            {a.balance === 0 ? <span className="text-red-400">Exhausted</span> : `${formatBytes(a.balance)} left`}
                           </div>
-                          <div className="text-zinc-500">out of {a.balance === 0 ? "∞" : (a.totalAssigned ? formatBytes(a.totalAssigned) : formatBytes(a.balance))}</div>
+                          <div className="text-zinc-500">out of {formatBytes(a.totalAssigned || 0)}</div>
+                          <div className="text-zinc-500 mt-0.5">Used: {formatBytes(a.usedTraffic || 0)}</div>
                         </>
                       )}
                     </div>

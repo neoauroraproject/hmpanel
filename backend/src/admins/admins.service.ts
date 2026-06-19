@@ -1,6 +1,7 @@
 import { Injectable, ConflictException, NotFoundException, BadRequestException, Logger, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PanelsService } from '../panels/panels.service';
+import { calculateAdminTrafficSummary } from '../common/utils/traffic.util';
 import * as bcrypt from 'bcryptjs';
 
 @Injectable()
@@ -117,9 +118,8 @@ export class AdminsService implements OnModuleInit {
           id: true, username: true, email: true, role: true,
           balance: true, trafficMode: true, status: true, createdAt: true,
           expiryTime: true, maxClients: true, permissions: true, portalSettings: true, refundOnDelete: true, refundOnEdit: true,
-          _count: { select: { clients: true } },
-          clients: { select: { up: true, down: true } },
-          transactions: { where: { type: 'CREDIT' }, select: { amount: true } }
+          totalAssigned: true,
+          _count: { select: { clients: true } }
         },
         orderBy: { createdAt: 'desc' },
       }),
@@ -127,14 +127,12 @@ export class AdminsService implements OnModuleInit {
     ]);
 
     const mappedData = data.map(admin => {
-      const usedBytes = admin.clients.reduce((acc, c) => acc + c.up + c.down, 0n);
-      const totalAssigned = admin.transactions.reduce((acc, t) => acc + t.amount, 0n);
-      const { clients, transactions, ...rest } = admin;
+      const summary = calculateAdminTrafficSummary(admin.totalAssigned, admin.balance);
       return {
-        ...rest,
+        ...admin,
         expiryTime: Number(admin.expiryTime),
-        usedTraffic: Number(usedBytes),
-        totalAssigned: Number(totalAssigned),
+        usedTraffic: summary.usedTraffic,
+        totalAssigned: summary.totalAllocated,
       };
     });
 
@@ -148,22 +146,19 @@ export class AdminsService implements OnModuleInit {
         id: true, username: true, email: true, role: true,
         balance: true, trafficMode: true, status: true, createdAt: true,
         expiryTime: true, maxClients: true, permissions: true, portalSettings: true, refundOnDelete: true, refundOnEdit: true,
+        totalAssigned: true,
         _count: { select: { clients: true } },
-        clients: { select: { up: true, down: true } },
         adminInbounds: { select: { inbound: { select: { id: true, tag: true, port: true, protocol: true, panel: { select: { id: true, name: true } } } } } },
-        transactions: { where: { type: 'CREDIT' }, select: { amount: true } }
       },
     });
     if (!admin) throw new NotFoundException('Admin not found');
 
-    const usedBytes = admin.clients.reduce((acc, c) => acc + c.up + c.down, 0n);
-    const totalAssigned = admin.transactions.reduce((acc, t) => acc + t.amount, 0n);
-    const { clients, transactions, ...rest } = admin;
+    const summary = calculateAdminTrafficSummary(admin.totalAssigned, admin.balance);
     return {
-      ...rest,
+      ...admin,
       expiryTime: Number(admin.expiryTime),
-      usedTraffic: Number(usedBytes),
-      totalAssigned: Number(totalAssigned),
+      usedTraffic: summary.usedTraffic,
+      totalAssigned: summary.totalAllocated,
     };
   }
 
