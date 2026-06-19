@@ -23,13 +23,17 @@ export class BackupsService {
       throw new InternalServerErrorException('DATABASE_URL is not configured');
     }
 
+    const parsedUrl = new URL(databaseUrl);
+    parsedUrl.searchParams.delete('schema');
+    const cleanDatabaseUrl = parsedUrl.toString();
+
     const backupId = Date.now().toString();
     const backupFile = path.join(this.backupsDir, `backup-${backupId}.sql.gz`);
 
     return new Promise((resolve, reject) => {
       this.logger.log(`Starting backup: ${backupFile}`);
       
-      const pgDump = spawn('pg_dump', [databaseUrl, '-cO', '--if-exists'], { shell: false });
+      const pgDump = spawn('pg_dump', [cleanDatabaseUrl, '-cO', '--if-exists'], { shell: false });
       const gzip = zlib.createGzip();
       const outStream = fs.createWriteStream(backupFile);
 
@@ -131,6 +135,10 @@ export class BackupsService {
       throw new InternalServerErrorException('DATABASE_URL is not configured');
     }
 
+    const parsedUrl = new URL(databaseUrl);
+    parsedUrl.searchParams.delete('schema');
+    const cleanDatabaseUrl = parsedUrl.toString();
+
     const safeName = path.basename(fileName);
     const safeId = path.basename(id);
     const tempFilePath = path.join(this.backupsDir, `temp-restore-${safeId}-${safeName}`);
@@ -143,7 +151,7 @@ export class BackupsService {
     return new Promise((resolve, reject) => {
       this.logger.log(`Starting restore from file: ${tempFilePath}`);
       
-      const psql = spawn('psql', [databaseUrl, '-v', 'ON_ERROR_STOP=0'], { shell: false });
+      const psql = spawn('psql', [cleanDatabaseUrl, '-v', 'ON_ERROR_STOP=0'], { shell: false });
       
       let errorMsg = '';
       psql.stderr.on('data', (data) => {
