@@ -54,3 +54,13 @@ temporary files/
 *.njsproj
 *.sln
 *.sw?
+
+# Build cache
+frontend/tsconfig.tsbuildinfo
+
+# Debug scripts
+*.debug.js
+
+# AI agent files
+AGENTS.md
+CLAUDE.md
