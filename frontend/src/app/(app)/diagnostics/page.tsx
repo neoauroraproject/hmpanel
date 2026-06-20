@@ -3,195 +3,168 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { PageHeader, Card, Spinner, ErrorBox, Badge } from "@/components/ui";
-import { Database, Server, Clock, Activity, HardDrive, Wifi, Cpu, ShieldAlert, CheckCircle2, XCircle } from "lucide-react";
+import { Server, HardDrive, Cpu, ShieldAlert, CheckCircle2, XCircle, Info, Lock } from "lucide-react";
 import { motion } from "framer-motion";
-import { formatDate } from "@/lib/format";
-
-interface DiagnosticsData {
-  database: { status: "online" | "offline"; latencyMs: number };
-  redis: { status: "online" | "offline"; latencyMs: number };
-  panels: {
-    name: string;
-    version: string;
-    status: string;
-    lastSync: string | null;
-    lastLatency: number;
-    syncResult: string;
-    errorLogs: string | null;
-  }[];
-  stats: {
-    connectedPanels: number;
-    importedInbounds: number;
-    importedClients: number;
-  };
-}
 
 export default function DiagnosticsPage() {
-  const { data, isLoading, error } = useQuery({
-    queryKey: ["diagnostics"],
-    queryFn: async () => (await api.get<DiagnosticsData>("/stats/diagnostics")).data,
-    refetchInterval: 10000, // Poll every 10 seconds for real-time diagnostics
+  const { data: diag, isLoading, error } = useQuery({
+    queryKey: ["system-diagnostics"],
+    queryFn: async () => (await api.get("/settings/diagnostics")).data,
+    refetchInterval: 15000,
   });
 
   if (isLoading) return <Spinner />;
-  if (error) return <ErrorBox message="Failed to fetch real-time system diagnostics." />;
-
-  const diag = data;
+  if (error) return <ErrorBox message="Failed to fetch system diagnostics." />;
   if (!diag) return null;
 
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
       <PageHeader
         title="System Diagnostics"
-        subtitle="100% genuine real-time infrastructure telemetry."
+        subtitle="Read-only hardware, docker, and installation telemetry."
       />
 
-      {/* Core Infrastructure Check */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-        <Card className="flex flex-col sm:flex-row items-start sm:items-center gap-4 bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800">
-          <div className={`p-4 rounded-xl shrink-0 ${diag.database.status === 'online' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
-            <Database size={24} />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        {/* Version Information */}
+        <Card className="p-0 overflow-hidden bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 shadow-sm">
+          <div className="bg-indigo-500/10 px-5 py-4 border-b border-indigo-500/20 flex items-center gap-2">
+            <Info className="text-indigo-500" size={18} />
+            <h3 className="font-bold text-zinc-800 dark:text-zinc-100">Version Information</h3>
           </div>
-          <div className="flex-1 w-full">
-            <h3 className="text-lg font-bold text-zinc-800 dark:text-zinc-100 flex items-center gap-2">
-              PostgreSQL Database
-              {diag.database.status === 'online' ? <CheckCircle2 size={16} className="text-emerald-500" /> : <XCircle size={16} className="text-red-500" />}
-            </h3>
-            <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">Primary transactional datastore</p>
-          </div>
-          <div className="text-left sm:text-right w-full sm:w-auto pt-3 sm:pt-0 border-t sm:border-t-0 border-zinc-200 dark:border-zinc-800 mt-2 sm:mt-0">
-            <div className="text-2xl font-black text-zinc-800 dark:text-zinc-100">{diag.database.latencyMs} <span className="text-sm font-medium text-zinc-500">ms</span></div>
-            <div className="text-xs font-semibold text-zinc-500 uppercase tracking-widest mt-1">Raw Ping</div>
-          </div>
-        </Card>
-
-        <Card className="flex flex-col sm:flex-row items-start sm:items-center gap-4 bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800">
-          <div className={`p-4 rounded-xl shrink-0 ${diag.redis.status === 'online' ? 'bg-rose-500/10 text-rose-400' : 'bg-zinc-500/10 text-zinc-500 dark:text-zinc-400'}`}>
-            <Server size={24} />
-          </div>
-          <div className="flex-1 w-full">
-            <h3 className="text-lg font-bold text-zinc-800 dark:text-zinc-100 flex items-center gap-2">
-              Redis Broker
-              {diag.redis.status === 'online' ? <CheckCircle2 size={16} className="text-rose-500" /> : <ShieldAlert size={16} className="text-zinc-500" />}
-            </h3>
-            <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">Background job orchestrator</p>
-          </div>
-          <div className="text-left sm:text-right w-full sm:w-auto pt-3 sm:pt-0 border-t sm:border-t-0 border-zinc-200 dark:border-zinc-800 mt-2 sm:mt-0">
-            {diag.redis.status === 'online' ? (
-              <>
-                <div className="text-2xl font-black text-zinc-800 dark:text-zinc-100">{diag.redis.latencyMs} <span className="text-sm font-medium text-zinc-500">ms</span></div>
-                <div className="text-xs font-semibold text-zinc-500 uppercase tracking-widest mt-1">TCP Ping</div>
-              </>
-            ) : (
-              <div className="text-sm font-semibold text-zinc-500">Not Configured</div>
-            )}
-          </div>
-        </Card>
-      </div>
-
-      {/* Database Record Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <Card className="bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 py-6">
-          <div className="text-sm font-semibold text-blue-400 uppercase tracking-widest mb-2 flex items-center gap-2"><Wifi size={16} /> Connected Panels</div>
-          <div className="text-4xl font-black text-zinc-800 dark:text-zinc-100">{diag.stats.connectedPanels}</div>
-          <div className="text-xs text-zinc-500 mt-2 font-medium">Nodes actively synced to the database.</div>
-        </Card>
-        <Card className="bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 py-6">
-          <div className="text-sm font-semibold text-purple-400 uppercase tracking-widest mb-2 flex items-center gap-2"><HardDrive size={16} /> Imported Inbounds</div>
-          <div className="text-4xl font-black text-zinc-800 dark:text-zinc-100">{diag.stats.importedInbounds}</div>
-          <div className="text-xs text-zinc-500 mt-2 font-medium">Distinct listening ports written to DB.</div>
-        </Card>
-        <Card className="bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 py-6">
-          <div className="text-sm font-semibold text-amber-400 uppercase tracking-widest mb-2 flex items-center gap-2"><Activity size={16} /> Imported Clients</div>
-          <div className="text-4xl font-black text-zinc-800 dark:text-zinc-100">{diag.stats.importedClients}</div>
-          <div className="text-xs text-zinc-500 mt-2 font-medium">Unique v2ray clients synchronized.</div>
-        </Card>
-      </div>
-
-      {/* Detailed Panel Telemetry */}
-      <h3 className="text-xl font-bold text-zinc-800 dark:text-zinc-100 mb-4 flex items-center gap-2 mt-8">
-        <Cpu size={20} className="text-emerald-500" />
-        Xray Panel Telemetry
-      </h3>
-      <Card className="p-0 overflow-x-auto bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 shadow-xl">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/50 text-left text-xs uppercase tracking-widest text-zinc-500">
-              <th className="px-5 py-4 font-semibold">Panel</th>
-              <th className="px-5 py-4 font-semibold">Version</th>
-              <th className="px-5 py-4 font-semibold">Status</th>
-              <th className="px-5 py-4 font-semibold">Last API Sync</th>
-              <th className="px-5 py-4 font-semibold">API Latency</th>
-              <th className="px-5 py-4 font-semibold">Sync Result</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-zinc-800/50">
-            {diag.panels.map((p, i) => (
-              <motion.tr 
-                key={p.name + i}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.2, delay: i * 0.05 }}
-                className="hover:bg-zinc-100 dark:bg-zinc-800/30 transition-colors"
-              >
-                <td className="px-5 py-4 font-semibold text-zinc-800 dark:text-zinc-100">{p.name}</td>
-                <td className="px-5 py-4 text-zinc-500 dark:text-zinc-400">{p.version}</td>
-                <td className="px-5 py-4">
-                  <Badge tone={p.status === 'online' ? 'green' : 'red'}>{p.status}</Badge>
-                </td>
-                <td className="px-5 py-4 text-zinc-500 dark:text-zinc-400 whitespace-nowrap flex items-center gap-2">
-                  <Clock size={14} className="text-zinc-600" />
-                  {p.lastSync ? formatDate(p.lastSync) : 'Never'}
-                </td>
-                <td className="px-5 py-4 font-mono text-zinc-600 dark:text-zinc-300">
-                  {p.lastLatency > 0 ? `${p.lastLatency}ms` : '—'}
-                </td>
-                <td className="px-5 py-4">
-                  <div className="flex flex-col">
-                    <span className={`font-medium ${p.syncResult === 'success' ? 'text-emerald-400' : p.syncResult === 'failure' ? 'text-red-400' : 'text-zinc-500'}`}>
-                      {p.syncResult.toUpperCase()}
-                    </span>
-                    {p.errorLogs && <span className="text-xs text-red-500/80 mt-1 max-w-[200px] truncate" title={p.errorLogs}>{p.errorLogs}</span>}
-                  </div>
-                </td>
-              </motion.tr>
-            ))}
-            {diag.panels.length === 0 && (
-              <tr>
-                <td colSpan={6} className="px-5 py-12 text-center text-zinc-500 font-medium">No panels registered in the database.</td>
+          <table className="w-full text-sm">
+            <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
+              <tr className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
+                <td className="px-5 py-3 text-zinc-500">Installed Version</td>
+                <td className="px-5 py-3 font-semibold text-zinc-800 dark:text-zinc-200">{diag.version.currentVersion}</td>
               </tr>
-            )}
-          </tbody>
-        </table>
-      </Card>
+              <tr className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
+                <td className="px-5 py-3 text-zinc-500">Running Image Tag</td>
+                <td className="px-5 py-3 font-semibold text-zinc-800 dark:text-zinc-200">{diag.container.tag}</td>
+              </tr>
+              <tr className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
+                <td className="px-5 py-3 text-zinc-500">Latest Release</td>
+                <td className="px-5 py-3 font-semibold text-zinc-800 dark:text-zinc-200">{diag.version.latestVersion}</td>
+              </tr>
+            </tbody>
+          </table>
+        </Card>
 
-      {/* Developer Debug Console */}
-      <h3 className="text-xl font-bold text-zinc-800 dark:text-zinc-100 mb-4 flex items-center gap-2 mt-8">
-        <Activity size={20} className="text-blue-500" />
-        Developer Debug Console
-      </h3>
-      <Card className="bg-black border-zinc-200 dark:border-zinc-800 p-0 overflow-hidden relative group">
-        <div className="absolute top-0 left-0 right-0 h-8 bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 flex items-center px-4 gap-2">
-          <div className="w-3 h-3 rounded-full bg-red-500/80"></div>
-          <div className="w-3 h-3 rounded-full bg-amber-500/80"></div>
-          <div className="w-3 h-3 rounded-full bg-emerald-500/80"></div>
-          <span className="text-[10px] font-mono text-zinc-500 ml-2">/var/log/syslog</span>
-        </div>
-        <div className="p-4 pt-10 h-64 overflow-y-auto font-mono text-xs text-zinc-500 dark:text-zinc-400">
-          {diag.panels.map((p, i) => (
-            <div key={i} className="mb-2">
-              <span className="text-emerald-500">[{formatDate(p.lastSync || new Date().toISOString())}]</span> 
-              <span className="text-blue-400"> [Panel:{p.name}]</span> 
-              <span className="text-zinc-500"> Ping: {p.lastLatency}ms</span>
-              <br />
-              <span className={p.syncResult === 'success' ? 'text-zinc-600 dark:text-zinc-300' : 'text-red-400'}>
-                &gt; {p.errorLogs ? p.errorLogs : `Sync completed successfully with status ${p.syncResult}.`}
-              </span>
-            </div>
-          ))}
-          {diag.panels.length === 0 && <div className="text-zinc-600">No telemetry data streaming...</div>}
-        </div>
-      </Card>
+        {/* Host Information */}
+        <Card className="p-0 overflow-hidden bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 shadow-sm">
+          <div className="bg-emerald-500/10 px-5 py-4 border-b border-emerald-500/20 flex items-center gap-2">
+            <Server className="text-emerald-500" size={18} />
+            <h3 className="font-bold text-zinc-800 dark:text-zinc-100">Host Information</h3>
+          </div>
+          <table className="w-full text-sm">
+            <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
+              <tr className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
+                <td className="px-5 py-3 text-zinc-500">OS</td>
+                <td className="px-5 py-3 font-semibold text-zinc-800 dark:text-zinc-200">{diag.host.os}</td>
+              </tr>
+              <tr className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
+                <td className="px-5 py-3 text-zinc-500">Architecture</td>
+                <td className="px-5 py-3 font-semibold text-zinc-800 dark:text-zinc-200">{diag.host.arch}</td>
+              </tr>
+              <tr className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
+                <td className="px-5 py-3 text-zinc-500">CPU</td>
+                <td className="px-5 py-3 font-semibold text-zinc-800 dark:text-zinc-200 max-w-[200px] truncate" title={diag.host.cpu}>{diag.host.cpu}</td>
+              </tr>
+              <tr className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
+                <td className="px-5 py-3 text-zinc-500">Memory (Free / Total)</td>
+                <td className="px-5 py-3 font-semibold text-zinc-800 dark:text-zinc-200">{diag.host.freeRam} / {diag.host.ram}</td>
+              </tr>
+            </tbody>
+          </table>
+        </Card>
+
+        {/* Docker & Container Info */}
+        <Card className="p-0 overflow-hidden bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 shadow-sm lg:col-span-2">
+          <div className="bg-blue-500/10 px-5 py-4 border-b border-blue-500/20 flex items-center gap-2">
+            <HardDrive className="text-blue-500" size={18} />
+            <h3 className="font-bold text-zinc-800 dark:text-zinc-100">Docker & Environment</h3>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2">
+            <table className="w-full text-sm">
+              <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
+                <tr className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
+                  <td className="px-5 py-3 text-zinc-500">Docker Engine</td>
+                  <td className="px-5 py-3 font-semibold text-zinc-800 dark:text-zinc-200">{diag.docker.version}</td>
+                </tr>
+                <tr className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
+                  <td className="px-5 py-3 text-zinc-500">Docker Compose</td>
+                  <td className="px-5 py-3 font-semibold text-zinc-800 dark:text-zinc-200">{diag.docker.composeVersion}</td>
+                </tr>
+                <tr className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
+                  <td className="px-5 py-3 text-zinc-500">Socket Access</td>
+                  <td className="px-5 py-3">
+                    {diag.docker.socketAccess ? <Badge tone="green">Available</Badge> : <Badge tone="red">Unavailable</Badge>}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <table className="w-full text-sm border-t md:border-t-0 md:border-l border-zinc-200 dark:border-zinc-800">
+              <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
+                <tr className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
+                  <td className="px-5 py-3 text-zinc-500">Container ID</td>
+                  <td className="px-5 py-3 font-mono text-xs text-zinc-800 dark:text-zinc-200">{diag.container.id}</td>
+                </tr>
+                <tr className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
+                  <td className="px-5 py-3 text-zinc-500">Install Path</td>
+                  <td className="px-5 py-3 font-mono text-xs text-zinc-800 dark:text-zinc-200 truncate max-w-[200px]" title={diag.installation.path}>{diag.installation.path}</td>
+                </tr>
+                <tr className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
+                  <td className="px-5 py-3 text-zinc-500">Updater Script</td>
+                  <td className="px-5 py-3">
+                    {diag.installation.updateScript === 'Found' ? <Badge tone="green">Found</Badge> : <Badge tone="red">Missing</Badge>}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </Card>
+
+        {/* Services & Connectivity */}
+        <Card className="p-0 overflow-hidden bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 shadow-sm lg:col-span-2">
+          <div className="bg-amber-500/10 px-5 py-4 border-b border-amber-500/20 flex items-center gap-2">
+            <Cpu className="text-amber-500" size={18} />
+            <h3 className="font-bold text-zinc-800 dark:text-zinc-100">Services & Security</h3>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2">
+            <table className="w-full text-sm">
+              <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
+                <tr className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
+                  <td className="px-5 py-3 text-zinc-500">PostgreSQL</td>
+                  <td className="px-5 py-3">{diag.services.postgres === 'Online' ? <Badge tone="green">Online</Badge> : <Badge tone="red">Offline</Badge>}</td>
+                </tr>
+                <tr className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
+                  <td className="px-5 py-3 text-zinc-500">Redis</td>
+                  <td className="px-5 py-3">{diag.services.redis === 'Online' ? <Badge tone="green">Online</Badge> : <Badge tone="red">Offline</Badge>}</td>
+                </tr>
+                <tr className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
+                  <td className="px-5 py-3 text-zinc-500">GitHub API</td>
+                  <td className="px-5 py-3">{diag.connectivity.github === 'Reachable' ? <Badge tone="green">Reachable</Badge> : <Badge tone="red">Unreachable</Badge>}</td>
+                </tr>
+              </tbody>
+            </table>
+            <table className="w-full text-sm border-t md:border-t-0 md:border-l border-zinc-200 dark:border-zinc-800">
+              <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
+                <tr className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
+                  <td className="px-5 py-3 text-zinc-500 flex items-center gap-1"><Lock size={14}/> SSL Provider</td>
+                  <td className="px-5 py-3 font-semibold text-zinc-800 dark:text-zinc-200">{diag.ssl.provider}</td>
+                </tr>
+                <tr className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
+                  <td className="px-5 py-3 text-zinc-500">Certificate State</td>
+                  <td className="px-5 py-3 font-semibold text-zinc-800 dark:text-zinc-200">{diag.ssl.certificate?.exists ? 'Valid' : 'Not Found'}</td>
+                </tr>
+                <tr className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
+                  <td className="px-5 py-3 text-zinc-500">SSL Path</td>
+                  <td className="px-5 py-3 font-mono text-xs text-zinc-600 truncate max-w-[150px]" title={diag.ssl.certPath}>{diag.ssl.certPath}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      </div>
     </motion.div>
   );
 }

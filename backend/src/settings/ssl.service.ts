@@ -20,14 +20,33 @@ export class SslService {
     let expiration = null;
     let daysRemaining = null;
     let issuer = null;
+    let provider = 'Unknown';
+    let certPathInUse = 'Not Found';
 
+    let isHttpsEnabled = false;
+    if (fs.existsSync(this.nginxConfPath)) {
+      const conf = fs.readFileSync(this.nginxConfPath, 'utf8');
+      if (conf.includes('listen 443 ssl')) {
+        isHttpsEnabled = true;
+      }
+    }
+
+    const isAcmeInstalled = fs.existsSync(this.acmeShPath);
+
+    // Default panel mount
     if (fs.existsSync(this.certPath)) {
       exists = true;
+      certPathInUse = this.certPath;
+      if (isAcmeInstalled) {
+        provider = 'ACME.sh';
+      } else {
+        provider = 'Custom Certificate';
+      }
+      
       try {
         const { stdout: enddateOut } = await execAsync(`openssl x509 -enddate -noout -in ${this.certPath}`);
         const { stdout: issuerOut } = await execAsync(`openssl x509 -issuer -noout -in ${this.certPath}`);
         
-        // Output format: notAfter=Jan 01 12:00:00 2024 GMT
         const dateStr = enddateOut.replace('notAfter=', '').trim();
         const expDate = new Date(dateStr);
         expiration = expDate.toISOString();
@@ -40,17 +59,35 @@ export class SslService {
         }
 
         issuer = issuerOut.replace('issuer=', '').trim();
+        if (issuer.toLowerCase().includes('let\'s encrypt')) {
+          if (!isAcmeInstalled) provider = 'Certbot';
+        }
       } catch (e) {
-        this.logger.error('Failed to parse certificate', e);
+        this.logger.error('Failed to parse certificate', e.message);
       }
     }
 
-    let isHttpsEnabled = false;
-    if (fs.existsSync(this.nginxConfPath)) {
-      const conf = fs.readFileSync(this.nginxConfPath, 'utf8');
-      if (conf.includes('listen 443 ssl')) {
-        isHttpsEnabled = true;
+    // Secondary check: Certbot mounted into Nginx container
+    if (!exists) {
+      try {
+        const inspectNginx = await execAsync('docker inspect hmpanel-nginx');
+        const nginxData = JSON.parse(inspectNginx.stdout);
+        const letsEncryptMount = nginxData[0]?.Mounts?.find((m: any) => m.Destination.includes('letsencrypt') || m.Source.includes('letsencrypt'));
+        if (letsEncryptMount) {
+          provider = 'Certbot';
+          certPathInUse = letsEncryptMount.Destination;
+          exists = true;
+        }
+      } catch (e) {
+        // Ignore
       }
+    }
+
+    // Tertiary check: Reverse Proxy
+    if (isHttpsEnabled && !exists) {
+      exists = true;
+      provider = 'Reverse Proxy / Custom';
+      certPathInUse = 'External / Host Managed';
     }
 
     // Determine mode
@@ -65,6 +102,8 @@ export class SslService {
       mode,
       domain: this.domain,
       isHttpsEnabled,
+      provider,
+      certPath: certPathInUse,
       certificate: exists ? {
         exists: true,
         expiration,

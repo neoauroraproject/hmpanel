@@ -119,7 +119,9 @@ export default function GlobalSettingsPage() {
             <div className="space-y-3 text-sm">
                 <div className="flex justify-between border-b border-zinc-200 dark:border-zinc-800/60 pb-2">
                   <span className="text-zinc-500">Panel Version</span>
-                  <span className="font-medium text-zinc-800 dark:text-zinc-200">v{process.env.NEXT_PUBLIC_APP_VERSION || "1.0.18"}</span>
+                  <span className="font-medium text-zinc-800 dark:text-zinc-200">
+                    <VersionDisplay />
+                  </span>
                 </div>
                 <div className="flex justify-between border-b border-zinc-200 dark:border-zinc-800/60 pb-2">
                   <span className="text-zinc-500">Edition</span>
@@ -127,7 +129,9 @@ export default function GlobalSettingsPage() {
                 </div>
                 <div className="flex justify-between border-b border-zinc-200 dark:border-zinc-800/60 pb-2">
                   <span className="text-zinc-500">Build</span>
-                  <span className="font-mono text-xs text-zinc-600 dark:text-zinc-400 mt-0.5">v{process.env.NEXT_PUBLIC_APP_VERSION || "1.0.18"}</span>
+                  <span className="font-mono text-xs text-zinc-600 dark:text-zinc-400 mt-0.5">
+                    <VersionDisplay />
+                  </span>
                 </div>
               <div className="pt-2 space-y-2">
                 <a href="https://github.com/neoauroraproject/hmpanel" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-zinc-600 dark:text-zinc-400 hover:text-blue-500 transition-colors">
@@ -326,12 +330,15 @@ function BackupRestoreCard() {
 
 interface SslStatus {
   mode: string;
+  domain: string;
   isHttpsEnabled: boolean;
+  provider?: string;
+  certPath?: string;
   certificate: {
     exists: boolean;
-    issuer?: string;
     expiration?: string;
-    daysRemaining: number;
+    daysRemaining?: number;
+    issuer?: string;
   };
 }
 
@@ -382,13 +389,23 @@ function SslManagementCard() {
           <span className="font-semibold text-zinc-800 dark:text-zinc-200">{sslInfo?.mode || 'Unknown'}</span>
         </div>
         <div className="flex justify-between items-center pb-2 border-b border-zinc-200 dark:border-zinc-800/50">
+          <span className="text-zinc-500">Provider</span>
+          <span className="font-semibold text-zinc-800 dark:text-zinc-200">{sslInfo?.provider || 'Unknown'}</span>
+        </div>
+        <div className="flex justify-between items-center pb-2 border-b border-zinc-200 dark:border-zinc-800/50">
           <span className="text-zinc-500">Certificate Status</span>
           <span className={`font-semibold ${sslInfo?.certificate?.exists ? 'text-emerald-500' : 'text-red-500'}`}>
-            {sslInfo?.certificate?.exists ? 'Found' : 'Not Found'}
+            {sslInfo?.certificate?.exists ? 'Valid / Active' : 'Not Found'}
           </span>
         </div>
         {sslInfo?.certificate?.exists && (
           <>
+            <div className="flex justify-between items-center pb-2 border-b border-zinc-200 dark:border-zinc-800/50">
+              <span className="text-zinc-500">Certificate Path</span>
+              <span className="font-mono text-xs text-zinc-600 dark:text-zinc-400 max-w-[200px] truncate" title={sslInfo.certPath}>
+                {sslInfo.certPath || 'Unknown'}
+              </span>
+            </div>
             <div className="flex justify-between items-center pb-2 border-b border-zinc-200 dark:border-zinc-800/50">
               <span className="text-zinc-500">Issuer</span>
               <span className="font-semibold text-zinc-800 dark:text-zinc-200">{sslInfo.certificate.issuer || 'Unknown'}</span>
@@ -401,8 +418,8 @@ function SslManagementCard() {
             </div>
             <div className="flex justify-between items-center">
               <span className="text-zinc-500">Days Remaining</span>
-              <span className={`font-semibold ${sslInfo.certificate.daysRemaining > 15 ? 'text-emerald-500' : 'text-amber-500'}`}>
-                {sslInfo.certificate.daysRemaining} days
+              <span className={`font-semibold ${(sslInfo.certificate.daysRemaining || 0) > 15 ? 'text-emerald-500' : 'text-amber-500'}`}>
+                {sslInfo.certificate.daysRemaining || 0} days
               </span>
             </div>
           </>
@@ -410,14 +427,16 @@ function SslManagementCard() {
       </div>
 
       <div className="flex flex-col sm:flex-row gap-3">
-        <button
-          onClick={() => renewSsl.mutate()}
-          disabled={renewSsl.isPending}
-          className="flex-1 flex items-center justify-center gap-2 rounded-lg border border-indigo-500/20 bg-indigo-500/10 px-4 py-2.5 text-sm font-medium text-indigo-600 hover:bg-indigo-500/20 disabled:opacity-50 transition-colors"
-        >
-          {renewSsl.isPending ? <Spinner className="w-4 h-4 text-indigo-500" /> : <RefreshCw size={16} />}
-          Renew Now
-        </button>
+        {sslInfo?.provider === 'ACME.sh' && (
+          <button
+            onClick={() => renewSsl.mutate()}
+            disabled={renewSsl.isPending}
+            className="flex-1 flex items-center justify-center gap-2 rounded-lg border border-indigo-500/20 bg-indigo-500/10 px-4 py-2.5 text-sm font-medium text-indigo-600 hover:bg-indigo-500/20 disabled:opacity-50 transition-colors"
+          >
+            {renewSsl.isPending ? <Spinner className="w-4 h-4 text-indigo-500" /> : <RefreshCw size={16} />}
+            Renew Now
+          </button>
+        )}
         <button
           onClick={() => refetch()}
           className="flex-1 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-4 py-2.5 text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors"
@@ -436,9 +455,19 @@ function SslManagementCard() {
   );
 }
 
+function VersionDisplay() {
+  const { data: updateInfo } = useQuery({
+    queryKey: ['check-update'],
+    queryFn: async () => (await api.get("/settings/check-update")).data,
+    refetchInterval: 1000 * 60 * 60,
+  });
+  return <>{updateInfo?.currentVersion || 'Loading...'}</>;
+}
+
 function UpdateCard() {
   const toast = useToast((s) => s.push);
-  const router = useRouter();
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [updateLogs, setUpdateLogs] = useState<string>('');
 
   const { data: updateInfo, isLoading } = useQuery({
     queryKey: ['check-update'],
@@ -446,14 +475,36 @@ function UpdateCard() {
     refetchInterval: 1000 * 60 * 60, // Check every hour
   });
 
+  const pollLogs = async () => {
+    try {
+      const res = await api.get("/settings/update-logs");
+      if (res.data.success && res.data.logs) {
+        setUpdateLogs(res.data.logs);
+      }
+    } catch (e) {
+      // Panel is likely offline and restarting!
+      setUpdateLogs((prev) => prev + '\n[Waiting for panel to restart... connection lost]');
+    }
+  };
+
+  useEffect(() => {
+    let interval: any;
+    if (isUpdating) {
+      interval = setInterval(pollLogs, 2000);
+    }
+    return () => clearInterval(interval);
+  }, [isUpdating]);
+
   const updatePanel = useMutation({
     mutationFn: async () => (await api.post("/settings/update-panel")).data,
     onSuccess: (data: { message: string }) => {
       toast(data.message || 'Update started...', 'success');
-      // Set a timer to reload the page or redirect after a few minutes
+      setIsUpdating(true);
+      
+      // Auto reload after 2 minutes
       setTimeout(() => {
         window.location.reload();
-      }, 60000);
+      }, 120000);
     },
     onError: (e: Error & { response?: { data?: { message?: string } } }) => {
       toast(e.response?.data?.message || "Failed to initiate update", "error");
@@ -467,6 +518,17 @@ function UpdateCard() {
   };
 
   if (isLoading || !updateInfo) return null;
+
+  if (isUpdating) {
+    return (
+      <div className="mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-800/60">
+        <p className="text-sm font-semibold text-blue-600 dark:text-blue-400 mb-2">Update in Progress...</p>
+        <pre className="text-[10px] sm:text-xs bg-zinc-900 text-green-400 p-3 rounded-lg overflow-x-auto max-h-48 whitespace-pre-wrap font-mono">
+          {updateLogs || 'Initializing updater...'}
+        </pre>
+      </div>
+    );
+  }
 
   if (updateInfo.hasUpdate) {
     return (
@@ -485,7 +547,7 @@ function UpdateCard() {
               className="mt-1 flex items-center justify-center gap-2 w-full py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded transition-colors disabled:opacity-50"
             >
               {updatePanel.isPending ? <Spinner className="w-4 h-4 text-white" /> : <RefreshCw size={14} />}
-              {updatePanel.isPending ? 'Updating...' : 'Update Now'}
+              {updatePanel.isPending ? 'Preparing Update...' : 'Update Now'}
             </button>
           </div>
         </div>

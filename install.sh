@@ -381,6 +381,7 @@ INITIAL_ADMIN_PASSWORD=${ADMIN_PASSWORD}
 EOF
 
     chmod 600 "${INSTALL_DIR}/.env"
+    chown 1001:1001 "${INSTALL_DIR}/.env"
     log ".env file generated successfully"
   fi
 
@@ -412,6 +413,22 @@ step_3_docker() {
 step_4_database() {
   step "[4/10] Database"
   cd "$INSTALL_DIR"
+
+  info "Pre-flight check: Validating .env permissions for container..."
+  if ! docker run --rm -u 1001:1001 -v "${INSTALL_DIR}/.env:/app/.env" alpine cat /app/.env >/dev/null 2>&1; then
+    warn "The .env file is not readable by the container user (UID 1001)."
+    info "Attempting to repair permissions automatically..."
+    chown 1001:1001 "${INSTALL_DIR}/.env"
+    chmod 600 "${INSTALL_DIR}/.env"
+    if ! docker run --rm -u 1001:1001 -v "${INSTALL_DIR}/.env:/app/.env" alpine cat /app/.env >/dev/null 2>&1; then
+      die "FATAL: Could not grant read permissions to .env for container user 1001."
+    else
+      log "Permissions repaired successfully."
+    fi
+  else
+    log "Pre-flight permissions check passed."
+  fi
+
   if ! run_with_spinner "Starting PostgreSQL container" docker compose up -d postgres; then
     die "Failed to start database container."
   fi

@@ -41,6 +41,7 @@ const CORE_NAV: {
   { href: "/migration", label: "Migration", icon: Import, roles: ["SUPER_ADMIN"] },
   { href: "/traffic", label: "Traffic", icon: Wallet },
   { href: "/settings", label: "Settings", icon: Settings, roles: ["SUPER_ADMIN"] },
+  { href: "/diagnostics", label: "Diagnostics", icon: Activity, roles: ["SUPER_ADMIN"] },
 ];
 
 

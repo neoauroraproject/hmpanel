@@ -62,7 +62,16 @@ main() {
     info "Not a git repository, skipping pull phase"
   fi
 
-  step "Pulling Latest Docker Images"
+  # Phase 5: Rollback Safety
+  step "[4/7] Rollback Safety: Tagging current image as rollback baseline"
+  if docker image inspect ghcr.io/neoauroraproject/hmpanel:latest &>/dev/null; then
+    docker tag ghcr.io/neoauroraproject/hmpanel:latest ghcr.io/neoauroraproject/hmpanel:rollback
+    log "Current image tagged as rollback."
+  else
+    warn "No existing latest image found to tag as rollback."
+  fi
+
+  step "[5/7] Pulling Latest Docker Images"
   info "Downloading prebuilt images..."
   
   local max_pull=5
@@ -83,7 +92,24 @@ main() {
     die "Failed to pull Docker images after $max_pull attempts. Please check your network connection or configure a Docker registry mirror."
   fi
 
-  step "Restarting Services"
+  step "[6/7] Updating Containers (Restarting Services)"
+  info "Pre-flight check: Validating .env permissions for container..."
+  if [ -f "${INSTALL_DIR}/.env" ]; then
+    if ! docker run --rm -u 1001:1001 -v "${INSTALL_DIR}/.env:/app/.env" alpine cat /app/.env >/dev/null 2>&1; then
+      warn "The .env file is not readable by the container user (UID 1001)."
+      info "Attempting to repair permissions automatically..."
+      chown 1001:1001 "${INSTALL_DIR}/.env"
+      chmod 600 "${INSTALL_DIR}/.env"
+      if ! docker run --rm -u 1001:1001 -v "${INSTALL_DIR}/.env:/app/.env" alpine cat /app/.env >/dev/null 2>&1; then
+        die "FATAL: Could not grant read permissions to .env for container user 1001. Update aborted to prevent container crash."
+      else
+        log "Permissions repaired successfully."
+      fi
+    else
+      log "Pre-flight permissions check passed."
+    fi
+  fi
+
   info "Re-deploying containers..."
   docker compose up -d
 
@@ -92,7 +118,7 @@ main() {
   docker image prune -a -f || true
   docker builder prune -f || true
 
-  step "Verifying Health"
+  step "[7/7] Verifying Health & Final Verification"
   local max_attempts=30
   local attempt=0
   info "Waiting for services to become healthy..."

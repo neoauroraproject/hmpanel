@@ -4,6 +4,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { RolesGuard, Roles } from '../common/roles.guard';
 import { SettingsService } from './settings.service';
 import { LicenseService } from './license.service';
+import { DiagnosticService } from './diagnostic.service';
 import { PremiumGuard } from '../common/guards/premium.guard';
 
 @ApiTags('Settings')
@@ -14,7 +15,15 @@ export class SettingsController {
   constructor(
     private settingsService: SettingsService,
     private licenseService: LicenseService,
+    private diagnosticService: DiagnosticService,
   ) {}
+
+  @Get('diagnostics')
+  @Roles('SUPER_ADMIN')
+  @ApiOperation({ summary: 'Get full system diagnostics report' })
+  async getDiagnostics() {
+    return this.diagnosticService.getDiagnostics();
+  }
 
   @Get()
   @Roles('SUPER_ADMIN')
@@ -51,5 +60,20 @@ export class SettingsController {
   @ApiOperation({ summary: 'Trigger automatic panel update' })
   async updatePanel() {
     return this.settingsService.updatePanel();
+  }
+
+  @Get('ssl-diagnostic')
+  @Roles('SUPER_ADMIN')
+  @ApiOperation({ summary: 'Run SSL diagnostic audit' })
+  async runSslDiagnostic() {
+    // We can put the logic directly here or in service. For quick diagnostic, we call a new service method
+    return this.settingsService.runSslDiagnostic();
+  }
+
+  @Get('update-logs')
+  @Roles('SUPER_ADMIN')
+  @ApiOperation({ summary: 'Get current updater logs' })
+  async getUpdateLogs() {
+    return this.settingsService.getUpdateLogs();
   }
 }
