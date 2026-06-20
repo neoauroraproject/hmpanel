@@ -53,7 +53,14 @@ export class DiagnosticService {
     try {
       const dVer = await execAsync('docker -v');
       dockerInfo.version = dVer.stdout.trim();
-      dockerInfo.socketAccess = true;
+      
+      try {
+        await execAsync('docker info');
+        dockerInfo.socketAccess = true;
+      } catch (e) {
+        dockerInfo.socketAccess = false;
+      }
+
       try {
          const dcVer = await execAsync('docker compose version');
          dockerInfo.composeVersion = dcVer.stdout.trim();
@@ -67,11 +74,12 @@ export class DiagnosticService {
       backend: 'Online (Self)',
     };
     try {
-      await execAsync('docker exec hmpanel-postgres pg_isready -U panel_user -d panel_db');
+      await execAsync(`pg_isready -h postgres -U ${process.env.POSTGRES_USER || 'panel_user'} -d ${process.env.POSTGRES_DB || 'panel_db'}`);
       services.postgres = 'Online';
     } catch (e) {}
     try {
-      await execAsync('docker exec hmpanel-redis redis-cli ping');
+      // Connect directly to redis using nc or similar since redis-cli might not be installed
+      await execAsync(`echo PING | nc -w 2 redis 6379 | grep -q PONG`);
       services.redis = 'Online';
     } catch (e) {}
 

@@ -112,14 +112,27 @@ export class SslService {
       }
 
     } catch (e) {
-      this.logger.warn('Docker socket access failed. Falling back to live HTTPS probe on nginx container...');
+      this.logger.warn('Docker socket access failed. Falling back to live HTTPS probe...');
       
-      // Fallback: Live HTTPS probe to our own Nginx container
-      try {
-        const cert = await this.getPeerCertificate('nginx');
+      // Fallback: Live HTTPS probe trying multiple internal and external hostnames
+      let cert = null;
+      let usedHostname = '';
+      const hostnamesToTry = ['hmpanel-nginx', 'nginx', this.domain, '127.0.0.1'];
+
+      for (const host of hostnamesToTry) {
+        try {
+          cert = await this.getPeerCertificate(host);
+          usedHostname = host;
+          break; // Stop at first successful probe
+        } catch (err) {
+          // Continue to next host
+        }
+      }
+
+      if (cert) {
         exists = true;
         isHttpsEnabled = true;
-        certPathInUse = 'Live Probe (Docker socket unavailable)';
+        certPathInUse = `Live Probe via ${usedHostname}`;
         
         const expDate = new Date(cert.valid_to);
         expiration = expDate.toISOString();
@@ -131,16 +144,11 @@ export class SslService {
           daysRemaining = -daysRemaining;
         }
 
-        // Parse issuer
         const certIssuer = cert.issuer?.CN || cert.issuer?.O || 'Unknown Issuer';
         issuer = certIssuer;
-
-        // We cannot reliably determine the installation method (Provider) just from the issuer.
-        // Therefore, we set provider to Unknown and rely on the issuer to show the CA.
         provider = 'Unknown';
-
-      } catch (probeError) {
-        this.logger.error('Live HTTPS probe failed. SSL is likely disabled or misconfigured.', probeError.message);
+      } else {
+        this.logger.error('All live HTTPS probes failed. SSL is likely disabled, misconfigured, or inaccessible from container.');
         provider = 'Unknown / Diagnostic Mode';
       }
     }
