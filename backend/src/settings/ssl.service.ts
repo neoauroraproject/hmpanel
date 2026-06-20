@@ -22,72 +22,78 @@ export class SslService {
     let issuer = null;
     let provider = 'Unknown';
     let certPathInUse = 'Not Found';
-
     let isHttpsEnabled = false;
-    if (fs.existsSync(this.nginxConfPath)) {
-      const conf = fs.readFileSync(this.nginxConfPath, 'utf8');
-      if (conf.includes('listen 443 ssl')) {
+
+    // We will attempt to run `docker exec hmpanel-nginx` to inspect the actual live container state.
+    // This is required because the certs and configurations are not mapped to the panel container.
+    try {
+      // Check for HTTPS enabled in nginx configuration
+      const { stdout: nginxConfOut } = await execAsync('docker exec hmpanel-nginx cat /etc/nginx/nginx.conf 2>/dev/null || true');
+      if (nginxConfOut.includes('listen 443 ssl') || nginxConfOut.includes('ssl_certificate')) {
         isHttpsEnabled = true;
       }
-    }
 
-    const isAcmeInstalled = fs.existsSync(this.acmeShPath);
+      // Check if certificate file exists in nginx container
+      const { stdout: certLsOut } = await execAsync('docker exec hmpanel-nginx ls /etc/nginx/ssl/fullchain.pem 2>/dev/null || true');
+      if (certLsOut.includes('/etc/nginx/ssl/fullchain.pem')) {
+        exists = true;
+        certPathInUse = '/etc/nginx/ssl/fullchain.pem';
 
-    // Default panel mount
-    if (fs.existsSync(this.certPath)) {
-      exists = true;
-      certPathInUse = this.certPath;
-      if (isAcmeInstalled) {
-        provider = 'ACME.sh';
-      } else {
-        provider = 'Custom Certificate';
+        // Extract certificate details
+        try {
+          const { stdout: enddateOut } = await execAsync('docker exec hmpanel-nginx openssl x509 -enddate -noout -in /etc/nginx/ssl/fullchain.pem');
+          const { stdout: issuerOut } = await execAsync('docker exec hmpanel-nginx openssl x509 -issuer -noout -in /etc/nginx/ssl/fullchain.pem');
+          
+          const dateStr = enddateOut.replace('notAfter=', '').trim();
+          const expDate = new Date(dateStr);
+          expiration = expDate.toISOString();
+          
+          const now = new Date();
+          const diffTime = Math.abs(expDate.getTime() - now.getTime());
+          daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          if (expDate.getTime() < now.getTime()) {
+            daysRemaining = -daysRemaining;
+          }
+
+          issuer = issuerOut.replace('issuer=', '').trim();
+        } catch (certError) {
+          this.logger.error('Failed to parse certificate within nginx container', certError.message);
+        }
       }
+
+      // Detect SSL Provider via inspecting the hmpanel-nginx container mounts
+      const { stdout: inspectOut } = await execAsync('docker inspect hmpanel-nginx');
+      const nginxData = JSON.parse(inspectOut);
+      const mounts = nginxData[0]?.Mounts || [];
+
+      // Check for Let's Encrypt / Certbot mounts
+      const letsEncryptMount = mounts.find((m: any) => m.Destination.includes('letsencrypt') || m.Source.includes('letsencrypt'));
       
-      try {
-        const { stdout: enddateOut } = await execAsync(`openssl x509 -enddate -noout -in ${this.certPath}`);
-        const { stdout: issuerOut } = await execAsync(`openssl x509 -issuer -noout -in ${this.certPath}`);
-        
-        const dateStr = enddateOut.replace('notAfter=', '').trim();
-        const expDate = new Date(dateStr);
-        expiration = expDate.toISOString();
-        
-        const now = new Date();
-        const diffTime = Math.abs(expDate.getTime() - now.getTime());
-        daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        if (expDate.getTime() < now.getTime()) {
-          daysRemaining = -daysRemaining;
-        }
+      // Also we can check if ACME is installed locally
+      const isAcmeInstalled = fs.existsSync(this.acmeShPath);
 
-        issuer = issuerOut.replace('issuer=', '').trim();
-        if (issuer.toLowerCase().includes('let\'s encrypt')) {
-          if (!isAcmeInstalled) provider = 'Certbot';
-        }
-      } catch (e) {
-        this.logger.error('Failed to parse certificate', e.message);
-      }
-    }
-
-    // Secondary check: Certbot mounted into Nginx container
-    if (!exists) {
-      try {
-        const inspectNginx = await execAsync('docker inspect hmpanel-nginx');
-        const nginxData = JSON.parse(inspectNginx.stdout);
-        const letsEncryptMount = nginxData[0]?.Mounts?.find((m: any) => m.Destination.includes('letsencrypt') || m.Source.includes('letsencrypt'));
+      if (exists) {
         if (letsEncryptMount) {
           provider = 'Certbot';
           certPathInUse = letsEncryptMount.Destination;
-          exists = true;
+        } else if (isAcmeInstalled) {
+          provider = 'ACME.sh';
+        } else {
+          provider = 'Custom Certificate';
         }
-      } catch (e) {
-        // Ignore
+      } else if (isHttpsEnabled) {
+        // Reverse proxy scenario where HTTPS is enabled but nginx container does not handle certs directly
+        exists = true;
+        provider = 'Reverse Proxy / Custom';
+        certPathInUse = 'External / Host Managed';
       }
-    }
 
-    // Tertiary check: Reverse Proxy
-    if (isHttpsEnabled && !exists) {
-      exists = true;
-      provider = 'Reverse Proxy / Custom';
-      certPathInUse = 'External / Host Managed';
+    } catch (e) {
+      this.logger.error('Failed to inspect hmpanel-nginx. Docker socket might be unavailable or container is down.', e.message);
+      // Fallback: Check if we are running in reverse proxy mode or something similar
+      const isAcmeInstalled = fs.existsSync(this.acmeShPath);
+      provider = isAcmeInstalled ? 'ACME.sh (Unverified)' : 'Unknown / Diagnostic Mode';
+      // Do not mock exists or expiration if we can't verify
     }
 
     // Determine mode
@@ -104,12 +110,10 @@ export class SslService {
       isHttpsEnabled,
       provider,
       certPath: certPathInUse,
-      certificate: exists ? {
-        exists: true,
-        expiration,
-        daysRemaining,
-        issuer
-      } : { exists: false }
+      certificate: {
+        exists,
+        ...(exists && expiration ? { expiration, daysRemaining, issuer } : {})
+      }
     };
   }
 
