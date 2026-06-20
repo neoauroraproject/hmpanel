@@ -38,4 +38,18 @@ export class SettingsController {
   async getLicenseFeatures() {
     return this.licenseService.getActiveFeatures();
   }
+
+  @Get('check-update')
+  @Roles('SUPER_ADMIN')
+  @ApiOperation({ summary: 'Check for panel updates on GitHub' })
+  async checkUpdate() {
+    return this.settingsService.checkUpdate();
+  }
+
+  @Post('update-panel')
+  @Roles('SUPER_ADMIN')
+  @ApiOperation({ summary: 'Trigger automatic panel update' })
+  async updatePanel() {
+    return this.settingsService.updatePanel();
+  }
 }

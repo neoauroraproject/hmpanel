@@ -137,6 +137,7 @@ export default function GlobalSettingsPage() {
                   <ExternalLink size={14} /> Telegram Channel
                 </a>
               </div>
+              <UpdateCard />
             </div>
           </Card>
           <Card className="p-0 overflow-hidden hover:border-blue-500 transition-colors cursor-pointer">
@@ -432,5 +433,71 @@ function SslManagementCard() {
         </button>
       </div>
     </Card>
+  );
+}
+
+function UpdateCard() {
+  const toast = useToast((s) => s.push);
+  const router = useRouter();
+
+  const { data: updateInfo, isLoading } = useQuery({
+    queryKey: ['check-update'],
+    queryFn: async () => (await api.get("/settings/check-update")).data,
+    refetchInterval: 1000 * 60 * 60, // Check every hour
+  });
+
+  const updatePanel = useMutation({
+    mutationFn: async () => (await api.post("/settings/update-panel")).data,
+    onSuccess: (data: { message: string }) => {
+      toast(data.message || 'Update started...', 'success');
+      // Set a timer to reload the page or redirect after a few minutes
+      setTimeout(() => {
+        window.location.reload();
+      }, 60000);
+    },
+    onError: (e: Error & { response?: { data?: { message?: string } } }) => {
+      toast(e.response?.data?.message || "Failed to initiate update", "error");
+    },
+  });
+
+  const handleUpdate = () => {
+    if (window.confirm("Are you sure you want to update? The panel will go offline for 1-2 minutes during the update process.")) {
+      updatePanel.mutate();
+    }
+  };
+
+  if (isLoading || !updateInfo) return null;
+
+  if (updateInfo.hasUpdate) {
+    return (
+      <div className="mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-800/60">
+        <div className="p-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-lg">
+          <div className="flex flex-col gap-2">
+            <div>
+              <p className="text-sm font-semibold text-amber-800 dark:text-amber-500">Update Available!</p>
+              <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">
+                Version {updateInfo.latestVersion} is now available (Current: {updateInfo.currentVersion}).
+              </p>
+            </div>
+            <button
+              onClick={handleUpdate}
+              disabled={updatePanel.isPending}
+              className="mt-1 flex items-center justify-center gap-2 w-full py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded transition-colors disabled:opacity-50"
+            >
+              {updatePanel.isPending ? <Spinner className="w-4 h-4 text-white" /> : <RefreshCw size={14} />}
+              {updatePanel.isPending ? 'Updating...' : 'Update Now'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-800/60">
+      <p className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+        <Shield size={14} /> You are on the latest version.
+      </p>
+    </div>
   );
 }

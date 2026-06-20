@@ -11,7 +11,7 @@ const execAsync = promisify(exec);
 export class SslService {
   private readonly logger = new Logger(SslService.name);
   private readonly certPath = '/etc/nginx/ssl/fullchain.pem';
-  private readonly nginxConfPath = '/app/nginx_host/nginx.conf';
+  private readonly nginxConfPath = '/app/nginx_host/nginx.conf.template';
   private readonly acmeShPath = '/app/acme.sh/acme.sh';
   private readonly domain = process.env.DOMAIN || 'localhost';
 
@@ -115,16 +115,21 @@ export class SslService {
     fs.writeFileSync(this.nginxConfPath, conf);
     
     try {
-      await this.reloadNginx();
+      await this.reloadNginx(true); // Must restart to trigger envsubst on the new template
       return { success: true, https: enableHttps };
     } catch (e) {
       throw new HttpException('Failed to reload Nginx after config change.', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
-  async reloadNginx() {
-    this.logger.log('Reloading Nginx proxy...');
-    await execAsync('docker exec hmpanel-nginx nginx -s reload');
+  async reloadNginx(restart: boolean = false) {
+    if (restart) {
+      this.logger.log('Restarting Nginx proxy to apply template changes...');
+      await execAsync('docker restart hmpanel-nginx');
+    } else {
+      this.logger.log('Reloading Nginx proxy...');
+      await execAsync('docker exec hmpanel-nginx nginx -s reload');
+    }
   }
 
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
