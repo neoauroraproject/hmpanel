@@ -204,77 +204,77 @@ install_docker_compose() {
 # ─────────────────────────────────────────────────────────────────
 collect_user_input() {
   echo ""
-  echo -e "  ${BOLD}Installation Mode${NC}"
-  echo -e "  ${BOLD}1${NC}) Fast Install (Recommended)"
-  echo -e "  ${BOLD}2${NC}) Advanced Install"
-  read -rp "  Select mode [1]: " INSTALL_MODE || true
-  [[ -z "$INSTALL_MODE" ]] && INSTALL_MODE=1
+  echo -e "  ${BOLD}How would you like to access HMPanel?${NC}"
+  echo -e "  ${BOLD}1${NC}) Domain"
+  echo -e "  ${BOLD}2${NC}) Server IP"
+  read -rp "  Select option [1]: " ACCESS_MODE || true
+  [[ -z "$ACCESS_MODE" ]] && ACCESS_MODE=1
+
+  if [[ "$ACCESS_MODE" == 2 ]]; then
+    DETECTED_IP=$(curl -s https://api.ipify.org 2>/dev/null || curl -s https://icanhazip.com 2>/dev/null || echo "")
+    if [[ -z "$DETECTED_IP" ]]; then
+      read -rp "  Could not detect public IP automatically. Please enter your Server IP: " DETECTED_IP
+    else
+      echo -e "  Detected IP: ${CYAN}${DETECTED_IP}${NC}"
+    fi
+    DOMAIN="$DETECTED_IP"
+    
+    echo ""
+    echo -e "  ${BOLD}Enable SSL for IP access?${NC} (Uses ZeroSSL for public IP)"
+    echo -e "  ${BOLD}1${NC}) Yes"
+    echo -e "  ${BOLD}2${NC}) No"
+    read -rp "  Select option [1]: " SSL_CHOICE_INPUT || true
+    [[ -z "$SSL_CHOICE_INPUT" ]] && SSL_CHOICE_INPUT=1
+    
+    if [[ "$SSL_CHOICE_INPUT" == 1 ]]; then
+      SSL_CHOICE=1 # ACME IP Cert
+    else
+      SSL_CHOICE=3 # Disabled
+    fi
+  else
+    echo ""
+    read -rp "  Enter domain name (e.g. panel.example.com): " DOMAIN || true
+    [[ -z "$DOMAIN" ]] && DOMAIN="localhost"
+    
+    echo ""
+    echo -e "  ${BOLD}Enable SSL?${NC}"
+    echo -e "  ${BOLD}1${NC}) Yes (Let's Encrypt/ZeroSSL)"
+    echo -e "  ${BOLD}2${NC}) No"
+    read -rp "  Select option [1]: " SSL_CHOICE_INPUT || true
+    [[ -z "$SSL_CHOICE_INPUT" ]] && SSL_CHOICE_INPUT=1
+    
+    if [[ "$SSL_CHOICE_INPUT" == 1 ]]; then
+      SSL_CHOICE=1 # ACME Domain Cert
+    else
+      SSL_CHOICE=3 # Disabled
+    fi
+  fi
 
   echo ""
-  if [[ "$INSTALL_MODE" == 1 ]]; then
-    info "Fast Install Selected"
-    read -rp "  Domain name (e.g. panel.yourdomain.com): " DOMAIN || true
-    [[ -z "$DOMAIN" ]] && DOMAIN="localhost"
-    
-    read -rp "  Admin username [admin]: " ADMIN_USERNAME || true
-    [[ -z "$ADMIN_USERNAME" ]] && ADMIN_USERNAME="admin"
-    
-    while true; do
-      read -rsp "  Admin password (min 8 chars): " ADMIN_PASSWORD || true
-      echo ""
-      if [[ -z "$ADMIN_PASSWORD" ]] || [[ ${#ADMIN_PASSWORD} -lt 8 ]]; then
-        warn "Password must be at least 8 characters"
-      else
-        break
-      fi
-    done
-
-    ADMIN_EMAIL=""
-    HTTP_PORT=80
-    HTTPS_PORT=443
-    SSL_CHOICE=1 # Attempt Let's Encrypt automatically afterwards
-  else
-    info "Advanced Install Selected"
-    read -rp "  Domain name (e.g. panel.yourdomain.com): " DOMAIN || true
-    [[ -z "$DOMAIN" ]] && DOMAIN="localhost"
-    
-    read -rp "  Admin username [admin]: " ADMIN_USERNAME || true
-    [[ -z "$ADMIN_USERNAME" ]] && ADMIN_USERNAME="admin"
-    
-    ADMIN_EMAIL="admin@localhost"
-    
-    while true; do
-      read -rsp "  Admin password (min 8 chars): " ADMIN_PASSWORD || true
-      echo ""
-      if [[ -z "$ADMIN_PASSWORD" ]] || [[ ${#ADMIN_PASSWORD} -lt 8 ]]; then
-        warn "Password must be at least 8 characters"
-      else
-        break
-      fi
-    done
-
-    read -rp "  HTTP port [80]: " HTTP_PORT || true
-    [[ -z "$HTTP_PORT" ]] && HTTP_PORT=80
-    
-    read -rp "  HTTPS port [443]: " HTTPS_PORT || true
-    [[ -z "$HTTPS_PORT" ]] && HTTPS_PORT=443
-
+  read -rp "  Admin username [admin]: " ADMIN_USERNAME || true
+  [[ -z "$ADMIN_USERNAME" ]] && ADMIN_USERNAME="admin"
+  
+  ADMIN_EMAIL="admin@${DOMAIN:-localhost}"
+  
+  while true; do
+    read -rsp "  Admin password (min 8 chars): " ADMIN_PASSWORD || true
     echo ""
-    echo -e "  SSL Configuration:"
-    echo -e "    ${BOLD}1${NC}) Let's Encrypt (automatic, recommended — requires public domain)"
-    echo -e "    ${BOLD}2${NC}) Self-signed certificate (for testing)"
-    echo -e "    ${BOLD}3${NC}) Skip SSL (HTTP only)"
-    read -rp "  SSL method [1]: " SSL_CHOICE || true
-    [[ -z "$SSL_CHOICE" ]] && SSL_CHOICE=1
-  fi
+    if [[ -z "$ADMIN_PASSWORD" ]] || [[ ${#ADMIN_PASSWORD} -lt 8 ]]; then
+      warn "Password must be at least 8 characters"
+    else
+      break
+    fi
+  done
+
+  HTTP_PORT=80
+  HTTPS_PORT=443
 
   echo ""
   echo -e "${BOLD}  Configuration Summary:${NC}"
   echo -e "  ┌─────────────────────────────────────────"
-  echo -e "  │  Domain:    ${CYAN}${DOMAIN}${NC}"
+  echo -e "  │  Access:    ${CYAN}${DOMAIN}${NC}"
   echo -e "  │  Username:  ${CYAN}${ADMIN_USERNAME}${NC}"
-  echo -e "  │  Email:     ${CYAN}${ADMIN_EMAIL:-None}${NC}"
-  echo -e "  │  HTTP Port: ${CYAN}${HTTP_PORT}${NC}"
+  echo -e "  │  Email:     ${CYAN}${ADMIN_EMAIL}${NC}"
   echo -e "  │  SSL:       ${CYAN}$(ssl_label $SSL_CHOICE)${NC}"
   echo -e "  └─────────────────────────────────────────"
   echo ""
@@ -286,7 +286,7 @@ collect_user_input() {
 
 ssl_label() {
   case "$1" in
-    1) echo "Let's Encrypt" ;;
+    1) echo "Enabled (ACME)" ;;
     2) echo "Self-signed" ;;
     3) echo "Disabled (HTTP only)" ;;
     *) echo "Unknown" ;;
@@ -322,6 +322,9 @@ step_1_configuration() {
     cp /tmp/hmpanel_install/.* "${INSTALL_DIR}/" 2>/dev/null || true
     rm -rf /tmp/hmpanel_install
   fi
+  
+  # Ensure panelapp user (1001) has access to needed directories
+  chown -R 1001:1001 "${INSTALL_DIR}/nginx" "${INSTALL_DIR}/uploads" "${INSTALL_DIR}/backups" "${INSTALL_DIR}/logs" 2>/dev/null || true
 }
 
 step_2_environment() {
@@ -520,82 +523,61 @@ step_8_ssl() {
   SSL_STATUS="disabled"
   
   if [[ "$SSL_CHOICE" == 1 ]]; then
-    ensure_package certbot certbot
+    ensure_package git git
+    ensure_package curl curl
+    ensure_package socat socat
 
-    while true; do
+    info "Installing acme.sh..."
+    if [[ ! -d "${INSTALL_DIR}/acme.sh" ]]; then
+      run_with_spinner "Cloning acme.sh" git clone https://github.com/acmesh-official/acme.sh.git /tmp/acme.sh
+      cd /tmp/acme.sh
+      ./acme.sh --install --home "${INSTALL_DIR}/acme.sh" --config-home "${INSTALL_DIR}/acme.sh/data" --accountemail "${ADMIN_EMAIL}" >/dev/null 2>&1
+      cd "$INSTALL_DIR"
+      rm -rf /tmp/acme.sh
+    fi
 
+    # Set default CA to ZeroSSL
+    "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" --set-default-ca --server zerossl >/dev/null 2>&1
 
-      info "Requesting Let's Encrypt certificate..."
+    info "Requesting ACME certificate for ${DOMAIN}..."
+    
+    # Stop Nginx temporarily to free port 80
+    docker stop hmpanel-nginx >/dev/null 2>&1 || true
+
+    local acme_success=false
+    if "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" --issue -d "$DOMAIN" --standalone; then
+      info "Installing certificate to nginx..."
+      "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" --install-cert -d "$DOMAIN" \
+        --fullchain-file "${SSL_DIR}/fullchain.pem" \
+        --key-file "${SSL_DIR}/privkey.pem" \
+        --reloadcmd "docker exec hmpanel-nginx nginx -s reload || true" >/dev/null 2>&1
       
-      # Stop Nginx temporarily to free port 80
-      docker stop hmpanel-nginx >/dev/null 2>&1 || true
-
-      local le_success=false
-      local certbot_exit=0
-      run_with_spinner "Running Certbot standalone" certbot certonly \
-          --standalone \
-          --non-interactive \
-          --agree-tos \
-          --register-unsafely-without-email \
-          -d "$DOMAIN" \
-          --http-01-port 80 || certbot_exit=$?
-      
-      if [[ $certbot_exit -eq 0 && -f "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" && -f "/etc/letsencrypt/live/${DOMAIN}/privkey.pem" ]]; then
-        cp "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" "${SSL_DIR}/fullchain.pem"
-        cp "/etc/letsencrypt/live/${DOMAIN}/privkey.pem" "${SSL_DIR}/privkey.pem"
-        chmod 600 "${SSL_DIR}/privkey.pem"
-        log "Certificate issued successfully"
-        SSL_STATUS="letsencrypt"
-        le_success=true
-      fi
-      
-      # Restart nginx
-      docker start hmpanel-nginx >/dev/null 2>&1 || true
-
-      if [[ "$le_success" == true ]]; then
-        break
-      fi
-
-      error "Let's Encrypt failed."
-      
-      if [[ "$INSTALL_MODE" == 2 ]]; then
-        echo -e "  ${BOLD}SSL Issuance Failed. Choose an option:${NC}"
-        echo -e "  1) Retry Let's Encrypt"
-        echo -e "  2) Use Self-Signed Certificate"
-        echo -e "  3) Switch to HTTP Only"
-        read -rp "  Choice [2]: " fb_choice || true
-        [[ -z "$fb_choice" ]] && fb_choice=2
+      chown -R 1001:1001 "${INSTALL_DIR}/nginx/ssl" "${INSTALL_DIR}/acme.sh" 2>/dev/null || true
         
-        if [[ "$fb_choice" == 1 ]]; then
-          continue
-        elif [[ "$fb_choice" == 3 ]]; then
-          SSL_CHOICE=3
-          sed -i 's/listen 443 ssl http2;/# SSL disabled/' "${INSTALL_DIR}/nginx/nginx.conf" 2>/dev/null || true
-          docker exec hmpanel-nginx nginx -s reload >/dev/null 2>&1 || true
-          SSL_STATUS="disabled"
-          break
-        else
-          SSL_CHOICE=2
-          SSL_STATUS="self-signed"
-          break
-        fi
-      else
-        warn "SSL failed but installation will continue with self-signed certificate."
-        SSL_CHOICE=2
-        SSL_STATUS="self-signed"
-        break
-      fi
-    done
+      log "Certificate issued successfully via acme.sh"
+      SSL_STATUS="acme"
+      acme_success=true
+    else
+      error "ACME SSL failed."
+      warn "Falling back to HTTP only..."
+      SSL_CHOICE=3
+      sed -i 's/listen 443 ssl http2;/# SSL disabled/' "${INSTALL_DIR}/nginx/nginx.conf" 2>/dev/null || true
+      SSL_STATUS="disabled"
+    fi
+    
+    # Restart nginx
+    docker start hmpanel-nginx >/dev/null 2>&1 || true
   fi
 
   if [[ "$SSL_CHOICE" == 2 ]]; then
-    # We already generated a dummy self-signed cert in step 2.
     log "Using self-signed certificate"
     SSL_STATUS="self-signed"
   fi
 
   if [[ "$SSL_CHOICE" == 3 ]]; then
     log "SSL disabled (HTTP only)"
+    sed -i 's/listen 443 ssl http2;/# SSL disabled/' "${INSTALL_DIR}/nginx/nginx.conf" 2>/dev/null || true
+    docker exec hmpanel-nginx nginx -s reload >/dev/null 2>&1 || true
     SSL_STATUS="disabled"
   fi
 }
@@ -668,25 +650,22 @@ print_success() {
   echo -e "  Version:      ${CYAN}1.0.0${NC}"
   echo -e "  Edition:      ${CYAN}Community${NC}"
   
-  if [[ "$SSL_STATUS" == "letsencrypt" || "$SSL_STATUS" == "self-signed" ]]; then
+  if [[ "$SSL_STATUS" == "acme" || "$SSL_STATUS" == "self-signed" ]]; then
     local https_suffix=""
     if [[ "$HTTPS_PORT" != "443" ]]; then
       https_suffix=":${HTTPS_PORT}"
     fi
     echo -e "  URL:          ${CYAN}https://${DOMAIN}${https_suffix}${NC}"
   else
-    local SERVER_IP
-    SERVER_IP=$(curl -s https://api.ipify.org 2>/dev/null || echo "SERVER_IP")
     local http_suffix=""
     if [[ "$HTTP_PORT" != "80" ]]; then
       http_suffix=":${HTTP_PORT}"
     fi
-    echo -e "  URL:          ${CYAN}http://${SERVER_IP}${http_suffix}${NC}"
     echo -e "  URL:          ${CYAN}http://${DOMAIN}${http_suffix}${NC}"
   fi
   
   case "${SSL_STATUS:-disabled}" in
-    letsencrypt) echo -e "  SSL:          ${GREEN}Active (Let's Encrypt)${NC}" ;;
+    acme)        echo -e "  SSL:          ${GREEN}Active (ACME)${NC}" ;;
     self-signed) echo -e "  SSL:          ${YELLOW}Active (Self-Signed)${NC}" ;;
     disabled)    echo -e "  SSL:          ${RED}Not Configured${NC}" ;;
   esac

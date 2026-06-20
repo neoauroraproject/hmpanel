@@ -178,61 +178,47 @@ cmd_logs() {
   esac
 }
 
-ssl_request_le() {
-  echo -e "${BOLD}--- Request Let's Encrypt Certificate ---${NC}\n"
+ssl_request_acme() {
+  echo -e "${BOLD}--- Request ACME Certificate ---${NC}\n"
   if [[ -f "${INSTALL_DIR}/.env" ]]; then
     source "${INSTALL_DIR}/.env"
   fi
   
   if [[ -z "${DOMAIN:-}" || "$DOMAIN" == "localhost" ]]; then
-    echo -e "${RED}✘ Invalid domain in .env. Let's Encrypt requires a public domain.${NC}"
+    echo -e "${RED}✘ Invalid domain/IP in .env.${NC}"
     pause
     return
   fi
   
-  echo -e "Attempting to issue Let's Encrypt certificate for ${CYAN}${DOMAIN}${NC}..."
+  echo -e "Attempting to issue ACME certificate for ${CYAN}${DOMAIN}${NC}..."
   
-  # Ensure certbot is installed
-  if ! command -v certbot &>/dev/null; then
-    echo "Installing certbot..."
-    apt-get update -qq >/dev/null 2>&1 && apt-get install -y -qq certbot >/dev/null 2>&1 || true
+  if [[ ! -f "${INSTALL_DIR}/acme.sh/acme.sh" ]]; then
+    echo -e "${RED}✘ acme.sh not found. Please run installer again or install acme.sh manually.${NC}"
+    pause
+    return
   fi
   
   # Temporarily stop nginx to free port 80
   docker stop hmpanel-nginx >/dev/null 2>&1 || true
   
-  local tmp_out
-  tmp_out=$(mktemp)
-  
-  if certbot certonly \
-      --standalone \
-      --non-interactive \
-      --agree-tos \
-      --register-unsafely-without-email \
-      -d "$DOMAIN" \
-      --http-01-port 80 >"$tmp_out" 2>&1; then
+  "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" --set-default-ca --server zerossl >/dev/null 2>&1
+
+  if "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" --issue -d "$DOMAIN" --standalone; then
+    "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" --install-cert -d "$DOMAIN" \
+      --fullchain-file "${INSTALL_DIR}/nginx/ssl/fullchain.pem" \
+      --key-file "${INSTALL_DIR}/nginx/ssl/privkey.pem" \
+      --reloadcmd "docker exec hmpanel-nginx nginx -s reload || true" >/dev/null 2>&1
+      
+    # Enable SSL in nginx if it was disabled
+    sed -i 's/# SSL disabled/listen 443 ssl http2;/' "${INSTALL_DIR}/nginx/nginx.conf" 2>/dev/null || true
     
-    if [[ -f "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" && -f "/etc/letsencrypt/live/${DOMAIN}/privkey.pem" ]]; then
-      cp "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" "${INSTALL_DIR}/nginx/ssl/fullchain.pem"
-      cp "/etc/letsencrypt/live/${DOMAIN}/privkey.pem" "${INSTALL_DIR}/nginx/ssl/privkey.pem"
-      chmod 600 "${INSTALL_DIR}/nginx/ssl/privkey.pem"
-      
-      # Enable SSL in nginx if it was disabled
-      sed -i 's/# SSL disabled/listen 443 ssl http2;/' "${INSTALL_DIR}/nginx/nginx.conf" 2>/dev/null || true
-      
-      echo -e "${GREEN}✔ Certificate issued successfully!${NC}"
-    fi
+    echo -e "${GREEN}✔ Certificate issued successfully!${NC}"
   else
-    echo -e "${RED}✘ Let's Encrypt failed.${NC}"
-    echo -e "Reason:"
-    cat "$tmp_out"
+    echo -e "${RED}✘ ACME request failed.${NC}"
   fi
-  rm -f "$tmp_out"
   
   echo "Restarting Nginx..."
   docker start hmpanel-nginx >/dev/null 2>&1 || true
-  # Reload to apply new certs
-  docker exec hmpanel-nginx nginx -s reload >/dev/null 2>&1 || true
   pause
 }
 
@@ -312,13 +298,13 @@ ssl_status() {
 }
 
 ssl_change_domain() {
-  echo -e "${BOLD}--- Change Domain ---${NC}\n"
+  echo -e "${BOLD}--- Change Domain / IP ---${NC}\n"
   if [[ -f "${INSTALL_DIR}/.env" ]]; then
     source "${INSTALL_DIR}/.env"
   fi
   
-  echo -e "Current Domain: ${CYAN}${DOMAIN:-None}${NC}"
-  read -rp "Enter new domain (e.g. panel.yourdomain.com): " new_domain
+  echo -e "Current Domain/IP: ${CYAN}${DOMAIN:-None}${NC}"
+  read -rp "Enter new domain or IP: " new_domain
   if [[ -n "$new_domain" ]]; then
     if grep -q "^DOMAIN=" "${INSTALL_DIR}/.env"; then
       sed -i "s/^DOMAIN=.*/DOMAIN=$new_domain/" "${INSTALL_DIR}/.env"
@@ -326,18 +312,18 @@ ssl_change_domain() {
       echo "DOMAIN=$new_domain" >> "${INSTALL_DIR}/.env"
     fi
     export DOMAIN="$new_domain"
-    echo -e "${GREEN}✔ Domain updated in .env to $new_domain${NC}"
+    echo -e "${GREEN}✔ Domain/IP updated in .env to $new_domain${NC}"
     
-    read -rp "Do you want to request a new Let's Encrypt SSL for this domain now? [y/N]: " req_ssl
+    read -rp "Do you want to request a new ACME SSL certificate for this domain/IP now? [y/N]: " req_ssl
     if [[ "${req_ssl,,}" == "y" ]]; then
-      ssl_request_le
+      ssl_request_acme
     else
-      echo "Restarting containers to apply domain changes..."
+      echo "Restarting containers to apply changes..."
       docker compose -f "${INSTALL_DIR}/docker-compose.yml" up -d
       pause
     fi
   else
-    echo "Domain change cancelled."
+    echo "Change cancelled."
     pause
   fi
 }
@@ -347,8 +333,8 @@ cmd_ssl() {
     clear
     print_header
     echo -e "${BOLD}--- SSL & Domain Management ---${NC}\n"
-    echo "  1) Change Domain Name"
-    echo "  2) Request Let's Encrypt Certificate"
+    echo "  1) Change Domain/IP"
+    echo "  2) Request ACME Certificate (ZeroSSL/Let's Encrypt)"
     echo "  3) Retry Certificate Request"
     echo "  4) Install Existing Certificate"
     echo "  5) Switch To HTTP Mode"
@@ -360,7 +346,7 @@ cmd_ssl() {
     
     case $choice in
       1) ssl_change_domain ;;
-      2|3) ssl_request_le ;;
+      2|3) ssl_request_acme ;;
       4) ssl_install_manual ;;
       5) ssl_disable ;;
       6) ssl_status ;;
@@ -388,6 +374,20 @@ cmd_uninstall() {
   fi
 }
 
+cmd_cleanup() {
+  echo -e "${BOLD}--- System Cleanup ---${NC}\n"
+  echo "This will remove all unused Docker images to free up disk space."
+  read -rp "Do you want to proceed? [y/N]: " confirm
+  if [[ "${confirm,,}" == "y" ]]; then
+    echo "Running cleanup..."
+    docker image prune -a -f
+    echo -e "${GREEN}✔ Cleanup completed.${NC}"
+  else
+    echo "Cleanup cancelled."
+  fi
+  pause
+}
+
 # ─────────────────────────────────────────────────────────────────
 # Main Menu Loop
 # ─────────────────────────────────────────────────────────────────
@@ -402,7 +402,8 @@ while true; do
   echo -e "  6. Restart Services"
   echo -e "  7. View Logs"
   echo -e "  8. SSL Management"
-  echo -e "  9. Uninstall HMPanel"
+  echo -e "  9. System Cleanup"
+  echo -e "  10. Uninstall HMPanel"
   echo -e "  0. Exit"
   echo ""
   
@@ -418,7 +419,8 @@ while true; do
     6) cmd_restart ;;
     7) cmd_logs ;;
     8) cmd_ssl ;;
-    9) cmd_uninstall ;;
+    9) cmd_cleanup ;;
+    10) cmd_uninstall ;;
     0) echo "Goodbye!"; exit 0 ;;
     *) echo -e "  ${RED}Invalid option!${NC}"; sleep 1 ;;
   esac

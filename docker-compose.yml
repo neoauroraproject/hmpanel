@@ -36,6 +36,11 @@ services:
       - uploads:/app/uploads
       - backups:/app/backups
       - logs:/app/logs
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./nginx/ssl:/etc/nginx/ssl
+      - ./acme.sh:/app/acme.sh
+      - ./.env:/app/.env
+      - ./nginx:/app/nginx_host
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:4000/health"]
       interval: 30s
@@ -64,8 +69,6 @@ services:
     volumes:
       - ./nginx/nginx.conf.template:/etc/nginx/nginx.conf.template:ro
       - ./nginx/ssl:/etc/nginx/ssl:ro
-      - certbot-www:/var/www/certbot:ro
-      - certbot-certs:/etc/letsencrypt:ro
     command: /bin/sh -c "envsubst '$${APP_PORT} $${BACKEND_PORT}' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && exec nginx -g 'daemon off;'"
     depends_on:
       - panel-app
@@ -124,18 +127,6 @@ services:
         max-size: "5m"
         max-file: "3"
 
-  # ── Certbot (SSL) ────────────────────────────────────────────────
-  certbot:
-    image: certbot/certbot:latest
-    container_name: hmpanel-certbot
-    profiles: ["ssl"]
-    volumes:
-      - certbot-certs:/etc/letsencrypt
-      - certbot-www:/var/www/certbot
-    entrypoint: /bin/sh -c "trap exit TERM; while :; do certbot renew --quiet; sleep 12h & wait $${!}; done"
-    networks:
-      - panel-network
-
 # ─────────────────────────────────────────────────────────────────
 # Named Volumes — persistent across restarts
 # ─────────────────────────────────────────────────────────────────
@@ -150,10 +141,6 @@ volumes:
     name: hmpanel_backups
   logs:
     name: hmpanel_logs
-  certbot-certs:
-    name: hmpanel_certbot_certs
-  certbot-www:
-    name: hmpanel_certbot_www
 
 # ─────────────────────────────────────────────────────────────────
 # Networks

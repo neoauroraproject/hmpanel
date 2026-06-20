@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Save, Settings, Activity, ArchiveX, ChevronRight, Info, ExternalLink, Database, Download, Upload } from "lucide-react";
+import { Save, Settings, Activity, ArchiveX, ChevronRight, Info, ExternalLink, Database, Download, Upload, Shield, RefreshCw } from "lucide-react";
 import { api } from "@/lib/api";
 import { useRouter } from "next/navigation";
 import { ErrorBox, PageHeader, Spinner, Card } from "@/components/ui";
@@ -95,6 +95,7 @@ export default function GlobalSettingsPage() {
           </Card>
 
           <BackupRestoreCard />
+          <SslManagementCard />
         </div>
 
         {/* Quick Links and About */}
@@ -109,7 +110,7 @@ export default function GlobalSettingsPage() {
             <div className="space-y-3 text-sm">
                 <div className="flex justify-between border-b border-zinc-200 dark:border-zinc-800/60 pb-2">
                   <span className="text-zinc-500">Panel Version</span>
-                  <span className="font-medium text-zinc-800 dark:text-zinc-200">v{process.env.NEXT_PUBLIC_APP_VERSION || "1.0.17"}</span>
+                  <span className="font-medium text-zinc-800 dark:text-zinc-200">v{process.env.NEXT_PUBLIC_APP_VERSION || "1.0.18"}</span>
                 </div>
                 <div className="flex justify-between border-b border-zinc-200 dark:border-zinc-800/60 pb-2">
                   <span className="text-zinc-500">Edition</span>
@@ -117,7 +118,7 @@ export default function GlobalSettingsPage() {
                 </div>
                 <div className="flex justify-between border-b border-zinc-200 dark:border-zinc-800/60 pb-2">
                   <span className="text-zinc-500">Build</span>
-                  <span className="font-mono text-xs text-zinc-600 dark:text-zinc-400 mt-0.5">v{process.env.NEXT_PUBLIC_APP_VERSION || "1.0.17"}</span>
+                  <span className="font-mono text-xs text-zinc-600 dark:text-zinc-400 mt-0.5">v{process.env.NEXT_PUBLIC_APP_VERSION || "1.0.18"}</span>
                 </div>
               <div className="pt-2 space-y-2">
                 <a href="https://github.com/neoauroraproject/hmpanel" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-zinc-600 dark:text-zinc-400 hover:text-blue-500 transition-colors">
@@ -307,6 +308,107 @@ function BackupRestoreCard() {
           </motion.div>
         </div>
       )}
+    </Card>
+  );
+}
+
+function SslManagementCard() {
+  const toast = require("@/components/toast").useToast((s: any) => s.push);
+  const qc = useQueryClient();
+  
+  const { data: sslInfo, isLoading, refetch } = useQuery({
+    queryKey: ["sslStatus"],
+    queryFn: async () => (await api.get<any>("/settings/ssl")).data,
+  });
+
+  const renewSsl = useMutation({
+    mutationFn: async () => (await api.post("/settings/ssl/renew")).data,
+    onSuccess: () => {
+      toast("SSL certificate renewed successfully");
+      refetch();
+    },
+    onError: (e: any) => toast(e.response?.data?.message || "Failed to renew certificate", "error"),
+  });
+
+  const switchMode = useMutation({
+    mutationFn: async (enableHttps: boolean) => (await api.post("/settings/ssl/switch", { enableHttps })).data,
+    onSuccess: (data) => {
+      toast(`Successfully switched to ${data.https ? 'HTTPS' : 'HTTP'}. Reloading...`);
+      setTimeout(() => window.location.reload(), 2000);
+    },
+    onError: (e: any) => toast(e.response?.data?.message || "Failed to switch mode", "error"),
+  });
+
+  if (isLoading) return <Card className="p-6 flex justify-center"><Spinner /></Card>;
+
+  return (
+    <Card className="p-6">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="p-2 rounded-lg bg-indigo-500/10 text-indigo-500">
+          <Shield size={20} />
+        </div>
+        <div>
+          <h3 className="text-lg font-bold text-zinc-800 dark:text-zinc-100">SSL Management</h3>
+          <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">Manage platform access mode and certificates.</p>
+        </div>
+      </div>
+
+      <div className="bg-zinc-50 dark:bg-zinc-900/50 rounded-xl p-4 mb-6 space-y-3 text-sm">
+        <div className="flex justify-between items-center pb-2 border-b border-zinc-200 dark:border-zinc-800/50">
+          <span className="text-zinc-500">Current Access Mode</span>
+          <span className="font-semibold text-zinc-800 dark:text-zinc-200">{sslInfo?.mode || 'Unknown'}</span>
+        </div>
+        <div className="flex justify-between items-center pb-2 border-b border-zinc-200 dark:border-zinc-800/50">
+          <span className="text-zinc-500">Certificate Status</span>
+          <span className={`font-semibold ${sslInfo?.certificate?.exists ? 'text-emerald-500' : 'text-red-500'}`}>
+            {sslInfo?.certificate?.exists ? 'Found' : 'Not Found'}
+          </span>
+        </div>
+        {sslInfo?.certificate?.exists && (
+          <>
+            <div className="flex justify-between items-center pb-2 border-b border-zinc-200 dark:border-zinc-800/50">
+              <span className="text-zinc-500">Issuer</span>
+              <span className="font-semibold text-zinc-800 dark:text-zinc-200">{sslInfo.certificate.issuer || 'Unknown'}</span>
+            </div>
+            <div className="flex justify-between items-center pb-2 border-b border-zinc-200 dark:border-zinc-800/50">
+              <span className="text-zinc-500">Expiration Date</span>
+              <span className="font-semibold text-zinc-800 dark:text-zinc-200">
+                {sslInfo.certificate.expiration ? new Date(sslInfo.certificate.expiration).toLocaleString() : 'Unknown'}
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-zinc-500">Days Remaining</span>
+              <span className={`font-semibold ${sslInfo.certificate.daysRemaining > 15 ? 'text-emerald-500' : 'text-amber-500'}`}>
+                {sslInfo.certificate.daysRemaining} days
+              </span>
+            </div>
+          </>
+        )}
+      </div>
+
+      <div className="flex flex-col sm:flex-row gap-3">
+        <button
+          onClick={() => renewSsl.mutate()}
+          disabled={renewSsl.isPending}
+          className="flex-1 flex items-center justify-center gap-2 rounded-lg border border-indigo-500/20 bg-indigo-500/10 px-4 py-2.5 text-sm font-medium text-indigo-600 hover:bg-indigo-500/20 disabled:opacity-50 transition-colors"
+        >
+          {renewSsl.isPending ? <Spinner className="w-4 h-4 text-indigo-500" /> : <RefreshCw size={16} />}
+          Renew Now
+        </button>
+        <button
+          onClick={() => refetch()}
+          className="flex-1 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-4 py-2.5 text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors"
+        >
+          Recheck Status
+        </button>
+        <button
+          onClick={() => switchMode.mutate(!sslInfo?.isHttpsEnabled)}
+          disabled={switchMode.isPending}
+          className="flex-1 rounded-lg bg-zinc-900 dark:bg-white px-4 py-2.5 text-sm font-medium text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-100 disabled:opacity-50 transition-colors"
+        >
+          Switch to {sslInfo?.isHttpsEnabled ? 'HTTP' : 'HTTPS'}
+        </button>
+      </div>
     </Card>
   );
 }
