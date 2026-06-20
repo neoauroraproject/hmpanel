@@ -15,6 +15,29 @@ export class SslService {
   private readonly acmeShPath = '/app/acme.sh/acme.sh';
   private readonly domain = process.env.DOMAIN || 'localhost';
 
+  private getPeerCertificate(hostname: string): Promise<any> {
+    return new Promise((resolve, reject) => {
+      const https = require('https');
+      const req = https.request({
+        hostname,
+        port: 443,
+        method: 'HEAD',
+        rejectUnauthorized: false,
+        timeout: 3000
+      }, (res: any) => {
+        const cert = res.socket.getPeerCertificate();
+        if (cert && Object.keys(cert).length > 0) {
+          resolve(cert);
+        } else {
+          reject(new Error('No certificate presented'));
+        }
+      });
+      req.on('error', reject);
+      req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
+      req.end();
+    });
+  }
+
   async getStatus() {
     let exists = false;
     let expiration = null;
@@ -89,11 +112,41 @@ export class SslService {
       }
 
     } catch (e) {
-      this.logger.error('Failed to inspect hmpanel-nginx. Docker socket might be unavailable or container is down.', e.message);
-      // Fallback: Check if we are running in reverse proxy mode or something similar
-      const isAcmeInstalled = fs.existsSync(this.acmeShPath);
-      provider = isAcmeInstalled ? 'ACME.sh (Unverified)' : 'Unknown / Diagnostic Mode';
-      // Do not mock exists or expiration if we can't verify
+      this.logger.warn('Docker socket access failed. Falling back to live HTTPS probe on nginx container...');
+      
+      // Fallback: Live HTTPS probe to our own Nginx container
+      try {
+        const cert = await this.getPeerCertificate('nginx');
+        exists = true;
+        isHttpsEnabled = true;
+        certPathInUse = 'Live Probe (Docker socket unavailable)';
+        
+        const expDate = new Date(cert.valid_to);
+        expiration = expDate.toISOString();
+        
+        const now = new Date();
+        const diffTime = Math.abs(expDate.getTime() - now.getTime());
+        daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        if (expDate.getTime() < now.getTime()) {
+          daysRemaining = -daysRemaining;
+        }
+
+        // Parse issuer
+        const certIssuer = cert.issuer?.CN || cert.issuer?.O || 'Unknown Issuer';
+        issuer = certIssuer;
+
+        if (certIssuer.toLowerCase().includes('let\'s encrypt')) {
+          provider = fs.existsSync(this.acmeShPath) ? 'ACME.sh' : 'Certbot';
+        } else if (certIssuer.toLowerCase().includes('zerossl')) {
+          provider = 'ACME.sh (ZeroSSL)';
+        } else {
+          provider = 'Custom Certificate';
+        }
+      } catch (probeError) {
+        this.logger.error('Live HTTPS probe failed. SSL is likely disabled or misconfigured.', probeError.message);
+        const isAcmeInstalled = fs.existsSync(this.acmeShPath);
+        provider = isAcmeInstalled ? 'ACME.sh (Unverified)' : 'Unknown / Diagnostic Mode';
+      }
     }
 
     // Determine mode
