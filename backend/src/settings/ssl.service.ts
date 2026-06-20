@@ -38,6 +38,16 @@ export class SslService {
     });
   }
 
+  private lastSuccessfulState: any = null;
+  private lastDiagnostics: any = {
+    lastCheckTime: null,
+    lastProbeError: null,
+    domainProbed: null,
+    tlsHandshakeStatus: 'Pending',
+    certificateExpiration: null,
+    certificateIssuer: null
+  };
+
   async getStatus() {
     let exists = false;
     let expiration = null;
@@ -46,6 +56,10 @@ export class SslService {
     let provider = 'Unknown';
     let certPathInUse = 'Not Found';
     let isHttpsEnabled = false;
+    let currentError = null;
+
+    this.lastDiagnostics.domainProbed = this.domain;
+    this.lastDiagnostics.lastCheckTime = new Date().toISOString();
 
     // We will attempt to run `docker exec hmpanel-nginx` to inspect the actual live container state.
     // This is required because the certs and configurations are not mapped to the panel container.
@@ -79,7 +93,11 @@ export class SslService {
           }
 
           issuer = issuerOut.replace('issuer=', '').trim();
+          this.lastDiagnostics.certificateExpiration = expiration;
+          this.lastDiagnostics.certificateIssuer = issuer;
+          this.lastDiagnostics.tlsHandshakeStatus = 'Local File System Checked';
         } catch (certError) {
+          currentError = certError.message;
           this.logger.error('Failed to parse certificate within nginx container', certError.message);
         }
       }
@@ -123,9 +141,12 @@ export class SslService {
         try {
           cert = await this.getPeerCertificate(host);
           usedHostname = host;
+          this.lastDiagnostics.tlsHandshakeStatus = `Success via ${host}`;
+          this.lastDiagnostics.lastProbeError = null;
           break; // Stop at first successful probe
         } catch (err) {
-          // Continue to next host
+          currentError = err.message;
+          this.lastDiagnostics.lastProbeError = `Failed on ${host}: ${err.message}`;
         }
       }
 
@@ -147,9 +168,13 @@ export class SslService {
         const certIssuer = cert.issuer?.CN || cert.issuer?.O || 'Unknown Issuer';
         issuer = certIssuer;
         provider = 'Unknown';
+
+        this.lastDiagnostics.certificateExpiration = expiration;
+        this.lastDiagnostics.certificateIssuer = issuer;
       } else {
         this.logger.error('All live HTTPS probes failed. SSL is likely disabled, misconfigured, or inaccessible from container.');
         provider = 'Unknown / Diagnostic Mode';
+        this.lastDiagnostics.tlsHandshakeStatus = 'Failed all probes';
       }
     }
 
@@ -161,7 +186,19 @@ export class SslService {
     else if (!isIp && isHttpsEnabled) mode = 'Domain HTTPS';
     else mode = 'Domain HTTP';
 
-    return {
+    let warning = null;
+
+    // Caching Logic: If current check failed but we have a cached valid state, fallback to cache
+    if (!exists && this.lastSuccessfulState && this.lastSuccessfulState.certificate?.exists) {
+      warning = 'Live detection failed. Showing last known valid configuration. Error: ' + (currentError || 'Timeout');
+      return {
+        ...this.lastSuccessfulState,
+        warning,
+        diagnostics: this.lastDiagnostics
+      };
+    }
+
+    const result = {
       mode,
       domain: this.domain,
       isHttpsEnabled,
@@ -170,8 +207,16 @@ export class SslService {
       certificate: {
         exists,
         ...(exists && expiration ? { expiration, daysRemaining, issuer } : {})
-      }
+      },
+      warning,
+      diagnostics: this.lastDiagnostics
     };
+
+    if (exists) {
+      this.lastSuccessfulState = result;
+    }
+
+    return result;
   }
 
   async renew() {

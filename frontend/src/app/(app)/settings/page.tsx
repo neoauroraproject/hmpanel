@@ -398,9 +398,16 @@ function SslManagementCard() {
             {sslInfo?.certificate?.exists ? 'Valid / Active' : 'Not Found'}
           </span>
         </div>
+        {sslInfo?.warning && (
+          <div className="flex items-start gap-2 mt-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400">
+            <Info size={16} className="mt-0.5 shrink-0" />
+            <span className="text-xs leading-relaxed">{sslInfo.warning}</span>
+          </div>
+        )}
+
         {sslInfo?.certificate?.exists && (
           <>
-            <div className="flex justify-between items-center pb-2 border-b border-zinc-200 dark:border-zinc-800/50">
+            <div className="flex justify-between items-center pb-2 border-b border-zinc-200 dark:border-zinc-800/50 mt-4">
               <span className="text-zinc-500">Certificate Path</span>
               <span className="font-mono text-xs text-zinc-600 dark:text-zinc-400 max-w-[200px] truncate" title={sslInfo.certPath}>
                 {sslInfo.certPath || 'Unknown'}
@@ -424,6 +431,33 @@ function SslManagementCard() {
             </div>
           </>
         )}
+
+        {sslInfo?.diagnostics && (
+          <div className="mt-6 p-4 rounded-lg bg-zinc-100 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700/50">
+            <h4 className="text-xs font-bold text-zinc-600 dark:text-zinc-400 mb-3 uppercase tracking-wider">Detection Diagnostics</h4>
+            <div className="space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-zinc-500">Last Check</span>
+                <span className="text-zinc-700 dark:text-zinc-300">{sslInfo.diagnostics.lastCheckTime ? new Date(sslInfo.diagnostics.lastCheckTime).toLocaleTimeString() : 'N/A'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-zinc-500">Probed Domain</span>
+                <span className="font-mono text-zinc-700 dark:text-zinc-300">{sslInfo.diagnostics.domainProbed || 'N/A'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-zinc-500">TLS Handshake</span>
+                <span className="text-zinc-700 dark:text-zinc-300">{sslInfo.diagnostics.tlsHandshakeStatus || 'Unknown'}</span>
+              </div>
+              {sslInfo.diagnostics.lastProbeError && (
+                <div className="flex justify-between">
+                  <span className="text-zinc-500">Last Error</span>
+                  <span className="text-red-500 max-w-[200px] truncate" title={sslInfo.diagnostics.lastProbeError}>{sslInfo.diagnostics.lastProbeError}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
       </div>
 
       <div className="flex flex-col sm:flex-row gap-3">
