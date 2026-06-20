@@ -59,7 +59,15 @@ cmd_status() {
     source "${INSTALL_DIR}/.env"
   fi
 
-  echo -e "  Version:       ${CYAN}1.0.0${NC}"
+  local app_version="Unknown"
+  if docker inspect hmpanel-panel >/dev/null 2>&1; then
+    # Try to grab the exact tag or version if possible, fallback to checking image
+    local image_name
+    image_name=$(docker inspect -f '{{.Config.Image}}' hmpanel-panel 2>/dev/null)
+    app_version="${image_name##*:}"
+  fi
+
+  echo -e "  Version:       ${CYAN}${app_version}${NC}"
   echo -e "  Edition:       ${CYAN}Community Edition${NC}"
   echo -e "  Domain:        ${CYAN}${DOMAIN:-Unknown}${NC}"
   echo ""

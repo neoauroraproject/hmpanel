@@ -62,6 +62,14 @@ main() {
     info "Not a git repository, skipping pull phase"
   fi
 
+  # Update CLI manager if present
+  if [[ -f "${INSTALL_DIR}/cli.sh" ]]; then
+    info "Updating CLI manager..."
+    cp "${INSTALL_DIR}/cli.sh" /usr/local/bin/hmpanel
+    chmod +x /usr/local/bin/hmpanel
+    ln -sf /usr/local/bin/hmpanel /usr/local/bin/hm
+  fi
+
   # Phase 5: Rollback Safety
   step "[4/7] Rollback Safety: Tagging current image as rollback baseline"
   if docker image inspect ghcr.io/neoauroraproject/hmpanel:latest &>/dev/null; then
