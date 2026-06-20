@@ -135,17 +135,13 @@ export class SslService {
         const certIssuer = cert.issuer?.CN || cert.issuer?.O || 'Unknown Issuer';
         issuer = certIssuer;
 
-        if (certIssuer.toLowerCase().includes('let\'s encrypt')) {
-          provider = fs.existsSync(this.acmeShPath) ? 'ACME.sh' : 'Certbot';
-        } else if (certIssuer.toLowerCase().includes('zerossl')) {
-          provider = 'ACME.sh (ZeroSSL)';
-        } else {
-          provider = 'Custom Certificate';
-        }
+        // We cannot reliably determine the installation method (Provider) just from the issuer.
+        // Therefore, we set provider to Unknown and rely on the issuer to show the CA.
+        provider = 'Unknown';
+
       } catch (probeError) {
         this.logger.error('Live HTTPS probe failed. SSL is likely disabled or misconfigured.', probeError.message);
-        const isAcmeInstalled = fs.existsSync(this.acmeShPath);
-        provider = isAcmeInstalled ? 'ACME.sh (Unverified)' : 'Unknown / Diagnostic Mode';
+        provider = 'Unknown / Diagnostic Mode';
       }
     }
 
