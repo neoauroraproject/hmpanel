@@ -1164,9 +1164,13 @@ export class PanelsService implements OnModuleInit {
           if (!inbound.settings.clients) return;
           
           const clientIndex = inbound.settings.clients.findIndex((c: any) => c.id === uuid);
-          if (clientIndex === -1) throw new Error(`Client with UUID ${uuid} not found in inbound`);
-          
-          inbound.settings.clients[clientIndex] = { ...inbound.settings.clients[clientIndex], ...clientPayload };
+          if (clientIndex === -1) {
+            // Client not found in inbound (probably deleted manually).
+            // Instead of throwing an error, we gracefully add it back.
+            inbound.settings.clients.push(clientPayload);
+          } else {
+            inbound.settings.clients[clientIndex] = { ...inbound.settings.clients[clientIndex], ...clientPayload };
+          }
         });
       }
       return response.data;
