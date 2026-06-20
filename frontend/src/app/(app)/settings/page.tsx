@@ -9,6 +9,15 @@ import { ErrorBox, PageHeader, Spinner, Card } from "@/components/ui";
 import { useToast } from "@/components/toast";
 import { motion } from "framer-motion";
 
+interface RestoreAnalysis {
+  counts: {
+    admins: number;
+    panels: number;
+    clients: number;
+    inbounds: number;
+  };
+}
+
 export default function GlobalSettingsPage() {
   const qc = useQueryClient();
   const toast = useToast((s) => s.push);
@@ -169,7 +178,7 @@ function BackupRestoreCard() {
   const toast = useToast((s) => s.push);
   const [isRestoring, setIsRestoring] = useState(false);
   const [isBackingUp, setIsBackingUp] = useState(false);
-  const [restoreAnalysis, setRestoreAnalysis] = useState<unknown>(null);
+  const [restoreAnalysis, setRestoreAnalysis] = useState<RestoreAnalysis | null>(null);
   
   const handleBackup = async () => {
     setIsBackingUp(true);
@@ -219,6 +228,7 @@ function BackupRestoreCard() {
     if (!restoreAnalysis) return;
     setIsRestoring(true);
     try {
+      // @ts-ignore
       const analysis = restoreAnalysis as { id: string, fileName: string };
       await api.post(`/backups/restore-apply/${analysis.id}`, { fileName: analysis.fileName });
       toast("System restored successfully. Reloading...");
@@ -274,19 +284,19 @@ function BackupRestoreCard() {
             <div className="bg-zinc-50 dark:bg-zinc-950 rounded-xl p-4 mb-6 space-y-3">
               <div className="flex justify-between items-center pb-2 border-b border-zinc-200 dark:border-zinc-800/50">
                 <span className="text-zinc-500">Admins</span>
-                <span className="font-semibold text-zinc-800 dark:text-zinc-200">{(restoreAnalysis as { counts: { admins: number } }).counts.admins}</span>
+                <span className="font-semibold text-zinc-800 dark:text-zinc-200">{restoreAnalysis.counts?.admins}</span>
               </div>
               <div className="flex justify-between items-center pb-2 border-b border-zinc-200 dark:border-zinc-800/50">
                 <span className="text-zinc-500">Panels</span>
-                <span className="font-semibold text-zinc-800 dark:text-zinc-200">{(restoreAnalysis as { counts: { panels: number } }).counts.panels}</span>
+                <span className="font-semibold text-zinc-800 dark:text-zinc-200">{restoreAnalysis.counts?.panels}</span>
               </div>
               <div className="flex justify-between items-center pb-2 border-b border-zinc-200 dark:border-zinc-800/50">
                 <span className="text-zinc-500">Clients</span>
-                <span className="font-semibold text-zinc-800 dark:text-zinc-200">{(restoreAnalysis as { counts: { clients: number } }).counts.clients}</span>
+                <span className="font-semibold text-zinc-800 dark:text-zinc-200">{restoreAnalysis.counts?.clients}</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-zinc-500">Inbounds</span>
-                <span className="font-semibold text-zinc-800 dark:text-zinc-200">{(restoreAnalysis as { counts: { inbounds: number } }).counts.inbounds}</span>
+                <span className="font-semibold text-zinc-800 dark:text-zinc-200">{restoreAnalysis.counts?.inbounds}</span>
               </div>
             </div>
 
