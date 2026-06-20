@@ -20,7 +20,7 @@ export class DiagnosticService {
     const updateInfo = await this.settingsService.checkUpdate();
     
     // 2. Container & Installation Info
-    let containerInfo = { id: 'Unknown', image: 'Unknown', tag: 'Unknown', uptime: 'Unknown' };
+    let containerInfo = { id: os.hostname(), image: 'Unknown', tag: 'Unknown', uptime: 'Unknown' };
     let installPath = 'Unknown';
     try {
       const inspectRes = await execAsync('docker inspect hmpanel-panel');
@@ -78,8 +78,7 @@ export class DiagnosticService {
       services.postgres = 'Online';
     } catch (e) {}
     try {
-      // Connect directly to redis using nc or similar since redis-cli might not be installed
-      await execAsync(`echo PING | nc -w 2 redis 6379 | grep -q PONG`);
+      await execAsync(`nc -z -w 2 redis 6379`);
       services.redis = 'Online';
     } catch (e) {}
 

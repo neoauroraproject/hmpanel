@@ -664,7 +664,7 @@ print_success() {
     echo -e "  Panel Status: ${RED}Stopped/Failed${NC}"
   fi
   
-  echo -e "  Version:      ${CYAN}1.0.0${NC}"
+  echo -e "  Version:      ${CYAN}1.1.0${NC}"
   echo -e "  Edition:      ${CYAN}Community${NC}"
   
   if [[ "$SSL_STATUS" == "acme" || "$SSL_STATUS" == "self-signed" ]]; then
