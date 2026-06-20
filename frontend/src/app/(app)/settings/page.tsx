@@ -166,10 +166,10 @@ export default function GlobalSettingsPage() {
 }
 
 function BackupRestoreCard() {
-  const toast = require("@/components/toast").useToast((s: any) => s.push);
+  const toast = useToast((s) => s.push);
   const [isRestoring, setIsRestoring] = useState(false);
   const [isBackingUp, setIsBackingUp] = useState(false);
-  const [restoreAnalysis, setRestoreAnalysis] = useState<any>(null);
+  const [restoreAnalysis, setRestoreAnalysis] = useState<unknown>(null);
   
   const handleBackup = async () => {
     setIsBackingUp(true);
@@ -219,7 +219,8 @@ function BackupRestoreCard() {
     if (!restoreAnalysis) return;
     setIsRestoring(true);
     try {
-      await api.post(`/backups/restore-apply/${restoreAnalysis.id}`, { fileName: restoreAnalysis.fileName });
+      const analysis = restoreAnalysis as { id: string, fileName: string };
+      await api.post(`/backups/restore-apply/${analysis.id}`, { fileName: analysis.fileName });
       toast("System restored successfully. Reloading...");
       setTimeout(() => window.location.reload(), 2000);
     } catch (err) {
@@ -273,19 +274,19 @@ function BackupRestoreCard() {
             <div className="bg-zinc-50 dark:bg-zinc-950 rounded-xl p-4 mb-6 space-y-3">
               <div className="flex justify-between items-center pb-2 border-b border-zinc-200 dark:border-zinc-800/50">
                 <span className="text-zinc-500">Admins</span>
-                <span className="font-semibold text-zinc-800 dark:text-zinc-200">{restoreAnalysis.counts.admins}</span>
+                <span className="font-semibold text-zinc-800 dark:text-zinc-200">{(restoreAnalysis as { counts: { admins: number } }).counts.admins}</span>
               </div>
               <div className="flex justify-between items-center pb-2 border-b border-zinc-200 dark:border-zinc-800/50">
                 <span className="text-zinc-500">Panels</span>
-                <span className="font-semibold text-zinc-800 dark:text-zinc-200">{restoreAnalysis.counts.panels}</span>
+                <span className="font-semibold text-zinc-800 dark:text-zinc-200">{(restoreAnalysis as { counts: { panels: number } }).counts.panels}</span>
               </div>
               <div className="flex justify-between items-center pb-2 border-b border-zinc-200 dark:border-zinc-800/50">
                 <span className="text-zinc-500">Clients</span>
-                <span className="font-semibold text-zinc-800 dark:text-zinc-200">{restoreAnalysis.counts.clients}</span>
+                <span className="font-semibold text-zinc-800 dark:text-zinc-200">{(restoreAnalysis as { counts: { clients: number } }).counts.clients}</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-zinc-500">Inbounds</span>
-                <span className="font-semibold text-zinc-800 dark:text-zinc-200">{restoreAnalysis.counts.inbounds}</span>
+                <span className="font-semibold text-zinc-800 dark:text-zinc-200">{(restoreAnalysis as { counts: { inbounds: number } }).counts.inbounds}</span>
               </div>
             </div>
 
@@ -312,13 +313,24 @@ function BackupRestoreCard() {
   );
 }
 
+interface SslStatus {
+  mode: string;
+  isHttpsEnabled: boolean;
+  certificate: {
+    exists: boolean;
+    issuer?: string;
+    expiration?: string;
+    daysRemaining: number;
+  };
+}
+
 function SslManagementCard() {
-  const toast = require("@/components/toast").useToast((s: any) => s.push);
+  const toast = useToast((s) => s.push);
   const qc = useQueryClient();
   
   const { data: sslInfo, isLoading, refetch } = useQuery({
     queryKey: ["sslStatus"],
-    queryFn: async () => (await api.get<any>("/settings/ssl")).data,
+    queryFn: async () => (await api.get<SslStatus>("/settings/ssl")).data,
   });
 
   const renewSsl = useMutation({
@@ -327,16 +339,16 @@ function SslManagementCard() {
       toast("SSL certificate renewed successfully");
       refetch();
     },
-    onError: (e: any) => toast(e.response?.data?.message || "Failed to renew certificate", "error"),
+    onError: (e: Error & { response?: { data?: { message?: string } } }) => toast(e.response?.data?.message || "Failed to renew certificate", "error"),
   });
 
   const switchMode = useMutation({
     mutationFn: async (enableHttps: boolean) => (await api.post("/settings/ssl/switch", { enableHttps })).data,
-    onSuccess: (data) => {
+    onSuccess: (data: { https: boolean }) => {
       toast(`Successfully switched to ${data.https ? 'HTTPS' : 'HTTP'}. Reloading...`);
       setTimeout(() => window.location.reload(), 2000);
     },
-    onError: (e: any) => toast(e.response?.data?.message || "Failed to switch mode", "error"),
+    onError: (e: Error & { response?: { data?: { message?: string } } }) => toast(e.response?.data?.message || "Failed to switch mode", "error"),
   });
 
   if (isLoading) return <Card className="p-6 flex justify-center"><Spinner /></Card>;
