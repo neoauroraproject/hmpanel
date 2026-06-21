@@ -101,7 +101,7 @@ export class SettingsService {
       
       return result;
     } catch (error) {
-      this.logger.error('Failed to check for updates:', error.message);
+      console.error('Failed to check for updates:', error.message);
       
       // If we have a cached result, return it on failure
       if (this.cachedUpdateResult) {
