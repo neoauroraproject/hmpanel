@@ -1247,6 +1247,58 @@ export class PanelsService implements OnModuleInit {
     }
   }
 
+  async verifyClientState(panelId: string, inboundPort: number, uuid: string): Promise<any | null> {
+    try {
+      const panel = await this.findOne(panelId);
+      const apiBaseUrl = panel.apiBaseUrl || panel.url.replace(/\/$/, '');
+      const headers = { Authorization: panel.apiToken ? `Bearer ${panel.apiToken}` : undefined };
+      const httpsAgent = this.getHttpsAgent();
+
+      if (panel.capClientsApi) {
+        const res = await axios.get(`${apiBaseUrl}/panel/api/clients/get/${uuid}`, { headers, httpsAgent, timeout: 5000 });
+        if (res.data && res.data.success && res.data.obj) {
+           return res.data.obj;
+        }
+      }
+
+      const listRes = await axios.get(`${apiBaseUrl}/panel/api/inbounds/list`, { headers, httpsAgent, timeout: 5000 });
+      if (!listRes.data || !listRes.data.success) throw new Error('Failed to list inbounds');
+      const inboundList = listRes.data.obj || [];
+      const inboundMeta = inboundList.find((i: any) => i.port === inboundPort);
+      if (!inboundMeta) throw new Error('Inbound not found');
+
+      const getRes = await axios.get(`${apiBaseUrl}/panel/api/inbounds/get/${inboundMeta.id}`, { headers, httpsAgent, timeout: 5000 });
+      if (!getRes.data || !getRes.data.success) throw new Error('Failed to fetch full inbound data');
+      
+      const inbound = getRes.data.obj;
+      if (!inbound.settings) return null;
+      let settings = typeof inbound.settings === 'string' ? JSON.parse(inbound.settings) : inbound.settings;
+      if (!settings.clients) return null;
+
+      const client = settings.clients.find((c: any) => c.id === uuid);
+      if (!client) return null;
+
+      // Extract stats
+      let stats = null;
+      if (inbound.clientStats) {
+        stats = inbound.clientStats.find((s: any) => s.email === client.email);
+      }
+
+      return {
+        id: client.id,
+        email: client.email,
+        enable: client.enable !== false && (stats ? stats.enable !== false : true),
+        totalGB: client.totalGB !== undefined ? client.totalGB : (stats ? stats.total : 0),
+        expiryTime: client.expiryTime !== undefined ? client.expiryTime : (stats ? stats.expiryTime : 0),
+        up: stats?.up || 0,
+        down: stats?.down || 0,
+      };
+    } catch (err: any) {
+      this.logger.error(`verifyClientState failed for ${uuid}: ${err.message}`);
+      return null;
+    }
+  }
+
   async resetClientTraffic(panelId: string, inboundPort: number, email: string) {
     try {
       return await this.updateInboundFull(panelId, inboundPort, (inbound) => {

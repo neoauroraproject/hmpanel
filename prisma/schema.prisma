@@ -130,6 +130,7 @@ model Admin {
   storeEnabled     Boolean              @default(false)
   productTemplates ProductTemplate[]
   Brand            Brand[]
+  operationQueues  OperationQueue[]
 }
 
 // Bridging table for Admin <-> Inbound access
@@ -238,6 +239,29 @@ model TrafficTransaction {
 // ---------------------------------------------------------
 // Operations & Auditing
 // ---------------------------------------------------------
+
+enum OperationStatus {
+  PENDING
+  RUNNING
+  SUCCESS
+  FAILED
+}
+
+model OperationQueue {
+  id          String          @id @default(uuid())
+  adminId     String?
+  entityId    String?         // E.g. Client UUID
+  entityType  String          // 'Client', 'Panel', etc.
+  operation   String          // 'DELETE', 'RENEW', 'TRAFFIC_INCREASE', 'EXPIRY_CHANGE', 'RESET_TRAFFIC'
+  payload     Json            // The data required for the operation
+  status      OperationStatus @default(PENDING)
+  attempts    Int             @default(0)
+  errorLog    String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  admin       Admin?          @relation(fields: [adminId], references: [id], onDelete: SetNull)
+}
 
 model AuditLog {
   id        String   @id @default(uuid())

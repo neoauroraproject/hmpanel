@@ -29,6 +29,51 @@ export class ClientsService {
     private monitoringService: MonitoringService
   ) {}
 
+  private async executeAtomicOperation(
+    adminId: string | null,
+    entityId: string,
+    entityType: string,
+    operationName: string,
+    payload: any,
+    task: (opId: string) => Promise<{ verified: boolean, message?: string }>,
+    onSuccess: (tx: any) => Promise<any>
+  ) {
+    const op = await this.prisma.operationQueue.create({
+      data: {
+        adminId, entityId, entityType, operation: operationName, payload, status: 'RUNNING'
+      }
+    });
+
+    try {
+      const result = await task(op.id);
+      
+      if (!result.verified) {
+        await this.prisma.operationQueue.update({
+           where: { id: op.id },
+           data: { status: 'FAILED', errorLog: result.message || 'Verification failed on panel' }
+        });
+        throw new BadRequestException(`Operation failed verification: ${result.message || 'State mismatch'}`);
+      }
+
+      const txResult = await this.prisma.$transaction(async (tx) => {
+         return await onSuccess(tx);
+      });
+
+      await this.prisma.operationQueue.update({
+         where: { id: op.id },
+         data: { status: 'SUCCESS' }
+      });
+
+      return txResult;
+    } catch (err: any) {
+      await this.prisma.operationQueue.update({
+         where: { id: op.id },
+         data: { status: 'FAILED', errorLog: err.message }
+      });
+      throw err;
+    }
+  }
+
   async create(callerId: string, data: { email: string; inboundIds: string[]; remark?: string; total?: number; expiryTime?: number; flow?: string; adminId?: string; limitIp?: number }) {
     if (data.email) data.email = data.email.trim();
     const totalBytes = BigInt(data.total || 0);
@@ -478,151 +523,156 @@ export class ClientsService {
     const successfullyUpdated: any[] = [];
     const successfullyAdded: any[] = [];
 
-    try {
-      // Process removals FIRST
-      for (const inbound of removedInbounds) {
-        await this.panelsService.delClient(inbound.panelId, inbound.port, existing.uuid, existing.email);
-        successfullyRemoved.push(inbound);
-      }
+    return this.executeAtomicOperation(
+      existing.adminId || null,
+      id,
+      'Client',
+      'UPDATE',
+      { updateData: data },
+      async () => {
+        let verifiedCount = 0;
 
-      // Process updates for kept inbounds
-      const keptInbounds = existing.inbounds.filter((i: any) => !removedInbounds.some((r: any) => r.id === i.id));
-      for (const inbound of keptInbounds) {
-        const isReality = inbound.protocol === 'vless' && (inbound.streamSettings as any)?.security === 'reality';
-        const clientPayload = { ...baseClientPayload, flow: isReality ? (newFlow || "") : "" };
-        await this.panelsService.updateClient(inbound.panelId, inbound.port, existing.uuid, clientPayload);
-        successfullyUpdated.push(inbound);
-      }
+        // Process removals FIRST
+        for (const inbound of removedInbounds) {
+          try {
+            await this.panelsService.delClient(inbound.panelId, inbound.port, existing.uuid, existing.email);
+            const isDeleted = await this.panelsService.verifyClientDeleted(inbound.panelId, inbound.port, existing.uuid, existing.email);
+            if (!isDeleted) return { verified: false, message: `Failed to remove client from inbound ${inbound.port}` };
+            successfullyRemoved.push(inbound);
+            verifiedCount++;
+          } catch (err: any) {
+            return { verified: false, message: `Error removing from panel: ${err.message}` };
+          }
+        }
 
-      // Process additions
-      for (const inbound of addedInbounds) {
-        const isReality = inbound.protocol === 'vless' && (inbound.streamSettings as any)?.security === 'reality';
-        const clientPayload = { ...baseClientPayload, flow: isReality ? (newFlow || "") : "" };
-        await this.panelsService.addClient(inbound.panelId, inbound.port, { clients: [clientPayload] });
-        successfullyAdded.push(inbound);
-      }
-    } catch (e: any) {
-      throw new BadRequestException(`Failed to modify client on panel: ${e.message}`);
-    }
-    
-    try {
-      return await this.prisma.$transaction(async (tx) => {
-      const updateData: Prisma.ClientUpdateInput = {};
-      if (existing.email !== existing.email.trim()) {
-        updateData.email = existing.email.trim();
-      }
-      if (data.enable !== undefined) {
-        updateData.enable = data.enable;
-        updateData.disableReason = data.enable ? null : 'MANUAL';
-      }
-      if (data.expiryTime !== undefined) updateData.expiryTime = newExpiry;
-      if (data.remark !== undefined) updateData.remark = data.remark;
-      if (data.flow !== undefined) updateData.flow = data.flow;
-      if (data.limitIp !== undefined) updateData.limitIp = data.limitIp;
+        // Process updates for kept inbounds
+        const keptInbounds = existing.inbounds.filter((i: any) => !removedInbounds.some((r: any) => r.id === i.id));
+        for (const inbound of keptInbounds) {
+          try {
+            const isReality = inbound.protocol === 'vless' && (inbound.streamSettings as any)?.security === 'reality';
+            const clientPayload = { ...baseClientPayload, flow: isReality ? (newFlow || "") : "" };
+            await this.panelsService.updateClient(inbound.panelId, inbound.port, existing.uuid, clientPayload);
+            const state = await this.panelsService.verifyClientState(inbound.panelId, inbound.port, existing.uuid);
+            if (!state || state.totalGB !== Number(newTotal) || state.expiryTime !== Number(newExpiry)) {
+               return { verified: false, message: `Verification failed for updated client on inbound ${inbound.port}` };
+            }
+            successfullyUpdated.push(inbound);
+            verifiedCount++;
+          } catch (err: any) {
+            return { verified: false, message: `Error updating panel: ${err.message}` };
+          }
+        }
 
-      let diff = 0n;
-      let previousAllocation = existing.total;
-      let newAllocation = newTotal;
+        // Process additions
+        for (const inbound of addedInbounds) {
+          try {
+            const isReality = inbound.protocol === 'vless' && (inbound.streamSettings as any)?.security === 'reality';
+            const clientPayload = { ...baseClientPayload, flow: isReality ? (newFlow || "") : "" };
+            await this.panelsService.addClient(inbound.panelId, inbound.port, { clients: [clientPayload] });
+            const state = await this.panelsService.verifyClientState(inbound.panelId, inbound.port, existing.uuid);
+            if (!state) {
+               return { verified: false, message: `Verification failed for added client on inbound ${inbound.port}` };
+            }
+            successfullyAdded.push(inbound);
+            verifiedCount++;
+          } catch (err: any) {
+            return { verified: false, message: `Error adding to panel: ${err.message}` };
+          }
+        }
 
-      if (data.total !== undefined && newAllocation !== existing.total) {
-        diff = newAllocation - existing.total;
-        updateData.total = newAllocation;
+        return { verified: verifiedCount === (removedInbounds.length + keptInbounds.length + addedInbounds.length) };
+      },
+      async (tx) => {
+        const updateData: Prisma.ClientUpdateInput = {};
+        if (existing.email !== existing.email.trim()) {
+          updateData.email = existing.email.trim();
+        }
+        if (data.enable !== undefined) {
+          updateData.enable = data.enable;
+          updateData.disableReason = data.enable ? null : 'MANUAL';
+        }
+        if (data.expiryTime !== undefined) updateData.expiryTime = newExpiry;
+        if (data.remark !== undefined) updateData.remark = data.remark;
+        if (data.flow !== undefined) updateData.flow = data.flow;
+        if (data.limitIp !== undefined) updateData.limitIp = data.limitIp;
 
-        if (existing.adminId) {
-          const admin = await tx.admin.findUnique({ where: { id: existing.adminId } });
-          if (admin && admin.trafficMode === 'ALLOCATION') {
-            if (diff > 0n) {
-              if (admin.balance < Number(diff)) throw new BadRequestException('Insufficient traffic balance');
-              await tx.admin.update({ where: { id: admin.id }, data: { balance: admin.balance - Number(diff) } });
-            } else if (diff < 0n) {
-              if (admin.refundOnEdit) {
-                await tx.admin.update({ where: { id: admin.id }, data: { balance: admin.balance + Math.abs(Number(diff)) } });
+        let diff = 0n;
+        let previousAllocation = existing.total;
+        let newAllocation = newTotal;
+
+        if (data.total !== undefined && newAllocation !== existing.total) {
+          diff = newAllocation - existing.total;
+          updateData.total = newAllocation;
+
+          if (existing.adminId) {
+            const admin = await tx.admin.findUnique({ where: { id: existing.adminId } });
+            if (admin && admin.trafficMode === 'ALLOCATION') {
+              if (diff > 0n) {
+                if (admin.balance < Number(diff)) throw new BadRequestException('Insufficient traffic balance');
+                await tx.admin.update({ where: { id: admin.id }, data: { balance: admin.balance - Number(diff) } });
+              } else if (diff < 0n) {
+                if (admin.refundOnEdit) {
+                  await tx.admin.update({ where: { id: admin.id }, data: { balance: admin.balance + Math.abs(Number(diff)) } });
+                }
+              }
+            }
+
+            if (admin && admin.trafficMode === 'ALLOCATION' && diff !== 0n) {
+              if (!(diff < 0n && !admin.refundOnEdit)) {
+                await tx.trafficTransaction.create({
+                  data: {
+                    adminId: admin.id,
+                    clientId: id,
+                    targetClientUuid: id,
+                    amount: diff > 0n ? diff : -diff,
+                    type: diff > 0n ? 'DEBIT' : 'CREDIT',
+                    action: diff > 0n ? `CLIENT_TRAFFIC_INCREASE_${Date.now()}` : `CLIENT_TRAFFIC_DECREASE_${Date.now()}`,
+                    description: diff > 0n ? 'Client Traffic Increase' : 'Client Traffic Decrease',
+                    balanceBefore: admin.balance,
+                    balanceAfter: diff > 0n ? admin.balance - Number(diff) : admin.balance + Math.abs(Number(diff)),
+                  }
+                });
               }
             }
           }
+        }
 
-          if (admin && admin.trafficMode === 'ALLOCATION' && diff !== 0n) {
-            if (!(diff < 0n && !admin.refundOnEdit)) {
-              await tx.trafficTransaction.create({
-                data: {
-                  adminId: admin.id,
-                  clientId: id,
-                  targetClientUuid: id,
-                  amount: diff > 0n ? diff : -diff,
-                  type: diff > 0n ? 'DEBIT' : 'CREDIT',
-                  action: diff > 0n ? `CLIENT_TRAFFIC_INCREASE_${Date.now()}` : `CLIENT_TRAFFIC_DECREASE_${Date.now()}`,
-                  description: diff > 0n ? 'Client Traffic Increase' : 'Client Traffic Decrease',
-                  balanceBefore: admin.balance,
-                  balanceAfter: diff > 0n ? admin.balance - Number(diff) : admin.balance + Math.abs(Number(diff)),
-                }
-              });
-            }
+        if (data.inboundIds) {
+          if (removedInbounds.length > 0) {
+            await tx.clientInbound.deleteMany({
+              where: {
+                clientId: id,
+                inboundId: { in: removedInbounds.map((i: any) => i.id) }
+              }
+            });
+          }
+          if (addedInbounds.length > 0) {
+            await tx.clientInbound.createMany({
+              data: addedInbounds.map((i: any) => ({
+                clientId: id,
+                inboundId: i.id
+              }))
+            });
           }
         }
-      }
 
-      if (data.inboundIds) {
-        if (removedInbounds.length > 0) {
-          await tx.clientInbound.deleteMany({
-            where: {
-              clientId: id,
-              inboundId: { in: removedInbounds.map((i: any) => i.id) }
+        const client = await tx.client.update({ where: { id }, data: updateData });
+        await tx.auditLog.create({
+          data: {
+            action: 'CLIENT_UPDATED',
+            entity: 'Client',
+            entityId: id,
+            adminId,
+            details: {
+              previousAllocation: previousAllocation.toString(),
+              newAllocation: newAllocation.toString(),
+              trafficDifference: diff.toString()
             }
-          });
-        }
-        if (addedInbounds.length > 0) {
-          await tx.clientInbound.createMany({
-            data: addedInbounds.map((i: any) => ({
-              clientId: id,
-              inboundId: i.id
-            }))
-          });
-        }
-      }
-
-      const client = await tx.client.update({ where: { id }, data: updateData });
-      await tx.auditLog.create({
-        data: {
-          action: 'CLIENT_UPDATED',
-          entity: 'Client',
-          entityId: id,
-          adminId,
-          details: {
-            previousAllocation: previousAllocation.toString(),
-            newAllocation: newAllocation.toString(),
-            trafficDifference: diff.toString()
           }
-        }
-      });
-      return client;
-    });
-    } catch (dbError) {
-      // Rollback panel modifications
-      for (const inbound of successfullyAdded) {
-         await this.panelsService.delClient(inbound.panelId, inbound.port, existing.uuid, existing.email).catch(console.error);
+        });
+        return client;
       }
-      
-      const revertPayload = {
-        id: existing.uuid,
-        subId: existing.subId || "",
-        email: existing.email.trim(),
-        enable: existing.enable,
-        totalGB: Number(existing.total),
-        expiryTime: Number(existing.expiryTime),
-        limitIp: (existing as any).limitIp || 0,
-        tgId: "",
-      };
-
-      for (const inbound of successfullyRemoved) {
-         const isReality = inbound.protocol === 'vless' && (inbound.streamSettings as any)?.security === 'reality';
-         await this.panelsService.addClient(inbound.panelId, inbound.port, { clients: [{...revertPayload, flow: isReality ? (existing.flow || "") : ""}] }).catch(console.error);
-      }
-      for (const inbound of successfullyUpdated) {
-         const isReality = inbound.protocol === 'vless' && (inbound.streamSettings as any)?.security === 'reality';
-         await this.panelsService.updateClient(inbound.panelId, inbound.port, existing.uuid, {...revertPayload, flow: isReality ? (existing.flow || "") : ""}).catch(console.error);
-      }
-      throw dbError;
-    }
+    );
   }
 
   async remove(id: string, adminId: string, role: string, skipRefund: boolean = false) {
@@ -635,104 +685,93 @@ export class ClientsService {
     await this.prisma.client.update({ where: { id }, data: { isDeleting: true } });
 
     let deletedSuccessfully = false;
-    let panelResponse = 'Success';
 
     try {
-      let verifiedDeleted = true;
+      const result = await this.executeAtomicOperation(
+        existing.adminId || null,
+        id,
+        'Client',
+        'DELETE',
+        { email: existing.email, skipRefund },
+        async () => {
+          let verifiedCount = 0;
+          let errorMessage = '';
 
-      for (const inbound of existing.inbounds) {
-        try {
-          await this.panelsService.delClient(inbound.panelId, inbound.port, existing.uuid, existing.email);
-          const isDeleted = await this.panelsService.verifyClientDeleted(inbound.panelId, inbound.port, existing.uuid, existing.email);
-          if (!isDeleted) {
-            verifiedDeleted = false;
-            panelResponse = 'Failed Verification';
-            break;
-          }
-        } catch (err: any) {
-          console.error(`Failed to delete client ${existing.email} from panel inbound ${inbound.id}:`, err.message);
-          verifiedDeleted = false;
-          panelResponse = `Error: ${err.message}`;
-          break;
-        }
-      }
-      
-      if (!verifiedDeleted) {
-        await this.prisma.auditLog.create({
-          data: {
-            action: 'CLIENT_DELETION_FAILED',
-            entity: 'Client',
-            entityId: id,
-            adminId,
-            details: { 
-              clientEmail: existing.email,
-              panelResponse,
-              verified: false,
-              message: 'Refund blocked because client was not successfully verified as deleted on the panel.'
+          for (const inbound of existing.inbounds) {
+            try {
+              await this.panelsService.delClient(inbound.panelId, inbound.port, existing.uuid, existing.email);
+              const isDeleted = await this.panelsService.verifyClientDeleted(inbound.panelId, inbound.port, existing.uuid, existing.email);
+              if (!isDeleted) {
+                errorMessage = `Verification failed: Client not fully deleted from panel ${inbound.panelId}.`;
+                return { verified: false, message: errorMessage };
+              }
+              verifiedCount++;
+            } catch (err: any) {
+              console.error(`Failed to delete client ${existing.email} from panel inbound ${inbound.id}:`, err.message);
+              return { verified: false, message: `Panel error: ${err.message}` };
             }
           }
-        });
-        throw new BadRequestException(`Failed to delete client from panel completely. Aborting deletion.`);
-      }
+          
+          return { verified: verifiedCount === existing.inbounds.length };
+        },
+        async (tx) => {
+          let refundGranted = false;
+          let refundedAmount = 0n;
 
-      const result = await this.prisma.$transaction(async (tx) => {
-        let refundGranted = false;
-        let refundedAmount = 0n;
-
-        if (existing.adminId && !skipRefund) {
-          const admin = await tx.admin.findUnique({ where: { id: existing.adminId } });
-          if (admin && admin.trafficMode === 'ALLOCATION' && existing.createdWithTrafficMode === 'ALLOCATION' && admin.refundOnDelete) {
-            const used = existing.up + existing.down;
-            const remaining = existing.total - used;
-            if (remaining > 0n) {
-              const existingRefund = await tx.trafficTransaction.findFirst({
-                where: {
-                  targetClientUuid: existing.uuid,
-                  action: 'CLIENT_DELETION_REFUND'
-                }
-              });
-              if (!existingRefund) {
-                await tx.admin.update({ where: { id: admin.id }, data: { balance: admin.balance + Number(remaining) } });
-                await tx.trafficTransaction.create({
-                  data: {
-                    adminId: admin.id,
-                    clientId: id,
+          if (existing.adminId && !skipRefund) {
+            const admin = await tx.admin.findUnique({ where: { id: existing.adminId } });
+            if (admin && admin.trafficMode === 'ALLOCATION' && existing.createdWithTrafficMode === 'ALLOCATION' && admin.refundOnDelete) {
+              const used = existing.up + existing.down;
+              const remaining = existing.total - used;
+              if (remaining > 0n) {
+                const existingRefund = await tx.trafficTransaction.findFirst({
+                  where: {
                     targetClientUuid: existing.uuid,
-                    amount: remaining,
-                    type: 'CREDIT',
-                    action: 'CLIENT_DELETION_REFUND',
-                    description: `Client Deletion Refund (${existing.email})`,
-                    balanceBefore: admin.balance,
-                    balanceAfter: admin.balance + Number(remaining),
+                    action: 'CLIENT_DELETION_REFUND'
                   }
                 });
-                refundGranted = true;
-                refundedAmount = remaining;
+                if (!existingRefund) {
+                  await tx.admin.update({ where: { id: admin.id }, data: { balance: admin.balance + Number(remaining) } });
+                  await tx.trafficTransaction.create({
+                    data: {
+                      adminId: admin.id,
+                      clientId: id,
+                      targetClientUuid: existing.uuid,
+                      amount: remaining,
+                      type: 'CREDIT',
+                      action: 'CLIENT_DELETION_REFUND',
+                      description: `Client Deletion Refund (${existing.email})`,
+                      balanceBefore: admin.balance,
+                      balanceAfter: admin.balance + Number(remaining),
+                    }
+                  });
+                  refundGranted = true;
+                  refundedAmount = remaining;
+                }
               }
             }
           }
-        }
 
-        await tx.client.delete({ where: { id } });
-        await tx.auditLog.create({ 
-          data: { 
-            action: skipRefund ? 'CLIENT_CLEANUP' : 'CLIENT_DELETED', 
-            entity: 'Client', 
-            entityId: id, 
-            adminId,
-            details: {
-              clientEmail: existing.email,
-              adminUsername: existing.admin?.username,
-              trafficBefore: existing.total.toString(),
-              trafficRefunded: refundedAmount.toString(),
-              panelResponse,
-              verified: true,
-              refundGranted
-            }
-          } 
-        });
-        return { deleted: true };
-      });
+          await tx.client.delete({ where: { id } });
+          await tx.auditLog.create({ 
+            data: { 
+              action: skipRefund ? 'CLIENT_CLEANUP' : 'CLIENT_DELETED', 
+              entity: 'Client', 
+              entityId: id, 
+              adminId,
+              details: {
+                clientEmail: existing.email,
+                adminUsername: existing.admin?.username,
+                trafficBefore: existing.total.toString(),
+                trafficRefunded: refundedAmount.toString(),
+                verified: true,
+                refundGranted
+              }
+            } 
+          });
+          return { deleted: true };
+        }
+      );
       
       deletedSuccessfully = true;
       return result;
@@ -746,68 +785,91 @@ export class ClientsService {
 
   async resetUsage(id: string, adminId: string, role: string) {
     const existing = await this.findOne(id, adminId, role);
+    const used = existing.up + existing.down;
     
-    for (const inbound of existing.inbounds) {
-      try {
-        await this.panelsService.resetClientTraffic(inbound.panelId, inbound.port, existing.email);
-      } catch (err: any) {
-        console.error(`Failed to reset traffic for client ${existing.email} on panel inbound ${inbound.id}:`, err.message);
-        throw new BadRequestException(`Failed to reset traffic on panel: ${err.message}`);
-      }
-    }
-    
-    return this.prisma.$transaction(async (tx) => {
-      const used = existing.up + existing.down;
-      
-      if (used > 0n && existing.adminId) {
-        const admin = await tx.admin.findUnique({ where: { id: existing.adminId } });
-        if (admin) {
-           if (admin.trafficMode === 'ALLOCATION') {
-               if (admin.balance < Number(used)) {
-                   throw new BadRequestException(`Insufficient traffic balance to reset this client. You need ${used} bytes.`);
-               }
-               await tx.admin.update({ where: { id: admin.id }, data: { balance: admin.balance - Number(used) } });
-               await tx.trafficTransaction.create({
-                 data: {
-                   adminId: admin.id,
-                   clientId: id,
-                   targetClientUuid: id,
-                   amount: used,
-                   type: 'DEBIT',
-                   action: `CLIENT_USAGE_RESET_CHARGE_${Date.now()}`,
-                   description: `Client Usage Reset Charge (${existing.email})`,
-                   balanceBefore: admin.balance,
-                   balanceAfter: admin.balance - Number(used),
-                 }
-               });
-           } else if (admin.trafficMode === 'USAGE') {
-               await tx.trafficTransaction.create({
-                 data: {
-                   adminId: admin.id,
-                   clientId: id,
-                   targetClientUuid: id,
-                   amount: used,
-                   type: 'USAGE_CHARGE',
-                   action: `HISTORICAL_USAGE_ARCHIVED_${Date.now()}`,
-                   description: `Historical Usage Archived via Reset (${existing.email})`,
-                   balanceBefore: admin.balance,
-                   balanceAfter: admin.balance,
-                 }
-               });
-           }
-        }
-      }
+    return this.executeAtomicOperation(
+      existing.adminId || null,
+      id,
+      'Client',
+      'RESET_TRAFFIC',
+      { email: existing.email, used: used.toString() },
+      async () => {
+        // Task: Execute on panel and verify
+        let verifiedCount = 0;
+        let errorMessage = '';
 
-      await tx.client.update({ where: { id }, data: { up: 0n, down: 0n } });
-      await tx.auditLog.create({ 
-        data: { 
-          action: 'RESET_USAGE', 
-          entity: 'Client', 
-          adminId,
-          details: { equivalentTrafficRestored: used.toString() } 
-        } 
-      });
-    });
+        for (const inbound of existing.inbounds) {
+          try {
+            await this.panelsService.resetClientTraffic(inbound.panelId, inbound.port, existing.email);
+            // Verify
+            const state = await this.panelsService.verifyClientState(inbound.panelId, inbound.port, existing.uuid);
+            if (!state || (state.up > 0 || state.down > 0)) {
+               errorMessage = `Verification failed: Panel ${inbound.panelId} reported traffic is not zero.`;
+               return { verified: false, message: errorMessage };
+            }
+            verifiedCount++;
+          } catch (err: any) {
+            console.error(`Failed to reset traffic for client ${existing.email} on panel inbound ${inbound.id}:`, err.message);
+            return { verified: false, message: `Failed to reset traffic on panel: ${err.message}` };
+          }
+        }
+        
+        return { verified: verifiedCount === existing.inbounds.length };
+      },
+      async (tx) => {
+        // Success Phase: Database changes and Billing
+        if (used > 0n && existing.adminId) {
+          const admin = await tx.admin.findUnique({ where: { id: existing.adminId } });
+          if (admin) {
+             if (admin.trafficMode === 'ALLOCATION') {
+                 if (admin.balance < Number(used)) {
+                     throw new BadRequestException(`Insufficient traffic balance to reset this client. You need ${used} bytes.`);
+                 }
+                 await tx.admin.update({ where: { id: admin.id }, data: { balance: admin.balance - Number(used) } });
+                 await tx.trafficTransaction.create({
+                   data: {
+                     adminId: admin.id,
+                     clientId: id,
+                     targetClientUuid: id,
+                     amount: used,
+                     type: 'DEBIT',
+                     action: `CLIENT_USAGE_RESET_CHARGE_${Date.now()}`,
+                     description: `Client Usage Reset Charge (${existing.email})`,
+                     balanceBefore: admin.balance,
+                     balanceAfter: admin.balance - Number(used),
+                   }
+                 });
+             } else if (admin.trafficMode === 'USAGE') {
+                 await tx.trafficTransaction.create({
+                   data: {
+                     adminId: admin.id,
+                     clientId: id,
+                     targetClientUuid: id,
+                     amount: used,
+                     type: 'USAGE_CHARGE',
+                     action: `HISTORICAL_USAGE_ARCHIVED_${Date.now()}`,
+                     description: `Historical Usage Archived via Reset (${existing.email})`,
+                     balanceBefore: admin.balance,
+                     balanceAfter: admin.balance,
+                   }
+                 });
+             }
+          }
+        }
+
+        await tx.client.update({ where: { id }, data: { up: 0n, down: 0n } });
+        await tx.auditLog.create({ 
+          data: { 
+            action: 'RESET_USAGE', 
+            entity: 'Client', 
+            adminId,
+            details: { equivalentTrafficRestored: used.toString() } 
+          } 
+        });
+        
+        return { success: true };
+      }
+    );
   }
 
   async getGroups(adminId: string, role: string) {
