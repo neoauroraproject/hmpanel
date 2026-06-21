@@ -180,14 +180,14 @@ export default function DiagnosticsPage() {
           </div>
           <div className="flex flex-col gap-1 p-3 rounded bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-100 dark:border-zinc-800">
             <span className="text-xs text-zinc-500">Host Diagnostics</span>
-            <span className="text-sm font-semibold">
-              {diag.docker.socketAccess ? <Badge tone="green">Available</Badge> : <Badge tone="red">Unavailable</Badge>}
+            <span className="text-sm font-semibold flex items-center gap-1">
+              {diag.docker.socketAccess ? <Badge tone="green">Available</Badge> : <Badge tone="amber">Unavailable</Badge>}
             </span>
           </div>
           <div className="flex flex-col gap-1 p-3 rounded bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-100 dark:border-zinc-800">
             <span className="text-xs text-zinc-500">Auto Update</span>
-            <span className="text-sm font-semibold">
-              {diag.docker.socketAccess ? <Badge tone="green">Available</Badge> : <Badge tone="red">Unavailable</Badge>}
+            <span className="text-sm font-semibold flex items-center gap-1">
+              {diag.docker.socketAccess ? <Badge tone="green">Available</Badge> : <Badge tone="amber">Unavailable</Badge>}
             </span>
           </div>
         </div>

@@ -13,7 +13,10 @@ export class SslService {
   private readonly certPath = '/etc/nginx/ssl/fullchain.pem';
   private readonly nginxConfPath = '/app/nginx_host/nginx.conf.template';
   private readonly acmeShPath = '/app/acme.sh/acme.sh';
-  private readonly domain = process.env.DOMAIN || 'localhost';
+
+  private get domain() {
+    return process.env.DOMAIN || process.env.PANEL_DOMAIN || 'localhost';
+  }
 
   private getPeerCertificate(hostname: string): Promise<any> {
     return new Promise((resolve, reject) => {
@@ -170,22 +173,20 @@ export class SslService {
         hostnamesToTry.push(this.domain);
       }
 
-      if (hostnamesToTry.length > 0) {
-        for (const host of hostnamesToTry) {
-          try {
-            cert = await this.getPeerCertificate(host);
-            usedHostname = host;
-            this.lastDiagnostics.tlsHandshakeStatus = `Success via ${host}`;
-            this.lastDiagnostics.lastProbeError = null;
-            break; // Stop at first successful probe
-          } catch (err) {
-            currentError = err.message;
-            this.lastDiagnostics.lastProbeError = `Failed on ${host}: ${err.message}`;
-          }
+      // ALWAYS fallback to internal nginx container to read the active certificate if external probe fails or domain is not set
+      hostnamesToTry.push('hmpanel-nginx');
+
+      for (const host of hostnamesToTry) {
+        try {
+          cert = await this.getPeerCertificate(host);
+          usedHostname = host;
+          this.lastDiagnostics.tlsHandshakeStatus = `Success via ${host}`;
+          this.lastDiagnostics.lastProbeError = null;
+          break; // Stop at first successful probe
+        } catch (err) {
+          currentError = err.message;
+          this.lastDiagnostics.lastProbeError = `Failed on ${host}: ${err.message}`;
         }
-      } else {
-        currentError = "No valid external domain configured for probe.";
-        this.lastDiagnostics.lastProbeError = currentError;
       }
 
       if (cert) {
