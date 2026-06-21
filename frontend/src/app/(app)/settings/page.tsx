@@ -340,6 +340,8 @@ interface SslStatus {
     daysRemaining?: number;
     issuer?: string;
   };
+  warning?: string;
+  diagnostics?: any;
 }
 
 function SslManagementCard() {

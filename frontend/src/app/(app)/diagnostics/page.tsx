@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { PageHeader, Card, Spinner, ErrorBox, Badge } from "@/components/ui";
-import { Server, HardDrive, Cpu, ShieldAlert, CheckCircle2, XCircle, Info, Lock } from "lucide-react";
+import { Server, HardDrive, Cpu, ShieldAlert, CheckCircle2, XCircle, Info, Lock, Activity } from "lucide-react";
 import { motion } from "framer-motion";
 
 export default function DiagnosticsPage() {
