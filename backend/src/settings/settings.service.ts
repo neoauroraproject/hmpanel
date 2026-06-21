@@ -61,6 +61,7 @@ export class SettingsService {
   async checkUpdate() {
     try {
       const axios = require('axios');
+      const { execSync } = require('child_process');
       const response = await axios.get('https://api.github.com/repos/neoauroraproject/hmpanel/releases/latest', {
         headers: { 'User-Agent': 'HMPanel' },
         timeout: 5000,
@@ -72,10 +73,19 @@ export class SettingsService {
       const currentClean = currentVersion.replace(/^v/, '');
       
       const hasUpdate = this.compareVersions(latestClean, currentClean) > 0;
-      return { hasUpdate, latestVersion, currentVersion };
+      
+      let canAutoUpdate = false;
+      try {
+        execSync('docker ps');
+        canAutoUpdate = true;
+      } catch (e) {
+        canAutoUpdate = false;
+      }
+
+      return { hasUpdate, latestVersion, currentVersion, canAutoUpdate };
     } catch (error) {
       console.error('Failed to check for updates:', error.message);
-      return { hasUpdate: false, latestVersion: 'unknown', currentVersion: this.getCurrentVersion() };
+      return { hasUpdate: false, latestVersion: 'unknown', currentVersion: this.getCurrentVersion(), canAutoUpdate: false };
     }
   }
 

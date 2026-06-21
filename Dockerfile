@@ -97,13 +97,10 @@ COPY --from=builder /app/frontend/.next/static ./frontend/frontend/.next/static
 COPY --from=builder /app/frontend/public ./frontend/frontend/public
 
 # ── Persistent data directories ───────────────────────────────────
-RUN mkdir -p /app/uploads /app/backups /app/logs && \
-    chown -R panelapp:nodejs /app
+RUN mkdir -p /app/uploads /app/backups /app/logs
 
 # ── Startup script ────────────────────────────────────────────────
-RUN printf '#!/bin/sh\nset -e\nif [ -f "/app/.env" ] && ! cat /app/.env >/dev/null 2>&1; then echo "====================================================="; echo "FATAL ERROR: Permission denied reading /app/.env!"; echo "The container user (UID 1001) cannot read the .env file."; echo "To fix this, run the following on your host machine:"; echo "  sudo chown 1001:1001 /opt/hmpanel/.env"; echo "====================================================="; exit 1; fi\necho "[HMPanel] Running database migrations..."\nnpx prisma db push --schema=/app/prisma/schema.prisma --accept-data-loss\necho "[HMPanel] Starting backend API on port ${BACKEND_PORT:-4000}..."\nPORT=${BACKEND_PORT:-4000} node backend/dist/main.js &\necho "[HMPanel] Starting frontend on port ${APP_PORT:-3000}..."\nPORT=${APP_PORT:-3000} HOSTNAME=0.0.0.0 node frontend/frontend/server.js &\nwait\n' > /app/start.sh && chmod +x /app/start.sh
-
-USER panelapp
+RUN printf '#!/bin/sh\nset -e\necho "[HMPanel] Running database migrations..."\nnpx prisma db push --schema=/app/prisma/schema.prisma --accept-data-loss\necho "[HMPanel] Starting backend API on port ${BACKEND_PORT:-4000}..."\nPORT=${BACKEND_PORT:-4000} node backend/dist/main.js &\necho "[HMPanel] Starting frontend on port ${APP_PORT:-3000}..."\nPORT=${APP_PORT:-3000} HOSTNAME=0.0.0.0 node frontend/frontend/server.js &\nwait\n' > /app/start.sh && chmod +x /app/start.sh
 
 EXPOSE 3000 4000
 

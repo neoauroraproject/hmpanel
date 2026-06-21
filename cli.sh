@@ -388,7 +388,7 @@ cmd_cleanup() {
   read -rp "Do you want to proceed? [y/N]: " confirm
   if [[ "${confirm,,}" == "y" ]]; then
     echo "Running cleanup..."
-    docker image prune -a -f
+    docker system prune -a -f --volumes
     echo -e "${GREEN}✔ Cleanup completed.${NC}"
   else
     echo "Cleanup cancelled."

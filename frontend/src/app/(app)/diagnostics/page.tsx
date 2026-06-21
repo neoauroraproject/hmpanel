@@ -146,25 +146,52 @@ export default function DiagnosticsPage() {
                 </tr>
               </tbody>
             </table>
-            <table className="w-full text-sm border-t md:border-t-0 md:border-l border-zinc-200 dark:border-zinc-800">
-              <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-                <tr className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
-                  <td className="px-5 py-3 text-zinc-500 flex items-center gap-1"><Lock size={14}/> SSL Provider</td>
-                  <td className="px-5 py-3 font-semibold text-zinc-800 dark:text-zinc-200">{diag.ssl.provider}</td>
-                </tr>
-                <tr className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
-                  <td className="px-5 py-3 text-zinc-500">Certificate State</td>
-                  <td className="px-5 py-3 font-semibold text-zinc-800 dark:text-zinc-200">{diag.ssl.certificate?.exists ? 'Valid' : 'Not Found'}</td>
-                </tr>
-                <tr className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
-                  <td className="px-5 py-3 text-zinc-500">SSL Path</td>
-                  <td className="px-5 py-3 font-mono text-xs text-zinc-600 truncate max-w-[150px]" title={diag.ssl.certPath}>{diag.ssl.certPath}</td>
-                </tr>
-              </tbody>
-            </table>
           </div>
         </Card>
       </div>
+
+      {!diag.docker.socketAccess && (
+        <div className="mt-4 p-4 rounded-lg bg-red-500/10 border border-red-500/20 flex items-start gap-3 text-red-600 dark:text-red-400">
+          <Info className="shrink-0 mt-0.5" size={18} />
+          <div className="text-sm">
+            <strong>Host Management Unavailable</strong>
+            <p className="mt-1 opacity-90">
+              Advanced host management features, auto-updates, and precise installation tracking are disabled because <code className="bg-red-500/10 px-1 rounded">/var/run/docker.sock</code> is not mounted into the panel container or lacks permissions.
+              This is expected in strict security configurations.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Capability Matrix */}
+      <Card className="mt-6 p-0 overflow-hidden bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 shadow-sm">
+        <div className="bg-indigo-500/10 px-5 py-4 border-b border-indigo-500/20 flex items-center gap-2">
+          <Activity className="text-indigo-500" size={18} />
+          <h3 className="font-bold text-zinc-800 dark:text-zinc-100">Capability Matrix</h3>
+        </div>
+        <div className="p-5 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="flex flex-col gap-1 p-3 rounded bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-100 dark:border-zinc-800">
+            <span className="text-xs text-zinc-500">SSL Detection</span>
+            <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1"><Badge tone="green">Available</Badge></span>
+          </div>
+          <div className="flex flex-col gap-1 p-3 rounded bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-100 dark:border-zinc-800">
+            <span className="text-xs text-zinc-500">Certificate Analysis</span>
+            <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1"><Badge tone="green">Available</Badge></span>
+          </div>
+          <div className="flex flex-col gap-1 p-3 rounded bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-100 dark:border-zinc-800">
+            <span className="text-xs text-zinc-500">Host Diagnostics</span>
+            <span className="text-sm font-semibold">
+              {diag.docker.socketAccess ? <Badge tone="green">Available</Badge> : <Badge tone="red">Unavailable</Badge>}
+            </span>
+          </div>
+          <div className="flex flex-col gap-1 p-3 rounded bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-100 dark:border-zinc-800">
+            <span className="text-xs text-zinc-500">Auto Update</span>
+            <span className="text-sm font-semibold">
+              {diag.docker.socketAccess ? <Badge tone="green">Available</Badge> : <Badge tone="red">Unavailable</Badge>}
+            </span>
+          </div>
+        </div>
+      </Card>
     </motion.div>
   );
 }

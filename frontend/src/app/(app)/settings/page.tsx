@@ -575,14 +575,23 @@ function UpdateCard() {
                 Version {updateInfo.latestVersion} is now available (Current: {updateInfo.currentVersion}).
               </p>
             </div>
-            <button
-              onClick={handleUpdate}
-              disabled={updatePanel.isPending}
-              className="mt-1 flex items-center justify-center gap-2 w-full py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded transition-colors disabled:opacity-50"
-            >
-              {updatePanel.isPending ? <Spinner className="w-4 h-4 text-white" /> : <RefreshCw size={14} />}
-              {updatePanel.isPending ? 'Preparing Update...' : 'Update Now'}
-            </button>
+            {updateInfo.canAutoUpdate ? (
+              <button
+                onClick={handleUpdate}
+                disabled={updatePanel.isPending}
+                className="mt-1 flex items-center justify-center gap-2 w-full py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded transition-colors disabled:opacity-50"
+              >
+                {updatePanel.isPending ? <Spinner className="w-4 h-4 text-white" /> : <RefreshCw size={14} />}
+                {updatePanel.isPending ? 'Preparing Update...' : 'Update Now'}
+              </button>
+            ) : (
+              <div className="mt-2 text-xs text-amber-800 dark:text-amber-500 bg-amber-100 dark:bg-amber-900/30 p-2 rounded">
+                <strong>Auto Update is disabled.</strong><br/>
+                Docker socket is not mounted in the panel container. To update, connect to your server via SSH and run:
+                <code className="block mt-1 bg-black/10 dark:bg-black/30 p-1.5 rounded text-amber-900 dark:text-amber-400 font-mono">hm</code>
+                Then select Option 3 (Update).
+              </div>
+            )}
           </div>
         </div>
       </div>
