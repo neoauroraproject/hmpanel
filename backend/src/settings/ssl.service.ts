@@ -39,6 +39,7 @@ export class SslService {
   }
 
   private lastSuccessfulState: any = null;
+  private readonly CACHE_FILE = path.join('/app/uploads', '.ssl_cache.json');
   private lastDiagnostics: any = {
     lastCheckTime: null,
     lastProbeError: null,
@@ -47,6 +48,33 @@ export class SslService {
     certificateExpiration: null,
     certificateIssuer: null
   };
+
+  constructor() {
+    this.loadCache();
+  }
+
+  private loadCache() {
+    try {
+      if (fs.existsSync(this.CACHE_FILE)) {
+        const data = fs.readFileSync(this.CACHE_FILE, 'utf8');
+        this.lastSuccessfulState = JSON.parse(data);
+      }
+    } catch (e) {
+      this.logger.warn('Could not load SSL cache from disk: ' + e.message);
+    }
+  }
+
+  private saveCache() {
+    try {
+      // Ensure directory exists (uploads directory is mounted by default)
+      if (!fs.existsSync('/app/uploads')) {
+        fs.mkdirSync('/app/uploads', { recursive: true });
+      }
+      fs.writeFileSync(this.CACHE_FILE, JSON.stringify(this.lastSuccessfulState), 'utf8');
+    } catch (e) {
+      this.logger.warn('Could not save SSL cache to disk: ' + e.message);
+    }
+  }
 
   async getStatus() {
     let exists = false;
@@ -135,19 +163,29 @@ export class SslService {
       // Fallback: Live HTTPS probe trying multiple internal and external hostnames
       let cert = null;
       let usedHostname = '';
-      const hostnamesToTry = ['hmpanel-nginx', 'nginx', this.domain, '127.0.0.1'];
+      const hostnamesToTry = [];
+      
+      // Only probe the actual domain, never localhost or 127.0.0.1
+      if (this.domain && this.domain !== 'localhost' && this.domain !== '127.0.0.1') {
+        hostnamesToTry.push(this.domain);
+      }
 
-      for (const host of hostnamesToTry) {
-        try {
-          cert = await this.getPeerCertificate(host);
-          usedHostname = host;
-          this.lastDiagnostics.tlsHandshakeStatus = `Success via ${host}`;
-          this.lastDiagnostics.lastProbeError = null;
-          break; // Stop at first successful probe
-        } catch (err) {
-          currentError = err.message;
-          this.lastDiagnostics.lastProbeError = `Failed on ${host}: ${err.message}`;
+      if (hostnamesToTry.length > 0) {
+        for (const host of hostnamesToTry) {
+          try {
+            cert = await this.getPeerCertificate(host);
+            usedHostname = host;
+            this.lastDiagnostics.tlsHandshakeStatus = `Success via ${host}`;
+            this.lastDiagnostics.lastProbeError = null;
+            break; // Stop at first successful probe
+          } catch (err) {
+            currentError = err.message;
+            this.lastDiagnostics.lastProbeError = `Failed on ${host}: ${err.message}`;
+          }
         }
+      } else {
+        currentError = "No valid external domain configured for probe.";
+        this.lastDiagnostics.lastProbeError = currentError;
       }
 
       if (cert) {
@@ -214,6 +252,7 @@ export class SslService {
 
     if (exists) {
       this.lastSuccessfulState = result;
+      this.saveCache();
     }
 
     return result;

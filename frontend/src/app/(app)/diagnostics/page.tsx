@@ -97,7 +97,7 @@ export default function DiagnosticsPage() {
                 <tr className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
                   <td className="px-5 py-3 text-zinc-500">Socket Access</td>
                   <td className="px-5 py-3">
-                    {diag.docker.socketAccess ? <Badge tone="green">Available</Badge> : <Badge tone="red">Unavailable</Badge>}
+                    {diag.docker.socketAccess ? <Badge tone="green">Available</Badge> : <Badge tone="amber">Not Mounted</Badge>}
                   </td>
                 </tr>
               </tbody>
@@ -115,7 +115,7 @@ export default function DiagnosticsPage() {
                 <tr className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
                   <td className="px-5 py-3 text-zinc-500">Updater Script</td>
                   <td className="px-5 py-3">
-                    {diag.installation.updateScript === 'Found' ? <Badge tone="green">Found</Badge> : <Badge tone="red">Missing</Badge>}
+                    {diag.installation.updateScript === 'Found' ? <Badge tone="green">Found</Badge> : <Badge tone="amber">Not Mounted</Badge>}
                   </td>
                 </tr>
               </tbody>
@@ -151,12 +151,12 @@ export default function DiagnosticsPage() {
       </div>
 
       {!diag.docker.socketAccess && (
-        <div className="mt-4 p-4 rounded-lg bg-red-500/10 border border-red-500/20 flex items-start gap-3 text-red-600 dark:text-red-400">
+        <div className="mt-4 p-4 rounded-lg bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 flex items-start gap-3 text-zinc-600 dark:text-zinc-400">
           <Info className="shrink-0 mt-0.5" size={18} />
           <div className="text-sm">
-            <strong>Host Management Unavailable</strong>
+            <strong className="text-zinc-700 dark:text-zinc-300">Host Management Unavailable</strong>
             <p className="mt-1 opacity-90">
-              Advanced host management features, auto-updates, and precise installation tracking are disabled because <code className="bg-red-500/10 px-1 rounded">/var/run/docker.sock</code> is not mounted into the panel container or lacks permissions.
+              Advanced host management features, auto-updates, and precise installation tracking are disabled because <code className="bg-zinc-200 dark:bg-zinc-700 px-1 rounded text-zinc-800 dark:text-zinc-200">/var/run/docker.sock</code> is not mounted into the panel container or lacks permissions.
               This is expected in strict security configurations.
             </p>
           </div>

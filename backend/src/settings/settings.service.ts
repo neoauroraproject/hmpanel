@@ -58,10 +58,21 @@ export class SettingsService {
     }
   }
 
+  private cachedUpdateResult: any = null;
+  private lastUpdateCheckTime: number = 0;
+
   async checkUpdate() {
     try {
       const axios = require('axios');
-      const { execSync } = require('child_process');
+      const semver = require('semver');
+      const fs = require('fs');
+      
+      const now = Date.now();
+      // Cache for 1 hour to prevent GitHub API rate limits
+      if (this.cachedUpdateResult && now - this.lastUpdateCheckTime < 3600000) {
+        return this.cachedUpdateResult;
+      }
+
       const response = await axios.get('https://api.github.com/repos/neoauroraproject/hmpanel/releases/latest', {
         headers: { 'User-Agent': 'HMPanel' },
         timeout: 5000,
@@ -72,33 +83,33 @@ export class SettingsService {
       const latestClean = latestVersion.replace(/^v/, '');
       const currentClean = currentVersion.replace(/^v/, '');
       
-      const hasUpdate = this.compareVersions(latestClean, currentClean) > 0;
+      const hasUpdate = semver.valid(latestClean) && semver.valid(currentClean) ? semver.gt(latestClean, currentClean) : false;
       
       let canAutoUpdate = false;
       try {
-        execSync('docker ps');
-        canAutoUpdate = true;
+        if (fs.existsSync('/var/run/docker.sock')) {
+          canAutoUpdate = true;
+        }
       } catch (e) {
         canAutoUpdate = false;
       }
 
-      return { hasUpdate, latestVersion, currentVersion, canAutoUpdate };
+      const result = { hasUpdate, latestVersion, currentVersion, canAutoUpdate };
+      
+      this.cachedUpdateResult = result;
+      this.lastUpdateCheckTime = now;
+      
+      return result;
     } catch (error) {
-      console.error('Failed to check for updates:', error.message);
+      this.logger.error('Failed to check for updates:', error.message);
+      
+      // If we have a cached result, return it on failure
+      if (this.cachedUpdateResult) {
+        return this.cachedUpdateResult;
+      }
+
       return { hasUpdate: false, latestVersion: 'unknown', currentVersion: this.getCurrentVersion(), canAutoUpdate: false };
     }
-  }
-
-  private compareVersions(v1: string, v2: string) {
-    const p1 = v1.split('.').map(Number);
-    const p2 = v2.split('.').map(Number);
-    for (let i = 0; i < Math.max(p1.length, p2.length); i++) {
-      const num1 = p1[i] || 0;
-      const num2 = p2[i] || 0;
-      if (num1 > num2) return 1;
-      if (num1 < num2) return -1;
-    }
-    return 0;
   }
 
   async updatePanel() {
