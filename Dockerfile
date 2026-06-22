@@ -71,8 +71,6 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
-ARG APP_VERSION=1.0.19
-ENV APP_VERSION=${APP_VERSION}
 
 # Install minimal runtime dependencies
 RUN apk add --no-cache openssl curl tini postgresql-client docker-cli bash socat
