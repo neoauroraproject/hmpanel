@@ -196,8 +196,8 @@ export class SettingsService {
       const logPath = '/app/logs/updater.log';
       fs.writeFileSync(logPath, '[1/7] Checking Versions (Passed)\n[2/7] Creating Backup (Passed)\n[3/7] Initializing Detached Updater...\n');
 
-      // 8. Run detached background docker container executing the update.sh on host
-      const command = `docker run -d --name hmpanel-updater --rm -v "${installDir}:${installDir}" -v /var/run/docker.sock:/var/run/docker.sock -w "${installDir}" docker:latest /bin/sh -c "apk add --no-cache bash curl && echo '[4/7] Executing update.sh on host...' >> ${installDir}/logs/updater.log && bash update.sh >> ${installDir}/logs/updater.log 2>&1"`;
+      // 8. Run detached background docker container executing the master updater on host
+      const command = `docker run -d --name hmpanel-updater --rm -v "${installDir}:${installDir}" -v /var/run/docker.sock:/var/run/docker.sock -w "${installDir}" docker:latest /bin/sh -c "apk add --no-cache bash curl && echo '[4/7] Downloading and Executing master update.sh on host...' >> ${installDir}/logs/updater.log && curl -fsSL https://raw.githubusercontent.com/neoauroraproject/hmpanel/main/update.sh | bash >> ${installDir}/logs/updater.log 2>&1"`;
       
       await execAsync(command);
 

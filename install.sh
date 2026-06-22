@@ -319,7 +319,6 @@ step_1_configuration() {
     ensure_package git git
     run_with_spinner "Cloning repository" git clone -b main https://github.com/neoauroraproject/hmpanel.git /tmp/hmpanel_install
     run_with_spinner "Copying files to installation directory" cp -r /tmp/hmpanel_install/* "${INSTALL_DIR}/"
-    cp /tmp/hmpanel_install/.* "${INSTALL_DIR}/" 2>/dev/null || true
     rm -rf /tmp/hmpanel_install
   fi
   

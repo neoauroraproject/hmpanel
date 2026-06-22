@@ -93,13 +93,14 @@ cmd_info() {
 }
 
 cmd_update() {
-  if [[ -f "${INSTALL_DIR}/update.sh" ]]; then
-    bash "${INSTALL_DIR}/update.sh"
-    pause
+  echo -e "${BOLD}--- Update HMPanel ---${NC}\n"
+  echo "Downloading master updater from GitHub..."
+  if curl -fsSL https://raw.githubusercontent.com/neoauroraproject/hmpanel/main/update.sh | bash; then
+    echo -e "${GREEN}✔ Update complete!${NC}"
   else
-    echo -e "${RED}✘ update.sh not found in ${INSTALL_DIR}${NC}"
-    pause
+    echo -e "${RED}✘ Update failed!${NC}"
   fi
+  pause
 }
 
 cmd_backup() {

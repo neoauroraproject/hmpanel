@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════
-#  HMPanel Panel — Interactive Updater v1.0
-#  https://github.com/HMPanel/panel
+#  HMPanel — Master Updater v1.2
+#  https://github.com/neoauroraproject/hmpanel
 # ═══════════════════════════════════════════════════════════════════
 set -euo pipefail
 
-# Colors & formatting
+# Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 BOLD='\033[1m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
 log()     { echo -e "${GREEN}✔${NC}  $*"; }
 warn()    { echo -e "${YELLOW}⚠${NC}  $*"; }
@@ -23,55 +23,52 @@ die()     { error "$*"; exit 1; }
 
 check_root() {
   if [[ $EUID -ne 0 ]]; then
-    die "This updater must be run as root. Use: sudo bash update.sh"
+    die "This updater must be run as root."
   fi
-  log "Running as root"
 }
 
 main() {
-  echo -e "${CYAN}${BOLD}HMPanel Panel Updater v1.0${NC}"
-  
+  echo -e "${CYAN}${BOLD}HMPanel Master Updater v1.2${NC}"
   check_root
 
-  # Detect installation directory
   INSTALL_DIR="/opt/hmpanel"
   if [[ ! -d "$INSTALL_DIR" ]]; then
-    # Fallback to current script directory if /opt/hmpanel-panel doesn't exist
-    INSTALL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    die "HMPanel is not installed at ${INSTALL_DIR}. Is the panel installed?"
   fi
   
-  info "Target directory: ${INSTALL_DIR}"
   cd "$INSTALL_DIR"
+  
+  REPO_URL="https://raw.githubusercontent.com/neoauroraproject/hmpanel/main"
 
-  if [[ ! -f "docker-compose.yml" ]]; then
-    die "docker-compose.yml not found in ${INSTALL_DIR}. Is HMPanel Panel installed?"
-  fi
+  step "[1/7] Fetching Latest Infrastructure Files"
+  info "Downloading latest docker-compose.yml..."
+  curl -fsSL "${REPO_URL}/docker-compose.yml" -o docker-compose.yml || warn "Failed to download docker-compose.yml"
 
-  # Pull changes from git if it's a git repo
-  if [[ -d ".git" ]]; then
-    step "Pulling Latest Updates from GitHub"
-    if command -v git &>/dev/null; then
-      info "Running git pull..."
-      git fetch --all
-      git reset --hard origin/main || git reset --hard origin/master || git pull
-      log "Git repository updated"
-    else
-      warn "Git is not installed, skipping git pull"
-    fi
-  else
-    info "Not a git repository, skipping pull phase"
-  fi
+  info "Downloading latest cli.sh..."
+  curl -fsSL "${REPO_URL}/cli.sh" -o cli.sh || warn "Failed to download cli.sh"
 
-  # Update CLI manager if present
+  info "Downloading latest update.sh..."
+  curl -fsSL "${REPO_URL}/update.sh" -o update.sh || warn "Failed to download update.sh"
+
+  info "Downloading latest uninstall.sh..."
+  curl -fsSL "${REPO_URL}/uninstall.sh" -o uninstall.sh || warn "Failed to download uninstall.sh"
+
+  info "Downloading latest nginx templates..."
+  mkdir -p nginx
+  curl -fsSL "${REPO_URL}/nginx/nginx.conf.template" -o nginx/nginx.conf.template || warn "Failed to download nginx.conf.template"
+
+  log "Host infrastructure synced with main branch."
+
+  step "[2/7] Updating CLI Manager"
   if [[ -f "${INSTALL_DIR}/cli.sh" ]]; then
-    info "Updating CLI manager..."
+    info "Installing updated hmpanel CLI..."
     cp "${INSTALL_DIR}/cli.sh" /usr/local/bin/hmpanel
     chmod +x /usr/local/bin/hmpanel
     ln -sf /usr/local/bin/hmpanel /usr/local/bin/hm
+    log "CLI updated successfully."
   fi
 
-  # Phase 5: Rollback Safety
-  step "[4/7] Rollback Safety: Tagging current image as rollback baseline"
+  step "[3/7] Rollback Safety"
   if docker image inspect ghcr.io/neoauroraproject/hmpanel:latest &>/dev/null; then
     docker tag ghcr.io/neoauroraproject/hmpanel:latest ghcr.io/neoauroraproject/hmpanel:rollback
     log "Current image tagged as rollback."
@@ -79,7 +76,7 @@ main() {
     warn "No existing latest image found to tag as rollback."
   fi
 
-  step "[5/7] Pulling Latest Docker Images"
+  step "[4/7] Pulling Latest Docker Images"
   info "Downloading prebuilt images..."
   
   local max_pull=5
@@ -97,36 +94,20 @@ main() {
   done
 
   if [[ "$pull_success" == false ]]; then
-    die "Failed to pull Docker images after $max_pull attempts. Please check your network connection or configure a Docker registry mirror."
+    die "Failed to pull Docker images after $max_pull attempts."
   fi
 
-  step "[6/7] Updating Containers (Restarting Services)"
-  info "Pre-flight check: Validating .env permissions for container..."
+  step "[5/7] Checking Permissions"
   if [ -f "${INSTALL_DIR}/.env" ]; then
-    if ! docker run --rm -u 1001:1001 -v "${INSTALL_DIR}/.env:/app/.env" alpine cat /app/.env >/dev/null 2>&1; then
-      warn "The .env file is not readable by the container user (UID 1001)."
-      info "Attempting to repair permissions automatically..."
-      chown 1001:1001 "${INSTALL_DIR}/.env"
-      chmod 600 "${INSTALL_DIR}/.env"
-      if ! docker run --rm -u 1001:1001 -v "${INSTALL_DIR}/.env:/app/.env" alpine cat /app/.env >/dev/null 2>&1; then
-        die "FATAL: Could not grant read permissions to .env for container user 1001. Update aborted to prevent container crash."
-      else
-        log "Permissions repaired successfully."
-      fi
-    else
-      log "Pre-flight permissions check passed."
-    fi
+    chown 1001:1001 "${INSTALL_DIR}/.env"
+    chmod 600 "${INSTALL_DIR}/.env"
   fi
 
-  info "Re-deploying containers..."
-  docker compose up -d
+  step "[6/7] Deploying Containers"
+  info "Recreating containers with latest mounts and images..."
+  docker compose up -d --remove-orphans
 
-  step "Cleaning Up"
-  info "Removing old unused Docker images and build cache to free up disk space..."
-  docker image prune -a -f || true
-  docker builder prune -f || true
-
-  step "[7/7] Verifying Health & Final Verification"
+  step "[7/7] Verifying Health & Cleaning Up"
   local max_attempts=30
   local attempt=0
   info "Waiting for services to become healthy..."
@@ -144,12 +125,12 @@ main() {
     warn "Health check timeout. Check logs: docker compose logs panel-app"
   else
     echo ""
-    log "HMPanel Panel successfully updated and verified!"
+    log "HMPanel Panel successfully updated to latest version!"
   fi
 
-  step "Final Cleanup"
-  info "Running final prune to remove dangling images..."
+  info "Cleaning up old images..."
   docker image prune -a -f || true
+  docker builder prune -f || true
 }
 
 main "$@"
