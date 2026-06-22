@@ -115,7 +115,7 @@ export default function DiagnosticsPage() {
                 <tr className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
                   <td className="px-5 py-3 text-zinc-500">Updater Script</td>
                   <td className="px-5 py-3">
-                    {diag.installation.updateScript === 'Found' ? <Badge tone="green">Found</Badge> : <Badge tone="amber">Not Mounted</Badge>}
+                    <Badge tone="green">{diag.installation.updateScript}</Badge>
                   </td>
                 </tr>
               </tbody>

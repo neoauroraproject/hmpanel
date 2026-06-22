@@ -62,7 +62,8 @@ export class DiagnosticService {
       }
 
       try {
-         const dcVer = await execAsync('docker compose version');
+         // Run docker compose inside the docker:latest image via socket to get compose version
+         const dcVer = await execAsync('docker run --rm -v /var/run/docker.sock:/var/run/docker.sock docker:latest docker compose version');
          dockerInfo.composeVersion = dcVer.stdout.trim();
       } catch (e) {}
     } catch (e) {}
@@ -102,7 +103,7 @@ export class DiagnosticService {
       connectivity,
       installation: {
         path: installPath,
-        updateScript: fs.existsSync('/app/nginx_host/../update.sh') || fs.existsSync(installPath + '/update.sh') ? 'Found' : 'Not Found',
+        updateScript: 'Master Updater (Remote)',
       }
     };
   }
