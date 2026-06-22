@@ -107,29 +107,53 @@ export class SslService {
         exists = true;
         certPathInUse = '/etc/nginx/ssl/fullchain.pem';
 
-        // Extract certificate details
+        // Extract certificate details using LOCAL openssl (panel container has openssl installed)
+        // The cert is mounted at /etc/nginx/ssl/ in both nginx and panel containers
         try {
-          const { stdout: enddateOut } = await execAsync('docker exec hmpanel-nginx openssl x509 -enddate -noout -in /etc/nginx/ssl/fullchain.pem');
-          const { stdout: issuerOut } = await execAsync('docker exec hmpanel-nginx openssl x509 -issuer -noout -in /etc/nginx/ssl/fullchain.pem');
-          
-          const dateStr = enddateOut.replace('notAfter=', '').trim();
-          const expDate = new Date(dateStr);
-          expiration = expDate.toISOString();
-          
-          const now = new Date();
-          const diffTime = Math.abs(expDate.getTime() - now.getTime());
-          daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-          if (expDate.getTime() < now.getTime()) {
-            daysRemaining = -daysRemaining;
-          }
+          const localCertPath = '/etc/nginx/ssl/fullchain.pem';
+          if (fs.existsSync(localCertPath)) {
+            const { stdout: enddateOut } = await execAsync(`openssl x509 -enddate -noout -in ${localCertPath}`);
+            const { stdout: issuerOut } = await execAsync(`openssl x509 -issuer -noout -in ${localCertPath}`);
+            
+            const dateStr = enddateOut.replace('notAfter=', '').trim();
+            const expDate = new Date(dateStr);
+            expiration = expDate.toISOString();
+            
+            const now = new Date();
+            const diffTime = Math.abs(expDate.getTime() - now.getTime());
+            daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            if (expDate.getTime() < now.getTime()) {
+              daysRemaining = -daysRemaining;
+            }
 
-          issuer = issuerOut.replace('issuer=', '').trim();
-          this.lastDiagnostics.certificateExpiration = expiration;
-          this.lastDiagnostics.certificateIssuer = issuer;
-          this.lastDiagnostics.tlsHandshakeStatus = 'Local File System Checked';
+            issuer = issuerOut.replace('issuer=', '').trim();
+            this.lastDiagnostics.certificateExpiration = expiration;
+            this.lastDiagnostics.certificateIssuer = issuer;
+            this.lastDiagnostics.tlsHandshakeStatus = 'Local Certificate Parsed';
+          } else {
+            // Fallback: try docker exec into nginx (unlikely to have openssl but worth trying)
+            const { stdout: enddateOut } = await execAsync('docker exec hmpanel-nginx openssl x509 -enddate -noout -in /etc/nginx/ssl/fullchain.pem');
+            const { stdout: issuerOut } = await execAsync('docker exec hmpanel-nginx openssl x509 -issuer -noout -in /etc/nginx/ssl/fullchain.pem');
+            
+            const dateStr = enddateOut.replace('notAfter=', '').trim();
+            const expDate = new Date(dateStr);
+            expiration = expDate.toISOString();
+            
+            const now = new Date();
+            const diffTime = Math.abs(expDate.getTime() - now.getTime());
+            daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            if (expDate.getTime() < now.getTime()) {
+              daysRemaining = -daysRemaining;
+            }
+
+            issuer = issuerOut.replace('issuer=', '').trim();
+            this.lastDiagnostics.certificateExpiration = expiration;
+            this.lastDiagnostics.certificateIssuer = issuer;
+            this.lastDiagnostics.tlsHandshakeStatus = 'Local File System Checked';
+          }
         } catch (certError) {
           currentError = certError.message;
-          this.logger.error('Failed to parse certificate within nginx container', certError.message);
+          this.logger.error('Failed to parse certificate', certError.message);
         }
       }
 

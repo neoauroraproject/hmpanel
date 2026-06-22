@@ -504,6 +504,7 @@ function UpdateCard() {
   const toast = useToast((s) => s.push);
   const [isUpdating, setIsUpdating] = useState(false);
   const [updateLogs, setUpdateLogs] = useState<string>('');
+  const [updateCompleted, setUpdateCompleted] = useState(false);
 
   const { data: updateInfo, isLoading } = useQuery({
     queryKey: ['check-update'],
@@ -517,6 +518,9 @@ function UpdateCard() {
       if (res.data.success && res.data.logs) {
         setUpdateLogs(res.data.logs);
       }
+      if (res.data.completed) {
+        setUpdateCompleted(true);
+      }
     } catch (e) {
       // Panel is likely offline and restarting!
       setUpdateLogs((prev) => prev + '\n[Waiting for panel to restart... connection lost]');
@@ -525,22 +529,18 @@ function UpdateCard() {
 
   useEffect(() => {
     let interval: any;
-    if (isUpdating) {
-      interval = setInterval(pollLogs, 2000);
+    if (isUpdating && !updateCompleted) {
+      interval = setInterval(pollLogs, 3000);
     }
     return () => clearInterval(interval);
-  }, [isUpdating]);
+  }, [isUpdating, updateCompleted]);
 
   const updatePanel = useMutation({
     mutationFn: async () => (await api.post("/settings/update-panel")).data,
     onSuccess: (data: { message: string }) => {
       toast(data.message || 'Update started...', 'success');
       setIsUpdating(true);
-      
-      // Auto reload after 2 minutes
-      setTimeout(() => {
-        window.location.reload();
-      }, 120000);
+      setUpdateCompleted(false);
     },
     onError: (e: Error & { response?: { data?: { message?: string } } }) => {
       toast(e.response?.data?.message || "Failed to initiate update", "error");
@@ -558,10 +558,27 @@ function UpdateCard() {
   if (isUpdating) {
     return (
       <div className="mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-800/60">
-        <p className="text-sm font-semibold text-blue-600 dark:text-blue-400 mb-2">Update in Progress...</p>
-        <pre className="text-[10px] sm:text-xs bg-zinc-900 text-green-400 p-3 rounded-lg overflow-x-auto max-h-48 whitespace-pre-wrap font-mono">
-          {updateLogs || 'Initializing updater...'}
-        </pre>
+        {updateCompleted ? (
+          <>
+            <p className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 mb-2">✔ Update Complete!</p>
+            <pre className="text-[10px] sm:text-xs bg-zinc-900 text-green-400 p-3 rounded-lg overflow-x-auto max-h-48 whitespace-pre-wrap font-mono mb-3">
+              {updateLogs}
+            </pre>
+            <button
+              onClick={() => window.location.reload()}
+              className="w-full py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+            >
+              <RefreshCw size={14} /> Reload Panel
+            </button>
+          </>
+        ) : (
+          <>
+            <p className="text-sm font-semibold text-blue-600 dark:text-blue-400 mb-2">Update in Progress...</p>
+            <pre className="text-[10px] sm:text-xs bg-zinc-900 text-green-400 p-3 rounded-lg overflow-x-auto max-h-48 whitespace-pre-wrap font-mono">
+              {updateLogs || 'Initializing updater...'}
+            </pre>
+          </>
+        )}
       </div>
     );
   }

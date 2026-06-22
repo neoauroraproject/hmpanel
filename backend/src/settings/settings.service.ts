@@ -47,10 +47,7 @@ export class SettingsService {
 
   getCurrentVersion() {
     try {
-      if (process.env.APP_VERSION) {
-        return `v${process.env.APP_VERSION}`;
-      }
-      // Single source of truth fallback: Read from backend package.json which is bundled during build
+      // Single source of truth: Read from backend package.json which is bundled during build
       const pkg = require('../../package.json');
       return `v${pkg.version}`;
     } catch (e) {
@@ -265,13 +262,35 @@ export class SettingsService {
   async getUpdateLogs() {
     try {
       const fs = require('fs');
+      const { promisify } = require('util');
+      const { exec } = require('child_process');
+      const execAsync = promisify(exec);
       const logPath = '/app/logs/updater.log';
+
+      let logs = '';
       if (fs.existsSync(logPath)) {
-        return { success: true, logs: fs.readFileSync(logPath, 'utf8') };
+        logs = fs.readFileSync(logPath, 'utf8');
+      } else {
+        logs = 'Waiting for updater to start...';
       }
-      return { success: true, logs: 'Waiting for updater to start...' };
+
+      // Detect if the updater container has finished (running or not)
+      let completed = false;
+      try {
+        const { stdout } = await execAsync('docker inspect hmpanel-updater --format="{{.State.Status}}"');
+        // If container still exists and is running, it's not done yet
+        completed = stdout.trim() !== 'running';
+      } catch (e) {
+        // Container doesn't exist = it finished and auto-removed (--rm flag)
+        // But only mark completed if we have meaningful log content
+        if (logs.includes('successfully updated') || logs.includes('Backend API is healthy') || logs.includes('Total reclaimed space')) {
+          completed = true;
+        }
+      }
+
+      return { success: true, logs, completed };
     } catch (error) {
-      return { success: false, error: 'Failed to read logs: ' + error.message };
+      return { success: false, error: 'Failed to read logs: ' + error.message, completed: false };
     }
   }
 }
