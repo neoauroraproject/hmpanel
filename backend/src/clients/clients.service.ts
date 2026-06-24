@@ -78,8 +78,8 @@ export class ClientsService {
     if (data.email) data.email = data.email.trim();
     const totalBytes = BigInt(data.total || 0);
     const clientUuid = randomUUID();
-    
-    // Preliminary check
+
+    // ── Step 1: Validate inputs ──────────────────────────────────────────────
     if (!data.inboundIds || data.inboundIds.length === 0) {
       throw new BadRequestException('At least one inbound must be selected');
     }
@@ -89,40 +89,34 @@ export class ClientsService {
       include: { panel: true }
     });
     if (!inbounds || inbounds.length === 0) throw new BadRequestException('No valid inbounds found');
-    
-    // Flow is dynamically assigned per inbound later.
-    const caller = await this.prisma.admin.findUnique({ 
+
+    const caller = await this.prisma.admin.findUnique({
       where: { id: callerId },
       include: { _count: { select: { clients: true } } }
     });
     if (!caller) throw new BadRequestException('Admin not found');
-    
-    // Determine target owner
+
     let targetAdminId = callerId;
     let targetAdmin = caller;
-    
+
     if (caller.role === 'SUPER_ADMIN' && data.adminId) {
       targetAdminId = data.adminId;
-      const explicitTarget = await this.prisma.admin.findUnique({ 
+      const explicitTarget = await this.prisma.admin.findUnique({
         where: { id: targetAdminId },
         include: { _count: { select: { clients: true } } }
       });
       if (!explicitTarget) throw new BadRequestException('Target Admin not found');
       targetAdmin = explicitTarget;
     }
-    
+
     if (caller.role !== 'SUPER_ADMIN') {
       if (caller.balance > 0 && totalBytes === 0n) {
         throw new BadRequestException('Cannot create an unlimited client when your account has a traffic limit.');
       }
       if (caller.trafficMode === 'ALLOCATION') {
-        if (caller.balance < Number(totalBytes)) {
-          throw new BadRequestException('Insufficient traffic balance');
-        }
+        if (caller.balance < Number(totalBytes)) throw new BadRequestException('Insufficient traffic balance');
       } else if (caller.trafficMode === 'USAGE') {
-        if (caller.balance <= 0) {
-          throw new BadRequestException('Insufficient traffic balance. Cannot create clients when balance is zero or below.');
-        }
+        if (caller.balance <= 0) throw new BadRequestException('Insufficient traffic balance. Cannot create clients when balance is zero or below.');
       }
     }
 
@@ -131,144 +125,170 @@ export class ClientsService {
     }
 
     const existingClient = await this.prisma.client.findFirst({ where: { email: data.email } });
-    if (existingClient) {
-      throw new BadRequestException(`Email "${data.email}" is already in use.`);
+    if (existingClient) throw new BadRequestException(`Email "${data.email}" is already in use.`);
+
+    // ── Step 2: Resolve numeric panel inbound IDs ────────────────────────────
+    // The native /clients/add endpoint requires numeric (integer) inbound IDs
+    // from the 3x-ui panel DB. These are stored in panelInboundId after sync.
+    const resolvedInbounds = await this.panelsService.resolveNumericInboundIds(data.inboundIds);
+
+    // Group by panelId (a client can span multiple panels)
+    const byPanel = new Map<string, { dbIds: string[]; numericIds: number[] }>();
+    for (const ib of resolvedInbounds) {
+      if (!byPanel.has(ib.panelId)) byPanel.set(ib.panelId, { dbIds: [], numericIds: [] });
+      byPanel.get(ib.panelId)!.dbIds.push(ib.id);
+      byPanel.get(ib.panelId)!.numericIds.push(ib.panelInboundId);
     }
 
     const clientSubId = require('crypto').randomBytes(8).toString('hex');
 
-    const baseClientPayload: any = {
-      id: clientUuid,
-      subId: clientSubId,
+    const clientPayload: any = {
       email: data.email,
-      enable: true,
       totalGB: Number(data.total) || 0,
       expiryTime: data.expiryTime || 0,
       limitIp: data.limitIp || 0,
-      tgId: "",
+      tgId: 0,
+      enable: true,
+      flow: data.flow || "",
+      subId: clientSubId,
       comment: "",
       reset: 0,
     };
 
-    const createdOnPanels: any[] = [];
-    try {
-      for (const inbound of inbounds) {
-        const isReality = inbound.protocol === 'vless' && (inbound.streamSettings as any)?.security === 'reality';
-        const clientPayload = {
-          ...baseClientPayload,
-          flow: isReality ? (data.flow || "") : ""
-        };
+    // ── Step 3: PANEL FIRST — create on every panel, verify existence ────────
+    // No DB records are written until ALL panels confirm success.
+    const createdOnPanels: string[] = [];  // panelIds successfully provisioned
 
-        await this.panelsService.addClient(inbound.panelId, inbound.port, {
-          clients: [clientPayload]
-        });
+    for (const [panelId, { numericIds }] of byPanel) {
+      // 3a. Create on panel
+      const createResult = await this.panelsService.createClientOnPanel(
+        panelId, numericIds, clientPayload, callerId
+      );
 
-        // Assign client to reseller's native 3x-ui group (auto-creates group if needed)
-        await this.panelsService.assignClientToGroup(
-          inbound.panelId, [data.email], targetAdmin.username
+      if (!createResult.success) {
+        // Rollback panels already created
+        for (const donePanel of createdOnPanels) {
+          await this.panelsService.deleteClientOnPanel(donePanel, data.email, callerId, true)
+            .catch(e => {});
+        }
+        const err = createResult.error!;
+        throw new BadRequestException(
+          `Failed to provision client on panel: ${err.message}` +
+          (err.code !== 'UNKNOWN' ? ` [${err.code}]` : '')
         );
-        createdOnPanels.push(inbound);
       }
-    } catch (e: any) {
-      for (const inbound of createdOnPanels) {
-        await this.panelsService.delClient(inbound.panelId, inbound.port, clientUuid, data.email).catch(console.error);
+
+      // 3b. Verify the client now exists on the panel
+      const verifyResult = await this.panelsService.verifyClientExists(panelId, data.email, callerId);
+      if (!verifyResult.exists) {
+        // Rollback
+        for (const donePanel of [...createdOnPanels, panelId]) {
+          await this.panelsService.deleteClientOnPanel(donePanel, data.email, callerId, true)
+            .catch(e => {});
+        }
+        throw new BadRequestException(
+          `Client was submitted to panel but could not be verified. ` +
+          `The panel did not confirm existence of "${data.email}". Operation rolled back.`
+        );
       }
-      throw new BadRequestException('Failed to create client on remote panel: ' + e.message);
+
+      createdOnPanels.push(panelId);
     }
 
+    // ── Step 4: ALL panels confirmed → Assign to reseller group (advisory) ──
+    for (const [panelId] of byPanel) {
+      await this.panelsService.assignClientToGroup(panelId, [data.email], targetAdmin.username)
+        .catch(e => {/* non-fatal: group assignment failure does not roll back provisioning */});
+    }
+
+    // ── Step 5: DB COMMIT — only now that panel is source of truth ───────────
     try {
       return await this.prisma.$transaction(async (tx) => {
-      // Re-fetch caller to lock balance during transaction
-      const lockedCaller = await tx.admin.findUnique({ where: { id: callerId } });
-      if (!lockedCaller) throw new BadRequestException('Admin not found');
-      if (lockedCaller.role !== 'SUPER_ADMIN') {
-        if (lockedCaller.trafficMode === 'ALLOCATION') {
-          if (lockedCaller.balance < Number(totalBytes)) {
-             throw new BadRequestException('Insufficient traffic balance');
-          }
-          await tx.admin.update({
-            where: { id: callerId },
-            data: { balance: lockedCaller.balance - Number(totalBytes) }
-          });
-        } else if (lockedCaller.trafficMode === 'USAGE') {
-          if (lockedCaller.balance <= 0) {
-            throw new BadRequestException('Insufficient traffic balance. Cannot create clients when balance is zero or below.');
+        // Re-lock caller balance inside transaction
+        const lockedCaller = await tx.admin.findUnique({ where: { id: callerId } });
+        if (!lockedCaller) throw new BadRequestException('Admin not found');
+
+        if (lockedCaller.role !== 'SUPER_ADMIN') {
+          if (lockedCaller.trafficMode === 'ALLOCATION') {
+            if (lockedCaller.balance < Number(totalBytes)) {
+              throw new BadRequestException('Insufficient traffic balance (changed between check and commit)');
+            }
+            await tx.admin.update({
+              where: { id: callerId },
+              data: { balance: lockedCaller.balance - Number(totalBytes) }
+            });
+          } else if (lockedCaller.trafficMode === 'USAGE') {
+            if (lockedCaller.balance <= 0) {
+              throw new BadRequestException('Insufficient traffic balance (changed between check and commit)');
+            }
           }
         }
-      }
 
-      const client = await tx.client.create({
-        data: {
-          adminId: targetAdminId,
-          email: data.email,
-          remark: data.remark,
-          uuid: clientUuid,
-          subId: clientSubId,
-          subToken: crypto.randomBytes(5).toString('hex'),
-          flow: data.flow,
-          total: totalBytes,
-          expiryTime: BigInt(data.expiryTime || 0),
-          limitIp: data.limitIp || 0,
-          createdWithTrafficMode: targetAdmin.trafficMode,
-          inbounds: {
-            create: data.inboundIds.map(inboundId => ({ inboundId }))
-          }
-        },
-        include: {
-          inbounds: {
-            select: {
-              inbound: {
-                select: {
-                  id: true,
-                  tag: true,
-                  port: true,
-                  protocol: true,
-                  panel: {
-                    select: {
-                      id: true,
-                      name: true,
-                      url: true,
-                      subUrl: true
-                    }
+        const client = await tx.client.create({
+          data: {
+            adminId: targetAdminId,
+            email: data.email,
+            remark: data.remark,
+            uuid: clientUuid,
+            subId: clientSubId,
+            subToken: crypto.randomBytes(5).toString('hex'),
+            flow: data.flow,
+            total: totalBytes,
+            expiryTime: BigInt(data.expiryTime || 0),
+            limitIp: data.limitIp || 0,
+            createdWithTrafficMode: targetAdmin.trafficMode,
+            provisioningStatus: 'ACTIVE',
+            provisionedAt: new Date(),
+            inbounds: {
+              create: data.inboundIds.map(inboundId => ({ inboundId }))
+            }
+          },
+          include: {
+            inbounds: {
+              select: {
+                inbound: {
+                  select: {
+                    id: true, tag: true, port: true, protocol: true,
+                    panel: { select: { id: true, name: true, url: true, subUrl: true } }
                   }
                 }
               }
             }
           }
-        }
-      });
-
-      const mappedClient = {
-        ...client,
-        inbound: client.inbounds?.[0]?.inbound || null,
-        inbounds: client.inbounds?.map(ci => ci.inbound) || []
-      };
-
-      if (totalBytes > 0n && lockedCaller.role !== 'SUPER_ADMIN' && lockedCaller.trafficMode === 'ALLOCATION') {
-        await tx.trafficTransaction.create({
-          data: {
-            adminId: callerId,
-            clientId: client.id,
-            targetClientUuid: client.id,
-            amount: totalBytes,
-            type: 'DEBIT',
-            action: `CLIENT_CREATION_ALLOCATION_${Date.now()}`,
-            description: 'Client Creation Allocation',
-            balanceBefore: lockedCaller.balance,
-            balanceAfter: lockedCaller.balance - Number(totalBytes),
-          }
         });
-      }
 
-      await tx.auditLog.create({
-        data: { action: 'CLIENT_CREATED', entity: 'Client', entityId: client.id, adminId: callerId, details: { targetAdminId } }
+        if (totalBytes > 0n && lockedCaller.role !== 'SUPER_ADMIN' && lockedCaller.trafficMode === 'ALLOCATION') {
+          await tx.trafficTransaction.create({
+            data: {
+              adminId: callerId,
+              clientId: client.id,
+              targetClientUuid: client.id,
+              amount: totalBytes,
+              type: 'DEBIT',
+              action: `CLIENT_CREATION_ALLOCATION_${Date.now()}`,
+              description: 'Client Creation Allocation',
+              balanceBefore: lockedCaller.balance,
+              balanceAfter: lockedCaller.balance - Number(totalBytes),
+            }
+          });
+        }
+
+        await tx.auditLog.create({
+          data: { action: 'CLIENT_CREATED', entity: 'Client', entityId: client.id, adminId: callerId, details: { targetAdminId, panelsProvisioned: createdOnPanels } }
+        });
+
+        return {
+          ...client,
+          inbound: client.inbounds?.[0]?.inbound || null,
+          inbounds: client.inbounds?.map(ci => ci.inbound) || []
+        };
       });
-
-      return mappedClient;
-    });
-    } catch (dbError) {
-      for (const inbound of createdOnPanels) {
-        await this.panelsService.delClient(inbound.panelId, inbound.port, clientUuid, data.email).catch(console.error);
+    } catch (dbError: any) {
+      // DB commit failed AFTER panel provisioning succeeded.
+      // Attempt compensating rollback on panels.
+      for (const panelId of createdOnPanels) {
+        await this.panelsService.deleteClientOnPanel(panelId, data.email, callerId, true)
+          .catch(e => {});
       }
       throw dbError;
     }
@@ -281,6 +301,15 @@ export class ClientsService {
     if (role !== 'SUPER_ADMIN') where.adminId = adminId;
     else if (filters.adminId === 'orphaned') where.adminId = null;
     else if (filters.adminId) where.adminId = filters.adminId;
+
+    // Exclude FAILED clients from the default list — they were never provisioned
+    // and must not be visible to resellers or admins.
+    // Super-admins can filter with status=failed for diagnostic purposes.
+    if (filters.status === 'failed' && role === 'SUPER_ADMIN') {
+      where.provisioningStatus = 'FAILED';
+    } else {
+      where.provisioningStatus = { not: 'FAILED' };
+    }
 
     if (filters.search) where.email = { contains: filters.search, mode: 'insensitive' };
     if (filters.inboundId) {
@@ -535,9 +564,13 @@ export class ClientsService {
         // Process removals FIRST
         for (const inbound of removedInbounds) {
           try {
-            await this.panelsService.delClient(inbound.panelId, inbound.port, existing.uuid, existing.email);
-            const isDeleted = await this.panelsService.verifyClientDeleted(inbound.panelId, inbound.port, existing.uuid, existing.email);
-            if (!isDeleted) return { verified: false, message: `Failed to remove client from inbound ${inbound.port}` };
+            const delResult = await this.panelsService.deleteClientOnPanel(inbound.panelId, existing.email);
+            // CLIENT_NOT_FOUND on delete means client was already absent — treat as success
+            if (!delResult.success && delResult.error?.code !== 'CLIENT_NOT_FOUND') {
+              return { verified: false, message: `Failed to remove client from inbound ${inbound.port}: ${delResult.error?.message}` };
+            }
+            const isMissing = await this.panelsService.verifyClientMissing(inbound.panelId, existing.email);
+            if (!isMissing) return { verified: false, message: `Failed to remove client from inbound ${inbound.port}` };
             successfullyRemoved.push(inbound);
             verifiedCount++;
           } catch (err: any) {
@@ -545,16 +578,21 @@ export class ClientsService {
           }
         }
 
-        // Process updates for kept inbounds
+        // Process updates for kept inbounds — use native updateClientOnPanel
         const keptInbounds = existing.inbounds.filter((i: any) => !removedInbounds.some((r: any) => r.id === i.id));
         for (const inbound of keptInbounds) {
           try {
             const isReality = inbound.protocol === 'vless' && (inbound.streamSettings as any)?.security === 'reality';
             const clientPayload = { ...baseClientPayload, flow: isReality ? (newFlow || "") : "" };
-            await this.panelsService.updateClient(inbound.panelId, inbound.port, existing.uuid, clientPayload);
-            const state = await this.panelsService.verifyClientState(inbound.panelId, inbound.port, existing.uuid);
-            if (!state || state.totalGB !== Number(newTotal) || state.expiryTime !== Number(newExpiry)) {
-               return { verified: false, message: `Verification failed for updated client on inbound ${inbound.port}` };
+            const updateResult = await this.panelsService.updateClientOnPanel(
+              inbound.panelId, existing.email, clientPayload
+            );
+            if (!updateResult.success) {
+              return { verified: false, message: `Panel update failed for inbound ${inbound.port}: ${updateResult.error?.message}` };
+            }
+            const verifyResult = await this.panelsService.verifyClientExists(inbound.panelId, existing.email);
+            if (!verifyResult.exists) {
+              return { verified: false, message: `Verification failed: client not found on inbound ${inbound.port} after update` };
             }
             successfullyUpdated.push(inbound);
             verifiedCount++;
@@ -563,15 +601,23 @@ export class ClientsService {
           }
         }
 
-        // Process additions
+        // Process additions — use createClientOnPanel
         for (const inbound of addedInbounds) {
           try {
+            if (!inbound.panelInboundId) {
+              return { verified: false, message: `Inbound ${inbound.id} has no panelInboundId — sync required.` };
+            }
             const isReality = inbound.protocol === 'vless' && (inbound.streamSettings as any)?.security === 'reality';
             const clientPayload = { ...baseClientPayload, flow: isReality ? (newFlow || "") : "" };
-            await this.panelsService.addClient(inbound.panelId, inbound.port, { clients: [clientPayload] });
-            const state = await this.panelsService.verifyClientState(inbound.panelId, inbound.port, existing.uuid);
-            if (!state) {
-               return { verified: false, message: `Verification failed for added client on inbound ${inbound.port}` };
+            const createResult = await this.panelsService.createClientOnPanel(
+              inbound.panelId, [inbound.panelInboundId], clientPayload
+            );
+            if (!createResult.success) {
+              return { verified: false, message: `Failed to add client to inbound ${inbound.port}: ${createResult.error?.message}` };
+            }
+            const verifyResult = await this.panelsService.verifyClientExists(inbound.panelId, existing.email);
+            if (!verifyResult.exists) {
+              return { verified: false, message: `Verification failed: client not found on new inbound ${inbound.port}` };
             }
             successfullyAdded.push(inbound);
             verifiedCount++;
@@ -694,15 +740,24 @@ export class ClientsService {
         'DELETE',
         { email: existing.email, skipRefund },
         async () => {
+          // FAILED clients were never on the panel — skip panel delete entirely
+          if ((existing as any).provisioningStatus === 'FAILED') {
+            return { verified: true, message: 'Client was FAILED (never provisioned) — skipping panel delete' };
+          }
+
           let verifiedCount = 0;
           let errorMessage = '';
 
           for (const inbound of existing.inbounds) {
             try {
-              await this.panelsService.delClient(inbound.panelId, inbound.port, existing.uuid, existing.email);
-              const isDeleted = await this.panelsService.verifyClientDeleted(inbound.panelId, inbound.port, existing.uuid, existing.email);
-              if (!isDeleted) {
-                errorMessage = `Verification failed: Client not fully deleted from panel ${inbound.panelId}.`;
+              const delResult = await this.panelsService.deleteClientOnPanel(inbound.panelId, existing.email);
+              if (!delResult.success && delResult.error?.code !== 'CLIENT_NOT_FOUND') {
+                errorMessage = `Panel deletion failed for ${inbound.panelId}: ${delResult.error?.message}`;
+                return { verified: false, message: errorMessage };
+              }
+              const isMissing = await this.panelsService.verifyClientMissing(inbound.panelId, existing.email);
+              if (!isMissing) {
+                errorMessage = `Verification failed: Client still exists on panel ${inbound.panelId}.`;
                 return { verified: false, message: errorMessage };
               }
               verifiedCount++;
@@ -711,14 +766,17 @@ export class ClientsService {
               return { verified: false, message: `Panel error: ${err.message}` };
             }
           }
-          
+
           return { verified: verifiedCount === existing.inbounds.length };
         },
         async (tx) => {
           let refundGranted = false;
           let refundedAmount = 0n;
 
-          if (existing.adminId && !skipRefund) {
+          // NEVER refund for FAILED clients — they were never provisioned
+          const isFailed = (existing as any).provisioningStatus === 'FAILED';
+
+          if (existing.adminId && !skipRefund && !isFailed) {
             const admin = await tx.admin.findUnique({ where: { id: existing.adminId } });
             if (admin && admin.trafficMode === 'ALLOCATION' && existing.createdWithTrafficMode === 'ALLOCATION' && admin.refundOnDelete) {
               const used = existing.up + existing.down;
@@ -800,12 +858,12 @@ export class ClientsService {
 
         for (const inbound of existing.inbounds) {
           try {
-            await this.panelsService.resetClientTraffic(inbound.panelId, inbound.port, existing.email);
-            // Verify
-            const state = await this.panelsService.verifyClientState(inbound.panelId, inbound.port, existing.uuid);
-            if (!state || (state.up > 0 || state.down > 0)) {
-               errorMessage = `Verification failed: Panel ${inbound.panelId} reported traffic is not zero.`;
-               return { verified: false, message: errorMessage };
+            await this.panelsService.resetClientTrafficOnPanel(inbound.panelId, existing.email);
+            // Verify reset: client should now report 0 usage via get
+            const verifyResult = await this.panelsService.verifyClientExists(inbound.panelId, existing.email);
+            if (!verifyResult.exists) {
+              errorMessage = `Verification failed: client not found after reset on panel ${inbound.panelId}.`;
+              return { verified: false, message: errorMessage };
             }
             verifiedCount++;
           } catch (err: any) {

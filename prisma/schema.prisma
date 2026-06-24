@@ -70,6 +70,7 @@ model Panel {
 model Inbound {
   id             String   @id @default(uuid())
   panelId        String
+  panelInboundId Int?     // Numeric ID from 3x-ui panel — required for native client API calls
   tag            String
   remark         String?
   port           Int
@@ -87,6 +88,14 @@ model Inbound {
 // ---------------------------------------------------------
 // Users & Ownership
 // ---------------------------------------------------------
+
+// Provisioning state machine for client lifecycle integrity
+enum ProvisioningStatus {
+  PENDING  // Created in DB; provisioning in-flight on panel
+  ACTIVE   // Provisioned and verified on panel
+  FAILED   // Provisioning failed; never became active — never show to users
+  DELETED  // Successfully removed from panel (soft-tombstone for audit trail)
+}
 
 enum AdminRole {
   SUPER_ADMIN
@@ -160,6 +169,11 @@ model Client {
   enable        Boolean @default(true)
   disableReason String? // MANUAL | EXPIRED | TRAFFIC_LIMIT | BALANCE_EXHAUSTED
   isDeleting    Boolean @default(false)
+
+  // Provisioning lifecycle
+  provisioningStatus  ProvisioningStatus @default(ACTIVE) // ACTIVE for all existing records; new records start as PENDING
+  provisioningError   String?            // Last error detail for FAILED state
+  provisionedAt       DateTime?          // Timestamp when ACTIVE was confirmed
 
   limitIp    Int    @default(0) // 0 = unlimited
 

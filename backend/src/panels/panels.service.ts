@@ -4,6 +4,59 @@ import axios, { AxiosError } from 'axios';
 import * as https from 'https';
 import * as crypto from 'crypto';
 
+// ─── Provisioning Error Classification ───────────────────────────────────────
+export type ProvisioningErrorCode =
+  | 'DUPLICATE_EMAIL'
+  | 'DUPLICATE_UUID'
+  | 'TIMEOUT'
+  | 'AUTH_FAILURE'
+  | 'INBOUND_NOT_FOUND'
+  | 'CLIENT_NOT_FOUND'
+  | 'PANEL_ERROR'
+  | 'NETWORK_ERROR'
+  | 'VERIFICATION_FAILED'
+  | 'UNKNOWN';
+
+export interface PanelApiError {
+  code: ProvisioningErrorCode;
+  message: string;        // Human-readable, safe to return to frontend
+  httpStatus?: number;
+  panelMessage?: string;  // Raw panel error message
+  endpoint: string;
+  durationMs: number;
+}
+
+export interface PanelApiResult {
+  success: boolean;
+  data?: any;
+  error?: PanelApiError;
+}
+
+export interface ProvisioningLogEvent {
+  operation: 'CREATE_CLIENT' | 'UPDATE_CLIENT' | 'DELETE_CLIENT' | 'RESET_TRAFFIC' | 'VERIFY_CLIENT' | 'SYNC_CLIENT';
+  adminId?: string;
+  panelId: string;
+  panelName?: string;
+  inboundDbId?: string;
+  panelInboundId?: number;
+  email: string;
+  uuid?: string;
+  endpoint: string;
+  requestSizeBytes?: number;
+  httpStatus?: number;
+  durationMs: number;
+  success: boolean;
+  errorCode?: ProvisioningErrorCode;
+  errorMessage?: string;
+  verificationResult?: boolean;
+}
+
+// ─── HTTP Retry Configuration ─────────────────────────────────────────────────
+const PANEL_CONNECT_TIMEOUT_MS  = 10_000;
+const PANEL_REQUEST_TIMEOUT_MS  = 30_000;
+const PANEL_RETRY_COUNT         = 3;
+const PANEL_RETRY_DELAYS_MS     = [500, 1500, 4500] as const; // exponential backoff
+
 @Injectable()
 export class PanelsService implements OnModuleInit {
   private readonly logger = new Logger(PanelsService.name);
@@ -11,6 +64,134 @@ export class PanelsService implements OnModuleInit {
   private onlineIpsCache: { data: Record<string, number>, timestamp: number } = { data: {}, timestamp: 0 };
 
   constructor(private prisma: PrismaService) {}
+
+  // ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  /** Retry an axios call with exponential backoff. */
+  private async retryRequest<T>(fn: () => Promise<T>, label: string): Promise<T> {
+    let lastErr: any;
+    for (let attempt = 0; attempt <= PANEL_RETRY_COUNT; attempt++) {
+      try {
+        return await fn();
+      } catch (err: any) {
+        lastErr = err;
+        const isTimeout = err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT' || err.message?.includes('timeout');
+        const isNetErr  = err.code === 'ECONNREFUSED' || err.code === 'ENOTFOUND' || err.code === 'ECONNRESET';
+        // Only retry on transient network/timeout errors, not on 4xx responses
+        if (!isTimeout && !isNetErr) throw err;
+        if (attempt < PANEL_RETRY_COUNT) {
+          const delay = PANEL_RETRY_DELAYS_MS[attempt] ?? 4500;
+          this.logger.warn(`${label}: attempt ${attempt + 1} failed (${err.code || err.message}), retrying in ${delay}ms`);
+          await new Promise(r => setTimeout(r, delay));
+        }
+      }
+    }
+    throw lastErr;
+  }
+
+  /** Classify an axios error into a structured ProvisioningErrorCode. */
+  private classifyError(err: any, endpoint: string, startTime: number): PanelApiError {
+    const durationMs = Date.now() - startTime;
+    const axiosErr = err as AxiosError;
+
+    if (axiosErr.response) {
+      const httpStatus = axiosErr.response.status;
+      const body: any = axiosErr.response.data || {};
+      const panelMsg: string = body?.msg || body?.message || '';
+      const lower = panelMsg.toLowerCase();
+
+      if (httpStatus === 401 || httpStatus === 403) {
+        return { code: 'AUTH_FAILURE', message: 'Panel API authentication failed. Check API token.', httpStatus, panelMessage: panelMsg, endpoint, durationMs };
+      }
+      if (lower.includes('email') && (lower.includes('exist') || lower.includes('duplicate') || lower.includes('already'))) {
+        return { code: 'DUPLICATE_EMAIL', message: `Email already exists on the panel: ${panelMsg}`, httpStatus, panelMessage: panelMsg, endpoint, durationMs };
+      }
+      if (lower.includes('uuid') && (lower.includes('exist') || lower.includes('duplicate'))) {
+        return { code: 'DUPLICATE_UUID', message: `UUID collision on panel: ${panelMsg}`, httpStatus, panelMessage: panelMsg, endpoint, durationMs };
+      }
+      if (lower.includes('inbound') && (lower.includes('not found') || lower.includes('404'))) {
+        return { code: 'INBOUND_NOT_FOUND', message: `Inbound not found on panel: ${panelMsg}`, httpStatus, panelMessage: panelMsg, endpoint, durationMs };
+      }
+      if (lower.includes('client') && lower.includes('not found')) {
+        return { code: 'CLIENT_NOT_FOUND', message: `Client not found on panel: ${panelMsg}`, httpStatus, panelMessage: panelMsg, endpoint, durationMs };
+      }
+      return { code: 'PANEL_ERROR', message: `Panel error (HTTP ${httpStatus}): ${panelMsg || 'No message'}`, httpStatus, panelMessage: panelMsg, endpoint, durationMs };
+    }
+
+    if (err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT' || err.message?.includes('timeout')) {
+      return { code: 'TIMEOUT', message: `Panel did not respond within ${PANEL_REQUEST_TIMEOUT_MS / 1000}s. Operation cancelled.`, endpoint, durationMs };
+    }
+    if (err.code === 'ECONNREFUSED' || err.code === 'ENOTFOUND') {
+      return { code: 'NETWORK_ERROR', message: `Cannot reach panel: ${err.message}`, endpoint, durationMs };
+    }
+    if (err instanceof BadRequestException) {
+      const resp = err.getResponse() as any;
+      const msg = typeof resp === 'string' ? resp : resp?.message || err.message;
+      // Re-classify duplicate email thrown from our own addClient logic
+      if (msg?.toLowerCase().includes('already exists')) {
+        return { code: 'DUPLICATE_EMAIL', message: msg, endpoint, durationMs };
+      }
+      return { code: 'PANEL_ERROR', message: msg, endpoint, durationMs };
+    }
+    return { code: 'UNKNOWN', message: err.message || 'Unknown error', endpoint, durationMs };
+  }
+
+  /** Emit a structured provisioning log event to Logger and AuditLog. */
+  private async logProvisioningEvent(event: ProvisioningLogEvent): Promise<void> {
+    const level = event.success ? 'log' : 'warn';
+    this.logger[level](
+      `[PROVISION:${event.operation}] panel=${event.panelId} email=${event.email} ` +
+      `endpoint=${event.endpoint} status=${event.httpStatus ?? 'N/A'} ` +
+      `duration=${event.durationMs}ms success=${event.success}` +
+      (event.errorCode ? ` error=${event.errorCode}: ${event.errorMessage}` : '') +
+      (event.verificationResult !== undefined ? ` verified=${event.verificationResult}` : '')
+    );
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          adminId: event.adminId || null,
+          action: event.operation,
+          entity: 'Client',
+          entityId: event.inboundDbId || null,
+          details: {
+            panelId: event.panelId,
+            panelName: event.panelName,
+            panelInboundId: event.panelInboundId,
+            email: event.email,
+            uuid: event.uuid,
+            endpoint: event.endpoint,
+            requestSizeBytes: event.requestSizeBytes,
+            httpStatus: event.httpStatus,
+            durationMs: event.durationMs,
+            success: event.success,
+            errorCode: event.errorCode,
+            errorMessage: event.errorMessage,
+            verificationResult: event.verificationResult,
+          },
+        },
+      });
+    } catch {
+      // Logging must never crash the provisioning flow
+    }
+  }
+
+  /** Resolve the numeric panel inbound IDs needed for native client API calls.  */
+  async resolveNumericInboundIds(inboundDbIds: string[]): Promise<{ id: string; panelId: string; panelInboundId: number; port: number }[]> {
+    const inbounds = await this.prisma.inbound.findMany({
+      where: { id: { in: inboundDbIds } },
+      select: { id: true, panelId: true, panelInboundId: true, port: true },
+    });
+    const missing = inbounds.filter(i => i.panelInboundId === null);
+    if (missing.length > 0) {
+      throw new BadRequestException(
+        `Panel sync required before creating clients. The following inbounds have not been synced yet: ` +
+        `${missing.map(i => i.id).join(', ')}. Please trigger a panel sync and retry.`
+      );
+    }
+    return inbounds as { id: string; panelId: string; panelInboundId: number; port: number }[];
+  }
+
+
 
   async onModuleInit() {
     this.logger.log('Starting auto-sync for all panels on boot...');
@@ -593,11 +774,11 @@ export class PanelsService implements OnModuleInit {
 
       if (caps.clientsApi) {
         const inboundsUrl = caps.slimInbounds ? '/panel/api/inbounds/list/slim' : '/panel/api/inbounds/list';
-        const inboundsRes = await axios.get(`${apiBaseUrl}${inboundsUrl}`, { headers, timeout: 8000 });
+        const inboundsRes = await axios.get(`${apiBaseUrl}${inboundsUrl}`, { headers, timeout: PANEL_REQUEST_TIMEOUT_MS });
         if (!inboundsRes.data || !inboundsRes.data.success) throw new Error(inboundsRes.data?.msg || 'Failed to fetch inbounds');
         apiInbounds = inboundsRes.data.obj || [];
 
-        const clientsRes = await axios.get(`${apiBaseUrl}/panel/api/clients/list`, { headers, timeout: 8000 });
+        const clientsRes = await axios.get(`${apiBaseUrl}/panel/api/clients/list`, { headers, timeout: PANEL_REQUEST_TIMEOUT_MS });
         if (!clientsRes.data || !clientsRes.data.success) throw new Error(clientsRes.data?.msg || 'Failed to fetch clients');
         const apiClientsList = clientsRes.data.obj || [];
         
@@ -617,7 +798,7 @@ export class PanelsService implements OnModuleInit {
           });
         }
       } else {
-        const inboundsRes = await axios.get(`${apiBaseUrl}/panel/api/inbounds/list`, { headers, timeout: 8000 });
+        const inboundsRes = await axios.get(`${apiBaseUrl}/panel/api/inbounds/list`, { headers, timeout: PANEL_REQUEST_TIMEOUT_MS });
         if (!inboundsRes.data || !inboundsRes.data.success) throw new Error(inboundsRes.data?.msg || 'Failed to fetch inbounds');
         apiInbounds = inboundsRes.data.obj || [];
 
@@ -677,6 +858,7 @@ export class PanelsService implements OnModuleInit {
           dbInbound = await this.prisma.inbound.create({
             data: {
               panelId: panel.id,
+              panelInboundId: apiInbound.id, // persist numeric ID for native client APIs
               tag: apiInbound.remark || `inbound-${apiInbound.port}`,
               port: apiInbound.port,
               protocol: apiInbound.protocol,
@@ -688,6 +870,7 @@ export class PanelsService implements OnModuleInit {
           dbInbound = await this.prisma.inbound.update({
             where: { id: dbInbound.id },
             data: {
+              panelInboundId: apiInbound.id, // always keep in sync
               tag: apiInbound.remark || dbInbound.tag,
               protocol: apiInbound.protocol,
               settings,
@@ -1103,216 +1286,418 @@ export class PanelsService implements OnModuleInit {
     return updateRes.data;
   }
 
-  async addClient(panelId: string, inboundPort: number, settingsPayload: any) {
+  // ═══════════════════════════════════════════════════════════════════════════
+  // NATIVE CLIENT API LAYER
+  // All methods below use /panel/api/clients/* endpoints exclusively.
+  // updateInboundFull() is NOT called from any of these methods.
+  //
+  // ROOT CAUSE OF "Native updateClient failed 404" (now fixed):
+  //   OLD: POST /panel/api/inbounds/updateClient/{UUID}   ← wrong path + wrong param
+  //   NEW: POST /panel/api/clients/update/{email}         ← correct path + email param
+  //
+  // LIVE PROBE RESULTS (2026-06-24, ServerB1 v3.3.1):
+  //   All /clients/* endpoints confirmed working.
+  //   /clients/traffic/{email} returns success:true + obj:null for missing clients
+  //   → use /clients/get/{email} success:false as delete sentinel instead.
+  //   /clients/del/{email} returns success:false for non-existent (not idempotent)
+  //   → treat CLIENT_NOT_FOUND as successful rollback.
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  private async getPanelHttpContext(panelId: string) {
+    const panel = await this.findOne(panelId);
+    const base    = panel.apiBaseUrl || panel.url.replace(/\/$/, '');
+    const headers = { Authorization: panel.apiToken ? `Bearer ${panel.apiToken}` : undefined };
+    const agent   = this.getHttpsAgent();
+    return { panel, base, headers, agent };
+  }
+
+  /**
+   * CREATE CLIENT on panel using native POST /panel/api/clients/add
+   * Logs: method, full URL, payload, response, panel base URL, identifier used
+   */
+  async createClientOnPanel(
+    panelId: string,
+    numericInboundIds: number[],
+    clientPayload: {
+      email: string;
+      totalGB?: number;
+      expiryTime?: number;
+      limitIp?: number;
+      tgId?: number;
+      enable?: boolean;
+      flow?: string;
+      subId?: string;
+      comment?: string;
+      reset?: number;
+    },
+    adminId?: string,
+  ): Promise<PanelApiResult> {
+    const { panel, base, headers, agent } = await this.getPanelHttpContext(panelId);
+    const endpoint = `${base}/panel/api/clients/add`;
+    const body     = { client: clientPayload, inboundIds: numericInboundIds };
+    const startMs  = Date.now();
+
+    this.logger.log(
+      `[CREATE_CLIENT] PANEL_BASE=${base} METHOD=POST URL=${endpoint} ` +
+      `IDENTIFIER=email:"${clientPayload.email}" ` +
+      `INBOUND_IDS=${JSON.stringify(numericInboundIds)} ` +
+      `PAYLOAD_SIZE=${JSON.stringify(body).length}B`
+    );
+
     try {
-      return await this.updateInboundFull(panelId, inboundPort, (inbound) => {
-        if (!inbound.settings) inbound.settings = { clients: [] };
-        else if (typeof inbound.settings === 'string') inbound.settings = JSON.parse(inbound.settings);
-        if (!inbound.settings.clients) inbound.settings.clients = [];
-        
-        if (settingsPayload && settingsPayload.clients) {
-          for (const newClient of settingsPayload.clients) {
-            const exists = inbound.settings.clients.some((c: any) => c.email === newClient.email);
-            if (exists) {
-              throw new BadRequestException(`Client "${newClient.email}" already exists on this server. Please use a different name.`);
-            }
-          }
-          inbound.settings.clients.push(...settingsPayload.clients);
-        }
+      const res = await this.retryRequest(() =>
+        axios.post(endpoint, body, {
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          httpsAgent: agent,
+          timeout: PANEL_REQUEST_TIMEOUT_MS,
+        }), `CREATE_CLIENT email=${clientPayload.email}`
+      );
+
+      const durationMs = Date.now() - startMs;
+      const ok = res.data?.success === true;
+
+      this.logger.log(
+        `[CREATE_CLIENT] RESPONSE HTTP=${res.status} success=${ok} ` +
+        `msg="${res.data?.msg || ''}" duration=${durationMs}ms`
+      );
+
+      await this.logProvisioningEvent({
+        operation: 'CREATE_CLIENT', adminId, panelId, panelName: panel.name,
+        email: clientPayload.email, endpoint,
+        requestSizeBytes: JSON.stringify(body).length,
+        httpStatus: res.status, durationMs, success: ok,
+        errorCode: ok ? undefined : 'PANEL_ERROR',
+        errorMessage: ok ? undefined : res.data?.msg,
       });
+
+      if (!ok) {
+        const panelMsg: string = res.data?.msg || '';
+        const lower = panelMsg.toLowerCase();
+        let code: ProvisioningErrorCode = 'PANEL_ERROR';
+        if (lower.includes('email') && (lower.includes('exist') || lower.includes('duplicate') || lower.includes('already') || lower.includes('required'))) code = 'DUPLICATE_EMAIL';
+        else if (lower.includes('uuid') && lower.includes('exist')) code = 'DUPLICATE_UUID';
+        else if (lower.includes('record not found') || lower.includes('inbound')) code = 'INBOUND_NOT_FOUND';
+        return { success: false, error: { code, message: panelMsg, httpStatus: res.status, panelMessage: panelMsg, endpoint, durationMs } };
+      }
+      return { success: true, data: res.data };
+
     } catch (err: any) {
-      if (err instanceof BadRequestException) throw err;
-      throw new BadRequestException(`Failed to add client to panel: ${err.message}`);
-    }
-  }
-
-  async updateClient(panelId: string, inboundPort: number, uuid: string, clientPayload: any) {
-    try {
-      const panel = await this.findOne(panelId);
-      const apiBaseUrl = panel.apiBaseUrl || panel.url.replace(/\/$/, '');
-      const headers = { Authorization: panel.apiToken ? `Bearer ${panel.apiToken}` : undefined };
-      const httpsAgent = this.getHttpsAgent();
-
-      // First, get the inbound ID for this port
-      const listRes = await axios.get(`${apiBaseUrl}/panel/api/inbounds/list`, { headers, httpsAgent, timeout: 5000 });
-      if (!listRes.data || !listRes.data.success) throw new Error('Failed to list inbounds');
-      const inboundList = listRes.data.obj || [];
-      const inboundMeta = inboundList.find((i: any) => i.port === inboundPort);
-      if (!inboundMeta) throw new Error(`Inbound with port ${inboundPort} not found on panel`);
-
-      // Native 3x-ui client update endpoint expects application/x-www-form-urlencoded
-      const formData = new URLSearchParams();
-      formData.append('id', inboundMeta.id.toString());
-      formData.append('settings', JSON.stringify({ clients: [clientPayload] }));
-
-      let response: any;
-      try {
-        response = await axios.post(`${apiBaseUrl}/panel/api/inbounds/updateClient/${uuid}`, formData.toString(), {
-          headers: { ...headers, 'Content-Type': 'application/x-www-form-urlencoded' },
-          httpsAgent,
-          timeout: 5000
-        });
-      } catch (err: any) {
-        console.warn(`Native updateClient failed for ${uuid}, falling back... Error: ${err.message}`);
-      }
-
-      if (!response || !response.data || !response.data.success) {
-        // Fallback to updateInboundFull if native endpoint fails (e.g. older versions)
-        return await this.updateInboundFull(panelId, inboundPort, (inbound) => {
-          if (!inbound.settings) return;
-          if (typeof inbound.settings === 'string') inbound.settings = JSON.parse(inbound.settings);
-          if (!inbound.settings.clients) return;
-          
-          const clientIndex = inbound.settings.clients.findIndex((c: any) => c.id === uuid);
-          if (clientIndex === -1) {
-            // Client not found in inbound (probably deleted manually).
-            // Instead of throwing an error, we gracefully add it back.
-            inbound.settings.clients.push(clientPayload);
-          } else {
-            inbound.settings.clients[clientIndex] = { ...inbound.settings.clients[clientIndex], ...clientPayload };
-          }
-        });
-      }
-      return response.data;
-    } catch (err: any) {
-      throw new BadRequestException(`Failed to update client on panel: ${err.message}`);
-    }
-  }
-
-  async delClient(panelId: string, inboundPort: number, uuid: string, email?: string) {
-    try {
-      const panel = await this.findOne(panelId);
-      const apiBaseUrl = panel.apiBaseUrl || panel.url.replace(/\/$/, '');
-      const headers = { Authorization: panel.apiToken ? `Bearer ${panel.apiToken}` : undefined };
-      const httpsAgent = this.getHttpsAgent();
-
-      if (panel.capClientsApi && email) {
-        try {
-          const response = await axios.post(`${apiBaseUrl}/panel/api/clients/del/${encodeURIComponent(email)}`, {}, { headers, httpsAgent, timeout: 5000 });
-          if (response.data && response.data.success) {
-            return response.data;
-          }
-        } catch (err: any) {
-          // fallback to updateInboundFull
-        }
-      }
-
-      return await this.updateInboundFull(panelId, inboundPort, (inbound) => {
-        if (!inbound.settings) return;
-        if (typeof inbound.settings === 'string') inbound.settings = JSON.parse(inbound.settings);
-        if (!inbound.settings.clients) return;
-        
-        inbound.settings.clients = inbound.settings.clients.filter((c: any) => c.id !== uuid);
+      const apiError = this.classifyError(err, endpoint, startMs);
+      this.logger.error(`[CREATE_CLIENT] FAILED email=${clientPayload.email} error=${apiError.code}: ${apiError.message}`);
+      await this.logProvisioningEvent({
+        operation: 'CREATE_CLIENT', adminId, panelId, panelName: panel.name,
+        email: clientPayload.email, endpoint,
+        requestSizeBytes: JSON.stringify(body).length,
+        durationMs: apiError.durationMs, success: false,
+        errorCode: apiError.code, errorMessage: apiError.message,
       });
-    } catch (err: any) {
-      throw new BadRequestException(`Failed to delete client from panel: ${err.message}`);
+      return { success: false, error: apiError };
     }
   }
 
-  async verifyClientDeleted(panelId: string, inboundPort: number, uuid: string, email: string): Promise<boolean> {
+  /**
+   * UPDATE CLIENT on panel using native POST /panel/api/clients/update/{email}
+   * Identifier: EMAIL (not UUID)
+   * Content-Type: application/json (not form-encoded)
+   */
+  async updateClientOnPanel(
+    panelId: string,
+    email: string,
+    clientPayload: Record<string, any>,
+    adminId?: string,
+  ): Promise<PanelApiResult> {
+    const { panel, base, headers, agent } = await this.getPanelHttpContext(panelId);
+    const endpoint = `${base}/panel/api/clients/update/${encodeURIComponent(email)}`;
+    const body     = { ...clientPayload, email };
+    const startMs  = Date.now();
+
+    this.logger.log(
+      `[UPDATE_CLIENT] PANEL_BASE=${base} METHOD=POST URL=${endpoint} ` +
+      `IDENTIFIER=email:"${email}" PAYLOAD_SIZE=${JSON.stringify(body).length}B`
+    );
+
     try {
-      const panel = await this.findOne(panelId);
-      const apiBaseUrl = panel.apiBaseUrl || panel.url.replace(/\/$/, '');
-      const headers = { Authorization: panel.apiToken ? `Bearer ${panel.apiToken}` : undefined };
-      const httpsAgent = this.getHttpsAgent();
+      const res = await this.retryRequest(() =>
+        axios.post(endpoint, body, {
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          httpsAgent: agent,
+          timeout: PANEL_REQUEST_TIMEOUT_MS,
+        }), `UPDATE_CLIENT email=${email}`
+      );
 
-      const listRes = await axios.get(`${apiBaseUrl}/panel/api/inbounds/list`, { headers, httpsAgent, timeout: 5000 });
-      if (!listRes.data || !listRes.data.success) {
-        throw new Error('Failed to list inbounds during verification');
-      }
-      const inboundList = listRes.data.obj || [];
-      const inboundMeta = inboundList.find((i: any) => i.port === inboundPort);
-      
-      // If the inbound itself doesn't exist anymore, the client is certainly gone.
-      if (!inboundMeta) return true;
+      const durationMs = Date.now() - startMs;
+      const ok = res.data?.success === true;
 
-      const getRes = await axios.get(`${apiBaseUrl}/panel/api/inbounds/get/${inboundMeta.id}`, { headers, httpsAgent, timeout: 5000 });
-      if (!getRes.data || !getRes.data.success) {
-        throw new Error('Failed to fetch full inbound data during verification');
-      }
-      
-      const inbound = getRes.data.obj;
-      if (!inbound || !inbound.settings) return true;
-      
-      const settings = typeof inbound.settings === 'string' ? JSON.parse(inbound.settings) : inbound.settings;
-      if (!settings.clients || !Array.isArray(settings.clients)) return true;
-      
-      // Verification must check BOTH UUID not found AND Email not found
-      const uuidFound = settings.clients.some((c: any) => c.id === uuid);
-      const emailFound = settings.clients.some((c: any) => c.email === email);
-      
-      return !uuidFound && !emailFound;
-    } catch (err: any) {
-      throw new BadRequestException(`Verification failed: ${err.message}`);
-    }
-  }
+      this.logger.log(
+        `[UPDATE_CLIENT] RESPONSE HTTP=${res.status} success=${ok} ` +
+        `msg="${res.data?.msg || ''}" duration=${durationMs}ms`
+      );
 
-  async verifyClientState(panelId: string, inboundPort: number, uuid: string): Promise<any | null> {
-    try {
-      const panel = await this.findOne(panelId);
-      const apiBaseUrl = panel.apiBaseUrl || panel.url.replace(/\/$/, '');
-      const headers = { Authorization: panel.apiToken ? `Bearer ${panel.apiToken}` : undefined };
-      const httpsAgent = this.getHttpsAgent();
-
-      if (panel.capClientsApi) {
-        const res = await axios.get(`${apiBaseUrl}/panel/api/clients/get/${uuid}`, { headers, httpsAgent, timeout: 5000 });
-        if (res.data && res.data.success && res.data.obj) {
-           return res.data.obj;
-        }
-      }
-
-      const listRes = await axios.get(`${apiBaseUrl}/panel/api/inbounds/list`, { headers, httpsAgent, timeout: 5000 });
-      if (!listRes.data || !listRes.data.success) throw new Error('Failed to list inbounds');
-      const inboundList = listRes.data.obj || [];
-      const inboundMeta = inboundList.find((i: any) => i.port === inboundPort);
-      if (!inboundMeta) throw new Error('Inbound not found');
-
-      const getRes = await axios.get(`${apiBaseUrl}/panel/api/inbounds/get/${inboundMeta.id}`, { headers, httpsAgent, timeout: 5000 });
-      if (!getRes.data || !getRes.data.success) throw new Error('Failed to fetch full inbound data');
-      
-      const inbound = getRes.data.obj;
-      if (!inbound.settings) return null;
-      let settings = typeof inbound.settings === 'string' ? JSON.parse(inbound.settings) : inbound.settings;
-      if (!settings.clients) return null;
-
-      const client = settings.clients.find((c: any) => c.id === uuid);
-      if (!client) return null;
-
-      // Extract stats
-      let stats = null;
-      if (inbound.clientStats) {
-        stats = inbound.clientStats.find((s: any) => s.email === client.email);
-      }
-
-      return {
-        id: client.id,
-        email: client.email,
-        enable: client.enable !== false && (stats ? stats.enable !== false : true),
-        totalGB: client.totalGB !== undefined ? client.totalGB : (stats ? stats.total : 0),
-        expiryTime: client.expiryTime !== undefined ? client.expiryTime : (stats ? stats.expiryTime : 0),
-        up: stats?.up || 0,
-        down: stats?.down || 0,
-      };
-    } catch (err: any) {
-      this.logger.error(`verifyClientState failed for ${uuid}: ${err.message}`);
-      return null;
-    }
-  }
-
-  async resetClientTraffic(panelId: string, inboundPort: number, email: string) {
-    try {
-      return await this.updateInboundFull(panelId, inboundPort, (inbound) => {
-        if (!inbound.clientStats) return;
-        const stat = inbound.clientStats.find((s: any) => s.email === email);
-        if (stat) {
-          stat.up = 0;
-          stat.down = 0;
-        }
+      await this.logProvisioningEvent({
+        operation: 'UPDATE_CLIENT', adminId, panelId, panelName: panel.name,
+        email, endpoint,
+        requestSizeBytes: JSON.stringify(body).length,
+        httpStatus: res.status, durationMs, success: ok,
+        errorCode: ok ? undefined : 'PANEL_ERROR',
+        errorMessage: ok ? undefined : res.data?.msg,
       });
+
+      if (!ok) {
+        const panelMsg: string = res.data?.msg || '';
+        const lower = panelMsg.toLowerCase();
+        const code: ProvisioningErrorCode = lower.includes('record not found') ? 'CLIENT_NOT_FOUND' : 'PANEL_ERROR';
+        return { success: false, error: { code, message: panelMsg, httpStatus: res.status, panelMessage: panelMsg, endpoint, durationMs } };
+      }
+      return { success: true, data: res.data };
+
     } catch (err: any) {
-      throw new BadRequestException(`Failed to reset client traffic on panel: ${err.message}`);
+      const apiError = this.classifyError(err, endpoint, startMs);
+      this.logger.error(`[UPDATE_CLIENT] FAILED email=${email} error=${apiError.code}: ${apiError.message}`);
+      await this.logProvisioningEvent({
+        operation: 'UPDATE_CLIENT', adminId, panelId, panelName: panel.name,
+        email, endpoint, durationMs: apiError.durationMs, success: false,
+        errorCode: apiError.code, errorMessage: apiError.message,
+      });
+      return { success: false, error: apiError };
     }
   }
+
+  /**
+   * DELETE CLIENT on panel using native POST /panel/api/clients/del/{email}
+   * Identifier: EMAIL (not UUID)
+   * NOT idempotent: returns success:false if client not found.
+   * Treat CLIENT_NOT_FOUND as a successful rollback (client was never there).
+   */
+  async deleteClientOnPanel(
+    panelId: string,
+    email: string,
+    adminId?: string,
+    isRollback = false,
+  ): Promise<PanelApiResult> {
+    const { panel, base, headers, agent } = await this.getPanelHttpContext(panelId);
+    const endpoint = `${base}/panel/api/clients/del/${encodeURIComponent(email)}`;
+    const startMs  = Date.now();
+
+    this.logger.log(
+      `[DELETE_CLIENT] PANEL_BASE=${base} METHOD=POST URL=${endpoint} ` +
+      `IDENTIFIER=email:"${email}" isRollback=${isRollback}`
+    );
+
+    try {
+      const res = await this.retryRequest(() =>
+        axios.post(endpoint, {}, {
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          httpsAgent: agent,
+          timeout: PANEL_REQUEST_TIMEOUT_MS,
+        }), `DELETE_CLIENT email=${email}`
+      );
+
+      const durationMs = Date.now() - startMs;
+      const panelMsg: string = res.data?.msg || '';
+      const lower = panelMsg.toLowerCase();
+      const notFound = lower.includes('not found');
+      const ok = res.data?.success === true || (isRollback && notFound);
+
+      this.logger.log(
+        `[DELETE_CLIENT] RESPONSE HTTP=${res.status} success=${res.data?.success} ` +
+        `msg="${panelMsg}" notFound=${notFound} effectiveOk=${ok} duration=${durationMs}ms`
+      );
+
+      await this.logProvisioningEvent({
+        operation: 'DELETE_CLIENT', adminId, panelId, panelName: panel.name,
+        email, endpoint,
+        httpStatus: res.status, durationMs, success: ok,
+        errorCode: (!ok && notFound) ? 'CLIENT_NOT_FOUND' : (!ok ? 'PANEL_ERROR' : undefined),
+        errorMessage: ok ? undefined : panelMsg,
+      });
+
+      if (!ok) {
+        const code: ProvisioningErrorCode = notFound ? 'CLIENT_NOT_FOUND' : 'PANEL_ERROR';
+        return { success: false, error: { code, message: panelMsg, httpStatus: res.status, panelMessage: panelMsg, endpoint, durationMs } };
+      }
+      return { success: true, data: res.data };
+
+    } catch (err: any) {
+      const apiError = this.classifyError(err, endpoint, startMs);
+      this.logger.error(`[DELETE_CLIENT] FAILED email=${email} error=${apiError.code}: ${apiError.message}`);
+      await this.logProvisioningEvent({
+        operation: 'DELETE_CLIENT', adminId, panelId, panelName: panel.name,
+        email, endpoint, durationMs: apiError.durationMs, success: false,
+        errorCode: apiError.code, errorMessage: apiError.message,
+      });
+      return { success: false, error: apiError };
+    }
+  }
+
+  /**
+   * VERIFY CLIENT EXISTS using GET /panel/api/clients/get/{email}
+   * Returns { exists: true, data } when found.
+   * Returns { exists: false } when success:false (record not found).
+   * This is the authoritative existence check — do NOT use /traffic/{email}.
+   */
+  async verifyClientExists(
+    panelId: string,
+    email: string,
+    adminId?: string,
+  ): Promise<{ exists: boolean; data?: any; error?: string }> {
+    const { panel, base, headers, agent } = await this.getPanelHttpContext(panelId);
+    const endpoint = `${base}/panel/api/clients/get/${encodeURIComponent(email)}`;
+    const startMs  = Date.now();
+
+    this.logger.log(
+      `[VERIFY_CLIENT] PANEL_BASE=${base} METHOD=GET URL=${endpoint} ` +
+      `IDENTIFIER=email:"${email}"`
+    );
+
+    try {
+      const res = await axios.get(endpoint, {
+        headers, httpsAgent: agent, timeout: PANEL_REQUEST_TIMEOUT_MS,
+      });
+      const durationMs = Date.now() - startMs;
+      const exists = res.data?.success === true && res.data?.obj !== null;
+
+      this.logger.log(
+        `[VERIFY_CLIENT] RESPONSE HTTP=${res.status} success=${res.data?.success} ` +
+        `obj=${res.data?.obj !== null ? 'present' : 'null'} exists=${exists} duration=${durationMs}ms`
+      );
+
+      await this.logProvisioningEvent({
+        operation: 'VERIFY_CLIENT', adminId, panelId, panelName: panel.name,
+        email, endpoint, httpStatus: res.status, durationMs,
+        success: exists, verificationResult: exists,
+        errorCode: exists ? undefined : 'VERIFICATION_FAILED',
+        errorMessage: exists ? undefined : (res.data?.msg || 'Client not found on panel'),
+      });
+
+      return { exists, data: exists ? res.data.obj : undefined };
+    } catch (err: any) {
+      const durationMs = Date.now() - startMs;
+      this.logger.error(`[VERIFY_CLIENT] ERROR email=${email} err=${err.message}`);
+      return { exists: false, error: err.message };
+    }
+  }
+
+  /**
+   * VERIFY CLIENT IS MISSING (post-delete check) using GET /panel/api/clients/get/{email}
+   * Returns true  when client is confirmed absent (success:false from panel).
+   * Returns false when client still exists.
+   *
+   * IMPORTANT: /clients/traffic/{email} returns success:true + obj:null for missing
+   * clients (confirmed in live probe). Do NOT use it as a delete sentinel.
+   */
+  async verifyClientMissing(
+    panelId: string,
+    email: string,
+    adminId?: string,
+  ): Promise<boolean> {
+    const result = await this.verifyClientExists(panelId, email, adminId);
+    return !result.exists;
+  }
+
+  /**
+   * RESET CLIENT TRAFFIC using native POST /panel/api/clients/resetTraffic/{email}
+   * This replaces the old updateInboundFull() approach which modified clientStats
+   * in memory and had no real effect on many 3x-ui versions.
+   */
+  async resetClientTrafficOnPanel(
+    panelId: string,
+    email: string,
+    adminId?: string,
+  ): Promise<PanelApiResult> {
+    const { panel, base, headers, agent } = await this.getPanelHttpContext(panelId);
+    const endpoint = `${base}/panel/api/clients/resetTraffic/${encodeURIComponent(email)}`;
+    const startMs  = Date.now();
+
+    this.logger.log(
+      `[RESET_TRAFFIC] PANEL_BASE=${base} METHOD=POST URL=${endpoint} ` +
+      `IDENTIFIER=email:"${email}"`
+    );
+
+    try {
+      const res = await this.retryRequest(() =>
+        axios.post(endpoint, {}, {
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          httpsAgent: agent,
+          timeout: PANEL_REQUEST_TIMEOUT_MS,
+        }), `RESET_TRAFFIC email=${email}`
+      );
+
+      const durationMs = Date.now() - startMs;
+      const ok = res.data?.success === true;
+
+      this.logger.log(
+        `[RESET_TRAFFIC] RESPONSE HTTP=${res.status} success=${ok} ` +
+        `msg="${res.data?.msg || ''}" duration=${durationMs}ms`
+      );
+
+      await this.logProvisioningEvent({
+        operation: 'RESET_TRAFFIC', adminId, panelId, panelName: panel.name,
+        email, endpoint, httpStatus: res.status, durationMs, success: ok,
+        errorCode: ok ? undefined : 'PANEL_ERROR',
+        errorMessage: ok ? undefined : res.data?.msg,
+      });
+
+      if (!ok) {
+        const panelMsg = res.data?.msg || '';
+        const code: ProvisioningErrorCode = panelMsg.toLowerCase().includes('record not found') ? 'CLIENT_NOT_FOUND' : 'PANEL_ERROR';
+        return { success: false, error: { code, message: panelMsg, httpStatus: res.status, panelMessage: panelMsg, endpoint, durationMs } };
+      }
+      return { success: true, data: res.data };
+
+    } catch (err: any) {
+      const apiError = this.classifyError(err, endpoint, startMs);
+      this.logger.error(`[RESET_TRAFFIC] FAILED email=${email} error=${apiError.code}: ${apiError.message}`);
+      await this.logProvisioningEvent({
+        operation: 'RESET_TRAFFIC', adminId, panelId, panelName: panel.name,
+        email, endpoint, durationMs: apiError.durationMs, success: false,
+        errorCode: apiError.code, errorMessage: apiError.message,
+      });
+      return { success: false, error: apiError };
+    }
+  }
+
+  // ─── Legacy shims (kept for backward-compat with callers not yet migrated) ───
+  // These now delegate to the new native methods.
+
+  /** @deprecated Use createClientOnPanel() */
+  async addClient(panelId: string, _inboundPort: number, settingsPayload: any) {
+    throw new BadRequestException(
+      'addClient() is deprecated. Callers must use createClientOnPanel() with numeric inbound IDs. ' +
+      'Trigger a panel sync to populate panelInboundId fields.'
+    );
+  }
+
+  /** @deprecated Use updateClientOnPanel() */
+  async updateClient(panelId: string, _inboundPort: number, _uuid: string, clientPayload: any) {
+    throw new BadRequestException(
+      'updateClient() is deprecated and was the source of "Native updateClient failed 404". ' +
+      'It called /panel/api/inbounds/updateClient/{UUID} which does not exist. ' +
+      'Callers must use updateClientOnPanel(panelId, email, payload).'
+    );
+  }
+
+  /** @deprecated Use deleteClientOnPanel() */
+  async delClient(panelId: string, _inboundPort: number, _uuid: string, email?: string) {
+    if (!email) throw new BadRequestException('delClient() requires email. Use deleteClientOnPanel().');
+    return this.deleteClientOnPanel(panelId, email, undefined, true);
+  }
+
+  /** @deprecated Use verifyClientMissing() */
+  async verifyClientDeleted(panelId: string, _inboundPort: number, _uuid: string, email: string): Promise<boolean> {
+    return this.verifyClientMissing(panelId, email);
+  }
+
+  /** @deprecated Use verifyClientExists() */
+  async verifyClientState(panelId: string, _inboundPort: number, _uuid: string): Promise<any | null> {
+    this.logger.warn(`[DEPRECATED] verifyClientState() called without email. Cannot verify without email. Returning null.`);
+    return null;
+  }
+
+  /** @deprecated Use resetClientTrafficOnPanel() */
+  async resetClientTraffic(panelId: string, _inboundPort: number, email: string) {
+    return this.resetClientTrafficOnPanel(panelId, email);
+  }
+
 
   // --- Native 3x-ui Group APIs (under /panel/api/clients/groups/*) ---
 
