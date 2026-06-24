@@ -239,6 +239,7 @@ export class ClientsService {
             createdWithTrafficMode: targetAdmin.trafficMode,
             provisioningStatus: 'ACTIVE',
             provisionedAt: new Date(),
+            balanceDeducted: totalBytes > 0n && lockedCaller.role !== 'SUPER_ADMIN' && lockedCaller.trafficMode === 'ALLOCATION',
             inbounds: {
               create: data.inboundIds.map(inboundId => ({ inboundId }))
             }
@@ -775,8 +776,9 @@ export class ClientsService {
 
           // NEVER refund for FAILED clients — they were never provisioned
           const isFailed = (existing as any).provisioningStatus === 'FAILED';
+          const wasDeducted = (existing as any).balanceDeducted === true;
 
-          if (existing.adminId && !skipRefund && !isFailed) {
+          if (existing.adminId && !skipRefund && !isFailed && wasDeducted) {
             const admin = await tx.admin.findUnique({ where: { id: existing.adminId } });
             if (admin && admin.trafficMode === 'ALLOCATION' && existing.createdWithTrafficMode === 'ALLOCATION' && admin.refundOnDelete) {
               const used = existing.up + existing.down;

@@ -159,13 +159,14 @@ model Client {
   id      String  @id @default(uuid())
   adminId String? // Nullable for Orphaned / Native System Clients
   brandId       String?
-  email         String // 3x-ui client identity key
+  email         String  @unique // 3x-ui client identity key
   remark        String? // Human-readable display name
   ownerTag      String? // Short label for grouping/filtering (e.g. 'vip', 'trial')
   uuid          String  @unique // 3x-ui UUID
   subId         String? // 3x-ui subId (used for subscription links)
   subToken      String? @unique // Secure generated token for portal proxy
   flow          String? // XTLS Flow (e.g. xtls-rprx-vision)
+  balanceDeducted Boolean @default(false) // Whether reseller balance was actually deducted for this client
   enable        Boolean @default(true)
   disableReason String? // MANUAL | EXPIRED | TRAFFIC_LIMIT | BALANCE_EXHAUSTED
   isDeleting    Boolean @default(false)
