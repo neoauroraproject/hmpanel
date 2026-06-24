@@ -1407,9 +1407,28 @@ export class PanelsService implements OnModuleInit {
     adminId?: string,
   ): Promise<PanelApiResult> {
     const { panel, base, headers, agent } = await this.getPanelHttpContext(panelId);
-    const endpoint = `${base}/panel/api/clients/update/${encodeURIComponent(email)}`;
-    const body     = { ...clientPayload, email };
+    
+    // 1. Fetch existing full client to avoid overwriting password/security/etc with empty values
+    const getEndpoint = `${base}/panel/api/clients/get/${encodeURIComponent(email)}`;
     const startMs  = Date.now();
+    let existingClientObj: any = {};
+    try {
+      const getRes = await this.retryRequest(() =>
+        axios.get(getEndpoint, { headers, httpsAgent: agent, timeout: PANEL_REQUEST_TIMEOUT_MS }),
+        `GET_CLIENT email=${email}`
+      );
+      if (getRes.data?.success && getRes.data?.obj?.client) {
+        existingClientObj = getRes.data.obj.client;
+      } else {
+        return { success: false, error: { code: 'CLIENT_NOT_FOUND', message: getRes.data?.msg || 'Client not found', httpStatus: getRes.status, endpoint: getEndpoint, durationMs: 0 } };
+      }
+    } catch (err: any) {
+      const apiError = this.classifyError(err, getEndpoint, startMs);
+      return { success: false, error: apiError };
+    }
+
+    const endpoint = `${base}/panel/api/clients/update/${encodeURIComponent(email)}`;
+    const body     = { ...existingClientObj, ...clientPayload, email };
 
     this.logger.log(
       `[UPDATE_CLIENT] PANEL_BASE=${base} METHOD=POST URL=${endpoint} ` +

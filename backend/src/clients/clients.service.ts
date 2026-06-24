@@ -143,6 +143,7 @@ export class ClientsService {
     const clientSubId = require('crypto').randomBytes(8).toString('hex');
 
     const clientPayload: any = {
+      id: clientUuid,
       email: data.email,
       totalGB: Number(data.total) || 0,
       expiryTime: data.expiryTime || 0,
@@ -524,7 +525,9 @@ export class ClientsService {
       totalGB: Number(newTotal),
       expiryTime: Number(newExpiry),
       limitIp: data.limitIp !== undefined ? data.limitIp : (existing as any).limitIp || 0,
-      tgId: "",
+      tgId: 0,
+      comment: existing.remark || "",
+      reset: 0,
     };
 
     let addedInbounds: any[] = [];
