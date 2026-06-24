@@ -104,6 +104,18 @@ main() {
   fi
 
   step "[6/7] Deploying Containers"
+  info "Ensuring SSL certificates exist so Nginx doesn't crash..."
+  SSL_DIR="${INSTALL_DIR}/nginx/ssl"
+  mkdir -p "${SSL_DIR}"
+  if [[ ! -f "${SSL_DIR}/fullchain.pem" ]]; then
+    info "Generating temporary self-signed certificate for Nginx startup..."
+    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+      -keyout "${SSL_DIR}/privkey.pem" \
+      -out "${SSL_DIR}/fullchain.pem" \
+      -subj "/CN=localhost/O=HMPanel/C=US" >/dev/null 2>&1 || true
+    chmod 600 "${SSL_DIR}/privkey.pem" 2>/dev/null || true
+  fi
+
   info "Recreating containers with latest mounts and images..."
   docker compose up -d --remove-orphans
 

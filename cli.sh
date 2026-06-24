@@ -219,7 +219,7 @@ ssl_request_acme() {
       --reloadcmd "docker exec hmpanel-nginx nginx -s reload || true" >/dev/null 2>&1
       
     # Enable SSL in nginx if it was disabled
-    sed -i 's/# SSL disabled/listen 443 ssl http2;/' "${INSTALL_DIR}/nginx/nginx.conf" 2>/dev/null || true
+    sed -i 's/# SSL disabled/listen 443 ssl;/' "${INSTALL_DIR}/nginx/nginx.conf.template" 2>/dev/null || true
     
     echo -e "${GREEN}✔ Certificate issued successfully!${NC}"
   else
@@ -243,11 +243,11 @@ ssl_install_manual() {
     chmod 600 "${INSTALL_DIR}/nginx/ssl/privkey.pem"
     
     # Enable SSL
-    sed -i 's/# SSL disabled/listen 443 ssl http2;/' "${INSTALL_DIR}/nginx/nginx.conf" 2>/dev/null || true
+    sed -i 's/# SSL disabled/listen 443 ssl;/' "${INSTALL_DIR}/nginx/nginx.conf.template" 2>/dev/null || true
     
     echo -e "${GREEN}✔ Certificates installed.${NC}"
-    echo "Reloading Nginx..."
-    docker exec hmpanel-nginx nginx -s reload >/dev/null 2>&1 || true
+    echo "Restarting Nginx..."
+    docker restart hmpanel-nginx >/dev/null 2>&1 || true
   else
     echo -e "${RED}✘ One or both files not found. Ensure paths are absolute and files exist.${NC}"
   fi
@@ -259,10 +259,10 @@ ssl_disable() {
   echo -e "${YELLOW}⚠ Warning: This will disable HTTPS entirely.${NC}"
   read -rp "Are you sure? [y/N]: " confirm
   if [[ "${confirm,,}" == "y" ]]; then
-    sed -i 's/listen 443 ssl http2;/# SSL disabled/' "${INSTALL_DIR}/nginx/nginx.conf" 2>/dev/null || true
+    sed -i 's/listen 443 ssl;/# SSL disabled/' "${INSTALL_DIR}/nginx/nginx.conf.template" 2>/dev/null || true
     echo -e "${GREEN}✔ SSL disabled.${NC}"
-    echo "Reloading Nginx..."
-    docker exec hmpanel-nginx nginx -s reload >/dev/null 2>&1 || true
+    echo "Restarting Nginx..."
+    docker restart hmpanel-nginx >/dev/null 2>&1 || true
   else
     echo "Cancelled."
   fi

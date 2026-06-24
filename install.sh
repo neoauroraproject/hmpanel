@@ -396,7 +396,7 @@ EOF
   fi
 
   if [[ "$SSL_CHOICE" == 3 ]]; then
-    sed -i 's/listen 443 ssl http2;/# SSL disabled/' "${INSTALL_DIR}/nginx/nginx.conf" 2>/dev/null || true
+    sed -i 's/listen 443 ssl;/# SSL disabled/' "${INSTALL_DIR}/nginx/nginx.conf.template" 2>/dev/null || true
   fi
 }
 
@@ -577,7 +577,7 @@ step_8_ssl() {
       error "ACME SSL failed."
       warn "Falling back to HTTP only..."
       SSL_CHOICE=3
-      sed -i 's/listen 443 ssl http2;/# SSL disabled/' "${INSTALL_DIR}/nginx/nginx.conf" 2>/dev/null || true
+      sed -i 's/listen 443 ssl;/# SSL disabled/' "${INSTALL_DIR}/nginx/nginx.conf.template" 2>/dev/null || true
       SSL_STATUS="disabled"
     fi
     
@@ -592,8 +592,8 @@ step_8_ssl() {
 
   if [[ "$SSL_CHOICE" == 3 ]]; then
     log "SSL disabled (HTTP only)"
-    sed -i 's/listen 443 ssl http2;/# SSL disabled/' "${INSTALL_DIR}/nginx/nginx.conf" 2>/dev/null || true
-    docker exec hmpanel-nginx nginx -s reload >/dev/null 2>&1 || true
+    sed -i 's/listen 443 ssl;/# SSL disabled/' "${INSTALL_DIR}/nginx/nginx.conf.template" 2>/dev/null || true
+    docker restart hmpanel-nginx >/dev/null 2>&1 || true
     SSL_STATUS="disabled"
   fi
 }
