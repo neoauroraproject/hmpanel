@@ -500,7 +500,29 @@ step_6_application() {
   fi
   
   info "Running Database Initialization and Migrations..."
-  if ! run_with_spinner "Applying Schema & Migrations" docker compose run --rm panel-app /bin/sh -c "npx prisma db push && node backend/dist/scripts/run-migrations.js"; then
+  
+  info "Applying pre-migration schema fixes for existing clients..."
+  docker exec hmpanel-postgres psql -U panel_user -d panel_db -c "
+DO \$\$
+DECLARE
+  default_panel_id TEXT;
+  default_server_id TEXT;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Client' AND column_name = 'panelId') THEN
+    SELECT id INTO default_panel_id FROM \"Panel\" LIMIT 1;
+    IF default_panel_id IS NULL THEN
+      default_server_id := gen_random_uuid()::text;
+      INSERT INTO \"Server\" (id, name, \"ipAddress\") VALUES (default_server_id, 'Local', '127.0.0.1');
+      default_panel_id := gen_random_uuid()::text;
+      INSERT INTO \"Panel\" (id, \"serverId\", name, url) VALUES (default_panel_id, default_server_id, 'Default Panel', 'http://127.0.0.1:2053');
+    END IF;
+    ALTER TABLE \"Client\" ADD COLUMN \"panelId\" TEXT;
+    UPDATE \"Client\" SET \"panelId\" = default_panel_id;
+  END IF;
+END \$\$;
+" || warn "Pre-migration SQL failed, but continuing..."
+
+  if ! run_with_spinner "Applying Schema & Migrations" docker compose run --rm panel-app /bin/sh -c "npx prisma db push --accept-data-loss && node backend/dist/scripts/run-migrations.js"; then
     die "Failed to initialize database schema."
   fi
 

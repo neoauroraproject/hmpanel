@@ -137,8 +137,29 @@ main() {
   info "Waiting for database to be ready..."
   sleep 5 # Ensure postgres is up
 
+  info "Applying pre-migration schema fixes for existing clients..."
+  docker exec hmpanel-postgres psql -U panel_user -d panel_db -c "
+DO \$\$
+DECLARE
+  default_panel_id TEXT;
+  default_server_id TEXT;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Client' AND column_name = 'panelId') THEN
+    SELECT id INTO default_panel_id FROM \"Panel\" LIMIT 1;
+    IF default_panel_id IS NULL THEN
+      default_server_id := gen_random_uuid()::text;
+      INSERT INTO \"Server\" (id, name, \"ipAddress\") VALUES (default_server_id, 'Local', '127.0.0.1');
+      default_panel_id := gen_random_uuid()::text;
+      INSERT INTO \"Panel\" (id, \"serverId\", name, url) VALUES (default_panel_id, default_server_id, 'Default Panel', 'http://127.0.0.1:2053');
+    END IF;
+    ALTER TABLE \"Client\" ADD COLUMN \"panelId\" TEXT;
+    UPDATE \"Client\" SET \"panelId\" = default_panel_id;
+  END IF;
+END \$\$;
+" || warn "Pre-migration SQL failed, but continuing..."
+
   info "Running Prisma Schema Update & System Migrations..."
-  if ! docker compose run --rm panel-app /bin/sh -c "npx prisma db push && node backend/dist/scripts/run-migrations.js"; then
+  if ! docker compose run --rm panel-app /bin/sh -c "npx prisma db push --accept-data-loss && node backend/dist/scripts/run-migrations.js"; then
     error "MIGRATION FAILED! Executing emergency rollback..."
     
     info "Stopping containers..."
