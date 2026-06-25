@@ -134,9 +134,6 @@ export class ClientsService {
       throw new BadRequestException(`Client limit reached. Maximum allowed: ${targetAdmin.maxClients}`);
     }
 
-    const existingClient = await this.prisma.client.findFirst({ where: { email: data.email } });
-    if (existingClient) throw new BadRequestException(`Email "${data.email}" is already in use.`);
-
     // ── Step 2: Resolve numeric panel inbound IDs ────────────────────────────
     // The native /clients/add endpoint requires numeric (integer) inbound IDs
     // from the 3x-ui panel DB. These are stored in panelInboundId after sync.
@@ -150,21 +147,38 @@ export class ClientsService {
       byPanel.get(ib.panelId)!.numericIds.push(ib.panelInboundId);
     }
 
-      const clientSubId = require('crypto').randomBytes(8).toString('hex');
+    for (const [panelId] of byPanel) {
+      const existingClient = await this.prisma.client.findUnique({
+        where: { panelId_email: { panelId, email: data.email } }
+      });
+      if (existingClient) throw new BadRequestException(`Email "${data.email}" is already in use on a selected panel.`);
+    }
 
-      const clientPayload: any = {
-        id: clientUuid,
-        email: data.email,
-        totalGB: Number(data.total) || 0,
-        expiryTime: data.expiryTime || 0,
-        limitIp: data.limitIp || 0,
-        tgId: 0,
-        enable: true,
-        flow: data.flow || "",
-        subId: clientSubId,
-        comment: "",
-        reset: 0,
-      };
+    // Prepare panel-specific payloads
+    const panelPayloads = new Map<string, any>();
+    const clientSubId = require('crypto').randomBytes(8).toString('hex');
+    
+    for (const [panelId, { numericIds }] of byPanel) {
+      const clientUuid = randomUUID();
+      const clientSubToken = require('crypto').randomBytes(5).toString('hex');
+      panelPayloads.set(panelId, {
+        uuid: clientUuid,
+        subToken: clientSubToken,
+        payload: {
+          id: clientUuid,
+          email: data.email,
+          totalGB: Number(data.total) || 0,
+          expiryTime: data.expiryTime || 0,
+          limitIp: data.limitIp || 0,
+          tgId: 0,
+          enable: true,
+          flow: data.flow || "",
+          subId: clientSubId,
+          comment: "",
+          reset: 0,
+        }
+      });
+    }
 
       // ── Step 3: PRE-FLIGHT CHECK ON REMOTE PANELS ────────────────────────────
       for (const [panelId] of byPanel) {
@@ -179,9 +193,10 @@ export class ClientsService {
       const createdOnPanels: string[] = [];  // panelIds successfully provisioned
 
     for (const [panelId, { numericIds }] of byPanel) {
+      const pData = panelPayloads.get(panelId)!;
       // 3a. Create on panel
       const createResult = await this.panelsService.createClientOnPanel(
-        panelId, numericIds, clientPayload, callerId
+        panelId, numericIds, pData.payload, callerId
       );
 
       if (!createResult.success) {
@@ -213,14 +228,13 @@ export class ClientsService {
             
           const fieldsMatch = 
             remoteClientObj.email === data.email &&
-            remoteClientObj.uuid === clientUuid &&
-            remoteClientObj.enable === true &&
-            remoteClientObj.subId !== undefined && remoteClientObj.subId !== null && remoteClientObj.subId !== "";
+            remoteClientObj.uuid === pData.uuid &&
+            remoteClientObj.enable === true;
 
           if (!inboundsMatch) {
             verificationReason = `Inbound mismatch. Expected [${expectedInbounds.join(',')}] but got [${remoteInbounds.join(',')}].`;
           } else if (!fieldsMatch) {
-            verificationReason = `Client field validation failed. Missing or mismatched email, uuid, enable status, or subId.`;
+            verificationReason = `Client field validation failed. Missing or mismatched email, uuid, or enable status.`;
           } else {
             isVerified = true;
           }
@@ -267,46 +281,52 @@ export class ClientsService {
           }
         }
 
-        const client = await tx.client.create({
-          data: {
-            adminId: targetAdminId,
-            email: data.email,
-            remark: data.remark,
-            uuid: clientUuid,
-            subId: clientSubId,
-            subToken: crypto.randomBytes(5).toString('hex'),
-            flow: data.flow,
-            total: totalBytes,
-            expiryTime: BigInt(data.expiryTime || 0),
-            limitIp: data.limitIp || 0,
-            createdWithTrafficMode: targetAdmin.trafficMode,
-            provisioningStatus: 'ACTIVE',
-            provisionedAt: new Date(),
-            balanceDeducted: totalBytes > 0n && lockedCaller.role !== 'SUPER_ADMIN' && lockedCaller.trafficMode === 'ALLOCATION',
-            inbounds: {
-              create: data.inboundIds.map(inboundId => ({ inboundId }))
-            }
-          },
-          include: {
-            inbounds: {
-              select: {
-                inbound: {
-                  select: {
-                    id: true, tag: true, port: true, protocol: true,
-                    panel: { select: { id: true, name: true, url: true, subUrl: true } }
+        const createdClients = [];
+        for (const [panelId, { dbIds }] of byPanel) {
+          const pData = panelPayloads.get(panelId)!;
+          const client = await tx.client.create({
+            data: {
+              panelId,
+              adminId: targetAdminId,
+              email: data.email,
+              remark: data.remark,
+              uuid: pData.uuid,
+              subId: clientSubId,
+              subToken: pData.subToken,
+              flow: data.flow,
+              total: totalBytes,
+              expiryTime: BigInt(data.expiryTime || 0),
+              limitIp: data.limitIp || 0,
+              createdWithTrafficMode: targetAdmin.trafficMode,
+              provisioningStatus: 'ACTIVE',
+              provisionedAt: new Date(),
+              balanceDeducted: totalBytes > 0n && lockedCaller.role !== 'SUPER_ADMIN' && lockedCaller.trafficMode === 'ALLOCATION',
+              inbounds: {
+                create: dbIds.map(inboundId => ({ inboundId }))
+              }
+            },
+            include: {
+              inbounds: {
+                select: {
+                  inbound: {
+                    select: {
+                      id: true, tag: true, port: true, protocol: true,
+                      panel: { select: { id: true, name: true, url: true, subUrl: true } }
+                    }
                   }
                 }
               }
             }
-          }
-        });
+          });
+          createdClients.push(client);
+        }
 
         if (totalBytes > 0n && lockedCaller.role !== 'SUPER_ADMIN' && lockedCaller.trafficMode === 'ALLOCATION') {
           await tx.trafficTransaction.create({
             data: {
               adminId: callerId,
-              clientId: client.id,
-              targetClientUuid: client.id,
+              clientId: createdClients[0].id,
+              targetClientUuid: createdClients[0].id,
               amount: totalBytes,
               type: 'DEBIT',
               action: `CLIENT_CREATION_ALLOCATION_${Date.now()}`,
@@ -318,13 +338,13 @@ export class ClientsService {
         }
 
         await tx.auditLog.create({
-          data: { action: 'CLIENT_CREATED', entity: 'Client', entityId: client.id, adminId: callerId, details: { targetAdminId, panelsProvisioned: createdOnPanels } }
+          data: { action: 'CLIENT_CREATED', entity: 'Client', entityId: createdClients[0].id, adminId: callerId, details: { targetAdminId, panelsProvisioned: createdOnPanels } }
         });
 
         return {
-          ...client,
-          inbound: client.inbounds?.[0]?.inbound || null,
-          inbounds: client.inbounds?.map(ci => ci.inbound) || []
+          ...createdClients[0],
+          inbound: createdClients[0].inbounds?.[0]?.inbound || null,
+          inbounds: createdClients.flatMap(c => c.inbounds?.map(ci => ci.inbound) || [])
         };
       });
     } catch (dbError: any) {
@@ -593,6 +613,11 @@ export class ClientsService {
           where: { id: { in: toAdd } },
           include: { panel: true }
         });
+        
+        const invalidInbounds = addedInbounds.filter(ib => ib.panelId !== (existing as any).panelId);
+        if (invalidInbounds.length > 0) {
+          throw new BadRequestException('Cannot add inbounds from a different panel to this client record. Please provision a new client for the other panel.');
+        }
       }
       removedInbounds = existing.inbounds.filter((i: any) => toRemove.includes(i.id));
     }
@@ -1102,55 +1127,71 @@ export class ClientsService {
       emails.push(`${dto.prefix}${sep}${i}`);
     }
 
-    const existingClient = await this.prisma.client.findFirst({
-      where: { email: { in: emails } }
-    });
-    if (existingClient) {
-      throw new BadRequestException(`Email "${existingClient.email}" is already in use.`);
+    const resolvedInbounds = await this.panelsService.resolveNumericInboundIds(dto.inboundIds);
+    const byPanel = new Map<string, { dbIds: string[]; numericIds: number[] }>();
+    for (const ib of resolvedInbounds) {
+      if (!byPanel.has(ib.panelId)) byPanel.set(ib.panelId, { dbIds: [], numericIds: [] });
+      byPanel.get(ib.panelId)!.dbIds.push(ib.id);
+      byPanel.get(ib.panelId)!.numericIds.push(ib.panelInboundId);
     }
 
-    const clientPayloads: any[] = [];
+    for (const [panelId] of byPanel) {
+      const existingClient = await this.prisma.client.findFirst({
+        where: { panelId, email: { in: emails } }
+      });
+      if (existingClient) {
+        throw new BadRequestException(`Email "${existingClient.email}" is already in use on panel ${panelId}.`);
+      }
+    }
+
+    const panelPayloads = new Map<string, any[]>();
     const clientsDbData: any[] = [];
 
     for (const email of emails) {
-      const clientUuid = crypto.randomUUID();
-      const clientSubId = crypto.randomBytes(8).toString('hex');
-      const clientSubToken = crypto.randomBytes(5).toString('hex');
+      const clientSubId = require('crypto').randomBytes(8).toString('hex');
+      
+      for (const [panelId] of byPanel) {
+        const clientUuid = crypto.randomUUID();
+        const clientSubToken = crypto.randomBytes(5).toString('hex');
 
-      clientPayloads.push({
-        id: clientUuid,
-        subId: clientSubId,
-        email: email,
-        enable: dto.enable !== false,
-        totalGB: Number(dto.total) || 0,
-        expiryTime: dto.expiryTime || 0,
-        limitIp: dto.limitIp || 0,
-        tgId: 0,
-        comment: dto.remark || "",
-        reset: 0,
-      });
+        if (!panelPayloads.has(panelId)) panelPayloads.set(panelId, []);
+        
+        panelPayloads.get(panelId)!.push({
+          id: clientUuid,
+          subId: clientSubId,
+          email: email,
+          enable: dto.enable !== false,
+          totalGB: Number(dto.total) || 0,
+          expiryTime: dto.expiryTime || 0,
+          limitIp: dto.limitIp || 0,
+          tgId: 0,
+          comment: dto.remark || "",
+          reset: 0,
+        });
 
-      clientsDbData.push({
-        adminId: targetAdminId,
-        email: email,
-        remark: dto.remark || "",
-        uuid: clientUuid,
-        subId: clientSubId,
-        subToken: clientSubToken,
-        flow: dto.flow || "",
-        total: totalBytesPerClient,
-        expiryTime: BigInt(dto.expiryTime || 0),
-        limitIp: dto.limitIp || 0,
-        enable: dto.enable !== false,
-        createdWithTrafficMode: targetAdmin.trafficMode,
-      });
+        clientsDbData.push({
+          panelId,
+          adminId: targetAdminId,
+          email: email,
+          remark: dto.remark || "",
+          uuid: clientUuid,
+          subId: clientSubId,
+          subToken: clientSubToken,
+          flow: dto.flow || "",
+          total: totalBytesPerClient,
+          expiryTime: BigInt(dto.expiryTime || 0),
+          limitIp: dto.limitIp || 0,
+          enable: dto.enable !== false,
+          createdWithTrafficMode: targetAdmin.trafficMode,
+        });
+      }
     }
 
     const createdOnPanels: any[] = [];
     try {
       for (const inbound of inbounds) {
         const isReality = inbound.protocol === 'vless' && (inbound.streamSettings as any)?.security === 'reality';
-        const payloadsForInbound = clientPayloads.map(p => ({
+        const payloadsForInbound = panelPayloads.get(inbound.panelId)!.map(p => ({
           ...p,
           flow: isReality ? (dto.flow || "") : ""
         }));
@@ -1168,7 +1209,8 @@ export class ClientsService {
       }
     } catch (e: any) {
       for (const inbound of createdOnPanels) {
-        await Promise.all(clientPayloads.map(p => 
+        const payloads = panelPayloads.get(inbound.panelId) || [];
+        await Promise.all(payloads.map(p => 
           this.panelsService.delClient(inbound.panelId, inbound.port, p.id, p.email).catch(console.error)
         ));
       }
@@ -1196,7 +1238,10 @@ export class ClientsService {
           data: {
             ...clientData,
             inbounds: {
-              create: dto.inboundIds.map(inboundId => ({ inboundId }))
+              // Only create inbound links for this specific panel's inbounds
+              create: dto.inboundIds
+                .filter(inboundId => inbounds.find(i => i.id === inboundId)?.panelId === clientData.panelId)
+                .map(inboundId => ({ inboundId }))
             }
           }
         });
@@ -1204,6 +1249,7 @@ export class ClientsService {
       }
 
       if (totalBytesRequired > 0n && caller.role !== 'SUPER_ADMIN' && caller.trafficMode === 'ALLOCATION') {
+        // Find distinct client emails to bill them once per bulk operation
         await tx.trafficTransaction.create({
           data: {
             adminId: callerId,
@@ -1226,10 +1272,11 @@ export class ClientsService {
       return result;
     });
 
-    return { success: true, count: createdClients.length };
+    return { success: true, count: emails.length };
     } catch (dbError) {
       for (const inbound of createdOnPanels) {
-        await Promise.all(clientPayloads.map(p => 
+        const payloads = panelPayloads.get(inbound.panelId) || [];
+        await Promise.all(payloads.map(p => 
           this.panelsService.delClient(inbound.panelId, inbound.port, p.id, p.email).catch(console.error)
         ));
       }

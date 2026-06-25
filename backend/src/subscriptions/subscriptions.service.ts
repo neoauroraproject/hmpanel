@@ -11,13 +11,14 @@ export class SubscriptionsService {
   constructor(private prisma: PrismaService) {}
 
   async getSubscriptionDetails(id: string) {
-    const client = await this.prisma.client.findFirst({
+    const clients = await this.prisma.client.findMany({
       where: {
         OR: [
           { subId: id },
           { id: id },
           { email: id },
-          { uuid: id }
+          { uuid: id },
+          { subToken: id }
         ]
       },
       include: {
@@ -49,173 +50,225 @@ export class SubscriptionsService {
       }
     });
 
-    if (!client) {
+    if (!clients || clients.length === 0) {
       throw new NotFoundException('Subscription not found');
     }
 
-    const inbound = client.inbounds?.[0]?.inbound || null;
-    const inbounds = client.inbounds?.map(ci => ci.inbound) || [];
+    const primaryClient = clients[0];
+    
+    let totalUp = 0n;
+    let totalDown = 0n;
+    let maxTotal = 0n;
+    const allInbounds = [];
+
+    for (const c of clients) {
+      totalUp += c.up;
+      totalDown += c.down;
+      if (c.total > maxTotal) maxTotal = c.total;
+      
+      if (c.inbounds) {
+        for (const ci of c.inbounds) {
+          if (ci.inbound) allInbounds.push(ci.inbound);
+        }
+      }
+    }
 
     return {
-      id: client.id,
-      uuid: client.uuid,
-      subId: client.subId,
-      subToken: client.subToken,
-      email: client.email,
-      remark: client.remark,
-      enable: client.enable,
-      up: Number(client.up),
-      down: Number(client.down),
-      total: Number(client.total),
-      expiryTime: Number(client.expiryTime),
-      createdAt: client.createdAt,
-      portalSettings: (client.admin as any)?.portalSettings || {},
-      inbound,
-      inbounds,
+      id: primaryClient.id,
+      uuid: primaryClient.uuid,
+      subId: primaryClient.subId,
+      subToken: primaryClient.subToken,
+      email: primaryClient.email,
+      remark: primaryClient.remark,
+      enable: primaryClient.enable,
+      up: Number(totalUp),
+      down: Number(totalDown),
+      total: Number(maxTotal),
+      expiryTime: Number(primaryClient.expiryTime),
+      createdAt: primaryClient.createdAt,
+      portalSettings: (primaryClient.admin as any)?.portalSettings || {},
+      inbound: allInbounds[0] || null,
+      inbounds: allInbounds,
     };
   }
 
   async getSubscriptionNodes(id: string) {
     const details = await this.getSubscriptionDetails(id);
-    const { email, subId, inbound } = details;
+    const { email, subId, inbounds } = details;
     
-    if (!inbound || !inbound.panel) {
+    if (!inbounds || inbounds.length === 0) {
       return [];
     }
 
-    let nativeUrl = '';
-    const panelSubUrl = inbound.panel.subUrl || inbound.panel.url || '';
-    try {
-      const pUrl = new URL(panelSubUrl);
-      const pathname = pUrl.pathname.endsWith('/sub/') ? pUrl.pathname : `${pUrl.pathname.replace(/\/$/, '')}/sub/`;
-      nativeUrl = `${pUrl.origin}${pathname}${encodeURIComponent(subId || email)}`;
-    } catch {
-      const base = panelSubUrl.endsWith('/') ? panelSubUrl : `${panelSubUrl}/`;
-      if (base.includes('/sub/')) {
-        nativeUrl = `${base}${encodeURIComponent(subId || email)}`;
-      } else {
-        nativeUrl = `${base}sub/${encodeURIComponent(subId || email)}`;
+    const panelSubUrls = new Set<string>();
+    for (const ib of inbounds) {
+      if (ib.panel) {
+        const url = ib.panel.subUrl || ib.panel.url;
+        if (url) panelSubUrls.add(url);
       }
     }
 
-    if (!nativeUrl || nativeUrl.includes('undefined')) {
-      return [];
+    const nativeUrls: string[] = [];
+    for (const pUrl of panelSubUrls) {
+      let nativeUrl = '';
+      try {
+        const u = new URL(pUrl);
+        const pathname = u.pathname.endsWith('/sub/') ? u.pathname : `${u.pathname.replace(/\/$/, '')}/sub/`;
+        nativeUrl = `${u.origin}${pathname}${encodeURIComponent(subId || email)}`;
+      } catch {
+        const base = pUrl.endsWith('/') ? pUrl : `${pUrl}/`;
+        if (base.includes('/sub/')) {
+          nativeUrl = `${base}${encodeURIComponent(subId || email)}`;
+        } else {
+          nativeUrl = `${base}sub/${encodeURIComponent(subId || email)}`;
+        }
+      }
+      nativeUrls.push(nativeUrl);
     }
 
+    if (nativeUrls.length === 0) return [];
+
     try {
-      const response = await axios.get(nativeUrl, {
+      const fetchPromises = nativeUrls.map(url => axios.get(url, {
         httpsAgent: new https.Agent({ rejectUnauthorized: false }),
         timeout: 10000,
-      });
+      }).catch(err => {
+        this.logger.error(`Failed to fetch native nodes from ${url}`, err.message);
+        return null;
+      }));
 
-      let content = response.data;
-      if (typeof content !== 'string') {
-         content = JSON.stringify(content);
-      }
-      
-      let decoded = content;
-      try {
-        decoded = Buffer.from(content, 'base64').toString('utf-8');
-        if (!decoded.includes('://')) {
-           decoded = content; 
-        }
-      } catch (e) {
-        decoded = content;
-      }
-
-      const lines = String(decoded).split('\n').map((l: string) => l.trim()).filter((l: string) => l.length > 0);
+      const responses = await Promise.all(fetchPromises);
       const nodes = [];
 
-      for (const line of lines) {
-        if (!line.includes('://')) continue;
-        const [protocol, rest] = line.split('://');
+      for (const response of responses) {
+        if (!response || !response.data) continue;
         
-        let tag = 'Unknown';
-        if (rest && rest.includes('#')) {
-          tag = decodeURIComponent(rest.split('#')[1]);
+        let content = response.data;
+        if (typeof content !== 'string') {
+           content = JSON.stringify(content);
+        }
+        
+        let decoded = content;
+        try {
+          decoded = Buffer.from(content, 'base64').toString('utf-8');
+          if (!decoded.includes('://')) {
+             decoded = content; 
+          }
+        } catch (e) {
+          decoded = content;
         }
 
-        nodes.push({
-          link: line,
-          protocol: protocol.toUpperCase(),
-          tag,
-        });
+        const lines = String(decoded).split('\n').map((l: string) => l.trim()).filter((l: string) => l.length > 0);
+        for (const line of lines) {
+          if (!line.includes('://')) continue;
+          const [protocol, rest] = line.split('://');
+          
+          let tag = 'Unknown';
+          if (rest && rest.includes('#')) {
+            tag = decodeURIComponent(rest.split('#')[1]);
+          }
+
+          nodes.push({
+            link: line,
+            protocol: protocol.toUpperCase(),
+            tag,
+          });
+        }
       }
 
       return nodes;
     } catch (error: any) {
-      this.logger.error(`Failed to fetch native nodes from ${nativeUrl}`, error.message);
+      this.logger.error(`Failed to aggregate nodes`, error.message);
       return [];
     }
   }
 
   async proxySubscription(token: string, req: Request, res: Response) {
-    const client = await this.prisma.client.findFirst({
-      where: { 
-        OR: [
-          { subToken: token },
-          { subId: token },
-          { uuid: token }
-        ]
-      },
-      include: {
-        inbounds: {
-          select: {
-            inbound: {
-              select: {
-                panel: {
-                  select: { subUrl: true, url: true }
-                }
-              }
-            }
-          }
+    try {
+      const details = await this.getSubscriptionDetails(token);
+      const { email, subId, inbounds } = details;
+
+      if (!inbounds || inbounds.length === 0) {
+        return res.status(404).send('Subscription not found');
+      }
+
+      const panelSubUrls = new Set<string>();
+      for (const ib of inbounds) {
+        if (ib.panel) {
+          const url = ib.panel.subUrl || ib.panel.url;
+          if (url) panelSubUrls.add(url);
         }
       }
-    });
 
-    const inbound = client?.inbounds?.[0]?.inbound || null;
-
-    if (!client || !inbound || !inbound.panel) {
-      return res.status(404).send('Subscription not found');
-    }
-
-    let nativeUrl = '';
-    const panelSubUrl = inbound.panel.subUrl || inbound.panel.url || '';
-    try {
-      const pUrl = new URL(panelSubUrl);
-      const pathname = pUrl.pathname.endsWith('/sub/') ? pUrl.pathname : `${pUrl.pathname.replace(/\/$/, '')}/sub/`;
-      nativeUrl = `${pUrl.origin}${pathname}${encodeURIComponent(client.subId || client.email)}`;
-    } catch {
-      const base = panelSubUrl.endsWith('/') ? panelSubUrl : `${panelSubUrl}/`;
-      if (base.includes('/sub/')) {
-        nativeUrl = `${base}${encodeURIComponent(client.subId || client.email)}`;
-      } else {
-        nativeUrl = `${base}sub/${encodeURIComponent(client.subId || client.email)}`;
+      const nativeUrls: string[] = [];
+      for (const pUrl of panelSubUrls) {
+        let nativeUrl = '';
+        try {
+          const u = new URL(pUrl);
+          const pathname = u.pathname.endsWith('/sub/') ? u.pathname : `${u.pathname.replace(/\/$/, '')}/sub/`;
+          nativeUrl = `${u.origin}${pathname}${encodeURIComponent(subId || email)}`;
+        } catch {
+          const base = pUrl.endsWith('/') ? pUrl : `${pUrl}/`;
+          if (base.includes('/sub/')) {
+            nativeUrl = `${base}${encodeURIComponent(subId || email)}`;
+          } else {
+            nativeUrl = `${base}sub/${encodeURIComponent(subId || email)}`;
+          }
+        }
+        nativeUrls.push(nativeUrl);
       }
-    }
 
-    try {
       const headers: any = {};
-      if (req.headers['user-agent']) {
-        headers['User-Agent'] = req.headers['user-agent'];
-      }
-      if (req.headers['accept']) {
-        headers['Accept'] = req.headers['accept'];
-      }
-      if (req.headers['accept-language']) {
-        headers['Accept-Language'] = req.headers['accept-language'];
-      }
+      if (req.headers['user-agent']) headers['User-Agent'] = req.headers['user-agent'];
+      if (req.headers['accept']) headers['Accept'] = req.headers['accept'];
+      if (req.headers['accept-language']) headers['Accept-Language'] = req.headers['accept-language'];
 
-      const response = await axios.get(nativeUrl, {
+      const fetchPromises = nativeUrls.map(url => axios.get(url, {
         headers,
         httpsAgent: new https.Agent({ rejectUnauthorized: false }),
-        responseType: 'stream',
         timeout: 10000,
-      });
+      }).catch(err => {
+        this.logger.error(`Failed to proxy native subscription from ${url}`, err.message);
+        return null;
+      }));
 
-      // Forward headers from 3x-ui
+      const responses = await Promise.all(fetchPromises);
+      let combinedData = '';
+      let firstValidResponse = null;
+
+      for (const response of responses) {
+        if (!response || !response.data) continue;
+        if (!firstValidResponse) firstValidResponse = response;
+
+        let content = response.data;
+        if (typeof content !== 'string') {
+          content = JSON.stringify(content);
+        }
+        
+        let decoded = content;
+        try {
+          decoded = Buffer.from(content, 'base64').toString('utf-8');
+          if (!decoded.includes('://')) {
+             decoded = content; 
+          }
+        } catch (e) {
+          decoded = content;
+        }
+
+        combinedData += decoded + '\n';
+      }
+
+      if (!firstValidResponse) {
+        return res.status(502).send('Bad Gateway - No panels responded');
+      }
+
+      const totalTraffic = details.total;
+      const usedTraffic = details.up + details.down;
+      const expireDate = Math.floor(details.expiryTime / 1000);
+
+      res.setHeader('Subscription-Userinfo', `upload=${details.up}; download=${details.down}; total=${totalTraffic}; expire=${expireDate}`);
+      
       const headersToForward = [
-        'subscription-userinfo',
         'profile-update-interval',
         'profile-web-page-url',
         'content-type',
@@ -223,14 +276,19 @@ export class SubscriptionsService {
       ];
 
       for (const h of headersToForward) {
-        if (response.headers[h]) {
-          res.setHeader(h, response.headers[h]);
+        if (firstValidResponse.headers[h]) {
+          res.setHeader(h, firstValidResponse.headers[h]);
         }
       }
 
-      response.data.pipe(res);
+      const finalBase64 = Buffer.from(combinedData.trim()).toString('base64');
+      res.send(finalBase64);
+
     } catch (error: any) {
-      this.logger.error(`Failed to proxy native subscription from ${nativeUrl}`, error.message);
+      if (error instanceof NotFoundException) {
+        return res.status(404).send('Subscription not found');
+      }
+      this.logger.error(`Failed to aggregate and proxy subscription`, error.message);
       res.status(502).send('Bad Gateway');
     }
   }

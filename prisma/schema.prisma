@@ -65,6 +65,7 @@ model Panel {
   backups       Backup[]
   incidents     Incident[]
   storeProfiles StoreProfile[]
+  clients       Client[]
 }
 
 model Inbound {
@@ -156,13 +157,14 @@ model AdminInbound {
 
 // Client entity strictly tied to an Admin for "ownership tracking"
 model Client {
-  id      String  @id @default(uuid())
-  adminId String? // Nullable for Orphaned / Native System Clients
+  id            String  @id @default(uuid())
+  panelId       String
+  adminId       String? // Nullable for Orphaned / Native System Clients
   brandId       String?
-  email         String  @unique // 3x-ui client identity key
+  email         String  // Removed @unique
   remark        String? // Human-readable display name
   ownerTag      String? // Short label for grouping/filtering (e.g. 'vip', 'trial')
-  uuid          String  @unique // 3x-ui UUID
+  uuid          String  // Removed @unique
   subId         String? // 3x-ui subId (used for subscription links)
   subToken      String? @unique // Secure generated token for portal proxy
   flow          String? // XTLS Flow (e.g. xtls-rprx-vision)
@@ -189,11 +191,15 @@ model Client {
   updatedAt DateTime @updatedAt
 
   admin         Admin?               @relation(fields: [adminId], references: [id], onDelete: SetNull)
+  panel         Panel                @relation(fields: [panelId], references: [id], onDelete: Cascade)
   brand         Brand?               @relation(fields: [brandId], references: [id], onDelete: SetNull)
   inbounds      ClientInbound[]
   transactions  TrafficTransaction[]
   createdOrders StoreOrder[]         @relation("CreatedClient")
   renewedOrders StoreOrder[]         @relation("RenewClient")
+
+  @@unique([panelId, email])
+  @@unique([panelId, uuid])
 }
 
 // ---------------------------------------------------------
@@ -517,4 +523,16 @@ model Incident {
   resolvedAt DateTime?
 
   panel Panel? @relation(fields: [panelId], references: [id], onDelete: SetNull)
+}
+
+// ---------------------------------------------------------
+// System Migrations
+// ---------------------------------------------------------
+
+model SystemMigration {
+  id              String   @id @default(uuid())
+  version         String   @unique
+  executedAt      DateTime @default(now())
+  status          String   // SUCCESS, FAILED
+  integrityReport Json?
 }

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════
-#  HMPanel — Master Updater v1.2
+#  HMPanel — Master Updater v1.3.0
 #  https://github.com/neoauroraproject/hmpanel
 # ═══════════════════════════════════════════════════════════════════
 set -euo pipefail
@@ -28,7 +28,7 @@ check_root() {
 }
 
 main() {
-  echo -e "${CYAN}${BOLD}HMPanel Master Updater v1.2${NC}"
+  echo -e "${CYAN}${BOLD}HMPanel Master Updater v1.3.0${NC}"
   check_root
 
   INSTALL_DIR="/opt/hmpanel"
@@ -40,7 +40,7 @@ main() {
   
   REPO_URL="https://raw.githubusercontent.com/neoauroraproject/hmpanel/main"
 
-  step "[1/7] Fetching Latest Infrastructure Files"
+  step "[1/8] Fetching Latest Infrastructure Files"
   info "Downloading latest docker-compose.yml..."
   curl -fsSL "${REPO_URL}/docker-compose.yml" -o docker-compose.yml || warn "Failed to download docker-compose.yml"
 
@@ -59,7 +59,7 @@ main() {
 
   log "Host infrastructure synced with main branch."
 
-  step "[2/7] Updating CLI Manager"
+  step "[2/8] Updating CLI Manager"
   if [[ -f "${INSTALL_DIR}/cli.sh" ]]; then
     info "Installing updated hmpanel CLI..."
     cp "${INSTALL_DIR}/cli.sh" /usr/local/bin/hmpanel
@@ -68,7 +68,7 @@ main() {
     log "CLI updated successfully."
   fi
 
-  step "[3/7] Rollback Safety"
+  step "[3/8] Rollback Safety & Database Backup"
   if docker image inspect ghcr.io/neoauroraproject/hmpanel:latest &>/dev/null; then
     docker tag ghcr.io/neoauroraproject/hmpanel:latest ghcr.io/neoauroraproject/hmpanel:rollback
     log "Current image tagged as rollback."
@@ -76,7 +76,22 @@ main() {
     warn "No existing latest image found to tag as rollback."
   fi
 
-  step "[4/7] Pulling Latest Docker Images"
+  mkdir -p "${INSTALL_DIR}/backups"
+  BACKUP_FILE="${INSTALL_DIR}/backups/pre_update_$(date +%Y%m%d_%H%M%S).sql"
+  
+  if docker ps | grep -q "hmpanel-postgres"; then
+    info "Creating pre-update database backup..."
+    if docker exec hmpanel-postgres pg_dump -U panel_user -d panel_db -F c > "$BACKUP_FILE"; then
+      log "Database backup created at $BACKUP_FILE"
+    else
+      warn "Failed to create database backup. Update will proceed but without rollback capability."
+      rm -f "$BACKUP_FILE"
+    fi
+  else
+    warn "Postgres container is not running. Skipping pre-update backup."
+  fi
+
+  step "[4/8] Pulling Latest Docker Images"
   info "Downloading prebuilt images..."
   
   local max_pull=5
@@ -97,13 +112,12 @@ main() {
     die "Failed to pull Docker images after $max_pull attempts."
   fi
 
-  step "[5/7] Checking Permissions"
+  step "[5/8] Checking Permissions"
   if [ -f "${INSTALL_DIR}/.env" ]; then
     chown 1001:1001 "${INSTALL_DIR}/.env"
     chmod 600 "${INSTALL_DIR}/.env"
   fi
 
-  step "[6/7] Deploying Containers"
   info "Ensuring SSL certificates exist so Nginx doesn't crash..."
   SSL_DIR="${INSTALL_DIR}/nginx/ssl"
   mkdir -p "${SSL_DIR}"
@@ -116,10 +130,49 @@ main() {
     chmod 600 "${SSL_DIR}/privkey.pem" 2>/dev/null || true
   fi
 
+  step "[6/8] Executing Database Migrations"
+  info "Starting database to apply migrations..."
+  docker compose up -d postgres
+  
+  info "Waiting for database to be ready..."
+  sleep 5 # Ensure postgres is up
+
+  info "Running Prisma Schema Update & System Migrations..."
+  if ! docker compose run --rm hmpanel-panel /bin/sh -c "npx prisma db push && node backend/dist/scripts/run-migrations.js"; then
+    error "MIGRATION FAILED! Executing emergency rollback..."
+    
+    info "Stopping containers..."
+    docker compose down
+    
+    if [[ -f "$BACKUP_FILE" ]]; then
+      info "Restoring database from pre-update backup..."
+      docker compose up -d postgres
+      sleep 5
+      # Drop and recreate public schema to ensure clean restore
+      docker exec hmpanel-postgres psql -U panel_user -d panel_db -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+      docker exec -i hmpanel-postgres pg_restore -U panel_user -d panel_db -1 < "$BACKUP_FILE"
+      log "Database restored successfully."
+    else
+      warn "No backup file found to restore."
+    fi
+    
+    info "Reverting Docker image to previous version..."
+    if docker image inspect ghcr.io/neoauroraproject/hmpanel:rollback &>/dev/null; then
+      docker tag ghcr.io/neoauroraproject/hmpanel:rollback ghcr.io/neoauroraproject/hmpanel:latest
+    fi
+    
+    info "Restarting previous version..."
+    docker compose up -d
+    die "Update aborted due to migration failure. The system has been rolled back."
+  fi
+  
+  log "Migrations completed successfully."
+
+  step "[7/8] Deploying Containers"
   info "Recreating containers with latest mounts and images..."
   docker compose up -d --remove-orphans
 
-  step "[7/7] Verifying Health & Cleaning Up"
+  step "[8/8] Verifying Health & Cleaning Up"
   local max_attempts=30
   local attempt=0
   info "Waiting for services to become healthy..."
@@ -137,7 +190,7 @@ main() {
     warn "Health check timeout. Check logs: docker compose logs panel-app"
   else
     echo ""
-    log "HMPanel Panel successfully updated to latest version!"
+    log "HMPanel Panel successfully updated to version 1.3.0!"
   fi
 
   info "Cleaning up old images..."

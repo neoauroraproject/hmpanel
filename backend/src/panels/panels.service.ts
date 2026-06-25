@@ -689,11 +689,16 @@ export class PanelsService implements OnModuleInit {
     const startTime = Date.now();
     const apiBaseUrl = panel.apiBaseUrl || panel.url.replace(/\/$/, '');
 
+    this.logger.debug(`[DIAGNOSTIC] Start Sync for panel ${id} (${panel.name}) at ${apiBaseUrl}`);
+
     try {
+      this.logger.debug(`[DIAGNOSTIC] GET /panel/api/server/status`);
       const statusRes = await axios.get(`${apiBaseUrl}/panel/api/server/status`, {
         headers: { Authorization: panel.apiToken ? `Bearer ${panel.apiToken}` : undefined },
         timeout: 5000,
       });
+      
+      this.logger.debug(`[DIAGNOSTIC] Response /server/status | HTTP ${statusRes.status} | success: ${statusRes.data?.success} | msg: ${statusRes.data?.msg} | obj type: ${typeof statusRes.data?.obj}`);
 
       if (!statusRes.data || !statusRes.data.success) {
         throw new Error(statusRes.data?.msg || 'Failed to get server status');
@@ -774,13 +779,19 @@ export class PanelsService implements OnModuleInit {
 
       if (caps.clientsApi) {
         const inboundsUrl = caps.slimInbounds ? '/panel/api/inbounds/list/slim' : '/panel/api/inbounds/list';
+        this.logger.debug(`[DIAGNOSTIC] GET ${inboundsUrl}`);
         const inboundsRes = await axios.get(`${apiBaseUrl}${inboundsUrl}`, { headers, timeout: PANEL_REQUEST_TIMEOUT_MS });
+        this.logger.debug(`[DIAGNOSTIC] Response ${inboundsUrl} | HTTP ${inboundsRes.status} | success: ${inboundsRes.data?.success} | msg: ${inboundsRes.data?.msg} | obj length: ${Array.isArray(inboundsRes.data?.obj) ? inboundsRes.data.obj.length : typeof inboundsRes.data?.obj}`);
         if (!inboundsRes.data || !inboundsRes.data.success) throw new Error(inboundsRes.data?.msg || 'Failed to fetch inbounds');
         apiInbounds = inboundsRes.data.obj || [];
 
+        this.logger.debug(`[DIAGNOSTIC] GET /panel/api/clients/list`);
         const clientsRes = await axios.get(`${apiBaseUrl}/panel/api/clients/list`, { headers, timeout: PANEL_REQUEST_TIMEOUT_MS });
+        this.logger.debug(`[DIAGNOSTIC] Response /clients/list | HTTP ${clientsRes.status} | success: ${clientsRes.data?.success} | msg: ${clientsRes.data?.msg} | obj length: ${Array.isArray(clientsRes.data?.obj) ? clientsRes.data.obj.length : typeof clientsRes.data?.obj}`);
         if (!clientsRes.data || !clientsRes.data.success) throw new Error(clientsRes.data?.msg || 'Failed to fetch clients');
         const apiClientsList = clientsRes.data.obj || [];
+        
+        this.logger.debug(`[DIAGNOSTIC] Parsing ${apiClientsList.length} clients from /clients/list`);
         
         for (const c of apiClientsList) {
           unifiedClients.push({
@@ -798,9 +809,13 @@ export class PanelsService implements OnModuleInit {
           });
         }
       } else {
+        this.logger.debug(`[DIAGNOSTIC] GET /panel/api/inbounds/list (Legacy parsing)`);
         const inboundsRes = await axios.get(`${apiBaseUrl}/panel/api/inbounds/list`, { headers, timeout: PANEL_REQUEST_TIMEOUT_MS });
+        this.logger.debug(`[DIAGNOSTIC] Response /inbounds/list | HTTP ${inboundsRes.status} | success: ${inboundsRes.data?.success} | msg: ${inboundsRes.data?.msg} | obj length: ${Array.isArray(inboundsRes.data?.obj) ? inboundsRes.data.obj.length : typeof inboundsRes.data?.obj}`);
         if (!inboundsRes.data || !inboundsRes.data.success) throw new Error(inboundsRes.data?.msg || 'Failed to fetch inbounds');
         apiInbounds = inboundsRes.data.obj || [];
+        
+        this.logger.debug(`[DIAGNOSTIC] Parsing legacy inbounds list with length: ${apiInbounds.length}`);
 
         for (const apiInbound of apiInbounds) {
           const settings = typeof apiInbound.settings === 'string' ? JSON.parse(apiInbound.settings) : apiInbound.settings;
@@ -831,12 +846,15 @@ export class PanelsService implements OnModuleInit {
         }
       }
 
+      this.logger.debug(`[DIAGNOSTIC] Starting Database operations: ${apiInbounds.length} inbounds, ${unifiedClients.length} clients`);
+      
       let totalSyncedInbounds = 0;
       let totalSyncedClients = 0;
       let panelUpDelta = 0n;
       let panelDownDelta = 0n;
       
-      const apiUuids = new Set<string>();
+      const apiEmails = new Set<string>();
+      const syncReport = { created: 0, updated: 0, skipped: 0, failed: 0, repaired: 0 };
 
       const admins = await this.prisma.admin.findMany({ select: { id: true, username: true } });
       const adminMap = new Map<string, string>();
@@ -845,6 +863,7 @@ export class PanelsService implements OnModuleInit {
       const apiInboundIdToDbId = new Map<number, string>();
 
       // 1. Sync Inbounds
+      this.logger.debug(`[DIAGNOSTIC] Syncing ${apiInbounds.length} inbounds into Database`);
       for (const apiInbound of apiInbounds) {
         totalSyncedInbounds++;
         const settings = typeof apiInbound.settings === 'string' ? JSON.parse(apiInbound.settings || '{}') : (apiInbound.settings || {});
@@ -884,22 +903,35 @@ export class PanelsService implements OnModuleInit {
       // 2. Sync Clients
       const adminUsageCharges = new Map<string, bigint>();
 
+      this.logger.debug(`[DIAGNOSTIC] Syncing ${unifiedClients.length} clients into Database`);
+
+      const processedEmails = new Set<string>();
+
       for (const unifiedClient of unifiedClients) {
         totalSyncedClients++;
-        if (!unifiedClient.uuid) continue; // safety check
-        apiUuids.add(unifiedClient.uuid);
+        if (!unifiedClient.uuid && !unifiedClient.email) continue; // safety check
         
-        let dbClient = await this.prisma.client.findUnique({
-          where: { uuid: unifiedClient.uuid },
-          include: { admin: true, inbounds: true }
-        });
+        const trimmedEmail = (unifiedClient.email || `client-${String(unifiedClient.uuid || '').slice(0, 8)}`).trim();
+        
+        if (processedEmails.has(trimmedEmail)) {
+          this.logger.warn(`[SYNC] Panel ${panel.name} returned duplicate client email: ${trimmedEmail}. Skipping.`);
+          syncReport.skipped++;
+          continue;
+        }
+        processedEmails.add(trimmedEmail);
+        apiEmails.add(trimmedEmail);
 
-        const trimmedEmail = unifiedClient.email || `client-${unifiedClient.uuid.slice(0, 8)}`;
-        const up = BigInt(unifiedClient.up || 0);
-        const down = BigInt(unifiedClient.down || 0);
-        const total = BigInt(unifiedClient.total || 0);
-        const expiryTime = BigInt(unifiedClient.expiryTime || 0);
-        const enable = unifiedClient.enable;
+        try {
+          let dbClient = await this.prisma.client.findUnique({
+            where: { panelId_email: { panelId: panel.id, email: trimmedEmail } },
+            include: { admin: true, inbounds: true }
+          });
+
+          const up = BigInt(unifiedClient.up || 0);
+          const down = BigInt(unifiedClient.down || 0);
+          const total = BigInt(unifiedClient.total || 0);
+          const expiryTime = BigInt(unifiedClient.expiryTime || 0);
+          const enable = unifiedClient.enable;
 
         let resolvedAdminId = dbClient?.adminId || null;
         if (unifiedClient.group) {
@@ -912,9 +944,11 @@ export class PanelsService implements OnModuleInit {
 
         // If client doesn't exist locally at all:
         if (!dbClient) {
+          this.logger.log(`[SYNC_DECISION] email="${trimmedEmail}" panelId="${panel.id}" existingDBRecord=NONE decision=CREATE`);
           await this.prisma.client.create({
             data: {
-              uuid: unifiedClient.uuid,
+              panelId: panel.id,
+              uuid: unifiedClient.uuid || crypto.randomUUID(), // Ensure UUID is always generated
               subId: unifiedClient.subId || null,
               subToken: crypto.randomBytes(5).toString('hex'),
               email: trimmedEmail,
@@ -926,7 +960,9 @@ export class PanelsService implements OnModuleInit {
               }
             }
           });
+          syncReport.created++;
         } else {
+          syncReport.updated++;
           // Usage Accounting Delta Calculation
           const usedOldUp = dbClient.up;
           const usedOldDown = dbClient.down;
@@ -961,6 +997,10 @@ export class PanelsService implements OnModuleInit {
           }
 
           const changedData: any = {};
+          if (dbClient.uuid !== unifiedClient.uuid && unifiedClient.uuid) {
+            changedData.uuid = unifiedClient.uuid;
+            syncReport.repaired++;
+          }
           if (dbClient.email !== trimmedEmail) changedData.email = trimmedEmail;
           if (unifiedClient.subId && dbClient.subId !== unifiedClient.subId) changedData.subId = unifiedClient.subId;
           if (dbClient.adminId !== resolvedAdminId) changedData.adminId = resolvedAdminId;
@@ -1004,7 +1044,13 @@ export class PanelsService implements OnModuleInit {
             });
           }
         }
+        } catch (clientErr: any) {
+          syncReport.failed++;
+          this.logger.error(`[SYNC] Failed to sync client ${trimmedEmail} on panel ${panel.id}: ${clientErr.message}`);
+        }
       }
+
+      this.logger.log(`[SYNC] Panel ${panel.name} Sync Report: Created=${syncReport.created}, Updated=${syncReport.updated}, Repaired=${syncReport.repaired}, Skipped=${syncReport.skipped}, Failed=${syncReport.failed}`);
 
       // Apply Usage Charges for USAGE mode admins
       for (const [adminId, totalDelta] of adminUsageCharges.entries()) {
@@ -1049,58 +1095,33 @@ export class PanelsService implements OnModuleInit {
 
         // Orphan Cleanup
         const dbClientsInPanel = await this.prisma.client.findMany({
-          where: {
-            inbounds: {
-              some: {
-                inbound: {
-                  panelId: id
-                }
-              }
-            }
-          },
+          where: { panelId: panel.id },
           include: { admin: true }
         });
   
         for (const dbC of dbClientsInPanel) {
-          const dbCAdmin = (dbC as any).admin;
-          if (!apiUuids.has(dbC.uuid)) {
+          if (!apiEmails.has(dbC.email)) {
             // Client was deleted directly on the panel.
-            // Check if this client is still assigned to other inbounds elsewhere.
-            const remainingCount = await this.prisma.clientInbound.count({
-              where: { clientId: dbC.id }
-            });
-            if (remainingCount === 0) {
-              await this.prisma.$transaction(async (tx) => {
-                const stillExists = await tx.client.findUnique({ where: { id: dbC.id } });
-                if (!stillExists) return;
+            // Since the client is now scoped to this panel, we simply delete it from the DB.
+            await this.prisma.$transaction(async (tx) => {
+              const stillExists = await tx.client.findUnique({ where: { id: dbC.id } });
+              if (!stillExists) return;
 
-                // Orphan Cleanup Refund has been permanently disabled to prevent billing exploits.
-                // The system will only delete the orphaned client record from the database.
-              
-                await tx.client.delete({ where: { id: dbC.id } });
-              });
-              
-              await this.prisma.auditLog.create({
-                data: {
-                  action: 'SYNC_ORPHAN_DELETED',
-                  entity: 'Client',
-                  entityId: dbC.id,
-                  details: { message: 'Client deleted directly on panel. Removed from DB.' }
-                }
-              });
-            } else {
-              await this.prisma.auditLog.create({
-                data: {
-                  action: 'SYNC_INBOUND_DELETED',
-                  entity: 'Client',
-                  entityId: dbC.id,
-                  details: { message: `Client removed from panel ${id} but remains assigned to other inbounds.` }
-                }
-              });
-            }
+              await tx.client.delete({ where: { id: dbC.id } });
+            });
+            
+            await this.prisma.auditLog.create({
+              data: {
+                action: 'SYNC_ORPHAN_DELETED',
+                entity: 'Client',
+                entityId: dbC.id,
+                details: { message: 'Client deleted directly on panel. Removed from DB.' }
+              }
+            });
           }
         }
 
+      this.logger.debug(`[DIAGNOSTIC] Committing panel stats to DB`);
       // Record global traffic deltas for this panel's clients
       await this.prisma.systemStats.create({
         data: {
@@ -1121,7 +1142,7 @@ export class PanelsService implements OnModuleInit {
           lastOnline: new Date(),
           lastSync: new Date(),
           inboundCount: totalSyncedInbounds,
-          clientCount: apiUuids.size,
+          clientCount: apiEmails.size,
           syncState: {
             upsert: {
               create: { lastSync: new Date(), status: 'success', latencyMs: latencyMs },
@@ -1136,7 +1157,7 @@ export class PanelsService implements OnModuleInit {
           action: 'SYNC_COMPLETED',
           entity: 'Panel',
           entityId: id,
-          details: { message: 'Panel synchronization completed successfully', inboundCount: totalSyncedInbounds, clientCount: apiUuids.size }
+          details: { message: 'Panel synchronization completed successfully', inboundCount: totalSyncedInbounds, clientCount: apiEmails.size }
         }
       });
 
@@ -1164,6 +1185,8 @@ export class PanelsService implements OnModuleInit {
         data: { action: 'PANEL_SYNC_SUCCESS', entity: 'Panel', entityId: id, details: { syncedInbounds: totalSyncedInbounds, syncedClients: totalSyncedClients, latencyMs } }
       });
 
+      this.logger.debug(`[DIAGNOSTIC] Sync Finished successfully`);
+
       return {
         success: true,
         version,
@@ -1175,6 +1198,8 @@ export class PanelsService implements OnModuleInit {
       };
 
     } catch (err: any) {
+      this.logger.error(`[DIAGNOSTIC] Sync failed with exception: ${err.message}`, err.stack);
+      
       await this.prisma.panel.update({
         where: { id },
         data: { status: 'offline' },

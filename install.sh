@@ -498,6 +498,12 @@ step_6_application() {
   if [[ "$pull_success" == false ]]; then
     die "Docker pull failed after $max_pull attempts. Please check your network connection or configure a Docker registry mirror."
   fi
+  
+  info "Running Database Initialization and Migrations..."
+  if ! run_with_spinner "Applying Schema & Migrations" docker compose run --rm hmpanel-panel /bin/sh -c "npx prisma db push && node backend/dist/scripts/run-migrations.js"; then
+    die "Failed to initialize database schema."
+  fi
+
   if ! run_with_spinner "Starting Application services" docker compose up -d; then
     die "Failed to start application services."
   fi
@@ -663,7 +669,7 @@ print_success() {
     echo -e "  Panel Status: ${RED}Stopped/Failed${NC}"
   fi
   
-  echo -e "  Version:      ${CYAN}1.1.0${NC}"
+  echo -e "  Version:      ${CYAN}1.3.0${NC}"
   echo -e "  Edition:      ${CYAN}Community${NC}"
   
   if [[ "$SSL_STATUS" == "acme" || "$SSL_STATUS" == "self-signed" ]]; then
