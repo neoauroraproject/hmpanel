@@ -20,13 +20,15 @@ export interface ClientFilters {
 }
 
 import { MonitoringService } from '../stats/monitoring.service';
+import { RedisLockService } from '../common/utils/redis-lock.service';
 
 @Injectable()
 export class ClientsService {
   constructor(
     private prisma: PrismaService,
     private panelsService: PanelsService,
-    private monitoringService: MonitoringService
+    private monitoringService: MonitoringService,
+    private lockService: RedisLockService
   ) {}
 
   private async executeAtomicOperation(
@@ -78,8 +80,16 @@ export class ClientsService {
     if (data.email) data.email = data.email.trim();
     const totalBytes = BigInt(data.total || 0);
     const clientUuid = randomUUID();
+    const lockKey = `client:create:${data.email}`;
 
-    // ── Step 1: Validate inputs ──────────────────────────────────────────────
+    // Acquire lock
+    const locked = await this.lockService.acquireLock(lockKey, 30000);
+    if (!locked) {
+      throw new BadRequestException('A client creation operation is already in progress for this email.');
+    }
+
+    try {
+      // ── Step 1: Validate inputs ──────────────────────────────────────────────
     if (!data.inboundIds || data.inboundIds.length === 0) {
       throw new BadRequestException('At least one inbound must be selected');
     }
@@ -140,25 +150,33 @@ export class ClientsService {
       byPanel.get(ib.panelId)!.numericIds.push(ib.panelInboundId);
     }
 
-    const clientSubId = require('crypto').randomBytes(8).toString('hex');
+      const clientSubId = require('crypto').randomBytes(8).toString('hex');
 
-    const clientPayload: any = {
-      id: clientUuid,
-      email: data.email,
-      totalGB: Number(data.total) || 0,
-      expiryTime: data.expiryTime || 0,
-      limitIp: data.limitIp || 0,
-      tgId: 0,
-      enable: true,
-      flow: data.flow || "",
-      subId: clientSubId,
-      comment: "",
-      reset: 0,
-    };
+      const clientPayload: any = {
+        id: clientUuid,
+        email: data.email,
+        totalGB: Number(data.total) || 0,
+        expiryTime: data.expiryTime || 0,
+        limitIp: data.limitIp || 0,
+        tgId: 0,
+        enable: true,
+        flow: data.flow || "",
+        subId: clientSubId,
+        comment: "",
+        reset: 0,
+      };
 
-    // ── Step 3: PANEL FIRST — create on every panel, verify existence ────────
-    // No DB records are written until ALL panels confirm success.
-    const createdOnPanels: string[] = [];  // panelIds successfully provisioned
+      // ── Step 3: PRE-FLIGHT CHECK ON REMOTE PANELS ────────────────────────────
+      for (const [panelId] of byPanel) {
+        const existCheck = await this.panelsService.verifyClientExists(panelId, data.email, callerId);
+        if (existCheck.exists) {
+          throw new BadRequestException(`Email "${data.email}" already exists on remote panel. Creation aborted.`);
+        }
+      }
+
+      // ── Step 4: PANEL FIRST — create on every panel, strictly verify ─────────
+      // No DB records are written until ALL panels confirm success.
+      const createdOnPanels: string[] = [];  // panelIds successfully provisioned
 
     for (const [panelId, { numericIds }] of byPanel) {
       // 3a. Create on panel
@@ -179,28 +197,52 @@ export class ClientsService {
         );
       }
 
-      // 3b. Verify the client now exists on the panel
-      const verifyResult = await this.panelsService.verifyClientExists(panelId, data.email, callerId);
-      if (!verifyResult.exists) {
-        // Rollback
-        for (const donePanel of [...createdOnPanels, panelId]) {
-          await this.panelsService.deleteClientOnPanel(donePanel, data.email, callerId, true)
-            .catch(e => {});
+        // 4b. Strict verification
+        const verifyResult = await this.panelsService.verifyClientExists(panelId, data.email, callerId);
+        let isVerified = false;
+        let verificationReason = "Client verification failed.";
+
+        if (verifyResult.exists && verifyResult.data && verifyResult.inboundIds) {
+          const remoteClientObj = verifyResult.data.client || verifyResult.data;
+          
+          const remoteInbounds = [...verifyResult.inboundIds].sort();
+          const expectedInbounds = [...numericIds].sort();
+          
+          const inboundsMatch = remoteInbounds.length === expectedInbounds.length && 
+            remoteInbounds.every((val, index) => val === expectedInbounds[index]);
+            
+          const fieldsMatch = 
+            remoteClientObj.email === data.email &&
+            remoteClientObj.uuid === clientUuid &&
+            remoteClientObj.enable === true &&
+            remoteClientObj.subId !== undefined && remoteClientObj.subId !== null && remoteClientObj.subId !== "";
+
+          if (!inboundsMatch) {
+            verificationReason = `Inbound mismatch. Expected [${expectedInbounds.join(',')}] but got [${remoteInbounds.join(',')}].`;
+          } else if (!fieldsMatch) {
+            verificationReason = `Client field validation failed. Missing or mismatched email, uuid, enable status, or subId.`;
+          } else {
+            isVerified = true;
+          }
+        } else {
+          verificationReason = !verifyResult.exists ? `Panel did not confirm existence.` : `Missing inboundIds or client object in response.`;
         }
-        throw new BadRequestException(
-          `Client was submitted to panel but could not be verified. ` +
-          `The panel did not confirm existence of "${data.email}". Operation rolled back.`
-        );
+
+        if (!isVerified) {
+          // Strict Rollback
+          for (const donePanel of [...createdOnPanels, panelId]) {
+            await this.panelsService.deleteClientOnPanel(donePanel, data.email, callerId, true).catch(() => {});
+          }
+          throw new BadRequestException(`Strict Provisioning verification failed: ${verificationReason} Operation completely rolled back.`);
+        }
+
+        createdOnPanels.push(panelId);
       }
 
-      createdOnPanels.push(panelId);
-    }
-
-    // ── Step 4: ALL panels confirmed → Assign to reseller group (advisory) ──
-    for (const [panelId] of byPanel) {
-      await this.panelsService.assignClientToGroup(panelId, [data.email], targetAdmin.username)
-        .catch(e => {/* non-fatal: group assignment failure does not roll back provisioning */});
-    }
+      // ── Step 5: Assign to reseller group (advisory) ────────────────────────
+      for (const [panelId] of byPanel) {
+        await this.panelsService.assignClientToGroup(panelId, [data.email], targetAdmin.username).catch(() => {});
+      }
 
     // ── Step 5: DB COMMIT — only now that panel is source of truth ───────────
     try {
@@ -286,13 +328,16 @@ export class ClientsService {
         };
       });
     } catch (dbError: any) {
-      // DB commit failed AFTER panel provisioning succeeded.
-      // Attempt compensating rollback on panels.
-      for (const panelId of createdOnPanels) {
-        await this.panelsService.deleteClientOnPanel(panelId, data.email, callerId, true)
-          .catch(e => {});
+      // Ultimate fallback rollback if database transaction crashes
+      for (const donePanel of createdOnPanels) {
+        await this.panelsService.deleteClientOnPanel(donePanel, data.email, callerId, true).catch(() => {});
       }
-      throw dbError;
+      throw new BadRequestException(`Database synchronization failed. Remote panels have been rolled back. Error: ${dbError.message}`);
+    }
+    
+    } finally {
+      // Always release lock
+      await this.lockService.releaseLock(lockKey);
     }
   }
 
@@ -727,14 +772,22 @@ export class ClientsService {
 
   async remove(id: string, adminId: string, role: string, skipRefund: boolean = false) {
     const existing = await this.findOne(id, adminId, role);
-    
-    if ((existing as any).isDeleting) {
+    const lockKey = `client:delete:${existing.id}`;
+
+    // Acquire distributed lock for deletion
+    const locked = await this.lockService.acquireLock(lockKey, 30000);
+    if (!locked) {
       throw new BadRequestException('Client deletion is already in progress');
     }
-    
-    await this.prisma.client.update({ where: { id }, data: { isDeleting: true } });
 
-    let deletedSuccessfully = false;
+    try {
+      if ((existing as any).isDeleting) {
+        throw new BadRequestException('Client deletion is already flagged in database');
+      }
+      
+      await this.prisma.client.update({ where: { id }, data: { isDeleting: true } });
+
+      let deletedSuccessfully = false;
 
     try {
       const result = await this.executeAtomicOperation(
@@ -843,6 +896,9 @@ export class ClientsService {
         // Unlock the deletion flag if it failed midway
         await this.prisma.client.update({ where: { id }, data: { isDeleting: false } }).catch(() => {});
       }
+    }
+    } finally {
+      await this.lockService.releaseLock(lockKey);
     }
   }
 

@@ -1464,7 +1464,15 @@ export class PanelsService implements OnModuleInit {
       if (!ok) {
         const panelMsg: string = res.data?.msg || '';
         const lower = panelMsg.toLowerCase();
-        const code: ProvisioningErrorCode = lower.includes('record not found') ? 'CLIENT_NOT_FOUND' : 'PANEL_ERROR';
+        const isNotFound = lower.includes('record not found') || lower.includes('not found');
+        
+        // Treat CLIENT_NOT_FOUND as success for rollback idempotency
+        if (isNotFound) {
+          this.logger.log(`[DELETE_CLIENT] Client ${email} not found on panel, treating as successful deletion (idempotent rollback).`);
+          return { success: true, data: res.data };
+        }
+        
+        const code: ProvisioningErrorCode = 'PANEL_ERROR';
         return { success: false, error: { code, message: panelMsg, httpStatus: res.status, panelMessage: panelMsg, endpoint, durationMs } };
       }
       return { success: true, data: res.data };
@@ -1515,7 +1523,7 @@ export class PanelsService implements OnModuleInit {
       const panelMsg: string = res.data?.msg || '';
       const lower = panelMsg.toLowerCase();
       const notFound = lower.includes('not found');
-      const ok = res.data?.success === true || (isRollback && notFound);
+      const ok = res.data?.success === true || notFound;
 
       this.logger.log(
         `[DELETE_CLIENT] RESPONSE HTTP=${res.status} success=${res.data?.success} ` +
@@ -1558,7 +1566,7 @@ export class PanelsService implements OnModuleInit {
     panelId: string,
     email: string,
     adminId?: string,
-  ): Promise<{ exists: boolean; data?: any; error?: string }> {
+  ): Promise<{ exists: boolean; data?: any; error?: string; inboundIds?: number[] }> {
     const { panel, base, headers, agent } = await this.getPanelHttpContext(panelId);
     const endpoint = `${base}/panel/api/clients/get/${encodeURIComponent(email)}`;
     const startMs  = Date.now();
@@ -1574,10 +1582,12 @@ export class PanelsService implements OnModuleInit {
       });
       const durationMs = Date.now() - startMs;
       const exists = res.data?.success === true && res.data?.obj !== null;
+      const inboundIds = exists ? res.data?.obj?.inboundIds || [] : [];
 
       this.logger.log(
         `[VERIFY_CLIENT] RESPONSE HTTP=${res.status} success=${res.data?.success} ` +
-        `obj=${res.data?.obj !== null ? 'present' : 'null'} exists=${exists} duration=${durationMs}ms`
+        `obj=${res.data?.obj !== null ? 'present' : 'null'} exists=${exists} ` +
+        `inboundIds=[${inboundIds.join(',')}] duration=${durationMs}ms`
       );
 
       await this.logProvisioningEvent({
@@ -1588,11 +1598,11 @@ export class PanelsService implements OnModuleInit {
         errorMessage: exists ? undefined : (res.data?.msg || 'Client not found on panel'),
       });
 
-      return { exists, data: exists ? res.data.obj : undefined };
+      return { exists, data: exists ? res.data.obj : undefined, inboundIds };
     } catch (err: any) {
       const durationMs = Date.now() - startMs;
       this.logger.error(`[VERIFY_CLIENT] ERROR email=${email} err=${err.message}`);
-      return { exists: false, error: err.message };
+      return { exists: false, error: err.message, inboundIds: [] };
     }
   }
 
