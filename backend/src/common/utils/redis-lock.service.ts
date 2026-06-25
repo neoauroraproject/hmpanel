@@ -7,10 +7,17 @@ export class RedisLockService implements OnModuleInit, OnModuleDestroy {
   private redisClient: Redis;
 
   onModuleInit() {
-    this.redisClient = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
+    const host = process.env.REDIS_HOST || 'localhost';
+    const port = parseInt(process.env.REDIS_PORT || '6379', 10);
+    const password = process.env.REDIS_PASSWORD || undefined;
+
+    this.redisClient = new Redis({
+      host,
+      port,
+      password,
       maxRetriesPerRequest: 3,
     });
-    this.logger.log('Redis client for locking initialized.');
+    this.logger.log(`Redis client for locking initialized on ${host}:${port}`);
   }
 
   onModuleDestroy() {

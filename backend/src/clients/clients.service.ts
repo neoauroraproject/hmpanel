@@ -83,8 +83,10 @@ export class ClientsService {
     const lockKey = `client:create:${data.email}`;
 
     // Acquire lock
+    this.logger.log(`[LOCK] Acquire lock: email=${data.email}`);
     const locked = await this.lockService.acquireLock(lockKey, 30000);
     if (!locked) {
+      this.logger.warn(`[LOCK] Already exists: email=${data.email}`);
       throw new BadRequestException('A client creation operation is already in progress for this email.');
     }
 
@@ -357,6 +359,7 @@ export class ClientsService {
     
     } finally {
       // Always release lock
+      this.logger.log(`[LOCK] Released: email=${data.email}`);
       await this.lockService.releaseLock(lockKey);
     }
   }
