@@ -138,7 +138,7 @@ main() {
   sleep 5 # Ensure postgres is up
 
   info "Running Prisma Schema Update & System Migrations..."
-  if ! docker compose run --rm hmpanel-panel /bin/sh -c "npx prisma db push && node backend/dist/scripts/run-migrations.js"; then
+  if ! docker compose run --rm panel-app /bin/sh -c "npx prisma db push && node backend/dist/scripts/run-migrations.js"; then
     error "MIGRATION FAILED! Executing emergency rollback..."
     
     info "Stopping containers..."

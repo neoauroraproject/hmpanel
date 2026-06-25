@@ -500,7 +500,7 @@ step_6_application() {
   fi
   
   info "Running Database Initialization and Migrations..."
-  if ! run_with_spinner "Applying Schema & Migrations" docker compose run --rm hmpanel-panel /bin/sh -c "npx prisma db push && node backend/dist/scripts/run-migrations.js"; then
+  if ! run_with_spinner "Applying Schema & Migrations" docker compose run --rm panel-app /bin/sh -c "npx prisma db push && node backend/dist/scripts/run-migrations.js"; then
     die "Failed to initialize database schema."
   fi
 
