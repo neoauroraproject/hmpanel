@@ -556,6 +556,75 @@ export class ClientsService {
       throw new BadRequestException('Failed to generate QR code');
     }
   }
+  private async syncInboundAssignmentsOnPanel(
+    panelId: string,
+    email: string,
+    newNumericInboundIds: number[] | null,
+    clientPayload: any,
+    adminId?: string
+  ): Promise<{ verified: boolean, message?: string }> {
+    if (newNumericInboundIds === null) {
+      // If we are not changing inbounds, just update directly without strict matching
+      const updateResult = await this.panelsService.updateClientOnPanel(
+        panelId, email, clientPayload, adminId
+      );
+      if (!updateResult.success) {
+        return { verified: false, message: `Panel update failed: ${updateResult.error?.message}` };
+      }
+      return { verified: true };
+    }
+
+    // ── Step 1: PRE-FLIGHT — verify the client still exists on the panel ──
+    this.logger.log(`[SYNC_INBOUNDS] Pre-flight: verifying client ${email} exists on panel ${panelId}`);
+    const preCheck = await this.panelsService.verifyClientExists(panelId, email, adminId);
+    if (!preCheck.exists) {
+      this.logger.error(
+        `[SYNC_INBOUNDS] ABORT: Client ${email} does NOT exist on panel ${panelId}. ` +
+        `Cannot update a client that has been removed from the panel.`
+      );
+      return { verified: false, message: `Client "${email}" does not exist on the remote panel. Update aborted. No changes were made.` };
+    }
+
+    // ── Step 2: Build and send a SINGLE update to the panel ───────────────
+    clientPayload.inboundIds = newNumericInboundIds;
+    this.logger.log(
+      `[SYNC_INBOUNDS] Sending update with new inboundIds=[${newNumericInboundIds.join(',')}] for client ${email}`
+    );
+
+    const updateResult = await this.panelsService.updateClientOnPanel(
+      panelId, email, clientPayload, adminId
+    );
+
+    if (!updateResult.success) {
+      this.logger.error(
+        `[SYNC_INBOUNDS] Panel update FAILED for ${email}: ` +
+        `code=${updateResult.error?.code} msg=${updateResult.error?.message}`
+      );
+      return { verified: false, message: `Panel update failed: ${updateResult.error?.message}` };
+    }
+
+    // ── Step 3: POST-UPDATE VERIFICATION ──────────────────────────────────
+    const postCheck = await this.panelsService.verifyClientExists(panelId, email, adminId);
+    if (!postCheck.exists) {
+      this.logger.error(`[SYNC_INBOUNDS] CRITICAL: Client ${email} MISSING after update!`);
+      return { verified: false, message: `Client "${email}" disappeared from the panel after update.` };
+    }
+
+    const remoteInbounds = [...(postCheck.inboundIds || [])].sort((a, b) => a - b);
+    const expectedInbounds = [...newNumericInboundIds].sort((a, b) => a - b);
+
+    const inboundsMatch = remoteInbounds.length === expectedInbounds.length &&
+      remoteInbounds.every((val, index) => val === expectedInbounds[index]);
+
+    if (!inboundsMatch) {
+      const errMsg = `Inbound mismatch after update for ${email}. Expected [${expectedInbounds.join(',')}] but got [${remoteInbounds.join(',')}].`;
+      this.logger.error(`[SYNC_INBOUNDS] VERIFICATION FAILED: ${errMsg} Triggering rollback.`);
+      return { verified: false, message: errMsg }; // STICT VERIFICATION: This fails the operation
+    }
+
+    this.logger.log(`[SYNC_INBOUNDS] Verification passed for ${email}.`);
+    return { verified: true };
+  }
 
   async update(id: string, adminId: string, role: string, data: { enable?: boolean; total?: number; expiryTime?: number; remark?: string; flow?: string; inboundIds?: string[]; limitIp?: number }) {
     const existing = await this.findOne(id, adminId, role);
@@ -600,8 +669,11 @@ export class ClientsService {
       reset: 0,
     };
 
-    let addedInbounds: any[] = [];
-    let removedInbounds: any[] = [];
+    // ── Compute inbound diff for local DB updates ──────────────────────────
+    let addedInboundDbIds: string[] = [];
+    let removedInboundDbIds: string[] = [];
+    // The complete set of numeric panel inbound IDs after the edit (for sending to panel)
+    let newNumericInboundIds: number[] | null = null;
 
     if (data.inboundIds) {
       if (data.inboundIds.length === 0) {
@@ -610,12 +682,12 @@ export class ClientsService {
       const existingInboundIds = existing.inbounds.map((i: any) => i.id);
       const newInboundIds = data.inboundIds;
       
-      const toAdd = newInboundIds.filter(idx => !existingInboundIds.includes(idx));
-      const toRemove = existingInboundIds.filter((idx: any) => !newInboundIds.includes(idx));
+      addedInboundDbIds = newInboundIds.filter(idx => !existingInboundIds.includes(idx));
+      removedInboundDbIds = existingInboundIds.filter((idx: any) => !newInboundIds.includes(idx));
 
-      if (toAdd.length > 0) {
-        addedInbounds = await this.prisma.inbound.findMany({
-          where: { id: { in: toAdd } },
+      if (addedInboundDbIds.length > 0) {
+        const addedInbounds = await this.prisma.inbound.findMany({
+          where: { id: { in: addedInboundDbIds } },
           include: { panel: true }
         });
         
@@ -624,12 +696,23 @@ export class ClientsService {
           throw new BadRequestException('Cannot add inbounds from a different panel to this client record. Please provision a new client for the other panel.');
         }
       }
-      removedInbounds = existing.inbounds.filter((i: any) => toRemove.includes(i.id));
+
+      // Resolve numeric panel inbound IDs for the COMPLETE new set
+      const resolvedInbounds = await this.panelsService.resolveNumericInboundIds(newInboundIds);
+      newNumericInboundIds = resolvedInbounds.map(ib => ib.panelInboundId);
+
+      this.logger.log(
+        `[CLIENT_UPDATE] email=${existing.email} ` +
+        `currentInboundIds=[${existingInboundIds.join(',')}] ` +
+        `requestedInboundIds=[${newInboundIds.join(',')}] ` +
+        `toAdd=[${addedInboundDbIds.join(',')}] ` +
+        `toRemove=[${removedInboundDbIds.join(',')}] ` +
+        `numericPanelInboundIds=[${newNumericInboundIds.join(',')}]`
+      );
     }
 
-    const successfullyRemoved: any[] = [];
-    const successfullyUpdated: any[] = [];
-    const successfullyAdded: any[] = [];
+    // The panelId for this client (all inbounds must be on the same panel)
+    const clientPanelId = (existing as any).panelId;
 
     return this.executeAtomicOperation(
       existing.adminId || null,
@@ -638,74 +721,20 @@ export class ClientsService {
       'UPDATE',
       { updateData: data },
       async () => {
-        let verifiedCount = 0;
+        const clientPayload: any = { ...baseClientPayload };
 
-        // Process removals FIRST
-        for (const inbound of removedInbounds) {
-          try {
-            const delResult = await this.panelsService.deleteClientOnPanel(inbound.panelId, existing.email);
-            // CLIENT_NOT_FOUND on delete means client was already absent — treat as success
-            if (!delResult.success && delResult.error?.code !== 'CLIENT_NOT_FOUND') {
-              return { verified: false, message: `Failed to remove client from inbound ${inbound.port}: ${delResult.error?.message}` };
-            }
-            const isMissing = await this.panelsService.verifyClientMissing(inbound.panelId, existing.email);
-            if (!isMissing) return { verified: false, message: `Failed to remove client from inbound ${inbound.port}` };
-            successfullyRemoved.push(inbound);
-            verifiedCount++;
-          } catch (err: any) {
-            return { verified: false, message: `Error removing from panel: ${err.message}` };
-          }
+        // Determine flow: use the first kept inbound's protocol to decide
+        const keptInbounds = existing.inbounds.filter((i: any) => !removedInboundDbIds.includes(i.id));
+        const primaryInbound = keptInbounds[0] || existing.inbounds[0];
+        if (primaryInbound) {
+          const isReality = primaryInbound.protocol === 'vless' && (primaryInbound.streamSettings as any)?.security === 'reality';
+          clientPayload.flow = isReality ? (newFlow || "") : "";
         }
 
-        // Process updates for kept inbounds — use native updateClientOnPanel
-        const keptInbounds = existing.inbounds.filter((i: any) => !removedInbounds.some((r: any) => r.id === i.id));
-        for (const inbound of keptInbounds) {
-          try {
-            const isReality = inbound.protocol === 'vless' && (inbound.streamSettings as any)?.security === 'reality';
-            const clientPayload = { ...baseClientPayload, flow: isReality ? (newFlow || "") : "" };
-            const updateResult = await this.panelsService.updateClientOnPanel(
-              inbound.panelId, existing.email, clientPayload
-            );
-            if (!updateResult.success) {
-              return { verified: false, message: `Panel update failed for inbound ${inbound.port}: ${updateResult.error?.message}` };
-            }
-            const verifyResult = await this.panelsService.verifyClientExists(inbound.panelId, existing.email);
-            if (!verifyResult.exists) {
-              return { verified: false, message: `Verification failed: client not found on inbound ${inbound.port} after update` };
-            }
-            successfullyUpdated.push(inbound);
-            verifiedCount++;
-          } catch (err: any) {
-            return { verified: false, message: `Error updating panel: ${err.message}` };
-          }
-        }
-
-        // Process additions — use createClientOnPanel
-        for (const inbound of addedInbounds) {
-          try {
-            if (!inbound.panelInboundId) {
-              return { verified: false, message: `Inbound ${inbound.id} has no panelInboundId — sync required.` };
-            }
-            const isReality = inbound.protocol === 'vless' && (inbound.streamSettings as any)?.security === 'reality';
-            const clientPayload = { ...baseClientPayload, flow: isReality ? (newFlow || "") : "" };
-            const createResult = await this.panelsService.createClientOnPanel(
-              inbound.panelId, [inbound.panelInboundId], clientPayload
-            );
-            if (!createResult.success) {
-              return { verified: false, message: `Failed to add client to inbound ${inbound.port}: ${createResult.error?.message}` };
-            }
-            const verifyResult = await this.panelsService.verifyClientExists(inbound.panelId, existing.email);
-            if (!verifyResult.exists) {
-              return { verified: false, message: `Verification failed: client not found on new inbound ${inbound.port}` };
-            }
-            successfullyAdded.push(inbound);
-            verifiedCount++;
-          } catch (err: any) {
-            return { verified: false, message: `Error adding to panel: ${err.message}` };
-          }
-        }
-
-        return { verified: verifiedCount === (removedInbounds.length + keptInbounds.length + addedInbounds.length) };
+        // Delegate panel synchronization and strict verification to the dedicated method
+        return this.syncInboundAssignmentsOnPanel(
+          clientPanelId, existing.email, newNumericInboundIds, clientPayload, adminId
+        );
       },
       async (tx) => {
         const updateData: Prisma.ClientUpdateInput = {};
@@ -762,20 +791,21 @@ export class ClientsService {
           }
         }
 
+        // Update local ClientInbound records to match the new inbound assignment
         if (data.inboundIds) {
-          if (removedInbounds.length > 0) {
+          if (removedInboundDbIds.length > 0) {
             await tx.clientInbound.deleteMany({
               where: {
                 clientId: id,
-                inboundId: { in: removedInbounds.map((i: any) => i.id) }
+                inboundId: { in: removedInboundDbIds }
               }
             });
           }
-          if (addedInbounds.length > 0) {
+          if (addedInboundDbIds.length > 0) {
             await tx.clientInbound.createMany({
-              data: addedInbounds.map((i: any) => ({
+              data: addedInboundDbIds.map((inboundId: string) => ({
                 clientId: id,
-                inboundId: i.id
+                inboundId
               }))
             });
           }
@@ -791,7 +821,10 @@ export class ClientsService {
             details: {
               previousAllocation: previousAllocation.toString(),
               newAllocation: newAllocation.toString(),
-              trafficDifference: diff.toString()
+              trafficDifference: diff.toString(),
+              inboundsAdded: addedInboundDbIds,
+              inboundsRemoved: removedInboundDbIds,
+              newInboundIds: data.inboundIds || 'unchanged',
             }
           }
         });

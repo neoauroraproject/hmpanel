@@ -1453,11 +1453,15 @@ export class PanelsService implements OnModuleInit {
     }
 
     const endpoint = `${base}/panel/api/clients/update/${encodeURIComponent(email)}`;
-    const body     = { ...existingClientObj, ...clientPayload, email };
+    // Build the update body: merge existing client fields with new payload.
+    // If inboundIds are provided (for inbound reassignment), include them at top level.
+    const body: Record<string, any> = { ...existingClientObj, ...clientPayload, email };
 
     this.logger.log(
       `[UPDATE_CLIENT] PANEL_BASE=${base} METHOD=POST URL=${endpoint} ` +
-      `IDENTIFIER=email:"${email}" PAYLOAD_SIZE=${JSON.stringify(body).length}B`
+      `IDENTIFIER=email:"${email}" ` +
+      `INBOUND_IDS=${body.inboundIds ? JSON.stringify(body.inboundIds) : 'unchanged'} ` +
+      `PAYLOAD_SIZE=${JSON.stringify(body).length}B`
     );
 
     try {
@@ -1490,14 +1494,13 @@ export class PanelsService implements OnModuleInit {
         const panelMsg: string = res.data?.msg || '';
         const lower = panelMsg.toLowerCase();
         const isNotFound = lower.includes('record not found') || lower.includes('not found');
-        
-        // Treat CLIENT_NOT_FOUND as success for rollback idempotency
-        if (isNotFound) {
-          this.logger.log(`[DELETE_CLIENT] Client ${email} not found on panel, treating as successful deletion (idempotent rollback).`);
-          return { success: true, data: res.data };
-        }
-        
-        const code: ProvisioningErrorCode = 'PANEL_ERROR';
+
+        // CLIENT_NOT_FOUND on UPDATE is a real error — the client was unexpectedly missing.
+        // Do NOT treat it as success. Only deleteClientOnPanel() treats not-found as idempotent.
+        const code: ProvisioningErrorCode = isNotFound ? 'CLIENT_NOT_FOUND' : 'PANEL_ERROR';
+        this.logger.warn(
+          `[UPDATE_CLIENT] Client ${email} update failed: ${panelMsg} (code=${code})`
+        );
         return { success: false, error: { code, message: panelMsg, httpStatus: res.status, panelMessage: panelMsg, endpoint, durationMs } };
       }
       return { success: true, data: res.data };
