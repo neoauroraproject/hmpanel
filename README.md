@@ -90,6 +90,16 @@ bash <(curl -fsSL https://raw.githubusercontent.com/neoauroraproject/hmpanel/mai
 ---
 
 <div align="center">
+
+### 💖 Donation / حمایت مالی
+
+**USDT (BEP20):** `0xacA935a5955a756BedaE4738304274EdeE0223D5`
+
+</div>
+
+---
+
+<div align="center">
   <p>Released under the MIT License</p>
   <p><strong>Crafted with ♥ by the HMPanel Team</strong></p>
   <p>Official Telegram: <a href="https://t.me/hmpanel">@hmpanel</a> | GitHub: <a href="https://github.com/neoauroraproject/hmpanel">neoauroraproject/hmpanel</a></p>
