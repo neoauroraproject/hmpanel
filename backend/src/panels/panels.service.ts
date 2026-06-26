@@ -1454,13 +1454,13 @@ export class PanelsService implements OnModuleInit {
 
     const endpoint = `${base}/panel/api/clients/update/${encodeURIComponent(email)}`;
     // Build the update body: merge existing client fields with new payload.
-    // If inboundIds are provided (for inbound reassignment), include them at top level.
+    // Ensure we do NOT send inboundIds to this endpoint as per 3.3.1 API.
     const body: Record<string, any> = { ...existingClientObj, ...clientPayload, email };
+    delete body.inboundIds;
 
     this.logger.log(
       `[UPDATE_CLIENT] PANEL_BASE=${base} METHOD=POST URL=${endpoint} ` +
       `IDENTIFIER=email:"${email}" ` +
-      `INBOUND_IDS=${body.inboundIds ? JSON.stringify(body.inboundIds) : 'unchanged'} ` +
       `PAYLOAD_SIZE=${JSON.stringify(body).length}B`
     );
 
@@ -1513,6 +1513,82 @@ export class PanelsService implements OnModuleInit {
         email, endpoint, durationMs: apiError.durationMs, success: false,
         errorCode: apiError.code, errorMessage: apiError.message,
       });
+      return { success: false, error: apiError };
+    }
+  }
+
+  async attachInboundsToClient(
+    panelId: string,
+    email: string,
+    inboundIds: number[],
+    adminId?: string,
+  ): Promise<PanelApiResult> {
+    const { panel, base, headers, agent } = await this.getPanelHttpContext(panelId);
+    const endpoint = `${base}/panel/api/clients/${encodeURIComponent(email)}/attach`;
+    const body = { inboundIds };
+    const startMs = Date.now();
+
+    this.logger.log(`[ATTACH_INBOUNDS] PANEL_BASE=${base} METHOD=POST URL=${endpoint} IDENTIFIER=email:"${email}" INBOUND_IDS=[${inboundIds.join(',')}]`);
+
+    try {
+      const res = await this.retryRequest(() =>
+        axios.post(endpoint, body, {
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          httpsAgent: agent,
+          timeout: PANEL_REQUEST_TIMEOUT_MS,
+        }), `ATTACH_INBOUNDS email=${email}`
+      );
+
+      const durationMs = Date.now() - startMs;
+      const ok = res.data?.success === true;
+
+      this.logger.log(`[ATTACH_INBOUNDS] RESPONSE HTTP=${res.status} success=${ok} msg="${res.data?.msg || ''}" duration=${durationMs}ms`);
+
+      if (!ok) {
+        return { success: false, error: { code: 'PANEL_ERROR', message: res.data?.msg || '', httpStatus: res.status, panelMessage: res.data?.msg, endpoint, durationMs } };
+      }
+      return { success: true, data: res.data };
+    } catch (err: any) {
+      const apiError = this.classifyError(err, endpoint, startMs);
+      this.logger.error(`[ATTACH_INBOUNDS] FAILED email=${email} error=${apiError.code}: ${apiError.message}`);
+      return { success: false, error: apiError };
+    }
+  }
+
+  async detachInboundsFromClient(
+    panelId: string,
+    email: string,
+    inboundIds: number[],
+    adminId?: string,
+  ): Promise<PanelApiResult> {
+    const { panel, base, headers, agent } = await this.getPanelHttpContext(panelId);
+    const endpoint = `${base}/panel/api/clients/${encodeURIComponent(email)}/detach`;
+    const body = { inboundIds };
+    const startMs = Date.now();
+
+    this.logger.log(`[DETACH_INBOUNDS] PANEL_BASE=${base} METHOD=POST URL=${endpoint} IDENTIFIER=email:"${email}" INBOUND_IDS=[${inboundIds.join(',')}]`);
+
+    try {
+      const res = await this.retryRequest(() =>
+        axios.post(endpoint, body, {
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          httpsAgent: agent,
+          timeout: PANEL_REQUEST_TIMEOUT_MS,
+        }), `DETACH_INBOUNDS email=${email}`
+      );
+
+      const durationMs = Date.now() - startMs;
+      const ok = res.data?.success === true;
+
+      this.logger.log(`[DETACH_INBOUNDS] RESPONSE HTTP=${res.status} success=${ok} msg="${res.data?.msg || ''}" duration=${durationMs}ms`);
+
+      if (!ok) {
+        return { success: false, error: { code: 'PANEL_ERROR', message: res.data?.msg || '', httpStatus: res.status, panelMessage: res.data?.msg, endpoint, durationMs } };
+      }
+      return { success: true, data: res.data };
+    } catch (err: any) {
+      const apiError = this.classifyError(err, endpoint, startMs);
+      this.logger.error(`[DETACH_INBOUNDS] FAILED email=${email} error=${apiError.code}: ${apiError.message}`);
       return { success: false, error: apiError };
     }
   }

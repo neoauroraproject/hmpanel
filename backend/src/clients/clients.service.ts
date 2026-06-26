@@ -585,21 +585,37 @@ export class ClientsService {
       return { verified: false, message: `Client "${email}" does not exist on the remote panel. Update aborted. No changes were made.` };
     }
 
-    // ── Step 2: Build and send a SINGLE update to the panel ───────────────
-    clientPayload.inboundIds = newNumericInboundIds;
-    this.logger.log(
-      `[SYNC_INBOUNDS] Sending update with new inboundIds=[${newNumericInboundIds.join(',')}] for client ${email}`
-    );
+    // ── Step 2: Calculate Differences and Apply Attach/Detach ──────────────
+    const remoteInbounds = preCheck.inboundIds || [];
+    const toAttach = newNumericInboundIds.filter(id => !remoteInbounds.includes(id));
+    const toDetach = remoteInbounds.filter(id => !newNumericInboundIds.includes(id));
 
+    if (toDetach.length > 0) {
+      this.logger.log(`[SYNC_INBOUNDS] Detaching inbounds [${toDetach.join(',')}] from client ${email}`);
+      const detachResult = await this.panelsService.detachInboundsFromClient(panelId, email, toDetach, adminId);
+      if (!detachResult.success) {
+        this.logger.error(`[SYNC_INBOUNDS] Detach FAILED for ${email}: ${detachResult.error?.message}`);
+        return { verified: false, message: `Panel detach failed: ${detachResult.error?.message}` };
+      }
+    }
+
+    if (toAttach.length > 0) {
+      this.logger.log(`[SYNC_INBOUNDS] Attaching inbounds [${toAttach.join(',')}] to client ${email}`);
+      const attachResult = await this.panelsService.attachInboundsToClient(panelId, email, toAttach, adminId);
+      if (!attachResult.success) {
+        this.logger.error(`[SYNC_INBOUNDS] Attach FAILED for ${email}: ${attachResult.error?.message}`);
+        return { verified: false, message: `Panel attach failed: ${attachResult.error?.message}` };
+      }
+    }
+
+    // Always update the client payload (fields like enable, expiryTime, totalGB)
+    // The updateClientOnPanel method now strips inboundIds from its payload
     const updateResult = await this.panelsService.updateClientOnPanel(
       panelId, email, clientPayload, adminId
     );
 
     if (!updateResult.success) {
-      this.logger.error(
-        `[SYNC_INBOUNDS] Panel update FAILED for ${email}: ` +
-        `code=${updateResult.error?.code} msg=${updateResult.error?.message}`
-      );
+      this.logger.error(`[SYNC_INBOUNDS] Panel update FAILED for ${email}: ${updateResult.error?.message}`);
       return { verified: false, message: `Panel update failed: ${updateResult.error?.message}` };
     }
 
@@ -610,14 +626,14 @@ export class ClientsService {
       return { verified: false, message: `Client "${email}" disappeared from the panel after update.` };
     }
 
-    const remoteInbounds = [...(postCheck.inboundIds || [])].sort((a, b) => a - b);
+    const postRemoteInbounds = [...(postCheck.inboundIds || [])].sort((a, b) => a - b);
     const expectedInbounds = [...newNumericInboundIds].sort((a, b) => a - b);
 
-    const inboundsMatch = remoteInbounds.length === expectedInbounds.length &&
-      remoteInbounds.every((val, index) => val === expectedInbounds[index]);
+    const inboundsMatch = postRemoteInbounds.length === expectedInbounds.length &&
+      postRemoteInbounds.every((val, index) => val === expectedInbounds[index]);
 
     if (!inboundsMatch) {
-      const errMsg = `Inbound mismatch after update for ${email}. Expected [${expectedInbounds.join(',')}] but got [${remoteInbounds.join(',')}].`;
+      const errMsg = `Inbound mismatch after update for ${email}. Expected [${expectedInbounds.join(',')}] but got [${postRemoteInbounds.join(',')}].`;
       this.logger.error(`[SYNC_INBOUNDS] VERIFICATION FAILED: ${errMsg} Triggering rollback.`);
       return { verified: false, message: errMsg }; // STICT VERIFICATION: This fails the operation
     }
