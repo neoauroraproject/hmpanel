@@ -294,6 +294,34 @@ ssl_label() {
 }
 
 # ─────────────────────────────────────────────────────────────────
+# SSL Fallback — called from ANY point in the SSL process on failure
+# Ensures nginx always ends up running on HTTP no matter what went wrong
+# ─────────────────────────────────────────────────────────────────
+ssl_fallback_to_http() {
+  local reason="${1:-Unknown SSL failure}"
+  error "SSL failed: ${reason}"
+  warn "⚠  Falling back to HTTP — panel will be accessible via http://${DOMAIN:-localhost}"
+
+  SSL_CHOICE=3
+  SSL_STATUS="disabled"
+
+  # Patch nginx config to disable SSL block (idempotent — safe to run multiple times)
+  if [[ -f "${INSTALL_DIR}/nginx/nginx.conf.template" ]]; then
+    sed -i 's/listen 443 ssl;/# SSL disabled/' "${INSTALL_DIR}/nginx/nginx.conf.template" 2>/dev/null || true
+  fi
+
+  # Update NEXT_PUBLIC_API_URL in .env to http so the frontend does not try https
+  if [[ -f "${INSTALL_DIR}/.env" ]]; then
+    sed -i "s|NEXT_PUBLIC_API_URL=https://|NEXT_PUBLIC_API_URL=http://|g" "${INSTALL_DIR}/.env" 2>/dev/null || true
+  fi
+
+  # Restart nginx to pick up the patched config
+  docker restart hmpanel-nginx >/dev/null 2>&1 || true
+
+  log "HTTP-only mode active. You can add SSL later via: hmpanel -> SSL Management"
+}
+
+# ─────────────────────────────────────────────────────────────────
 # 10 Steps
 # ─────────────────────────────────────────────────────────────────
 
@@ -324,6 +352,12 @@ step_1_configuration() {
   
   # Ensure panelapp user (1001) has access to needed directories
   chown -R 1001:1001 "${INSTALL_DIR}/nginx" "${INSTALL_DIR}/uploads" "${INSTALL_DIR}/backups" "${INSTALL_DIR}/logs" 2>/dev/null || true
+
+  # Configure nginx for HTTP-only AFTER files are in place
+  if [[ "$SSL_CHOICE" == 3 ]]; then
+    sed -i 's/listen 443 ssl;/# SSL disabled/' "${INSTALL_DIR}/nginx/nginx.conf.template" 2>/dev/null || true
+    info "Nginx configured for HTTP-only mode"
+  fi
 }
 
 step_2_environment() {
@@ -395,9 +429,7 @@ EOF
     chmod 600 "${SSL_DIR}/privkey.pem" 2>/dev/null || true
   fi
 
-  if [[ "$SSL_CHOICE" == 3 ]]; then
-    sed -i 's/listen 443 ssl;/# SSL disabled/' "${INSTALL_DIR}/nginx/nginx.conf.template" 2>/dev/null || true
-  fi
+  # NOTE: nginx.conf.template sed for HTTP-only is handled in step_1 after files are copied
 }
 
 step_3_docker() {
@@ -565,59 +597,104 @@ step_8_ssl() {
   step "[8/10] SSL"
   SSL_DIR="${INSTALL_DIR}/nginx/ssl"
   SSL_STATUS="disabled"
-  
+
   if [[ "$SSL_CHOICE" == 1 ]]; then
+
+    # ── 1. Install dependencies ──────────────────────────────────
+    set +e
     ensure_package git git
     ensure_package curl curl
     ensure_package socat socat
+    set -e
 
+    # ── 2. Clone & install acme.sh ───────────────────────────────
     info "Installing acme.sh..."
     if [[ ! -d "${INSTALL_DIR}/acme.sh" ]]; then
-      run_with_spinner "Cloning acme.sh" git clone https://github.com/acmesh-official/acme.sh.git /tmp/acme.sh
-      cd /tmp/acme.sh
-      ./acme.sh --install --home "${INSTALL_DIR}/acme.sh" --config-home "${INSTALL_DIR}/acme.sh/data" --accountemail "${ADMIN_EMAIL}" >/dev/null 2>&1
-      cd "$INSTALL_DIR"
+      if ! run_with_spinner "Cloning acme.sh" \
+          git clone https://github.com/acmesh-official/acme.sh.git /tmp/acme.sh; then
+        ssl_fallback_to_http "Could not clone acme.sh (network or git error)"
+        return 0
+      fi
+
+      # Run installer inside subshell — never changes parent working directory
+      (
+        cd /tmp/acme.sh
+        ./acme.sh --install \
+          --home "${INSTALL_DIR}/acme.sh" \
+          --config-home "${INSTALL_DIR}/acme.sh/data" \
+          --accountemail "${ADMIN_EMAIL}" >/dev/null 2>&1
+      ) || true
       rm -rf /tmp/acme.sh
     fi
 
-    # Set default CA to ZeroSSL
-    "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" --set-default-ca --server zerossl >/dev/null 2>&1
+    # Verify acme.sh binary is actually present after install
+    if [[ ! -x "${INSTALL_DIR}/acme.sh/acme.sh" ]]; then
+      ssl_fallback_to_http "acme.sh binary missing after install"
+      return 0
+    fi
 
+    # ── 3. Set ZeroSSL as default CA ─────────────────────────────
+    "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" \
+      --set-default-ca --server zerossl >/dev/null 2>&1 || true
+
+    # ── 4. Stop nginx to free port 80 ────────────────────────────
     info "Requesting ACME certificate for ${DOMAIN}..."
-    
-    # Stop Nginx temporarily to free port 80
     docker stop hmpanel-nginx >/dev/null 2>&1 || true
 
-    local acme_success=false
-    if "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" --issue -d "$DOMAIN" --standalone; then
-      info "Installing certificate to nginx..."
-      "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" --install-cert -d "$DOMAIN" \
-        --fullchain-file "${SSL_DIR}/fullchain.pem" \
-        --key-file "${SSL_DIR}/privkey.pem" \
-        --reloadcmd "docker exec hmpanel-nginx nginx -s reload || true" >/dev/null 2>&1
-      
-      chown -R 1001:1001 "${INSTALL_DIR}/nginx/ssl" "${INSTALL_DIR}/acme.sh" 2>/dev/null || true
-        
-      log "Certificate issued successfully via acme.sh"
-      SSL_STATUS="acme"
-      acme_success=true
-    else
-      error "ACME SSL failed."
-      warn "Falling back to HTTP only..."
-      SSL_CHOICE=3
-      sed -i 's/listen 443 ssl;/# SSL disabled/' "${INSTALL_DIR}/nginx/nginx.conf.template" 2>/dev/null || true
-      SSL_STATUS="disabled"
+    # ── 5. Issue certificate ──────────────────────────────────────
+    # Disable set -e here so a cert failure does not abort the whole script
+    set +e
+    "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" \
+      --issue -d "$DOMAIN" --standalone
+    local acme_exit=$?
+    set -e
+
+    if [[ $acme_exit -ne 0 ]]; then
+      # Bring nginx back up before falling back so the panel is reachable
+      docker start hmpanel-nginx >/dev/null 2>&1 || true
+      ssl_fallback_to_http "acme.sh --issue returned exit code ${acme_exit} (DNS, port 80 blocked, or rate-limit)"
+      return 0
     fi
-    
-    # Restart nginx
+
+    # ── 6. Install cert into nginx ───────────────────────────────
+    set +e
+    "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" \
+      --install-cert -d "$DOMAIN" \
+      --fullchain-file "${SSL_DIR}/fullchain.pem" \
+      --key-file      "${SSL_DIR}/privkey.pem" \
+      --reloadcmd     "docker exec hmpanel-nginx nginx -s reload || true" \
+      >/dev/null 2>&1
+    local install_exit=$?
+    set -e
+
+    if [[ $install_exit -ne 0 ]]; then
+      docker start hmpanel-nginx >/dev/null 2>&1 || true
+      ssl_fallback_to_http "acme.sh --install-cert failed (exit code ${install_exit})"
+      return 0
+    fi
+
+    # ── 7. Fix permissions & restart nginx ───────────────────────
+    chown -R 1001:1001 "${INSTALL_DIR}/nginx/ssl" "${INSTALL_DIR}/acme.sh" 2>/dev/null || true
     docker start hmpanel-nginx >/dev/null 2>&1 || true
+
+    # Verify nginx actually came up with the new cert
+    sleep 2
+    if ! docker ps --filter "name=hmpanel-nginx" --filter "status=running" | grep -q hmpanel-nginx; then
+      ssl_fallback_to_http "nginx failed to start with the new certificate"
+      return 0
+    fi
+
+    log "Certificate issued and installed successfully via acme.sh"
+    SSL_STATUS="acme"
   fi
 
+  # ── Self-signed ────────────────────────────────────────────────
   if [[ "$SSL_CHOICE" == 2 ]]; then
     log "Using self-signed certificate"
     SSL_STATUS="self-signed"
   fi
 
+  # ── HTTP-only (chosen or fallen back to) ──────────────────────
   if [[ "$SSL_CHOICE" == 3 ]]; then
     log "SSL disabled (HTTP only)"
     sed -i 's/listen 443 ssl;/# SSL disabled/' "${INSTALL_DIR}/nginx/nginx.conf.template" 2>/dev/null || true
