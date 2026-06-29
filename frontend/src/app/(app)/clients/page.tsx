@@ -13,7 +13,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Search, Plus, ChevronDown, ChevronUp, Copy, Check, CheckCircle2,
   Trash2, X, Play, Square, CheckSquare, Eye, MoreVertical, QrCode, Link, Edit2, Power, 
-  Activity, Users, HardDrive, CalendarDays, Filter, FolderPlus, RotateCcw, AlertTriangle, Database, Network
+  Activity, Users, HardDrive, CalendarDays, Filter, FolderPlus, RotateCcw, AlertTriangle, Database, Network, Download
 } from "lucide-react";
 import { io } from "socket.io-client";
 import { ConnectionDetailsModal } from "@/components/ConnectionDetailsModal";
@@ -289,6 +289,54 @@ export default function ClientsPage() {
     },
   });
 
+  // Optimized bulk enable/disable — uses 3.4.2 bulk endpoints when available
+  const bulkToggleMutation = useMutation({
+    mutationFn: async (dto: { ids: string[]; action: "enable" | "disable" }) =>
+      (await api.post<any>(`/bulk-clients/${dto.action}`, { ids: dto.ids })).data,
+    onSuccess: (d, vars) => {
+      if (d.failed > 0) {
+        setBulkResult({
+          success: d.affected,
+          failed: d.failed,
+          errors: d.errors,
+          action: vars.action,
+        });
+      } else {
+        toast(`Bulk ${vars.action} completed. Affected: ${d.affected} client(s).`, "success");
+      }
+      setSelectedClients({});
+      setTimeout(() => {
+        qc.invalidateQueries({ queryKey: ["clients"] });
+        qc.invalidateQueries({ queryKey: ["reseller-overview"] });
+        qc.invalidateQueries({ queryKey: ["overview"] });
+      }, 1500);
+    },
+    onError: (err: any) => {
+      toast(err.response?.data?.message || "Bulk action failed", "error");
+    },
+  });
+
+  // Export subscription links as downloadable TXT
+  const bulkExportMutation = useMutation({
+    mutationFn: async (dto: { ids: string[] }) =>
+      (await api.post<any>("/bulk-clients/export-subs", dto)).data,
+    onSuccess: (data) => {
+      const blob = new Blob([data.content], { type: "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = data.filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast(`Exported ${data.count} subscription links`, "success");
+    },
+    onError: (err: any) => {
+      toast(err.response?.data?.message || "Export failed", "error");
+    },
+  });
+
   if (isLoading) return <Spinner />;
   if (error) return <ErrorBox message="Failed to load clients" />;
 
@@ -353,6 +401,8 @@ export default function ClientsPage() {
       });
     } else if (action === "assignGroup") {
       setGroupAssignModalOpen(true);
+    } else if (action === "exportSubs") {
+      bulkExportMutation.mutate({ ids: selectedIds });
     }
   };
 
@@ -1126,6 +1176,12 @@ export default function ClientsPage() {
                   Group
                 </button>
                 <button
+                  onClick={() => handleBulkAction("exportSubs")}
+                  className="rounded-full border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:bg-zinc-800 whitespace-nowrap"
+                >
+                  Export Subs
+                </button>
+                <button
                   onClick={() => handleBulkAction("delete")}
                   className="rounded-full border border-red-900/35 bg-red-950/20 px-3 py-1.5 text-xs font-medium text-red-400 hover:bg-red-950/40 whitespace-nowrap"
                 >
@@ -1190,6 +1246,13 @@ export default function ClientsPage() {
                   title="Assign Group"
                 >
                   <FolderPlus size={18} />
+                </button>
+                <button
+                  onClick={() => handleBulkAction("exportSubs")}
+                  className="rounded-full p-2 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                  title="Export Subscription Links"
+                >
+                  <Download size={18} />
                 </button>
                 <button
                   onClick={() => handleBulkAction("delete")}
@@ -1289,7 +1352,11 @@ export default function ClientsPage() {
               </button>
               <button
                 onClick={() => {
-                  bulkMutation.mutate({ ids: selectedIds, action: pendingBulkAction });
+                  if (pendingBulkAction === "enable" || pendingBulkAction === "disable") {
+                    bulkToggleMutation.mutate({ ids: selectedIds, action: pendingBulkAction });
+                  } else {
+                    bulkMutation.mutate({ ids: selectedIds, action: pendingBulkAction as any });
+                  }
                   setPendingBulkAction(null);
                 }}
                 className="flex-1 rounded-xl bg-blue-600 py-3 font-semibold text-white hover:bg-blue-500 transition-colors capitalize"
@@ -1378,7 +1445,7 @@ export default function ClientsPage() {
 
       {/* Bulk Processing Loading Overlay */}
       <AnimatePresence>
-        {bulkMutation.isPending && (
+        {(bulkMutation.isPending || bulkToggleMutation.isPending || bulkExportMutation.isPending) && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -2506,6 +2573,7 @@ function MobileActionsSheet({
             { id: "addDays", label: "Extend Expiry", icon: CalendarDays },
             { id: "enable", label: "Enable Selected", icon: Play },
             { id: "disable", label: "Disable Selected", icon: Square },
+            { id: "exportSubs", label: "Export Subscription Links", icon: Download },
             { id: "assignGroup", label: "Assign Native Group", icon: Users },
             { id: "resetTraffic", label: "Reset Traffic Counters", icon: RotateCcw },
             { id: "delete", label: "Delete Permanently", icon: Trash2, danger: true },

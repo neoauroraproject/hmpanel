@@ -8,6 +8,14 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.0.1`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [1.4.0] - 2026-06-30
+
+### Added
+- **Bulk Operations 3.4.2 API Support:** HMPanel now automatically detects and utilizes the new optimized bulk endpoints (`/bulkEnable`, `/bulkDisable`, `/export`) when connected to 3.4.2 panels, significantly improving performance for operations on hundreds of clients at once. Operations seamlessly fall back to sequential execution for 3.3.1 panels.
+- **Export Subscription Links:** Added a new "Export Subs" bulk action that generates a downloadable `.txt` file containing email addresses and subscription URLs for all selected clients.
+
+---
+
 ## [1.0.4] - 2026-06-12
 
 ### Added

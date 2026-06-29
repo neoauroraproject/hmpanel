@@ -218,6 +218,9 @@ export class PanelsService implements OnModuleInit {
       slimInbounds: false,
       observatory: false,
       websocket: false,
+      bulkEnable: false,
+      bulkDisable: false,
+      bulkExport: false,
     };
     const headers = { Authorization: apiToken ? `Bearer ${apiToken}` : undefined };
 
@@ -239,6 +242,22 @@ export class PanelsService implements OnModuleInit {
     try {
       const obsRes = await axios.get(`${apiBaseUrl}/panel/api/server/xrayObservatory`, { headers, timeout: 3000 });
       if (obsRes.data && obsRes.data.success !== undefined) caps.observatory = true;
+    } catch {}
+
+    // 3.4.2 Bulk endpoints — probe with empty payload to detect availability
+    try {
+      const beRes = await axios.post(`${apiBaseUrl}/panel/api/clients/bulkEnable`, { emails: [] }, { headers, timeout: 3000 });
+      if (beRes.data && beRes.data.success !== undefined) caps.bulkEnable = true;
+    } catch {}
+
+    try {
+      const bdRes = await axios.post(`${apiBaseUrl}/panel/api/clients/bulkDisable`, { emails: [] }, { headers, timeout: 3000 });
+      if (bdRes.data && bdRes.data.success !== undefined) caps.bulkDisable = true;
+    } catch {}
+
+    try {
+      const exRes = await axios.get(`${apiBaseUrl}/panel/api/clients/export`, { headers, timeout: 3000 });
+      if (exRes.data && exRes.data.success !== undefined) caps.bulkExport = true;
     } catch {}
 
     return caps;
@@ -730,6 +749,9 @@ export class PanelsService implements OnModuleInit {
           capSlimInbounds: caps.slimInbounds,
           capObservatory: caps.observatory,
           capWebsocket: caps.websocket,
+          capBulkEnable: caps.bulkEnable,
+          capBulkDisable: caps.bulkDisable,
+          capBulkExport: caps.bulkExport,
           version,
         }
       });

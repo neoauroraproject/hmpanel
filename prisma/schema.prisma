@@ -58,6 +58,9 @@ model Panel {
   capSlimInbounds Boolean   @default(false)
   capObservatory  Boolean   @default(false)
   capWebsocket    Boolean   @default(false)
+  capBulkEnable   Boolean   @default(false)
+  capBulkDisable  Boolean   @default(false)
+  capBulkExport   Boolean   @default(false)
 
   server        Server         @relation(fields: [serverId], references: [id], onDelete: Cascade)
   inbounds      Inbound[]

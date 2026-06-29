@@ -14,6 +14,7 @@ import { SettingsModule } from './settings/settings.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { InboundsModule } from './inbounds/inbounds.module';
 import { BackupsModule } from './backups/backups.module';
+import { BulkClientsModule } from './bulk-clients/bulk-clients.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { BackupsModule } from './backups/backups.module';
     SubscriptionsModule,
     InboundsModule,
     BackupsModule,
+    BulkClientsModule,
   ],
   controllers: [AppController],
   providers: [],
