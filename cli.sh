@@ -7,6 +7,175 @@ set -euo pipefail
 INSTALL_DIR="/opt/hmpanel"
 BACKUP_DIR="${INSTALL_DIR}/backups"
 
+update_env() {
+  local key="$1"
+  local val="$2"
+  local env_file="${INSTALL_DIR}/.env"
+  local tmp_file="${INSTALL_DIR}/.env.tmp"
+  
+  if [[ -f "$env_file" ]]; then
+    if grep -q "^${key}=" "$env_file"; then
+      # Replace existing key safely
+      awk -v k="$key" -v v="$val" -F'=' 'BEGIN{OFS="="} $1==k {$2=v; print; next} {print}' "$env_file" > "$tmp_file"
+    else
+      # Append new key
+      cp "$env_file" "$tmp_file"
+      echo "${key}=${val}" >> "$tmp_file"
+    fi
+    mv "$tmp_file" "$env_file"
+    chmod 600 "$env_file" 2>/dev/null || true
+  fi
+}
+
+ensure_env_variables() {
+  local env_file="${INSTALL_DIR}/.env"
+  if [[ -f "$env_file" ]]; then
+    if ! grep -q "^PANEL_PROTOCOL=" "$env_file"; then update_env "PANEL_PROTOCOL" "http"; fi
+    if ! grep -q "^SSL_ENABLED=" "$env_file"; then update_env "SSL_ENABLED" "false"; fi
+    if ! grep -q "^SSL_PROVIDER=" "$env_file"; then update_env "SSL_PROVIDER" "none"; fi
+    if ! grep -q "^PANEL_DOMAIN=" "$env_file"; then
+      local current_domain
+      current_domain=$(grep "^DOMAIN=" "$env_file" | cut -d= -f2 || echo "localhost")
+      update_env "PANEL_DOMAIN" "$current_domain"
+    fi
+  fi
+}
+
+ensure_env_variables
+
+verify_dns() {
+  local domain="$1"
+  if [[ "$domain" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || [[ "$domain" == "localhost" ]]; then
+    echo "Skipping DNS verification for IP/localhost: $domain"
+    return 0
+  fi
+
+  echo "Verifying DNS resolution for $domain..."
+  if ! host "$domain" >/dev/null 2>&1 && ! dig +short "$domain" >/dev/null 2>&1 && ! getent hosts "$domain" >/dev/null 2>&1; then
+    echo -e "${YELLOW}⚠ DNS check failed: $domain does not resolve.${NC}"
+    return 1
+  fi
+  echo -e "${GREEN}✔ DNS verification passed${NC}"
+  return 0
+}
+
+verify_port_80() {
+  echo "Checking if port 80 is available..."
+  if command -v ss &>/dev/null; then
+    if ss -tuln | grep -q ":80 "; then
+      local holding_process
+      holding_process=$(lsof -i :80 -t 2>/dev/null | xargs ps -o comm= -p 2>/dev/null || echo "")
+      if [[ "$holding_process" != "docker" && "$holding_process" != "" ]]; then
+        echo -e "${YELLOW}⚠ Port 80 is occupied by host process: $holding_process${NC}"
+        return 1
+      fi
+    fi
+  elif command -v netstat &>/dev/null; then
+    if netstat -tuln | grep -q ":80 "; then
+      local holding_process
+      holding_process=$(lsof -i :80 -t 2>/dev/null | xargs ps -o comm= -p 2>/dev/null || echo "")
+      if [[ "$holding_process" != "docker" && "$holding_process" != "" ]]; then
+        echo -e "${YELLOW}⚠ Port 80 is occupied by host process: $holding_process${NC}"
+        return 1
+      fi
+    fi
+  fi
+  echo -e "${GREEN}✔ Port 80 is available${NC}"
+  return 0
+}
+
+write_http_nginx_template() {
+  local target_file="$1"
+  cat > "$target_file" <<'EOF'
+user nginx;
+worker_processes auto;
+error_log /var/log/nginx/error.log warn;
+pid /var/run/nginx.pid;
+
+events {
+    worker_connections 1024;
+    use epoll;
+    multi_accept on;
+}
+
+http {
+    include       /etc/nginx/mime.types;
+    default_type  application/octet-stream;
+
+    log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                    '$status $body_bytes_sent "$http_referer" '
+                    '"$http_user_agent" "$http_x_forwarded_for"';
+
+    access_log /var/log/nginx/access.log main;
+
+    sendfile        on;
+    tcp_nopush      on;
+    tcp_nodelay     on;
+    keepalive_timeout 65;
+    types_hash_max_size 2048;
+    client_max_body_size 50M;
+
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    # Gzip compression
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 6;
+    gzip_types text/plain text/css text/xml application/json application/javascript application/xml+rss image/svg+xml;
+
+    # Rate limiting
+    limit_req_zone $binary_remote_addr zone=api_limit:10m rate=30r/s;
+    limit_req_zone $binary_remote_addr zone=login_limit:10m rate=5r/m;
+
+    upstream backend {
+        server panel-app:${BACKEND_PORT};
+        keepalive 32;
+    }
+
+    upstream frontend {
+        server panel-app:${APP_PORT};
+        keepalive 32;
+    }
+
+    server {
+        listen 80;
+        server_name _;
+
+        # ── Backend API ──────────────────────────────────────────
+        location /api/ {
+            limit_req zone=api_limit burst=50 nodelay;
+            proxy_pass http://backend/;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection 'upgrade';
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            
+            proxy_buffering off;
+            proxy_read_timeout 600s;
+        }
+
+        # ── Frontend Next.js SPA ──────────────────────────────────
+        location / {
+            proxy_pass http://frontend;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection 'upgrade';
+            proxy_set_header Host $host;
+            proxy_cache_bypass $http_upgrade;
+        }
+    }
+}
+EOF
+}
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -187,178 +356,393 @@ cmd_logs() {
   esac
 }
 
-ssl_request_acme() {
-  echo -e "${BOLD}--- Request ACME Certificate ---${NC}\n"
-  if [[ -f "${INSTALL_DIR}/.env" ]]; then
-    source "${INSTALL_DIR}/.env"
-  fi
-  
-  if [[ -z "${DOMAIN:-}" || "$DOMAIN" == "localhost" ]]; then
-    echo -e "${RED}✘ Invalid domain/IP in .env.${NC}"
-    pause
-    return
-  fi
-  
-  echo -e "Attempting to issue ACME certificate for ${CYAN}${DOMAIN}${NC}..."
-  
-  if [[ ! -f "${INSTALL_DIR}/acme.sh/acme.sh" ]]; then
-    echo -e "${RED}✘ acme.sh not found. Please run installer again or install acme.sh manually.${NC}"
-    pause
-    return
-  fi
-  
-  # Temporarily stop nginx to free port 80
-  docker stop hmpanel-nginx >/dev/null 2>&1 || true
-  
-  "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" --set-default-ca --server zerossl >/dev/null 2>&1
+verify_nginx_status() {
+  local container_name="hmpanel-nginx"
+  local is_recheck="${1:-false}"
+  local status
+  status=$(docker inspect -f '{{.State.Status}}' "$container_name" 2>/dev/null || echo "missing")
 
-  if "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" --issue -d "$DOMAIN" --standalone; then
-    "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" --install-cert -d "$DOMAIN" \
-      --fullchain-file "${INSTALL_DIR}/nginx/ssl/fullchain.pem" \
-      --key-file "${INSTALL_DIR}/nginx/ssl/privkey.pem" \
-      --reloadcmd "docker exec hmpanel-nginx nginx -s reload || true" >/dev/null 2>&1
-      
-    # Enable SSL in nginx if it was disabled
-    sed -i 's/# SSL disabled/listen 443 ssl;/' "${INSTALL_DIR}/nginx/nginx.conf.template" 2>/dev/null || true
-    
-    echo -e "${GREEN}✔ Certificate issued successfully!${NC}"
-  else
-    echo -e "${RED}✘ ACME request failed.${NC}"
+  if [[ "$status" == "restarting" || "$status" != "running" ]]; then
+    echo -e "${RED}✘ Nginx container failed to start (Status: $status).${NC}"
+    if [[ "$is_recheck" == "true" ]]; then
+      echo -e "${RED}✘ Nginx failed to start even in HTTP-only mode. Manual intervention required.${NC}"
+      return 1
+    fi
+    echo -e "${YELLOW}⚠ Automatically falling back to HTTP...${NC}"
+    ssl_fallback_to_http "Nginx container startup failure"
+    sleep 3
+    verify_nginx_status "true"
+    return $?
   fi
-  
-  echo "Restarting Nginx..."
-  docker start hmpanel-nginx >/dev/null 2>&1 || true
+
+  echo "Verifying Nginx endpoints..."
+  local curl_success=false
+  for i in {1..5}; do
+    if curl -skL "https://127.0.0.1/api/health" &>/dev/null || curl -skL "http://127.0.0.1/api/health" &>/dev/null; then
+      curl_success=true
+      break
+    fi
+    sleep 2
+  done
+
+  if [[ "$curl_success" == false ]]; then
+    echo -e "${RED}✘ Nginx is running but API health endpoint is unreachable.${NC}"
+    if [[ "$is_recheck" == "true" ]]; then
+      echo -e "${RED}✘ Endpoints unreachable even in HTTP-only mode. Manual intervention required.${NC}"
+      return 1
+    fi
+    echo -e "${YELLOW}⚠ Automatically falling back to HTTP...${NC}"
+    ssl_fallback_to_http "Nginx endpoints unreachable with SSL configuration"
+    sleep 3
+    verify_nginx_status "true"
+    return $?
+  fi
+
+  echo -e "${GREEN}✔ Nginx is running and endpoints are healthy${NC}"
+  return 0
+}
+
+ssl_fallback_to_http() {
+  local reason="${1:-Unknown SSL failure}"
+  echo -e "${RED}✘ SSL failed: ${reason}${NC}"
+  echo -e "${YELLOW}⚠ Falling back to HTTP — panel will be accessible via HTTP${NC}"
+
+  update_env "PANEL_PROTOCOL" "http"
+  update_env "SSL_ENABLED" "false"
+  update_env "SSL_PROVIDER" "none"
+  source "${INSTALL_DIR}/.env"
+  update_env "NEXT_PUBLIC_API_URL" "http://${PANEL_DOMAIN}/api"
+
+  if [[ -f "${INSTALL_DIR}/nginx/nginx.conf.template" ]] && ! [[ -f "${INSTALL_DIR}/nginx/nginx.conf.template.ssl" ]]; then
+    cp "${INSTALL_DIR}/nginx/nginx.conf.template" "${INSTALL_DIR}/nginx/nginx.conf.template.ssl"
+  fi
+  write_http_nginx_template "${INSTALL_DIR}/nginx/nginx.conf.template"
+
+  docker compose -f "${INSTALL_DIR}/docker-compose.yml" down nginx >/dev/null 2>&1 || true
+  docker compose -f "${INSTALL_DIR}/docker-compose.yml" up -d nginx >/dev/null 2>&1 || true
+}
+
+ssl_issue() {
+  echo -e "${BOLD}--- Issue / Renew SSL ---${NC}\n"
+  source "${INSTALL_DIR}/.env"
+
+  if [[ -z "${PANEL_DOMAIN:-}" || "$PANEL_DOMAIN" == "localhost" ]]; then
+    echo -e "${RED}✘ Invalid domain/IP in .env: ${PANEL_DOMAIN:-None}${NC}"
+    pause
+    return
+  fi
+
+  if ! verify_dns "$PANEL_DOMAIN"; then
+    ssl_fallback_to_http "DNS verification failed"
+    pause
+    return
+  fi
+  if ! verify_port_80; then
+    ssl_fallback_to_http "Port 80 is occupied"
+    pause
+    return
+  fi
+
+  # Stop nginx
+  docker stop hmpanel-nginx >/dev/null 2>&1 || true
+
+  local cert_obtained=false
+  local provider="none"
+  local SSL_DIR="${INSTALL_DIR}/nginx/ssl"
+
+  # ACME (Let's Encrypt / ZeroSSL)
+  if [[ -f "${INSTALL_DIR}/acme.sh/acme.sh" ]]; then
+    for ca in "letsencrypt" "zerossl"; do
+      if [[ "$cert_obtained" == false ]]; then
+        echo "Trying acme.sh ($ca)..."
+        "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" --set-default-ca --server "$ca" >/dev/null 2>&1
+        if "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" --issue -d "$PANEL_DOMAIN" --standalone >/dev/null 2>&1; then
+          "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" --install-cert -d "$PANEL_DOMAIN" \
+            --fullchain-file "${SSL_DIR}/fullchain.pem" \
+            --key-file "${SSL_DIR}/privkey.pem" >/dev/null 2>&1
+          cert_obtained=true
+          provider="$ca"
+          echo -e "${GREEN}✔ Certificate issued successfully via $ca${NC}"
+        fi
+      fi
+    done
+  fi
+
+  # Certbot fallback
+  if [[ "$cert_obtained" == false ]]; then
+    echo "Trying Certbot..."
+    local certbot_exit=1
+    if command -v certbot &>/dev/null; then
+      certbot certonly --standalone --non-interactive --agree-tos -m "admin@$PANEL_DOMAIN" -d "$PANEL_DOMAIN" >/dev/null 2>&1
+      certbot_exit=$?
+    else
+      docker run --rm -p 80:80 -v "${SSL_DIR}:/etc/letsencrypt" certbot/certbot certonly --standalone --non-interactive --agree-tos -m "admin@$PANEL_DOMAIN" -d "$PANEL_DOMAIN" >/dev/null 2>&1
+      certbot_exit=$?
+    fi
+
+    if [[ $certbot_exit -eq 0 ]]; then
+      if [[ -f "/etc/letsencrypt/live/${PANEL_DOMAIN}/privkey.pem" ]]; then
+        cp "/etc/letsencrypt/live/${PANEL_DOMAIN}/privkey.pem" "${SSL_DIR}/privkey.pem"
+        cp "/etc/letsencrypt/live/${PANEL_DOMAIN}/fullchain.pem" "${SSL_DIR}/fullchain.pem"
+      elif [[ -f "${SSL_DIR}/live/${PANEL_DOMAIN}/privkey.pem" ]]; then
+        cp "${SSL_DIR}/live/${PANEL_DOMAIN}/privkey.pem" "${SSL_DIR}/privkey.pem"
+        cp "${SSL_DIR}/live/${PANEL_DOMAIN}/fullchain.pem" "${SSL_DIR}/fullchain.pem"
+      fi
+      cert_obtained=true
+      provider="certbot"
+      echo -e "${GREEN}✔ Certificate issued successfully via Certbot${NC}"
+    fi
+  fi
+
+  if [[ "$cert_obtained" == true ]]; then
+    update_env "PANEL_PROTOCOL" "https"
+    update_env "SSL_ENABLED" "true"
+    update_env "SSL_PROVIDER" "$provider"
+    update_env "NEXT_PUBLIC_API_URL" "https://${PANEL_DOMAIN}/api"
+
+    if [[ -f "${INSTALL_DIR}/nginx/nginx.conf.template.ssl" ]]; then
+      cp "${INSTALL_DIR}/nginx/nginx.conf.template.ssl" "${INSTALL_DIR}/nginx/nginx.conf.template"
+    else
+      sed -i 's/# SSL disabled/listen 443 ssl;/' "${INSTALL_DIR}/nginx/nginx.conf.template" 2>/dev/null || true
+    fi
+
+    docker start hmpanel-nginx >/dev/null 2>&1 || true
+    sleep 2
+    verify_nginx_status
+  else
+    ssl_fallback_to_http "All providers failed"
+  fi
   pause
 }
 
-ssl_install_manual() {
-  echo -e "${BOLD}--- Install Existing Certificate ---${NC}\n"
-  echo "Please provide absolute paths to your certificate files."
-  read -rp "Path to fullchain.pem: " path_cert
-  read -rp "Path to privkey.pem: " path_key
+ssl_enable() {
+  echo -e "${BOLD}--- Enable HTTPS ---${NC}\n"
+  local cert_file="${INSTALL_DIR}/nginx/ssl/fullchain.pem"
   
-  if [[ -f "$path_cert" && -f "$path_key" ]]; then
-    cp "$path_cert" "${INSTALL_DIR}/nginx/ssl/fullchain.pem"
-    cp "$path_key" "${INSTALL_DIR}/nginx/ssl/privkey.pem"
-    chmod 600 "${INSTALL_DIR}/nginx/ssl/privkey.pem"
-    
-    # Enable SSL
-    sed -i 's/# SSL disabled/listen 443 ssl;/' "${INSTALL_DIR}/nginx/nginx.conf.template" 2>/dev/null || true
-    
-    echo -e "${GREEN}✔ Certificates installed.${NC}"
-    echo "Restarting Nginx..."
-    docker restart hmpanel-nginx >/dev/null 2>&1 || true
-  else
-    echo -e "${RED}✘ One or both files not found. Ensure paths are absolute and files exist.${NC}"
+  if [[ ! -f "$cert_file" ]]; then
+    echo -e "${YELLOW}⚠ Certificate missing. Automatically running SSL Issue workflow...${NC}"
+    ssl_issue
+    return
   fi
+
+  local end_date
+  end_date=$(openssl x509 -enddate -noout -in "$cert_file" 2>/dev/null | cut -d= -f2)
+  local expiration_epoch
+  expiration_epoch=$(date -d "$end_date" +%s 2>/dev/null || date -j -f "%b %d %T %Y %Z" "$end_date" +%s 2>/dev/null)
+  local current_epoch=$(date +%s)
+  
+  if [[ -n "$expiration_epoch" && $expiration_epoch -lt $current_epoch ]]; then
+    echo -e "${YELLOW}⚠ Certificate expired. Automatically renewing...${NC}"
+    ssl_renew
+    return
+  fi
+
+  echo "Enabling HTTPS..."
+  update_env "PANEL_PROTOCOL" "https"
+  update_env "SSL_ENABLED" "true"
+  source "${INSTALL_DIR}/.env"
+  update_env "NEXT_PUBLIC_API_URL" "https://${PANEL_DOMAIN}/api"
+
+  if [[ -f "${INSTALL_DIR}/nginx/nginx.conf.template.ssl" ]]; then
+    cp "${INSTALL_DIR}/nginx/nginx.conf.template.ssl" "${INSTALL_DIR}/nginx/nginx.conf.template"
+  fi
+
+  docker restart hmpanel-nginx >/dev/null 2>&1 || true
+  sleep 2
+  verify_nginx_status
   pause
 }
 
 ssl_disable() {
-  echo -e "${BOLD}--- Switch to HTTP Mode ---${NC}\n"
-  echo -e "${YELLOW}⚠ Warning: This will disable HTTPS entirely.${NC}"
+  echo -e "${BOLD}--- Disable HTTPS ---${NC}\n"
+  echo -e "${YELLOW}⚠ Warning: This will switch the panel to HTTP mode.${NC}"
   read -rp "Are you sure? [y/N]: " confirm
   if [[ "${confirm,,}" == "y" ]]; then
-    sed -i 's/listen 443 ssl;/# SSL disabled/' "${INSTALL_DIR}/nginx/nginx.conf.template" 2>/dev/null || true
-    echo -e "${GREEN}✔ SSL disabled.${NC}"
-    echo "Restarting Nginx..."
-    docker restart hmpanel-nginx >/dev/null 2>&1 || true
+    source "${INSTALL_DIR}/.env"
+    ssl_fallback_to_http "User explicitly disabled HTTPS"
+    verify_nginx_status "true"
+    echo -e "${GREEN}✔ HTTPS Disabled.${NC}"
   else
     echo "Cancelled."
   fi
   pause
 }
 
-ssl_status() {
-  echo -e "${BOLD}--- SSL Status ---${NC}\n"
-  local cert_file="${INSTALL_DIR}/nginx/ssl/fullchain.pem"
-  
-  if [[ ! -f "$cert_file" ]]; then
-    echo -e "${RED}✘ SSL certificate not found at ${cert_file}${NC}"
-    echo "Is SSL disabled or strictly HTTP?"
-    pause
-    return
+ssl_renew() {
+  echo -e "${BOLD}--- Renew Existing Certificate ---${NC}\n"
+  source "${INSTALL_DIR}/.env"
+  local provider="${SSL_PROVIDER:-none}"
+
+  if [[ "$provider" == "none" || -z "$provider" ]]; then
+    if [[ -f "${INSTALL_DIR}/acme.sh/acme.sh" ]]; then
+      provider="letsencrypt"
+    elif command -v certbot &>/dev/null; then
+      provider="certbot"
+    else
+      echo -e "${RED}✘ Provider unknown and no tools detected. Run Issue SSL instead.${NC}"
+      pause
+      return
+    fi
   fi
 
-  local end_date
-  end_date=$(openssl x509 -enddate -noout -in "$cert_file" | cut -d= -f2)
-  local expiration_epoch
-  expiration_epoch=$(date -d "$end_date" +%s 2>/dev/null || date -j -f "%b %d %T %Y %Z" "$end_date" +%s 2>/dev/null)
-  local current_epoch
-  current_epoch=$(date +%s)
-  
-  if [[ -n "$expiration_epoch" ]]; then
-    local days_left=$(( (expiration_epoch - current_epoch) / 86400 ))
-    echo -e "  Certificate:   ${CYAN}Found${NC}"
-    echo -e "  Expiration:    ${CYAN}${end_date}${NC}"
-    
-    if [[ $days_left -lt 0 ]]; then
-      echo -e "  Status:        ${RED}Expired ($((-days_left)) days ago)${NC}"
-    elif [[ $days_left -lt 15 ]]; then
-      echo -e "  Status:        ${YELLOW}Expiring Soon (${days_left} days left)${NC}"
+  echo "Renewing via $provider..."
+  if [[ "$provider" == "letsencrypt" || "$provider" == "zerossl" ]]; then
+    "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" --renew -d "$PANEL_DOMAIN" --force
+  elif [[ "$provider" == "certbot" ]]; then
+    if command -v certbot &>/dev/null; then
+      certbot renew --force-renewal
     else
-      echo -e "  Status:        ${GREEN}Valid (${days_left} days left)${NC}"
+      docker run --rm -v "${INSTALL_DIR}/nginx/ssl:/etc/letsencrypt" certbot/certbot renew --force-renewal
     fi
+  fi
+
+  docker restart hmpanel-nginx >/dev/null 2>&1 || true
+  verify_nginx_status
+  pause
+}
+
+ssl_test_dns() {
+  echo -e "${BOLD}--- Test Domain & DNS ---${NC}\n"
+  source "${INSTALL_DIR}/.env"
+  local domain="${PANEL_DOMAIN:-localhost}"
+  
+  echo -e "Domain: ${CYAN}${domain}${NC}"
+  
+  local public_ip
+  public_ip=$(curl -s https://api.ipify.org || curl -s https://icanhazip.com || echo "Unknown")
+  echo -e "Public IP: ${CYAN}${public_ip}${NC}"
+
+  if [[ "$domain" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo -e "DNS A Record: ${CYAN}N/A (IP Address)${NC}"
   else
-    echo -e "  Certificate:   ${CYAN}Found${NC}"
-    echo -e "  Status:        ${YELLOW}Unable to parse expiration date${NC}"
+    local a_record
+    a_record=$(dig +short "$domain" 2>/dev/null || host "$domain" | awk '/has address/ {print $4}' | head -n1)
+    echo -e "DNS A Record: ${CYAN}${a_record:-Not Found}${NC}"
+    if [[ "$a_record" == "$public_ip" && -n "$a_record" ]]; then
+      echo -e "Match: ${GREEN}Yes${NC}"
+    else
+      echo -e "Match: ${RED}No Mismatch${NC}"
+    fi
+  fi
+
+  echo ""
+  verify_port_80
+  
+  echo "Checking if port 443 is available..."
+  if command -v ss &>/dev/null && ss -tuln | grep -q ":443 "; then
+    echo -e "${YELLOW}⚠ Port 443 is occupied${NC}"
+  else
+    echo -e "${GREEN}✔ Port 443 is available${NC}"
   fi
   pause
 }
 
-ssl_change_domain() {
-  echo -e "${BOLD}--- Change Domain / IP ---${NC}\n"
-  if [[ -f "${INSTALL_DIR}/.env" ]]; then
-    source "${INSTALL_DIR}/.env"
-  fi
-  
-  echo -e "Current Domain/IP: ${CYAN}${DOMAIN:-None}${NC}"
-  read -rp "Enter new domain or IP: " new_domain
-  if [[ -n "$new_domain" ]]; then
-    if grep -q "^DOMAIN=" "${INSTALL_DIR}/.env"; then
-      sed -i "s/^DOMAIN=.*/DOMAIN=$new_domain/" "${INSTALL_DIR}/.env"
-    else
-      echo "DOMAIN=$new_domain" >> "${INSTALL_DIR}/.env"
+ssl_repair() {
+  echo -e "${BOLD}--- Repair SSL ---${NC}\n"
+  echo "Checking configuration..."
+  source "${INSTALL_DIR}/.env"
+  if [[ "${SSL_ENABLED}" == "true" ]]; then
+    echo "Desired State: HTTPS"
+    local cert_file="${INSTALL_DIR}/nginx/ssl/fullchain.pem"
+    if [[ ! -f "$cert_file" ]]; then
+      echo -e "${RED}✘ Certificate missing. Trying to reissue...${NC}"
+      ssl_issue
+      return
     fi
-    export DOMAIN="$new_domain"
-    echo -e "${GREEN}✔ Domain/IP updated in .env to $new_domain${NC}"
-    
-    read -rp "Do you want to request a new ACME SSL certificate for this domain/IP now? [y/N]: " req_ssl
-    if [[ "${req_ssl,,}" == "y" ]]; then
-      ssl_request_acme
-    else
-      echo "Restarting containers to apply changes..."
-      docker compose -f "${INSTALL_DIR}/docker-compose.yml" up -d
-      pause
+    local end_date=$(openssl x509 -enddate -noout -in "$cert_file" 2>/dev/null | cut -d= -f2)
+    local expiration_epoch=$(date -d "$end_date" +%s 2>/dev/null)
+    local current_epoch=$(date +%s)
+    if [[ -n "$expiration_epoch" && $expiration_epoch -lt $current_epoch ]]; then
+      echo -e "${RED}✘ Certificate expired. Trying to renew...${NC}"
+      ssl_renew
+      return
     fi
+    echo "Certificate looks valid. Verifying nginx..."
+    verify_nginx_status
+    pause
   else
-    echo "Change cancelled."
+    echo "Desired State is HTTP. Nothing to repair."
     pause
   fi
+}
+
+ssl_status() {
+  echo -e "${BOLD}--- SSL Status ---${NC}\n"
+  source "${INSTALL_DIR}/.env"
+  
+  echo -e "Desired State:    ${CYAN}${PANEL_PROTOCOL^^}${NC}"
+  echo -e "Provider:         ${CYAN}${SSL_PROVIDER}${NC}"
+  echo -e "Domain:           ${CYAN}${PANEL_DOMAIN}${NC}"
+  
+  local cert_file="${INSTALL_DIR}/nginx/ssl/fullchain.pem"
+  if [[ -f "$cert_file" ]]; then
+    local end_date=$(openssl x509 -enddate -noout -in "$cert_file" 2>/dev/null | cut -d= -f2)
+    local expiration_epoch=$(date -d "$end_date" +%s 2>/dev/null)
+    local current_epoch=$(date +%s)
+    if [[ -n "$expiration_epoch" ]]; then
+      local days_left=$(( (expiration_epoch - current_epoch) / 86400 ))
+      echo -e "Expiration:       ${CYAN}${end_date}${NC}"
+      if [[ $days_left -lt 0 ]]; then
+        echo -e "Cert Status:      ${RED}Expired ($((-days_left)) days ago)${NC}"
+      else
+        echo -e "Cert Status:      ${GREEN}Valid (${days_left} days left)${NC}"
+      fi
+    fi
+    echo -e "Certificate Path: ${CYAN}${cert_file}${NC}"
+  else
+    echo -e "Cert Status:      ${RED}Missing${NC}"
+  fi
+
+  local nginx_status=$(docker inspect -f '{{.State.Status}}' hmpanel-nginx 2>/dev/null || echo "missing")
+  if [[ "$nginx_status" == "running" ]]; then
+    echo -e "Nginx Status:     ${GREEN}Running${NC}"
+  else
+    echo -e "Nginx Status:     ${RED}${nginx_status}${NC}"
+  fi
+
+  if curl -skL "http://127.0.0.1/api/health" &>/dev/null; then
+    echo -e "HTTP Reachable:   ${GREEN}Yes${NC}"
+  else
+    echo -e "HTTP Reachable:   ${RED}No${NC}"
+  fi
+
+  if curl -skL "https://127.0.0.1/api/health" &>/dev/null; then
+    echo -e "HTTPS Reachable:  ${GREEN}Yes${NC}"
+  else
+    echo -e "HTTPS Reachable:  ${RED}No${NC}"
+  fi
+
+  if [[ "${PANEL_PROTOCOL}" == "https" && ! -f "$cert_file" ]]; then
+    echo -e "\n${YELLOW}⚠ Discrepancy: Desired state is HTTPS but certificate is missing. Run Repair SSL.${NC}"
+  fi
+  pause
 }
 
 cmd_ssl() {
   while true; do
     clear
     print_header
-    echo -e "${BOLD}--- SSL & Domain Management ---${NC}\n"
-    echo "  1) Change Domain/IP"
-    echo "  2) Request ACME Certificate (ZeroSSL/Let's Encrypt)"
-    echo "  3) Retry Certificate Request"
-    echo "  4) Install Existing Certificate"
-    echo "  5) Switch To HTTP Mode"
-    echo "  6) View SSL Status"
+    echo -e "${BOLD}--- SSL Management ---${NC}\n"
+    echo "  1) Issue / Renew SSL"
+    echo "  2) Enable HTTPS"
+    echo "  3) Disable HTTPS (HTTP Mode)"
+    echo "  4) Renew Existing Certificate"
+    echo "  5) Check SSL Status"
+    echo "  6) Test Domain & DNS"
+    echo "  7) Repair SSL"
     echo "  0) Back to Main Menu"
     echo ""
     read -rp "  Choice: " choice
     echo ""
     
     case $choice in
-      1) ssl_change_domain ;;
-      2|3) ssl_request_acme ;;
-      4) ssl_install_manual ;;
-      5) ssl_disable ;;
-      6) ssl_status ;;
+      1) ssl_issue ;;
+      2) ssl_enable ;;
+      3) ssl_disable ;;
+      4) ssl_renew ;;
+      5) ssl_status ;;
+      6) ssl_test_dns ;;
+      7) ssl_repair ;;
       0) return ;;
       *) echo -e "${RED}Invalid option!${NC}"; sleep 1 ;;
     esac

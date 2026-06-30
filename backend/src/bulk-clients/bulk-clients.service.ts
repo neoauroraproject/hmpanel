@@ -79,9 +79,7 @@ export class BulkClientsService {
                     subUrl: true,
                     apiBaseUrl: true,
                     apiToken: true,
-                    capBulkEnable: true,
-                    capBulkDisable: true,
-                    capBulkExport: true,
+                    capabilities: true,
                   },
                 },
               },
@@ -102,9 +100,7 @@ export class BulkClientsService {
           subUrl: string | null;
           apiBaseUrl: string | null;
           apiToken: string | null;
-          capBulkEnable: boolean;
-          capBulkDisable: boolean;
-          capBulkExport: boolean;
+          capabilities: any;
         };
         emails: string[];
         clientRecords: typeof clients;
@@ -170,7 +166,7 @@ export class BulkClientsService {
     const results = { success: 0, failed: 0, errors: [] as string[] };
 
     for (const [panelId, { panel, emails }] of byPanel) {
-      if (panel.capBulkEnable) {
+      if (panel.capabilities?.bulkEnable) {
         // ── 3.4.2 optimized path: single bulk request ──
         this.logger.log(`[BULK_ENABLE] Using 3.4.2 bulkEnable for panel ${panel.name} (${emails.length} clients)`);
 
@@ -221,7 +217,7 @@ export class BulkClientsService {
           success: results.success,
           failed: results.failed,
           errors: results.errors,
-          optimized: [...byPanel.values()].some(g => g.panel.capBulkEnable),
+          optimized: [...byPanel.values()].some(g => g.panel.capabilities?.bulkEnable),
         },
       },
     });
@@ -243,7 +239,7 @@ export class BulkClientsService {
     const results = { success: 0, failed: 0, errors: [] as string[] };
 
     for (const [panelId, { panel, emails }] of byPanel) {
-      if (panel.capBulkDisable) {
+      if (panel.capabilities?.bulkDisable) {
         // ── 3.4.2 optimized path ──
         this.logger.log(`[BULK_DISABLE] Using 3.4.2 bulkDisable for panel ${panel.name} (${emails.length} clients)`);
 
@@ -293,7 +289,7 @@ export class BulkClientsService {
           success: results.success,
           failed: results.failed,
           errors: results.errors,
-          optimized: [...byPanel.values()].some(g => g.panel.capBulkDisable),
+          optimized: [...byPanel.values()].some(g => g.panel.capabilities?.bulkDisable),
         },
       },
     });

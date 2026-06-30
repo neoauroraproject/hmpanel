@@ -24,6 +24,43 @@ step()    { echo -e "\n${CYAN}${BOLD}──── $* ────${NC}"; }
 die()     { error "$*"; exit 1; }
 
 # ─────────────────────────────────────────────────────────────────
+# Global Helpers
+# ─────────────────────────────────────────────────────────────────
+update_env() {
+  local key="$1"
+  local val="$2"
+  local env_file="/opt/hmpanel/.env"
+  local tmp_file="/opt/hmpanel/.env.tmp"
+  
+  if [[ -f "$env_file" ]]; then
+    if grep -q "^${key}=" "$env_file"; then
+      # Replace existing key safely
+      awk -v k="$key" -v v="$val" -F'=' 'BEGIN{OFS="="} $1==k {$2=v; print; next} {print}' "$env_file" > "$tmp_file"
+    else
+      # Append new key
+      cp "$env_file" "$tmp_file"
+      echo "${key}=${val}" >> "$tmp_file"
+    fi
+    mv "$tmp_file" "$env_file"
+    chmod 600 "$env_file" 2>/dev/null || true
+  fi
+}
+
+ensure_env_variables() {
+  local env_file="/opt/hmpanel/.env"
+  if [[ -f "$env_file" ]]; then
+    if ! grep -q "^PANEL_PROTOCOL=" "$env_file"; then update_env "PANEL_PROTOCOL" "http"; fi
+    if ! grep -q "^SSL_ENABLED=" "$env_file"; then update_env "SSL_ENABLED" "false"; fi
+    if ! grep -q "^SSL_PROVIDER=" "$env_file"; then update_env "SSL_PROVIDER" "none"; fi
+    if ! grep -q "^PANEL_DOMAIN=" "$env_file"; then
+      local current_domain
+      current_domain=$(grep "^DOMAIN=" "$env_file" | cut -d= -f2 || echo "localhost")
+      update_env "PANEL_DOMAIN" "$current_domain"
+    fi
+  fi
+}
+
+# ─────────────────────────────────────────────────────────────────
 # Banner
 # ─────────────────────────────────────────────────────────────────
 print_banner() {
@@ -293,6 +330,225 @@ ssl_label() {
   esac
 }
 
+write_http_nginx_template() {
+  local target_file="$1"
+  cat > "$target_file" <<'EOF'
+user nginx;
+worker_processes auto;
+error_log /var/log/nginx/error.log warn;
+pid /var/run/nginx.pid;
+
+events {
+    worker_connections 1024;
+    use epoll;
+    multi_accept on;
+}
+
+http {
+    include       /etc/nginx/mime.types;
+    default_type  application/octet-stream;
+
+    log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                    '$status $body_bytes_sent "$http_referer" '
+                    '"$http_user_agent" "$http_x_forwarded_for"';
+
+    access_log /var/log/nginx/access.log main;
+
+    sendfile        on;
+    tcp_nopush      on;
+    tcp_nodelay     on;
+    keepalive_timeout 65;
+    types_hash_max_size 2048;
+    client_max_body_size 50M;
+
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    # Gzip compression
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 6;
+    gzip_types text/plain text/css text/xml application/json application/javascript application/xml+rss image/svg+xml;
+
+    # Rate limiting
+    limit_req_zone $binary_remote_addr zone=api_limit:10m rate=30r/s;
+    limit_req_zone $binary_remote_addr zone=login_limit:10m rate=5r/m;
+
+    upstream backend {
+        server panel-app:${BACKEND_PORT};
+        keepalive 32;
+    }
+
+    upstream frontend {
+        server panel-app:${APP_PORT};
+        keepalive 32;
+    }
+
+    server {
+        listen 80;
+        server_name _;
+
+        # ── Backend API ──────────────────────────────────────────
+        location /api/ {
+            limit_req zone=api_limit burst=50 nodelay;
+            proxy_pass http://backend/;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection 'upgrade';
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            
+            proxy_buffering off;
+            proxy_read_timeout 600s;
+        }
+
+        # ── Frontend Next.js SPA ──────────────────────────────────
+        location / {
+            proxy_pass http://frontend;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection 'upgrade';
+            proxy_set_header Host $host;
+            proxy_cache_bypass $http_upgrade;
+        }
+    }
+}
+EOF
+}
+
+verify_dns() {
+  local domain="$1"
+  if [[ "$domain" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || [[ "$domain" == "localhost" ]]; then
+    log "Skipping DNS verification for IP/localhost: $domain"
+    return 0
+  fi
+
+  info "Verifying DNS resolution for $domain..."
+  if ! host "$domain" >/dev/null 2>&1 && ! dig +short "$domain" >/dev/null 2>&1 && ! getent hosts "$domain" >/dev/null 2>&1; then
+    warn "DNS check failed: $domain does not resolve."
+    return 1
+  fi
+  log "DNS verification passed"
+  return 0
+}
+
+verify_port_80() {
+  info "Checking if port 80 is available..."
+  if command -v ss &>/dev/null; then
+    if ss -tuln | grep -q ":80 "; then
+      local holding_process
+      holding_process=$(lsof -i :80 -t 2>/dev/null | xargs ps -o comm= -p 2>/dev/null || echo "")
+      if [[ "$holding_process" != "docker" && "$holding_process" != "" ]]; then
+        warn "Port 80 is occupied by host process: $holding_process"
+        return 1
+      fi
+    fi
+  elif command -v netstat &>/dev/null; then
+    if netstat -tuln | grep -q ":80 "; then
+      local holding_process
+      holding_process=$(lsof -i :80 -t 2>/dev/null | xargs ps -o comm= -p 2>/dev/null || echo "")
+      if [[ "$holding_process" != "docker" && "$holding_process" != "" ]]; then
+        warn "Port 80 is occupied by host process: $holding_process"
+        return 1
+      fi
+    fi
+  fi
+  log "Port 80 is available"
+  return 0
+}
+
+verify_nginx_status() {
+  local container_name="hmpanel-nginx"
+  local is_recheck="${1:-false}"
+  local status
+  status=$(docker inspect -f '{{.State.Status}}' "$container_name" 2>/dev/null || echo "missing")
+
+  if [[ "$status" == "restarting" || "$status" != "running" ]]; then
+    error "Nginx container failed to start (Status: $status)."
+    info "─── Last 50 lines of nginx logs ───"
+    docker logs "$container_name" --tail=50 2>&1 || true
+    echo ""
+
+    if [[ "$is_recheck" == "true" ]]; then
+      die "Nginx failed to start even in HTTP-only mode. Manual intervention required."
+    fi
+
+    warn "Automatically falling back to HTTP..."
+    ssl_fallback_to_http "Nginx container startup failure"
+    # Re-verify after fallback — if it still fails, die.
+    sleep 3
+    verify_nginx_status "true"
+    return
+  fi
+
+  # ── Verify Endpoint Reachability ──
+  info "Verifying Nginx endpoints..."
+  local curl_success=false
+  for i in {1..5}; do
+    if curl -skL "https://127.0.0.1/api/health" &>/dev/null || curl -skL "http://127.0.0.1/api/health" &>/dev/null; then
+      curl_success=true
+      break
+    fi
+    sleep 2
+  done
+
+  if [[ "$curl_success" == false ]]; then
+    error "Nginx is running but API health endpoint is unreachable."
+    if [[ "$is_recheck" == "true" ]]; then
+      die "Endpoints unreachable even in HTTP-only mode. Manual intervention required."
+    fi
+    warn "Automatically falling back to HTTP..."
+    ssl_fallback_to_http "Nginx endpoints unreachable with SSL configuration"
+    sleep 3
+    verify_nginx_status "true"
+    return
+  fi
+
+  log "Nginx is running and endpoints are healthy"
+}
+
+# ─────────────────────────────────────────────────────────────────
+# SSL Fallback — called from ANY point in the SSL process on failure
+# Ensures nginx always ends up running on HTTP no matter what went wrong
+# ─────────────────────────────────────────────────────────────────
+ssl_fallback_to_http() {
+  local reason="${1:-Unknown SSL failure}"
+  error "SSL failed: ${reason}"
+  warn "⚠  Falling back to HTTP — panel will be accessible via http://${DOMAIN:-localhost}"
+
+  SSL_CHOICE=3
+  SSL_STATUS="disabled"
+
+  # Back up the original template if it has SSL configuration
+  if [[ -f "${INSTALL_DIR}/nginx/nginx.conf.template" ]] && ! [[ -f "${INSTALL_DIR}/nginx/nginx.conf.template.ssl" ]]; then
+    cp "${INSTALL_DIR}/nginx/nginx.conf.template" "${INSTALL_DIR}/nginx/nginx.conf.template.ssl"
+  fi
+
+  # Replace the template with the dedicated HTTP template
+  write_http_nginx_template "${INSTALL_DIR}/nginx/nginx.conf.template"
+
+  # Remove all SSL cert files to prevent stale/broken certs from causing future issues
+  rm -f "${INSTALL_DIR}/nginx/ssl/fullchain.pem" "${INSTALL_DIR}/nginx/ssl/privkey.pem" 2>/dev/null || true
+
+  # Update .env explicitly to HTTP state
+  update_env "PANEL_PROTOCOL" "http"
+  update_env "SSL_ENABLED" "false"
+  update_env "SSL_PROVIDER" "none"
+  update_env "NEXT_PUBLIC_API_URL" "http://${DOMAIN}/api"
+
+  # Restart/Recreate nginx container to pick up the patched config
+  docker compose -f "${INSTALL_DIR}/docker-compose.yml" down nginx >/dev/null 2>&1 || true
+  docker compose -f "${INSTALL_DIR}/docker-compose.yml" up -d nginx >/dev/null 2>&1 || true
+
+  log "HTTP-only mode active. You can add SSL later via: hmpanel -> SSL Management"
+}
+
 # ─────────────────────────────────────────────────────────────────
 # SSL Fallback — called from ANY point in the SSL process on failure
 # Ensures nginx always ends up running on HTTP no matter what went wrong
@@ -328,6 +584,8 @@ ssl_fallback_to_http() {
 step_1_configuration() {
   step "[1/10] Configuration"
   INSTALL_DIR="/opt/hmpanel"
+  BACKUP_DIR="${INSTALL_DIR}/backups"
+
   mkdir -p \
     "${INSTALL_DIR}/nginx/ssl" \
     "${INSTALL_DIR}/uploads" \
@@ -355,7 +613,14 @@ step_1_configuration() {
 
   # Configure nginx for HTTP-only AFTER files are in place
   if [[ "$SSL_CHOICE" == 3 ]]; then
+<<<<<<< HEAD
     sed -i 's/listen 443 ssl;/# SSL disabled/' "${INSTALL_DIR}/nginx/nginx.conf.template" 2>/dev/null || true
+=======
+    if [[ -f "${INSTALL_DIR}/nginx/nginx.conf.template" ]] && ! [[ -f "${INSTALL_DIR}/nginx/nginx.conf.template.ssl" ]]; then
+      cp "${INSTALL_DIR}/nginx/nginx.conf.template" "${INSTALL_DIR}/nginx/nginx.conf.template.ssl"
+    fi
+    write_http_nginx_template "${INSTALL_DIR}/nginx/nginx.conf.template"
+>>>>>>> aa2f827 (feat: redesign SSL Manager, introduce strict verification and API capability resolver)
     info "Nginx configured for HTTP-only mode"
   fi
 }
@@ -366,6 +631,7 @@ step_2_environment() {
   if [[ -f "${INSTALL_DIR}/.env" ]]; then
     info "Existing database detected."
     log "Reusing existing PostgreSQL credentials."
+    ensure_env_variables
     source "${INSTALL_DIR}/.env"
     export POSTGRES_PASSWORD
     export POSTGRES_USER
@@ -375,6 +641,13 @@ step_2_environment() {
     POSTGRES_PASSWORD=$(openssl rand -hex 24)
     REDIS_PASSWORD=$(openssl rand -hex 24)
     log "Security secrets generated"
+
+    local init_protocol="http"
+    local init_ssl_enabled="false"
+    if [[ "$SSL_CHOICE" == 1 || "$SSL_CHOICE" == 2 ]]; then
+      init_protocol="https"
+      init_ssl_enabled="true"
+    fi
 
     cat > "${INSTALL_DIR}/.env" <<EOF
 # HMPanel — Auto-generated by installer on $(date)
@@ -403,8 +676,15 @@ APP_PORT=3000
 BACKEND_PORT=4000
 HTTP_PORT=${HTTP_PORT}
 HTTPS_PORT=${HTTPS_PORT}
+
+# Installer & CLI State
+PANEL_PROTOCOL=${init_protocol}
+SSL_ENABLED=${init_ssl_enabled}
+SSL_PROVIDER=none
+PANEL_DOMAIN=${DOMAIN}
+
 DOMAIN=${DOMAIN}
-NEXT_PUBLIC_API_URL=https://${DOMAIN}/api
+NEXT_PUBLIC_API_URL=${init_protocol}://${DOMAIN}/api
 NEXT_PUBLIC_RELEASE_MODE=COMMUNITY
 
 # Initial Admin
@@ -561,6 +841,7 @@ END \$\$;
   if ! run_with_spinner "Starting Application services" docker compose up -d; then
     die "Failed to start application services."
   fi
+  verify_nginx_status
 }
 
 step_7_health_check() {
@@ -599,6 +880,18 @@ step_8_ssl() {
   SSL_STATUS="disabled"
 
   if [[ "$SSL_CHOICE" == 1 ]]; then
+<<<<<<< HEAD
+=======
+    # ── Verify DNS and Port 80 availability ──────────────────────
+    if ! verify_dns "$DOMAIN"; then
+      ssl_fallback_to_http "DNS verification failed for $DOMAIN"
+      return 0
+    fi
+    if ! verify_port_80; then
+      ssl_fallback_to_http "Port 80 is occupied"
+      return 0
+    fi
+>>>>>>> aa2f827 (feat: redesign SSL Manager, introduce strict verification and API capability resolver)
 
     # ── 1. Install dependencies ──────────────────────────────────
     set +e
@@ -609,83 +902,148 @@ step_8_ssl() {
 
     # ── 2. Clone & install acme.sh ───────────────────────────────
     info "Installing acme.sh..."
+    local clone_failed=false
     if [[ ! -d "${INSTALL_DIR}/acme.sh" ]]; then
       if ! run_with_spinner "Cloning acme.sh" \
           git clone https://github.com/acmesh-official/acme.sh.git /tmp/acme.sh; then
-        ssl_fallback_to_http "Could not clone acme.sh (network or git error)"
-        return 0
+        warn "Could not clone acme.sh. Attempting certbot..."
+        clone_failed=true
       fi
 
-      # Run installer inside subshell — never changes parent working directory
-      (
-        cd /tmp/acme.sh
-        ./acme.sh --install \
-          --home "${INSTALL_DIR}/acme.sh" \
-          --config-home "${INSTALL_DIR}/acme.sh/data" \
-          --accountemail "${ADMIN_EMAIL}" >/dev/null 2>&1
-      ) || true
-      rm -rf /tmp/acme.sh
+      if [[ "$clone_failed" == false && -d /tmp/acme.sh ]]; then
+        (
+          cd /tmp/acme.sh
+          ./acme.sh --install \
+            --home "${INSTALL_DIR}/acme.sh" \
+            --config-home "${INSTALL_DIR}/acme.sh/data" \
+            --accountemail "${ADMIN_EMAIL}" >/dev/null 2>&1
+        ) || true
+        rm -rf /tmp/acme.sh
+      fi
     fi
 
-    # Verify acme.sh binary is actually present after install
-    if [[ ! -x "${INSTALL_DIR}/acme.sh/acme.sh" ]]; then
-      ssl_fallback_to_http "acme.sh binary missing after install"
-      return 0
-    fi
-
-    # ── 3. Set ZeroSSL as default CA ─────────────────────────────
-    "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" \
-      --set-default-ca --server zerossl >/dev/null 2>&1 || true
-
-    # ── 4. Stop nginx to free port 80 ────────────────────────────
-    info "Requesting ACME certificate for ${DOMAIN}..."
+    # ── 3. Stop nginx to free port 80 ────────────────────────────
     docker stop hmpanel-nginx >/dev/null 2>&1 || true
 
-    # ── 5. Issue certificate ──────────────────────────────────────
-    # Disable set -e here so a cert failure does not abort the whole script
-    set +e
-    "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" \
-      --issue -d "$DOMAIN" --standalone
-    local acme_exit=$?
-    set -e
+    local cert_obtained=false
 
-    if [[ $acme_exit -ne 0 ]]; then
-      # Bring nginx back up before falling back so the panel is reachable
+    # ── 4. Try acme.sh (Let's Encrypt) ───────────────────────────
+    if [[ "$clone_failed" == false && -x "${INSTALL_DIR}/acme.sh/acme.sh" ]]; then
+      info "Trying to issue certificate via acme.sh (Let's Encrypt)..."
+      set +e
+      "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" \
+        --set-default-ca --server letsencrypt >/dev/null 2>&1
+      "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" \
+        --issue -d "$DOMAIN" --standalone
+      local acme_exit=$?
+      set -e
+
+      if [[ $acme_exit -eq 0 ]]; then
+        info "Installing cert issued by Let's Encrypt..."
+        set +e
+        "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" \
+          --install-cert -d "$DOMAIN" \
+          --fullchain-file "${SSL_DIR}/fullchain.pem" \
+          --key-file      "${SSL_DIR}/privkey.pem" \
+          --reloadcmd     "docker exec hmpanel-nginx nginx -s reload || true" \
+          >/dev/null 2>&1
+        local install_exit=$?
+        set -e
+        if [[ $install_exit -eq 0 ]]; then
+          cert_obtained=true
+          SSL_STATUS="acme (Let's Encrypt)"
+        fi
+      fi
+    fi
+
+    # ── 5. Try acme.sh (ZeroSSL) ─────────────────────────────────
+    if [[ "$cert_obtained" == false && "$clone_failed" == false && -x "${INSTALL_DIR}/acme.sh/acme.sh" ]]; then
+      info "Let's Encrypt failed. Trying to issue certificate via acme.sh (ZeroSSL)..."
+      set +e
+      "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" \
+        --set-default-ca --server zerossl >/dev/null 2>&1
+      "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" \
+        --issue -d "$DOMAIN" --standalone
+      local acme_exit=$?
+      set -e
+
+      if [[ $acme_exit -eq 0 ]]; then
+        info "Installing cert issued by ZeroSSL..."
+        set +e
+        "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" \
+          --install-cert -d "$DOMAIN" \
+          --fullchain-file "${SSL_DIR}/fullchain.pem" \
+          --key-file      "${SSL_DIR}/privkey.pem" \
+          --reloadcmd     "docker exec hmpanel-nginx nginx -s reload || true" \
+          >/dev/null 2>&1
+        local install_exit=$?
+        set -e
+        if [[ $install_exit -eq 0 ]]; then
+          cert_obtained=true
+          SSL_STATUS="acme (ZeroSSL)"
+        fi
+      fi
+    fi
+
+    # ── 6. Try certbot --standalone ─────────────────────────────
+    if [[ "$cert_obtained" == false ]]; then
+      info "acme.sh failed. Trying to issue certificate via Certbot..."
+      set +e
+      local certbot_exit=1
+      if command -v certbot &>/dev/null; then
+        info "Using host certbot..."
+        certbot certonly --standalone --non-interactive --agree-tos \
+          --email "$ADMIN_EMAIL" -d "$DOMAIN"
+        certbot_exit=$?
+      else
+        info "Using docker certbot..."
+        docker run --rm --name certbot-temp -p 80:80 \
+          -v "${SSL_DIR}:/etc/letsencrypt" \
+          certbot/certbot certonly --standalone --non-interactive --agree-tos \
+          --email "$ADMIN_EMAIL" -d "$DOMAIN"
+        certbot_exit=$?
+      fi
+      set -e
+
+      if [[ $certbot_exit -eq 0 ]]; then
+        if [[ -f "/etc/letsencrypt/live/${DOMAIN}/privkey.pem" ]]; then
+          cp "/etc/letsencrypt/live/${DOMAIN}/privkey.pem" "${SSL_DIR}/privkey.pem"
+          cp "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" "${SSL_DIR}/fullchain.pem"
+        elif [[ -f "${SSL_DIR}/live/${DOMAIN}/privkey.pem" ]]; then
+          cp "${SSL_DIR}/live/${DOMAIN}/privkey.pem" "${SSL_DIR}/privkey.pem"
+          cp "${SSL_DIR}/live/${DOMAIN}/fullchain.pem" "${SSL_DIR}/fullchain.pem"
+        fi
+        cert_obtained=true
+        SSL_STATUS="certbot"
+        log "Certificate issued successfully via Certbot"
+      fi
+    fi
+
+    # ── 7. Handle final status ───────────────────────────────────
+    if [[ "$cert_obtained" == true ]]; then
+      chown -R 1001:1001 "${INSTALL_DIR}/nginx/ssl" "${INSTALL_DIR}/acme.sh" 2>/dev/null || true
       docker start hmpanel-nginx >/dev/null 2>&1 || true
-      ssl_fallback_to_http "acme.sh --issue returned exit code ${acme_exit} (DNS, port 80 blocked, or rate-limit)"
-      return 0
-    fi
+      
+      # Update .env explicitly to HTTPS state
+      update_env "PANEL_PROTOCOL" "https"
+      update_env "SSL_ENABLED" "true"
+      
+      if [[ "$SSL_STATUS" == "certbot" ]]; then
+        update_env "SSL_PROVIDER" "certbot"
+      elif [[ "$SSL_STATUS" == "acme (ZeroSSL)" ]]; then
+        update_env "SSL_PROVIDER" "zerossl"
+      else
+        update_env "SSL_PROVIDER" "letsencrypt"
+      fi
 
-    # ── 6. Install cert into nginx ───────────────────────────────
-    set +e
-    "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" \
-      --install-cert -d "$DOMAIN" \
-      --fullchain-file "${SSL_DIR}/fullchain.pem" \
-      --key-file      "${SSL_DIR}/privkey.pem" \
-      --reloadcmd     "docker exec hmpanel-nginx nginx -s reload || true" \
-      >/dev/null 2>&1
-    local install_exit=$?
-    set -e
-
-    if [[ $install_exit -ne 0 ]]; then
+      # Verify nginx actually came up with the new cert
+      sleep 2
+      verify_nginx_status
+    else
       docker start hmpanel-nginx >/dev/null 2>&1 || true
-      ssl_fallback_to_http "acme.sh --install-cert failed (exit code ${install_exit})"
+      ssl_fallback_to_http "All certificate providers (acme.sh Let's Encrypt, acme.sh ZeroSSL, certbot) failed."
       return 0
     fi
-
-    # ── 7. Fix permissions & restart nginx ───────────────────────
-    chown -R 1001:1001 "${INSTALL_DIR}/nginx/ssl" "${INSTALL_DIR}/acme.sh" 2>/dev/null || true
-    docker start hmpanel-nginx >/dev/null 2>&1 || true
-
-    # Verify nginx actually came up with the new cert
-    sleep 2
-    if ! docker ps --filter "name=hmpanel-nginx" --filter "status=running" | grep -q hmpanel-nginx; then
-      ssl_fallback_to_http "nginx failed to start with the new certificate"
-      return 0
-    fi
-
-    log "Certificate issued and installed successfully via acme.sh"
-    SSL_STATUS="acme"
   fi
 
   # ── Self-signed ────────────────────────────────────────────────
@@ -697,7 +1055,10 @@ step_8_ssl() {
   # ── HTTP-only (chosen or fallen back to) ──────────────────────
   if [[ "$SSL_CHOICE" == 3 ]]; then
     log "SSL disabled (HTTP only)"
-    sed -i 's/listen 443 ssl;/# SSL disabled/' "${INSTALL_DIR}/nginx/nginx.conf.template" 2>/dev/null || true
+    if [[ -f "${INSTALL_DIR}/nginx/nginx.conf.template" ]] && ! [[ -f "${INSTALL_DIR}/nginx/nginx.conf.template.ssl" ]]; then
+      cp "${INSTALL_DIR}/nginx/nginx.conf.template" "${INSTALL_DIR}/nginx/nginx.conf.template.ssl"
+    fi
+    write_http_nginx_template "${INSTALL_DIR}/nginx/nginx.conf.template"
     docker restart hmpanel-nginx >/dev/null 2>&1 || true
     SSL_STATUS="disabled"
   fi
@@ -705,12 +1066,53 @@ step_8_ssl() {
 
 step_9_final_verification() {
   step "[9/10] Final Verification"
-  local panel_status="Stopped"
-  if docker inspect -f '{{.State.Status}}' hmpanel-panel 2>/dev/null | grep -q "running"; then
-    panel_status="Running"
-    log "Panel Status: ${panel_status}"
+
+  local containers=("hmpanel-postgres" "hmpanel-redis" "hmpanel-panel" "hmpanel-nginx")
+  local all_healthy=true
+
+  for container in "${containers[@]}"; do
+    local status
+    status=$(docker inspect -f '{{.State.Status}}' "$container" 2>/dev/null || echo "missing")
+
+    if [[ "$status" == "running" ]]; then
+      log "$container: Running"
+    elif [[ "$status" == "restarting" ]]; then
+      all_healthy=false
+      error "$container: Restarting"
+      info "─── Last 30 lines of $container logs ───"
+      docker logs "$container" --tail=30 2>&1 || true
+      echo ""
+
+      # Auto-remediate nginx SSL failures
+      if [[ "$container" == "hmpanel-nginx" ]]; then
+        local logs
+        logs=$(docker logs "$container" --tail=50 2>&1 || echo "")
+        if [[ "$logs" =~ ssl || "$logs" =~ BIO_new_file || "$logs" =~ PEM_read_bio || "$logs" =~ certificate || "$logs" =~ "key mismatch" || "$logs" =~ 'no "ssl" directive' ]]; then
+          warn "SSL-related error detected during final verification. Automatically falling back to HTTP..."
+          ssl_fallback_to_http "Final verification detected SSL failure"
+          sleep 3
+          local recheck
+          recheck=$(docker inspect -f '{{.State.Status}}' "$container" 2>/dev/null || echo "missing")
+          if [[ "$recheck" == "running" ]]; then
+            log "$container: Recovered (HTTP mode)"
+            all_healthy=true
+          else
+            die "Nginx failed to start even in HTTP mode. Manual intervention required."
+          fi
+        else
+          die "$container failed to start due to a non-SSL error. Check logs above."
+        fi
+      fi
+    else
+      all_healthy=false
+      error "$container: $status"
+    fi
+  done
+
+  if [[ "$all_healthy" == true ]]; then
+    log "All containers are healthy"
   else
-    error "Panel Status: Not Running"
+    warn "Some containers are not in a healthy state. Check errors above."
   fi
 }
 
@@ -771,25 +1173,37 @@ print_success() {
   echo -e "  Version:      ${CYAN}1.3.0${NC}"
   echo -e "  Edition:      ${CYAN}Community${NC}"
   
-  if [[ "$SSL_STATUS" == "acme" || "$SSL_STATUS" == "self-signed" ]]; then
+  # Reality-check: verify SSL_STATUS matches the actual nginx configuration
+  if [[ "${SSL_STATUS:-disabled}" != "disabled" ]]; then
+    if ! grep -q "listen 443 ssl" "${INSTALL_DIR}/nginx/nginx.conf.template" 2>/dev/null; then
+      SSL_STATUS="disabled"
+    fi
+  fi
+
+  if [[ "$SSL_STATUS" == acme* || "$SSL_STATUS" == "self-signed" || "$SSL_STATUS" == "certbot" ]]; then
     local https_suffix=""
     if [[ "$HTTPS_PORT" != "443" ]]; then
       https_suffix=":${HTTPS_PORT}"
     fi
     echo -e "  URL:          ${CYAN}https://${DOMAIN}${https_suffix}${NC}"
+    echo -e "  SSL:          ${GREEN}✓ Active (${SSL_STATUS})${NC}"
   else
     local http_suffix=""
     if [[ "$HTTP_PORT" != "80" ]]; then
       http_suffix=":${HTTP_PORT}"
     fi
     echo -e "  URL:          ${CYAN}http://${DOMAIN}${http_suffix}${NC}"
+    echo -e "  SSL:          ${YELLOW}✓ HTTP mode (SSL not configured)${NC}"
   fi
-  
-  case "${SSL_STATUS:-disabled}" in
-    acme)        echo -e "  SSL:          ${GREEN}Active (ACME)${NC}" ;;
-    self-signed) echo -e "  SSL:          ${YELLOW}Active (Self-Signed)${NC}" ;;
-    disabled)    echo -e "  SSL:          ${RED}Not Configured${NC}" ;;
-  esac
+
+  # Final nginx status
+  local nginx_status
+  nginx_status=$(docker inspect -f '{{.State.Status}}' hmpanel-nginx 2>/dev/null || echo "missing")
+  if [[ "$nginx_status" == "running" ]]; then
+    echo -e "  Nginx:        ${GREEN}✓ Running${NC}"
+  else
+    echo -e "  Nginx:        ${RED}✗ ${nginx_status}${NC}"
+  fi
   
   echo ""
   echo -e "  CLI:          ${CYAN}hmpanel${NC}"

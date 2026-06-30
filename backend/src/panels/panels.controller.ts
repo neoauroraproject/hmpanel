@@ -49,6 +49,12 @@ export class PanelsController {
     return this.panelsService.getInbounds(id);
   }
 
+  @Post(':id/scan-capabilities')
+  @ApiOperation({ summary: 'Manually trigger a deep scan of panel capabilities based on OpenAPI spec' })
+  scanCapabilities(@Param('id') id: string) {
+    return this.panelsService.scanCapabilities(id);
+  }
+
   @Patch(':id')
   @ApiOperation({ summary: 'Update panel' })
   update(@Param('id') id: string, @Body() dto: { name?: string; url?: string; subUrl?: string; apiToken?: string; status?: string }) {

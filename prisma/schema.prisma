@@ -51,16 +51,23 @@ model Panel {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  // API Capability Flags
-  capClientsApi   Boolean   @default(false)
-  capPagination   Boolean   @default(false)
-  capApiToken     Boolean   @default(false)
-  capSlimInbounds Boolean   @default(false)
-  capObservatory  Boolean   @default(false)
-  capWebsocket    Boolean   @default(false)
-  capBulkEnable   Boolean   @default(false)
-  capBulkDisable  Boolean   @default(false)
-  capBulkExport   Boolean   @default(false)
+  // API Capability Flags (JSON)
+  capabilities            Json?     @default("{}") // Generic capability map: { bulkEnable: true, smtp: false, ... }
+  apiVersion              String?   // Tracks exactly which API version was last detected
+  capabilitySchemaVersion String    @default("1.0") // Tracks version of capabilities schema to enable safe schema migration
+  lastCapabilityScan      DateTime? // Timestamp of the last full capability probe
+  capabilityHash          String?   // Hash of the resolved capabilities to detect spec changes
+
+  // Legacy Capability Flags (Transitional Migration - do not drop yet)
+  capClientsApi           Boolean   @default(false)
+  capPagination           Boolean   @default(false)
+  capApiToken             Boolean   @default(false)
+  capSlimInbounds         Boolean   @default(false)
+  capObservatory          Boolean   @default(false)
+  capWebsocket            Boolean   @default(false)
+  capBulkEnable           Boolean   @default(false)
+  capBulkDisable          Boolean   @default(false)
+  capBulkExport           Boolean   @default(false)
 
   server        Server         @relation(fields: [serverId], references: [id], onDelete: Cascade)
   inbounds      Inbound[]

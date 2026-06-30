@@ -1,5 +1,6 @@
-import { Injectable, NotFoundException, BadRequestException, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger, OnModuleInit, Inject, forwardRef } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { PanelCapabilitiesService } from './panel-capabilities.service';
 import axios, { AxiosError } from 'axios';
 import * as https from 'https';
 import * as crypto from 'crypto';
@@ -63,7 +64,10 @@ export class PanelsService implements OnModuleInit {
   private panelOnlineCache: Record<string, { emails: string[], timestamp: number }> = {};
   private onlineIpsCache: { data: Record<string, number>, timestamp: number } = { data: {}, timestamp: 0 };
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private panelCapabilitiesService: PanelCapabilitiesService
+  ) {}
 
   // ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -210,59 +214,7 @@ export class PanelsService implements OnModuleInit {
     }
   }
 
-  private async discoverCapabilities(apiBaseUrl: string, apiToken?: string) {
-    const caps = {
-      clientsApi: false,
-      pagination: false,
-      apiToken: !!apiToken,
-      slimInbounds: false,
-      observatory: false,
-      websocket: false,
-      bulkEnable: false,
-      bulkDisable: false,
-      bulkExport: false,
-    };
-    const headers = { Authorization: apiToken ? `Bearer ${apiToken}` : undefined };
-
-    try {
-      const cRes = await axios.get(`${apiBaseUrl}/panel/api/clients/list`, { headers, timeout: 3000 });
-      if (cRes.data && cRes.data.success !== undefined) caps.clientsApi = true;
-    } catch {}
-
-    try {
-      const pRes = await axios.get(`${apiBaseUrl}/panel/api/clients/list/paged`, { headers, timeout: 3000 });
-      if (pRes.data && pRes.data.success !== undefined) caps.pagination = true;
-    } catch {}
-
-    try {
-      const oRes = await axios.get(`${apiBaseUrl}/panel/api/inbounds/options`, { headers, timeout: 3000 });
-      if (oRes.data && oRes.data.success !== undefined) caps.slimInbounds = true;
-    } catch {}
-
-    try {
-      const obsRes = await axios.get(`${apiBaseUrl}/panel/api/server/xrayObservatory`, { headers, timeout: 3000 });
-      if (obsRes.data && obsRes.data.success !== undefined) caps.observatory = true;
-    } catch {}
-
-    // 3.4.2 Bulk endpoints — probe with empty payload to detect availability
-    try {
-      const beRes = await axios.post(`${apiBaseUrl}/panel/api/clients/bulkEnable`, { emails: [] }, { headers, timeout: 3000 });
-      if (beRes.data && beRes.data.success !== undefined) caps.bulkEnable = true;
-    } catch {}
-
-    try {
-      const bdRes = await axios.post(`${apiBaseUrl}/panel/api/clients/bulkDisable`, { emails: [] }, { headers, timeout: 3000 });
-      if (bdRes.data && bdRes.data.success !== undefined) caps.bulkDisable = true;
-    } catch {}
-
-    try {
-      const exRes = await axios.get(`${apiBaseUrl}/panel/api/clients/export`, { headers, timeout: 3000 });
-      if (exRes.data && exRes.data.success !== undefined) caps.bulkExport = true;
-    } catch {}
-
-    return caps;
-  }
-
+  // discoverCapabilities removed in favor of PanelCapabilitiesService
   async testConnection(data: { url: string; apiToken?: string; panelId?: string }) {
     if (data.panelId && !data.apiToken) {
       const panel = await this.prisma.panel.findUnique({ where: { id: data.panelId } });
@@ -364,14 +316,15 @@ export class PanelsService implements OnModuleInit {
           // Soft failure on inbounds
         }
 
-        const capabilities = await this.discoverCapabilities(apiBaseUrl, data.apiToken);
+        const resolved = this.panelCapabilitiesService.resolveCapabilities(panelVersion);
 
         return {
           ok: true,
           checklist,
           version: panelVersion,
           xrayVersion: xrayVersion,
-          capabilities,
+          capabilities: resolved.capabilities,
+          apiVersion: panelVersion,
           pingMs,
           status: 'online',
           inboundCount,
@@ -511,14 +464,6 @@ export class PanelsService implements OnModuleInit {
     }
 
     const testResult = await this.testConnection({ url: data.url, apiToken: data.apiToken });
-    const caps = testResult.capabilities || {
-      clientsApi: false,
-      pagination: false,
-      apiToken: !!data.apiToken,
-      slimInbounds: false,
-      observatory: false,
-      websocket: false,
-    };
 
     const panel = await this.prisma.panel.create({
       data: {
@@ -535,12 +480,9 @@ export class PanelsService implements OnModuleInit {
         panelType: '3x-ui',
         webBasePath,
         apiBaseUrl,
-        capClientsApi: caps.clientsApi,
-        capPagination: caps.pagination,
-        capApiToken: caps.apiToken,
-        capSlimInbounds: caps.slimInbounds,
-        capObservatory: caps.observatory,
-        capWebsocket: caps.websocket,
+        capabilities: testResult.capabilities || {},
+        apiVersion: testResult.apiVersion || 'unknown',
+        lastCapabilityScan: new Date(),
       },
     });
 
@@ -703,6 +645,11 @@ export class PanelsService implements OnModuleInit {
     return { deleted: true };
   }
 
+  async scanCapabilities(id: string) {
+    const panel = await this.findOne(id);
+    return this.panelCapabilitiesService.scanAndPersist(id, panel.version || '3.2.5');
+  }
+
   async sync(id: string) {
     const panel = await this.findOne(id);
     const startTime = Date.now();
@@ -738,23 +685,20 @@ export class PanelsService implements OnModuleInit {
       const diskTotal = obj.disk?.total ? Number(obj.disk.total) : 1;
       const diskUsage = (diskCurrent / diskTotal) * 100;
 
-      // Feature discovery
-      const caps = await this.discoverCapabilities(apiBaseUrl, panel.apiToken || undefined);
-      await this.prisma.panel.update({
-        where: { id: panel.id },
-        data: {
-          capClientsApi: caps.clientsApi,
-          capPagination: caps.pagination,
-          capApiToken: caps.apiToken,
-          capSlimInbounds: caps.slimInbounds,
-          capObservatory: caps.observatory,
-          capWebsocket: caps.websocket,
-          capBulkEnable: caps.bulkEnable,
-          capBulkDisable: caps.bulkDisable,
-          capBulkExport: caps.bulkExport,
-          version,
-        }
-      });
+      let caps = panel.capabilities && typeof panel.capabilities === 'object' ? (panel.capabilities as any) : null;
+      const { hash: currentHash } = this.panelCapabilitiesService.resolveCapabilities(version);
+      
+      // Auto-Rescan: Trigger a capability scan if the panel version changed, or if the spec file changed (hash mismatch)
+      if (panel.apiVersion !== version || panel.capabilityHash !== currentHash || !caps || !caps.clientsApi) {
+        this.logger.log(`[SYNC] Version/Hash change detected or caps missing. Triggering capability rescan.`);
+        caps = await this.panelCapabilitiesService.scanAndPersist(id, version);
+      } else {
+        // Update version info without full rescan
+        await this.prisma.panel.update({
+          where: { id: panel.id },
+          data: { version, apiVersion: version }
+        });
+      }
 
       // --- Group Sync & Conflict Detection ---
       try {
