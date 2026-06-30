@@ -641,12 +641,7 @@ export class SslService {
   }
 
   async repair() {
-    if (this.isExecuting) {
-      throw new HttpException(
-        'SSL operation already in progress.',
-        HttpStatus.CONFLICT,
-      );
-    }
+    this.isExecuting = false; // Force clear any active locks for repair
     this.isExecuting = true;
     const opId = Math.random().toString(16).substring(2, 8);
     this.logger.log(`[SSL][${opId}] Triggering repair`);
