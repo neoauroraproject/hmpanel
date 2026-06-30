@@ -1047,6 +1047,10 @@ run_verify_step() {
   if [[ "$passed" == "true" ]]; then return 0; else return 1; fi
 }
 
+clean_json_val() {
+  echo -n "$1" | sed 's/<[^>]*>//g' | tr -d '\r' | tr '\n' ' ' | sed 's/\\/\\\\/g; s/"/\\"/g' | cut -c 1-200
+}
+
 # ----------------- Verification Modules -----------------
 
 verify_dns() {
@@ -1074,7 +1078,7 @@ verify_nginx() {
   else
     VERIFY_STEP_MESSAGE="Nginx config test failed"
     local esc
-    esc=$(echo "$out" | head -n 5 | sed 's/"/\\"/g' | tr '\n' ' ')
+    esc=$(clean_json_val "$out")
     VERIFY_STEP_DETAILS="{\"error\": \"$esc\"}"
     if [[ -n "$VERIFY_LOG_FILE" ]]; then echo "[verify_nginx] $out" >> "$VERIFY_LOG_FILE"; fi
     return 1
@@ -1119,7 +1123,7 @@ verify_tls() {
   else
     VERIFY_STEP_MESSAGE="TLS handshake failed"
     local esc
-    esc=$(echo "$out" | head -n 10 | sed 's/"/\\"/g' | tr '\n' ' ')
+    esc=$(clean_json_val "$out")
     VERIFY_STEP_DETAILS="{\"error\": \"$esc\"}"
     if [[ -n "$VERIFY_LOG_FILE" ]]; then echo "[verify_tls] ERROR: $out" >> "$VERIFY_LOG_FILE"; fi
     return 1
@@ -1152,7 +1156,7 @@ verify_backend() {
   else
     VERIFY_STEP_MESSAGE="Backend unreachable"
     local esc
-    esc=$(echo "$out" | sed 's/"/\\"/g' | tr '\n' ' ')
+    esc=$(clean_json_val "$out")
     VERIFY_STEP_DETAILS="{\"response\": \"$esc\"}"
     return 1
   fi
@@ -1204,9 +1208,11 @@ verify_e2e_health() {
         
         run_verify_step "TLS_HANDSHAKE" "verify_tls '$domain'"
         run_verify_step "HTTP_REDIRECT" "verify_http_redirect '$domain'"
-        run_verify_step "BACKEND_API" "verify_backend '$domain'"
-        run_verify_step "FRONTEND_ACCESSIBILITY" "verify_frontend '$domain'"
-        run_verify_step "SUBSCRIPTION_ENDPOINT" "verify_subscription '$domain'"
+        
+        # Wait up to 60s for containers to fully boot and endpoints to respond properly
+        run_verify_wait "BACKEND_API" "verify_backend '$domain'" 60 2
+        run_verify_wait "FRONTEND_ACCESSIBILITY" "verify_frontend '$domain'" 60 2
+        run_verify_wait "SUBSCRIPTION_ENDPOINT" "verify_subscription '$domain'" 60 2
         
       fi
     fi
