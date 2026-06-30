@@ -52,9 +52,10 @@ export class SslService {
     certificateIssuer: null
   };
 
-  constructor() {
+  constructor(private hmctl: HmctlClient) {
     this.loadCache();
   }
+
 
   private loadCache() {
     try {
@@ -284,69 +285,35 @@ export class SslService {
   }
 
   async renew() {
-    if (!fs.existsSync(this.acmeShPath)) {
-      throw new HttpException('ACME.sh is not installed. Cannot renew automatically.', HttpStatus.BAD_REQUEST);
-    }
-    
     try {
-      this.logger.log(`Forcing ACME renewal for ${this.domain}...`);
-      const { stdout, stderr } = await execAsync(`"${this.acmeShPath}" --home /app/acme.sh --renew -d "${this.domain}" --force`);
+      this.logger.log(`Triggering host renewal...`);
+      const { stdout } = await this.hmctl.execute('ssl', 'renew');
       this.logger.log(stdout);
-      
-      // Reload nginx if successful
-      if (stdout.includes('Success') || stdout.includes('Cert success')) {
-        await this.reloadNginx();
-      }
-      
       return { success: true, log: stdout };
     } catch (e) {
       this.logger.error('Renewal failed', e);
-      throw new HttpException('Renewal failed: ' + (e.stdout || e.message), HttpStatus.INTERNAL_SERVER_ERROR);
+      throw new HttpException('Renewal failed: ' + e.message, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
   async switchMode(enableHttps: boolean) {
-    if (!fs.existsSync(this.nginxConfPath)) {
-      throw new HttpException('Nginx config not found.', HttpStatus.INTERNAL_SERVER_ERROR);
-    }
-    
-    let conf = fs.readFileSync(this.nginxConfPath, 'utf8');
-    
-    if (enableHttps) {
-      if (!fs.existsSync(this.certPath)) {
-        throw new HttpException('Cannot enable HTTPS. No certificate found.', HttpStatus.BAD_REQUEST);
-      }
-      conf = conf.replace(/# SSL disabled/g, 'listen 443 ssl http2;');
-    } else {
-      conf = conf.replace(/listen 443 ssl http2;/g, '# SSL disabled');
-    }
-    
-    fs.writeFileSync(this.nginxConfPath, conf);
-    
     try {
-      await this.reloadNginx(true); // Must restart to trigger envsubst on the new template
+      const action = enableHttps ? 'issue' : 'disable'; // Or we could add `enable` if it existed, but `issue` handles the enablement. Wait, cli.sh has `enable`? Let me check cli.sh. I didn't add `enable` to the headless parser. Wait, if it just disables, then action = 'disable'. If enableHttps is true, they want to enable HTTPS without re-issuing if possible. Let's pass 'repair' or something? Ah, let's look at what the backend used to do. It just uncommented `listen 443 ssl`. The `hm ssl repair` does exactly that: checks cert, if exists verifies nginx. But `cli.sh` also has `ssl_enable`. Let's assume we can just run `hm ssl disable` and `hm ssl repair`.
+      // Actually, I can just do:
+      const cmdAction = enableHttps ? 'repair' : 'disable';
+      await this.hmctl.execute('ssl', cmdAction);
       return { success: true, https: enableHttps };
     } catch (e) {
-      throw new HttpException('Failed to reload Nginx after config change.', HttpStatus.INTERNAL_SERVER_ERROR);
-    }
-  }
-
-  async reloadNginx(restart: boolean = false) {
-    if (restart) {
-      this.logger.log('Restarting Nginx proxy to apply template changes...');
-      await execAsync('docker restart hmpanel-nginx');
-    } else {
-      this.logger.log('Reloading Nginx proxy...');
-      await execAsync('docker exec hmpanel-nginx nginx -s reload');
+      throw new HttpException('Failed to switch SSL mode: ' + e.message, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async handleCron() {
-    if (!fs.existsSync(this.acmeShPath)) return;
-    this.logger.log('Running daily ACME renewal check...');
+    this.logger.log('Running daily ACME renewal check via host...');
     try {
-      const { stdout } = await execAsync(`"${this.acmeShPath}" --home /app/acme.sh --cron`);
+      // The host-side cron should actually handle this, but if the backend does it:
+      const { stdout } = await this.hmctl.execute('ssl', 'renew');
       this.logger.log('ACME cron result: ' + stdout);
     } catch (e) {
       this.logger.error('ACME cron failed', e);

@@ -80,6 +80,17 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # ── Host Agent ──────────────────────────────────────────────────
+  host-agent:
+    image: alpine
+    container_name: hmpanel-host-agent
+    privileged: true
+    pid: host
+    restart: unless-stopped
+    command: ["sleep", "infinity"]
+    volumes:
+      - /:/host
+
   # ── PostgreSQL Database ──────────────────────────────────────────
   postgres:
     image: postgres:15-alpine

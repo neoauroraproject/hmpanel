@@ -207,7 +207,12 @@ print_header() {
   echo -e "  ${BOLD}HMPanel CLI Manager — Community Edition${NC}\n"
 }
 
+HEADLESS="${HEADLESS:-false}"
+
 pause() {
+  if [[ "$HEADLESS" == "true" ]]; then
+    return
+  fi
   echo ""
   read -rp "Press Enter to return to the menu..."
 }
@@ -462,6 +467,22 @@ ssl_issue() {
   local SSL_DIR="${INSTALL_DIR}/nginx/ssl"
 
   # ACME (Let's Encrypt / ZeroSSL)
+  if command -v git &>/dev/null && command -v curl &>/dev/null && command -v socat &>/dev/null; then
+    if [[ ! -d "${INSTALL_DIR}/acme.sh" ]]; then
+      echo "Installing acme.sh..."
+      if git clone https://github.com/acmesh-official/acme.sh.git /tmp/acme.sh >/dev/null 2>&1; then
+        (
+          cd /tmp/acme.sh
+          ./acme.sh --install \
+            --home "${INSTALL_DIR}/acme.sh" \
+            --config-home "${INSTALL_DIR}/acme.sh/data" \
+            --accountemail "${ADMIN_EMAIL:-admin@$PANEL_DOMAIN}" >/dev/null 2>&1
+        ) || true
+        rm -rf /tmp/acme.sh
+      fi
+    fi
+  fi
+
   if [[ -f "${INSTALL_DIR}/acme.sh/acme.sh" ]]; then
     for ca in "letsencrypt" "zerossl"; do
       if [[ "$cert_obtained" == false ]]; then
@@ -523,6 +544,33 @@ ssl_issue() {
   else
     ssl_fallback_to_http "All providers failed"
   fi
+  pause
+}
+
+ssl_selfsigned() {
+  local domain="${1:-localhost}"
+  echo -e "${BOLD}--- Generating Self-Signed SSL ---${NC}\n"
+  local SSL_DIR="${INSTALL_DIR}/nginx/ssl"
+  
+  docker stop hmpanel-nginx >/dev/null 2>&1 || true
+
+  openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+    -keyout "${SSL_DIR}/privkey.pem" \
+    -out "${SSL_DIR}/fullchain.pem" \
+    -subj "/C=US/ST=State/L=City/O=Organization/CN=${domain}" >/dev/null 2>&1
+
+  update_env "PANEL_PROTOCOL" "https"
+  update_env "SSL_ENABLED" "true"
+  update_env "SSL_PROVIDER" "self-signed"
+  update_env "NEXT_PUBLIC_API_URL" "https://${domain}/api"
+
+  if [[ -f "${INSTALL_DIR}/nginx/nginx.conf.template.ssl" ]]; then
+    cp "${INSTALL_DIR}/nginx/nginx.conf.template.ssl" "${INSTALL_DIR}/nginx/nginx.conf.template"
+  fi
+
+  docker start hmpanel-nginx >/dev/null 2>&1 || true
+  sleep 2
+  verify_nginx_status
   pause
 }
 
@@ -791,6 +839,39 @@ cmd_cleanup() {
   fi
   pause
 }
+
+# ─────────────────────────────────────────────────────────────────
+# Headless Command Parser (for API/Backend integration)
+# ─────────────────────────────────────────────────────────────────
+if [[ "${1:-}" == "ssl" ]]; then
+  HEADLESS=true
+  ACTION="${2:-}"
+  case "$ACTION" in
+    issue)
+      # Ensure non-interactive mode
+      export PANEL_DOMAIN="${3:-}"
+      export ADMIN_EMAIL="${4:-}"
+      ssl_issue
+      ;;
+    selfsigned)
+      ssl_selfsigned "${3:-}"
+      ;;
+    disable)
+      ssl_disable
+      ;;
+    renew)
+      ssl_renew
+      ;;
+    repair)
+      ssl_repair
+      ;;
+    *)
+      echo "Usage: hm ssl {issue <domain> <email> | disable | renew | repair}"
+      exit 1
+      ;;
+  esac
+  exit 0
+fi
 
 # ─────────────────────────────────────────────────────────────────
 # Main Menu Loop

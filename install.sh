@@ -638,6 +638,15 @@ step_1_configuration() {
     write_http_nginx_template "${INSTALL_DIR}/nginx/nginx.conf.template"
     info "Nginx configured for HTTP-only mode"
   fi
+
+  # Install CLI Manager immediately so it can be used for SSL setup
+  if [[ -f "${INSTALL_DIR}/cli.sh" ]]; then
+    info "Installing CLI Manager..."
+    cp "${INSTALL_DIR}/cli.sh" /usr/local/bin/hmpanel
+    chmod +x /usr/local/bin/hmpanel
+    ln -sf /usr/local/bin/hmpanel /usr/local/bin/hm
+    log "Global 'hmpanel' and 'hm' commands installed"
+  fi
 }
 
 step_2_environment() {
@@ -903,190 +912,40 @@ step_8_ssl() {
   SSL_STATUS="disabled"
 
   if [[ "$SSL_CHOICE" == 1 ]]; then
-    # ── Check if DOMAIN is an IP address ─────────────────────────
     if [[ "$DOMAIN" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || [[ "$DOMAIN" == "localhost" ]]; then
       warn "IP address or localhost detected ($DOMAIN). Skipping SSL workflow entirely."
-      ssl_fallback_to_http "SSL cannot be installed for raw IP addresses or localhost."
-      return 0
-    fi
-
-    # ── Verify DNS and Port 80 availability ──────────────────────
-    if ! verify_dns "$DOMAIN"; then
-      ssl_fallback_to_http "DNS verification failed for $DOMAIN"
-      return 0
-    fi
-    if ! verify_port_80; then
-      ssl_fallback_to_http "Port 80 is occupied"
+      hm ssl disable
       return 0
     fi
 
     # ── 1. Install dependencies ──────────────────────────────────
-    set +e
     ensure_package git git
     ensure_package curl curl
     ensure_package socat socat
-    set -e
 
-    # ── 2. Clone & install acme.sh ───────────────────────────────
-    info "Installing acme.sh..."
-    local clone_failed=false
-    if [[ ! -d "${INSTALL_DIR}/acme.sh" ]]; then
-      if ! run_with_spinner "Cloning acme.sh" \
-          git clone https://github.com/acmesh-official/acme.sh.git /tmp/acme.sh; then
-        warn "Could not clone acme.sh. Attempting certbot..."
-        clone_failed=true
-      fi
-
-      if [[ "$clone_failed" == false && -d /tmp/acme.sh ]]; then
-        (
-          cd /tmp/acme.sh
-          ./acme.sh --install \
-            --home "${INSTALL_DIR}/acme.sh" \
-            --config-home "${INSTALL_DIR}/acme.sh/data" \
-            --accountemail "${ADMIN_EMAIL}" >/dev/null 2>&1
-        ) || true
-        rm -rf /tmp/acme.sh
-      fi
-    fi
-
-    # ── 3. Stop nginx to free port 80 ────────────────────────────
-    docker stop hmpanel-nginx >/dev/null 2>&1 || true
-
-    local cert_obtained=false
-
-    # ── 4. Try acme.sh (Let's Encrypt) ───────────────────────────
-    if [[ "$clone_failed" == false && -x "${INSTALL_DIR}/acme.sh/acme.sh" ]]; then
-      info "Trying to issue certificate via acme.sh (Let's Encrypt)..."
-      set +e
-      "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" \
-        --set-default-ca --server letsencrypt >/dev/null 2>&1
-      "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" \
-        --issue -d "$DOMAIN" --standalone
-      local acme_exit=$?
-      set -e
-
-      if [[ $acme_exit -eq 0 ]]; then
-        info "Installing cert issued by Let's Encrypt..."
-        set +e
-        "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" \
-          --install-cert -d "$DOMAIN" \
-          --fullchain-file "${SSL_DIR}/fullchain.pem" \
-          --key-file      "${SSL_DIR}/privkey.pem" \
-          --reloadcmd     "docker exec hmpanel-nginx nginx -s reload || true" \
-          >/dev/null 2>&1
-        local install_exit=$?
-        set -e
-        if [[ $install_exit -eq 0 ]]; then
-          cert_obtained=true
-          SSL_STATUS="acme (Let's Encrypt)"
-        fi
-      fi
-    fi
-
-    # ── 5. Try acme.sh (ZeroSSL) ─────────────────────────────────
-    if [[ "$cert_obtained" == false && "$clone_failed" == false && -x "${INSTALL_DIR}/acme.sh/acme.sh" ]]; then
-      info "Let's Encrypt failed. Trying to issue certificate via acme.sh (ZeroSSL)..."
-      set +e
-      "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" \
-        --set-default-ca --server zerossl >/dev/null 2>&1
-      "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" \
-        --issue -d "$DOMAIN" --standalone
-      local acme_exit=$?
-      set -e
-
-      if [[ $acme_exit -eq 0 ]]; then
-        info "Installing cert issued by ZeroSSL..."
-        set +e
-        "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" \
-          --install-cert -d "$DOMAIN" \
-          --fullchain-file "${SSL_DIR}/fullchain.pem" \
-          --key-file      "${SSL_DIR}/privkey.pem" \
-          --reloadcmd     "docker exec hmpanel-nginx nginx -s reload || true" \
-          >/dev/null 2>&1
-        local install_exit=$?
-        set -e
-        if [[ $install_exit -eq 0 ]]; then
-          cert_obtained=true
-          SSL_STATUS="acme (ZeroSSL)"
-        fi
-      fi
-    fi
-
-    # ── 6. Try certbot --standalone ─────────────────────────────
-    if [[ "$cert_obtained" == false ]]; then
-      info "acme.sh failed. Trying to issue certificate via Certbot..."
-      set +e
-      local certbot_exit=1
-      if command -v certbot &>/dev/null; then
-        info "Using host certbot..."
-        certbot certonly --standalone --non-interactive --agree-tos \
-          --email "$ADMIN_EMAIL" -d "$DOMAIN"
-        certbot_exit=$?
-      else
-        info "Using docker certbot..."
-        docker run --rm --name certbot-temp -p 80:80 \
-          -v "${SSL_DIR}:/etc/letsencrypt" \
-          certbot/certbot certonly --standalone --non-interactive --agree-tos \
-          --email "$ADMIN_EMAIL" -d "$DOMAIN"
-        certbot_exit=$?
-      fi
-      set -e
-
-      if [[ $certbot_exit -eq 0 ]]; then
-        if [[ -f "/etc/letsencrypt/live/${DOMAIN}/privkey.pem" ]]; then
-          cp "/etc/letsencrypt/live/${DOMAIN}/privkey.pem" "${SSL_DIR}/privkey.pem"
-          cp "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" "${SSL_DIR}/fullchain.pem"
-        elif [[ -f "${SSL_DIR}/live/${DOMAIN}/privkey.pem" ]]; then
-          cp "${SSL_DIR}/live/${DOMAIN}/privkey.pem" "${SSL_DIR}/privkey.pem"
-          cp "${SSL_DIR}/live/${DOMAIN}/fullchain.pem" "${SSL_DIR}/fullchain.pem"
-        fi
-        cert_obtained=true
-        SSL_STATUS="certbot"
-        log "Certificate issued successfully via Certbot"
-      fi
-    fi
-
-    # ── 7. Handle final status ───────────────────────────────────
-    if [[ "$cert_obtained" == true ]]; then
-      chown -R 1001:1001 "${INSTALL_DIR}/nginx/ssl" "${INSTALL_DIR}/acme.sh" 2>/dev/null || true
-      docker start hmpanel-nginx >/dev/null 2>&1 || true
-      
-      # Update .env explicitly to HTTPS state
-      update_env "PANEL_PROTOCOL" "https"
-      update_env "SSL_ENABLED" "true"
-      
-      if [[ "$SSL_STATUS" == "certbot" ]]; then
-        update_env "SSL_PROVIDER" "certbot"
-      elif [[ "$SSL_STATUS" == "acme (ZeroSSL)" ]]; then
-        update_env "SSL_PROVIDER" "zerossl"
-      else
-        update_env "SSL_PROVIDER" "letsencrypt"
-      fi
-
-      # Verify nginx actually came up with the new cert
-      sleep 2
-      verify_nginx_status
+    info "Delegating SSL issuance to HMCTL..."
+    hm ssl issue "$DOMAIN" "$ADMIN_EMAIL"
+    
+    # Read the updated .env to get the SSL status
+    source "${INSTALL_DIR}/.env"
+    if [[ "$SSL_ENABLED" == "true" ]]; then
+      SSL_STATUS="${SSL_PROVIDER}"
     else
-      docker start hmpanel-nginx >/dev/null 2>&1 || true
-      ssl_fallback_to_http "All certificate providers (acme.sh Let's Encrypt, acme.sh ZeroSSL, certbot) failed."
-      return 0
+      SSL_STATUS="disabled"
     fi
   fi
 
   # ── Self-signed ────────────────────────────────────────────────
   if [[ "$SSL_CHOICE" == 2 ]]; then
     log "Using self-signed certificate"
+    hm ssl selfsigned "$DOMAIN"
     SSL_STATUS="self-signed"
   fi
 
   # ── HTTP-only (chosen or fallen back to) ──────────────────────
   if [[ "$SSL_CHOICE" == 3 ]]; then
     log "SSL disabled (HTTP only)"
-    if [[ -f "${INSTALL_DIR}/nginx/nginx.conf.template" ]] && ! [[ -f "${INSTALL_DIR}/nginx/nginx.conf.template.ssl" ]]; then
-      cp "${INSTALL_DIR}/nginx/nginx.conf.template" "${INSTALL_DIR}/nginx/nginx.conf.template.ssl"
-    fi
-    write_http_nginx_template "${INSTALL_DIR}/nginx/nginx.conf.template"
-    docker restart hmpanel-nginx >/dev/null 2>&1 || true
+    hm ssl disable
     SSL_STATUS="disabled"
   fi
 }
@@ -1169,14 +1028,6 @@ EOF
     log "Systemd auto-start enabled"
   fi
 
-  if [[ -f "${INSTALL_DIR}/cli.sh" ]]; then
-    info "Installing CLI Manager..."
-    cp "${INSTALL_DIR}/cli.sh" /usr/local/bin/hmpanel
-    chmod +x /usr/local/bin/hmpanel
-    ln -sf /usr/local/bin/hmpanel /usr/local/bin/hm
-    log "Global 'hmpanel' and 'hm' commands installed"
-  fi
-
   print_success
 }
 
@@ -1196,8 +1047,32 @@ print_success() {
   else
     echo -e "  Panel Status: ${RED}Stopped/Failed${NC}"
   fi
+  # Get local installer version
+  local local_version="Unknown"
+  local script_dir
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  if [[ -f "$script_dir/package.json" ]]; then
+    local_version=$(grep -m1 '"version":' "$script_dir/package.json" | cut -d'"' -f4 || echo "Unknown")
+  fi
+
+  # Get running application version
+  local app_version="Unknown"
+  if docker exec hmpanel-panel node -p "require('./package.json').version" >/dev/null 2>&1; then
+    app_version=$(docker exec hmpanel-panel node -p "require('./package.json').version" | tr -d '\r')
+  elif docker inspect hmpanel-panel >/dev/null 2>&1; then
+    local image_name
+    image_name=$(docker inspect -f '{{.Config.Image}}' hmpanel-panel 2>/dev/null)
+    app_version="${image_name##*:}"
+  fi
   
-  echo -e "  Version:      ${CYAN}1.3.0${NC}"
+  if [[ "$local_version" != "Unknown" && "$app_version" != "Unknown" && "$local_version" != "$app_version" ]]; then
+    echo -e "  ${YELLOW}⚠ Version mismatch detected!${NC}"
+    echo -e "  Installer Version:   ${CYAN}${local_version}${NC}"
+    echo -e "  Application Version: ${CYAN}${app_version}${NC}"
+  else
+    echo -e "  Version:      ${CYAN}${app_version}${NC}"
+  fi
+  
   echo -e "  Edition:      ${CYAN}Community${NC}"
   
   # Reality-check: verify SSL_STATUS matches the actual nginx configuration
