@@ -62,6 +62,21 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
           isSuccessRef.current = true;
           setWorkflowState("success");
           eventSource.close();
+
+          const currentProtocol = window.location.protocol;
+          const currentHost = window.location.hostname;
+          let newProtocol = currentProtocol;
+          let newHost = currentHost;
+
+          if (data.data?.domain) newHost = data.data.domain;
+          if (data.data?.https !== undefined) newProtocol = data.data.https ? "https:" : "http:";
+          else if (data.data?.domain) newProtocol = "https:"; // Issue/change domain always results in HTTPS
+
+          if (newProtocol !== currentProtocol || newHost !== currentHost) {
+            setTimeout(() => {
+              window.location.href = `${newProtocol}//${newHost}${window.location.pathname}`;
+            }, 2500);
+          }
         } else if (data.type === "error") {
           setWorkflowState("error");
           setWorkflowError(data.error?.message || data.error?.reason || "Unknown error occurred.");

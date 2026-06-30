@@ -1,6 +1,6 @@
 import { Injectable, Logger, HttpException, HttpStatus } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { Subject } from 'rxjs';
+import { ReplaySubject } from 'rxjs';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
@@ -303,24 +303,44 @@ export class SslService {
   }
 
   async switchMode(enableHttps: boolean) {
-    try {
+    return new Promise((resolve, reject) => {
       const cmdAction = enableHttps ? 'enable' : 'disable';
-      await this.hmctl.execute('ssl', cmdAction);
-      return { success: true, https: enableHttps };
-    } catch (e) {
-      throw new HttpException('Failed to switch SSL mode: ' + e.message, HttpStatus.INTERNAL_SERVER_ERROR);
-    }
+      this.stream$ = new ReplaySubject<{ data: any }>(100);
+      
+      this.hmctl.executeStream('ssl', cmdAction).subscribe({
+        next: (event) => {
+          if (event.type === 'progress') {
+             this.stream$.next({ data: { type: 'progress', message: event.message } });
+          } else if (event.type === 'complete') {
+             this.stream$.next({ data: { type: 'complete', data: event.data } });
+             resolve({ success: true, https: enableHttps });
+          } else if (event.type === 'error') {
+             this.stream$.next({ data: { type: 'error', error: event.error } });
+             reject(new HttpException(event.error?.message || 'Error', HttpStatus.INTERNAL_SERVER_ERROR));
+          }
+        },
+        error: (err) => {
+          this.stream$.next({ data: { type: 'error', error: err } });
+          reject(new HttpException(err.message, HttpStatus.INTERNAL_SERVER_ERROR));
+        }
+      });
+    });
   }
 
-  private stream$ = new Subject<{ data: any }>();
+  private stream$: ReplaySubject<{ data: any }> | null = null;
 
   getStream() {
+    if (!this.stream$) {
+      this.stream$ = new ReplaySubject<{ data: any }>(100);
+    }
     return this.stream$.asObservable();
   }
 
   async issue(domain: string, email: string, selfSigned: boolean = false) {
     const action = selfSigned ? 'selfsigned' : 'issue';
     const args = selfSigned ? [domain] : [domain, email];
+    
+    this.stream$ = new ReplaySubject<{ data: any }>(100);
     
     return new Promise((resolve, reject) => {
       this.hmctl.executeStream('ssl', action, args).subscribe({
@@ -344,6 +364,8 @@ export class SslService {
   }
 
   async changeDomain(domain: string, email: string) {
+    this.stream$ = new ReplaySubject<{ data: any }>(100);
+    
     return new Promise((resolve, reject) => {
       this.hmctl.executeStream('ssl', 'change-domain', [domain, email]).subscribe({
         next: (event) => {
