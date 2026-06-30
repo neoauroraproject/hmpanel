@@ -1691,7 +1691,7 @@ if [[ "$JSON_OUTPUT" == "true" || "${1:-}" == "ssl" || "${1:-}" == "doctor" || "
     esac
   elif [[ "$MODULE" == "backup" ]]; then
     if [[ "$ACTION" == "create" ]]; then
-      local btype="${3:-full}"
+      btype="${3:-full}"
       do_backup "$btype" "true"
     else
       echo "Usage: hm backup create {full|database|config}"
