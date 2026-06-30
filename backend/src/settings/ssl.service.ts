@@ -149,15 +149,23 @@ export class SslService {
     const checkPortNginxContainer = (port: number): Promise<boolean> => {
       return new Promise((resolve) => {
         const socket = new net.Socket();
-        socket.setTimeout(1000);
-        socket.on('connect', () => { socket.destroy(); resolve(true); });
-        socket.on('error', () => { socket.destroy(); resolve(false); });
-        socket.on('timeout', () => { socket.destroy(); resolve(false); });
+        socket.setTimeout(800);
+        socket.on('connect', () => {
+          socket.destroy();
+          resolve(true);
+        });
+        socket.on('error', () => {
+          socket.destroy();
+          resolve(false);
+        });
+        socket.on('timeout', () => {
+          socket.destroy();
+          resolve(false);
+        });
         socket.connect(port, 'hmpanel-nginx');
       });
     };
 
-    const isNginxRunning = (await checkPortNginxContainer(80)) || (await checkPortNginxContainer(443));
     const isHttpsInNginx =
       nginxConfOut.includes('listen 443 ssl') ||
       nginxConfOut.includes('ssl_certificate');
@@ -167,37 +175,124 @@ export class SslService {
     const certExists =
       fs.existsSync(localCertPath) && fs.existsSync(localKeyPath);
 
-    // DNS Resolution
-    let dnsStatus = 'FAIL';
-    let resolvedIp = 'N/A';
-    try {
-      if (domain !== 'localhost' && !/^[0-9.]+$/.test(domain)) {
-        const ips = await dns.promises.resolve4(domain);
-        if (ips && ips.length > 0) {
-          dnsStatus = 'PASS';
-          resolvedIp = ips[0];
+    // Parallel checks
+    const dnsPromise = (async () => {
+      try {
+        if (domain !== 'localhost' && !/^[0-9.]+$/.test(domain)) {
+          const ips = await dns.promises.resolve4(domain);
+          if (ips && ips.length > 0) return { status: 'PASS', ip: ips[0] };
         }
-      } else {
-        dnsStatus = 'N/A';
-        resolvedIp = '127.0.0.1';
+        return { status: 'N/A', ip: '127.0.0.1' };
+      } catch {
+        return { status: 'FAIL', ip: 'N/A' };
       }
-    } catch {
-      dnsStatus = 'FAIL';
-    }
+    })();
 
-    // Expected Server IP
-    let expectedServerIp = 'N/A';
-    try {
-      const ipRes = await axios.get<string>('https://api.ipify.org', {
-        timeout: 2000,
-      });
-      expectedServerIp = ipRes.data.trim();
-    } catch {
-      expectedServerIp = 'Unknown';
-    }
+    const ipifyPromise = (async () => {
+      try {
+        const ipRes = await axios.get<string>('https://api.ipify.org', {
+          timeout: 1200,
+        });
+        return ipRes.data.trim();
+      } catch {
+        return 'Unknown';
+      }
+    })();
 
-    const tcp80 = (await checkPortNginxContainer(80)) ? 'PASS' : 'FAIL';
-    const tcp443 = (await checkPortNginxContainer(443)) ? 'PASS' : 'FAIL';
+    const port80Promise = checkPortNginxContainer(80);
+    const port443Promise = checkPortNginxContainer(443);
+
+    const httpHealthPromise = (async () => {
+      try {
+        const res = await axios.get<unknown>(
+          'http://hmpanel-nginx/api/health',
+          { timeout: 1200 },
+        );
+        return res.status === 200 ? 'PASS' : 'FAIL';
+      } catch {
+        return 'FAIL';
+      }
+    })();
+
+    const httpsHealthPromise = (async () => {
+      try {
+        const agent = new https.Agent({ rejectUnauthorized: false });
+        const res = await axios.get<unknown>(
+          'https://hmpanel-nginx/api/health',
+          { httpsAgent: agent, timeout: 1200 },
+        );
+        return res.status === 200 ? 'PASS' : 'FAIL';
+      } catch {
+        return 'FAIL';
+      }
+    })();
+
+    const backendPromise = (async () => {
+      try {
+        const res = await axios.get<unknown>('http://127.0.0.1:4000/health', {
+          timeout: 1000,
+        });
+        return res.status === 200 ? 'PASS' : 'FAIL';
+      } catch {
+        return 'FAIL';
+      }
+    })();
+
+    const frontendPromise = (async () => {
+      try {
+        const res = await axios.get<unknown>('http://127.0.0.1:3000', {
+          timeout: 1000,
+        });
+        return res.status === 200 ? 'PASS' : 'FAIL';
+      } catch {
+        return 'FAIL';
+      }
+    })();
+
+    const redirectPromise = (async () => {
+      if (sslEnabled) {
+        try {
+          const res = await axios.get<unknown>('http://hmpanel-nginx', {
+            maxRedirects: 0,
+            validateStatus: (status: number) => status >= 300 && status < 400,
+            timeout: 1000,
+          });
+          const loc = (res.headers.location as string) || '';
+          return loc.startsWith('https://') ? 'PASS' : 'FAIL';
+        } catch {
+          return 'FAIL';
+        }
+      }
+      return 'N/A';
+    })();
+
+    const [
+      dnsResult,
+      expectedServerIp,
+      tcp80Bool,
+      tcp443Bool,
+      httpHealth,
+      httpsHealth,
+      backend,
+      frontend,
+      redirect,
+    ] = await Promise.all([
+      dnsPromise,
+      ipifyPromise,
+      port80Promise,
+      port443Promise,
+      httpHealthPromise,
+      httpsHealthPromise,
+      backendPromise,
+      frontendPromise,
+      redirectPromise,
+    ]);
+
+    const dnsStatus = dnsResult.status;
+    const resolvedIp = dnsResult.ip;
+    const tcp80 = tcp80Bool ? 'PASS' : 'FAIL';
+    const tcp443 = tcp443Bool ? 'PASS' : 'FAIL';
+    const isNginxRunning = tcp80Bool || tcp443Bool;
     const nginxListening443 = tcp443;
     const nginxConfigTest = isNginxRunning ? 'PASS' : 'FAIL';
 
@@ -240,7 +335,7 @@ export class SslService {
     // Peer Cert loaded
     let certificateLoaded = 'FAIL';
     let tlsHandshake = 'FAIL';
-    if (isNginxRunning && isHttpsInNginx) {
+    if (isNginxRunning && isHttpsInNginx && tcp443Bool) {
       try {
         await this.getPeerCertificate('hmpanel-nginx');
         certificateLoaded = 'PASS';
@@ -248,70 +343,6 @@ export class SslService {
       } catch {
         // ignore
       }
-    }
-
-    // HTTP/HTTPS Health checks
-    let httpHealth = 'FAIL';
-    let httpsHealth = 'FAIL';
-    try {
-      const httpRes = await axios.get<unknown>(
-        'http://hmpanel-nginx/api/health',
-        { timeout: 2000 },
-      );
-      if (httpRes.status === 200) httpHealth = 'PASS';
-    } catch {
-      // ignore
-    }
-
-    try {
-      const agent = new https.Agent({ rejectUnauthorized: false });
-      const httpsRes = await axios.get<unknown>(
-        'https://hmpanel-nginx/api/health',
-        { httpsAgent: agent, timeout: 2000 },
-      );
-      if (httpsRes.status === 200) httpsHealth = 'PASS';
-    } catch {
-      // ignore
-    }
-
-    // Backend / Frontend
-    let backend = 'FAIL';
-    let frontend = 'FAIL';
-    try {
-      const backendRes = await axios.get<unknown>(
-        'http://localhost:4000/health',
-        { timeout: 1500 },
-      );
-      if (backendRes.status === 200) backend = 'PASS';
-    } catch {
-      // ignore
-    }
-
-    try {
-      const frontendRes = await axios.get<unknown>('http://localhost:3000', {
-        timeout: 1500,
-      });
-      if (frontendRes.status === 200) frontend = 'PASS';
-    } catch {
-      // ignore
-    }
-
-    // HTTP Redirect
-    let redirect = 'FAIL';
-    if (sslEnabled) {
-      try {
-        const res = await axios.get<unknown>('http://hmpanel-nginx', {
-          maxRedirects: 0,
-          validateStatus: (status: number) => status >= 300 && status < 400,
-          timeout: 1500,
-        });
-        const loc = (res.headers.location as string) || '';
-        redirect = loc.startsWith('https://') ? 'PASS' : 'FAIL';
-      } catch {
-        redirect = 'FAIL';
-      }
-    } else {
-      redirect = 'N/A';
     }
 
     // server_name check
