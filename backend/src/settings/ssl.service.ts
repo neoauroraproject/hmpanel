@@ -287,9 +287,9 @@ export class SslService {
   async renew() {
     try {
       this.logger.log(`Triggering host renewal...`);
-      const { stdout } = await this.hmctl.execute('ssl', 'renew');
-      this.logger.log(stdout);
-      return { success: true, log: stdout };
+      const result = await this.hmctl.execute('ssl', 'renew');
+      this.logger.log(`Renewal result: ${JSON.stringify(result)}`);
+      return { success: true, log: result.log || 'Success' };
     } catch (e) {
       this.logger.error('Renewal failed', e);
       throw new HttpException('Renewal failed: ' + e.message, HttpStatus.INTERNAL_SERVER_ERROR);
@@ -298,8 +298,6 @@ export class SslService {
 
   async switchMode(enableHttps: boolean) {
     try {
-      const action = enableHttps ? 'issue' : 'disable'; // Or we could add `enable` if it existed, but `issue` handles the enablement. Wait, cli.sh has `enable`? Let me check cli.sh. I didn't add `enable` to the headless parser. Wait, if it just disables, then action = 'disable'. If enableHttps is true, they want to enable HTTPS without re-issuing if possible. Let's pass 'repair' or something? Ah, let's look at what the backend used to do. It just uncommented `listen 443 ssl`. The `hm ssl repair` does exactly that: checks cert, if exists verifies nginx. But `cli.sh` also has `ssl_enable`. Let's assume we can just run `hm ssl disable` and `hm ssl repair`.
-      // Actually, I can just do:
       const cmdAction = enableHttps ? 'repair' : 'disable';
       await this.hmctl.execute('ssl', cmdAction);
       return { success: true, https: enableHttps };
@@ -312,9 +310,8 @@ export class SslService {
   async handleCron() {
     this.logger.log('Running daily ACME renewal check via host...');
     try {
-      // The host-side cron should actually handle this, but if the backend does it:
-      const { stdout } = await this.hmctl.execute('ssl', 'renew');
-      this.logger.log('ACME cron result: ' + stdout);
+      const result = await this.hmctl.execute('ssl', 'renew');
+      this.logger.log('ACME cron result: ' + JSON.stringify(result));
     } catch (e) {
       this.logger.error('ACME cron failed', e);
     }

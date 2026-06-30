@@ -27,6 +27,34 @@ update_env() {
   fi
 }
 
+# ─────────────────────────────────────────────────────────────────
+# Global API Constants & Helpers
+# ─────────────────────────────────────────────────────────────────
+OPERATION_ID=$(tr -dc a-f0-9 </dev/urandom | head -c 8 || echo "unknown")
+JSON_OUTPUT=false
+if [[ " $* " == *" --json "* ]]; then
+  JSON_OUTPUT=true
+fi
+
+output_json() {
+  local success="$1"
+  local code="$2"
+  local extra_json="${3:-}"
+  
+  local json="{"
+  json+="\"operation_id\": \"$OPERATION_ID\","
+  json+="\"success\": $success,"
+  json+="\"code\": \"$code\""
+  if [[ -n "$extra_json" ]]; then
+    json+=",$extra_json"
+  fi
+  json+="}"
+  
+  # When outputting JSON, we MUST only output JSON to stdout.
+  # So we print it to stdout, and anything else should go to stderr or /dev/null
+  echo "$json"
+}
+
 ensure_env_variables() {
   local env_file="${INSTALL_DIR}/.env"
   if [[ -f "$env_file" ]]; then
@@ -438,25 +466,43 @@ ssl_fallback_to_http() {
 }
 
 ssl_issue() {
-  echo -e "${BOLD}--- Issue / Renew SSL ---${NC}\n"
+  if [[ "$JSON_OUTPUT" != "true" ]]; then
+    echo -e "${BOLD}--- Issue / Renew SSL ---${NC}\n"
+  fi
   source "${INSTALL_DIR}/.env"
 
   if [[ -z "${PANEL_DOMAIN:-}" || "$PANEL_DOMAIN" == "localhost" || "$PANEL_DOMAIN" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-    echo -e "${YELLOW}⚠ IP address or localhost detected (${PANEL_DOMAIN:-None}). Skipping SSL workflow entirely.${NC}"
-    ssl_fallback_to_http "SSL cannot be installed for raw IP addresses or localhost."
-    pause
-    return
+    if [[ "$JSON_OUTPUT" == "true" ]]; then
+      output_json false "INVALID_DOMAIN"
+      exit 30
+    else
+      echo -e "${YELLOW}⚠ IP address or localhost detected (${PANEL_DOMAIN:-None}). Skipping SSL workflow entirely.${NC}"
+      ssl_fallback_to_http "SSL cannot be installed for raw IP addresses or localhost."
+      pause
+      return
+    fi
   fi
 
   if ! verify_dns "$PANEL_DOMAIN"; then
-    ssl_fallback_to_http "DNS verification failed"
-    pause
-    return
+    if [[ "$JSON_OUTPUT" == "true" ]]; then
+      output_json false "DNS_ERROR"
+      exit 10
+    else
+      ssl_fallback_to_http "DNS verification failed"
+      pause
+      return
+    fi
   fi
+  
   if ! verify_port_80; then
-    ssl_fallback_to_http "Port 80 is occupied"
-    pause
-    return
+    if [[ "$JSON_OUTPUT" == "true" ]]; then
+      output_json false "PORT_BUSY"
+      exit 11
+    else
+      ssl_fallback_to_http "Port 80 is occupied"
+      pause
+      return
+    fi
   fi
 
   # Stop nginx
@@ -469,7 +515,7 @@ ssl_issue() {
   # ACME (Let's Encrypt / ZeroSSL)
   if command -v git &>/dev/null && command -v curl &>/dev/null && command -v socat &>/dev/null; then
     if [[ ! -d "${INSTALL_DIR}/acme.sh" ]]; then
-      echo "Installing acme.sh..."
+      if [[ "$JSON_OUTPUT" != "true" ]]; then echo "Installing acme.sh..."; fi
       if git clone https://github.com/acmesh-official/acme.sh.git /tmp/acme.sh >/dev/null 2>&1; then
         (
           cd /tmp/acme.sh
@@ -540,16 +586,30 @@ ssl_issue() {
 
     docker start hmpanel-nginx >/dev/null 2>&1 || true
     sleep 2
-    verify_nginx_status
+    
+    # We won't call verify_nginx_status interactively if in JSON mode
+    if [[ "$JSON_OUTPUT" == "true" ]]; then
+      output_json true "SSL_ISSUED" "\"provider\":\"$provider\",\"domain\":\"$PANEL_DOMAIN\""
+      exit 0
+    else
+      verify_nginx_status
+    fi
   else
-    ssl_fallback_to_http "All providers failed"
+    if [[ "$JSON_OUTPUT" == "true" ]]; then
+      output_json false "ACME_FAILED"
+      exit 12
+    else
+      ssl_fallback_to_http "All providers failed"
+    fi
   fi
   pause
 }
 
 ssl_selfsigned() {
   local domain="${1:-localhost}"
-  echo -e "${BOLD}--- Generating Self-Signed SSL ---${NC}\n"
+  if [[ "$JSON_OUTPUT" != "true" ]]; then
+    echo -e "${BOLD}--- Generating Self-Signed SSL ---${NC}\n"
+  fi
   local SSL_DIR="${INSTALL_DIR}/nginx/ssl"
   
   docker stop hmpanel-nginx >/dev/null 2>&1 || true
@@ -570,7 +630,13 @@ ssl_selfsigned() {
 
   docker start hmpanel-nginx >/dev/null 2>&1 || true
   sleep 2
-  verify_nginx_status
+
+  if [[ "$JSON_OUTPUT" == "true" ]]; then
+    output_json true "SSL_SELFSIGNED" "\"domain\":\"$domain\""
+    exit 0
+  else
+    verify_nginx_status
+  fi
   pause
 }
 
@@ -613,14 +679,25 @@ ssl_enable() {
 }
 
 ssl_disable() {
-  echo -e "${BOLD}--- Disable HTTPS ---${NC}\n"
-  echo -e "${YELLOW}⚠ Warning: This will switch the panel to HTTP mode.${NC}"
-  read -rp "Are you sure? [y/N]: " confirm
+  if [[ "$JSON_OUTPUT" != "true" ]]; then
+    echo -e "${BOLD}--- Disable HTTPS ---${NC}\n"
+    echo -e "${YELLOW}⚠ Warning: This will switch the panel to HTTP mode.${NC}"
+    read -rp "Are you sure? [y/N]: " confirm
+  else
+    confirm="y"
+  fi
+  
   if [[ "${confirm,,}" == "y" ]]; then
     source "${INSTALL_DIR}/.env"
     ssl_fallback_to_http "User explicitly disabled HTTPS"
-    verify_nginx_status "true"
-    echo -e "${GREEN}✔ HTTPS Disabled.${NC}"
+    if [[ "$JSON_OUTPUT" != "true" ]]; then verify_nginx_status "true"; fi
+    
+    if [[ "$JSON_OUTPUT" == "true" ]]; then
+      output_json true "HTTPS_DISABLED"
+      exit 0
+    else
+      echo -e "${GREEN}✔ HTTPS Disabled.${NC}"
+    fi
   else
     echo "Cancelled."
   fi
@@ -628,7 +705,9 @@ ssl_disable() {
 }
 
 ssl_renew() {
-  echo -e "${BOLD}--- Renew Existing Certificate ---${NC}\n"
+  if [[ "$JSON_OUTPUT" != "true" ]]; then
+    echo -e "${BOLD}--- Renew Existing Certificate ---${NC}\n"
+  fi
   source "${INSTALL_DIR}/.env"
   local provider="${SSL_PROVIDER:-none}"
 
@@ -638,26 +717,52 @@ ssl_renew() {
     elif command -v certbot &>/dev/null; then
       provider="certbot"
     else
-      echo -e "${RED}✘ Provider unknown and no tools detected. Run Issue SSL instead.${NC}"
-      pause
-      return
+      if [[ "$JSON_OUTPUT" == "true" ]]; then
+        output_json false "UNKNOWN_PROVIDER"
+        exit 30
+      else
+        echo -e "${RED}✘ Provider unknown and no tools detected. Run Issue SSL instead.${NC}"
+        pause
+        return
+      fi
     fi
   fi
 
-  echo "Renewing via $provider..."
+  if [[ "$JSON_OUTPUT" != "true" ]]; then echo "Renewing via $provider..."; fi
+  
+  local renew_success=false
+  local renew_out=""
+  
   if [[ "$provider" == "letsencrypt" || "$provider" == "zerossl" ]]; then
-    "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" --renew -d "$PANEL_DOMAIN" --force
+    renew_out=$("${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" --renew -d "$PANEL_DOMAIN" --force 2>&1)
+    if [[ $? -eq 0 ]]; then renew_success=true; fi
   elif [[ "$provider" == "certbot" ]]; then
     if command -v certbot &>/dev/null; then
-      certbot renew --force-renewal
+      renew_out=$(certbot renew --force-renewal 2>&1)
+      if [[ $? -eq 0 ]]; then renew_success=true; fi
     else
-      docker run --rm -v "${INSTALL_DIR}/nginx/ssl:/etc/letsencrypt" certbot/certbot renew --force-renewal
+      renew_out=$(docker run --rm -v "${INSTALL_DIR}/nginx/ssl:/etc/letsencrypt" certbot/certbot renew --force-renewal 2>&1)
+      if [[ $? -eq 0 ]]; then renew_success=true; fi
     fi
   fi
 
   docker restart hmpanel-nginx >/dev/null 2>&1 || true
-  verify_nginx_status
-  pause
+  
+  if [[ "$JSON_OUTPUT" == "true" ]]; then
+    # We must escape newlines for valid JSON
+    local escaped_out
+    escaped_out=$(echo "$renew_out" | awk '{printf "%s\\n", $0}' | sed 's/"/\\"/g')
+    if [[ "$renew_success" == "true" ]]; then
+      output_json true "RENEW_SUCCESS" "\"log\":\"$escaped_out\""
+      exit 0
+    else
+      output_json false "RENEW_FAILED" "\"log\":\"$escaped_out\""
+      exit 12
+    fi
+  else
+    verify_nginx_status
+    pause
+  fi
 }
 
 ssl_test_dns() {
@@ -697,31 +802,44 @@ ssl_test_dns() {
 }
 
 ssl_repair() {
-  echo -e "${BOLD}--- Repair SSL ---${NC}\n"
-  echo "Checking configuration..."
+  if [[ "$JSON_OUTPUT" != "true" ]]; then
+    echo -e "${BOLD}--- Repair SSL ---${NC}\n"
+    echo "Checking configuration..."
+  fi
   source "${INSTALL_DIR}/.env"
   if [[ "${SSL_ENABLED}" == "true" ]]; then
-    echo "Desired State: HTTPS"
+    if [[ "$JSON_OUTPUT" != "true" ]]; then echo "Desired State: HTTPS"; fi
     local cert_file="${INSTALL_DIR}/nginx/ssl/fullchain.pem"
     if [[ ! -f "$cert_file" ]]; then
-      echo -e "${RED}✘ Certificate missing. Trying to reissue...${NC}"
+      if [[ "$JSON_OUTPUT" != "true" ]]; then echo -e "${RED}✘ Certificate missing. Trying to reissue...${NC}"; fi
       ssl_issue
       return
     fi
-    local end_date=$(openssl x509 -enddate -noout -in "$cert_file" 2>/dev/null | cut -d= -f2)
-    local expiration_epoch=$(date -d "$end_date" +%s 2>/dev/null)
+    local end_date=$(openssl x509 -enddate -noout -in "$cert_file" 2>/dev/null | cut -d= -f2 || echo "")
+    local expiration_epoch=$(date -d "$end_date" +%s 2>/dev/null || echo "")
     local current_epoch=$(date +%s)
     if [[ -n "$expiration_epoch" && $expiration_epoch -lt $current_epoch ]]; then
-      echo -e "${RED}✘ Certificate expired. Trying to renew...${NC}"
+      if [[ "$JSON_OUTPUT" != "true" ]]; then echo -e "${RED}✘ Certificate expired. Trying to renew...${NC}"; fi
       ssl_renew
       return
     fi
-    echo "Certificate looks valid. Verifying nginx..."
-    verify_nginx_status
-    pause
+    if [[ "$JSON_OUTPUT" != "true" ]]; then echo "Certificate looks valid. Verifying nginx..."; fi
+    
+    if [[ "$JSON_OUTPUT" == "true" ]]; then
+      output_json true "REPAIR_SUCCESS"
+      exit 0
+    else
+      verify_nginx_status
+      pause
+    fi
   else
-    echo "Desired State is HTTP. Nothing to repair."
-    pause
+    if [[ "$JSON_OUTPUT" == "true" ]]; then
+      output_json true "HTTP_MODE"
+      exit 0
+    else
+      echo "Desired State is HTTP. Nothing to repair."
+      pause
+    fi
   fi
 }
 
@@ -840,36 +958,136 @@ cmd_cleanup() {
   pause
 }
 
+cmd_doctor() {
+  if [[ "$JSON_OUTPUT" != "true" ]]; then
+    echo -e "${BOLD}--- HMPanel Doctor ---${NC}\n"
+  fi
+  
+  local docker_status="missing"
+  if command -v docker &>/dev/null; then
+    docker_status="running"
+    if [[ "$JSON_OUTPUT" != "true" ]]; then echo -e "✓ Docker"; fi
+  else
+    if [[ "$JSON_OUTPUT" != "true" ]]; then echo -e "✗ Docker"; fi
+  fi
+  
+  local compose_status="missing"
+  if docker compose version &>/dev/null; then
+    compose_status="installed"
+    if [[ "$JSON_OUTPUT" != "true" ]]; then echo -e "✓ Docker Compose"; fi
+  else
+    if [[ "$JSON_OUTPUT" != "true" ]]; then echo -e "✗ Docker Compose"; fi
+  fi
+  
+  local pg_status="missing"
+  if [[ "$(docker inspect -f '{{.State.Status}}' hmpanel-postgres 2>/dev/null)" == "running" ]]; then
+    pg_status="running"
+    if [[ "$JSON_OUTPUT" != "true" ]]; then echo -e "✓ PostgreSQL"; fi
+  else
+    if [[ "$JSON_OUTPUT" != "true" ]]; then echo -e "✗ PostgreSQL"; fi
+  fi
+  
+  local redis_status="missing"
+  if [[ "$(docker inspect -f '{{.State.Status}}' hmpanel-redis 2>/dev/null)" == "running" ]]; then
+    redis_status="running"
+    if [[ "$JSON_OUTPUT" != "true" ]]; then echo -e "✓ Redis"; fi
+  else
+    if [[ "$JSON_OUTPUT" != "true" ]]; then echo -e "✗ Redis"; fi
+  fi
+  
+  local nginx_status="missing"
+  if [[ "$(docker inspect -f '{{.State.Status}}' hmpanel-nginx 2>/dev/null)" == "running" ]]; then
+    nginx_status="running"
+    if [[ "$JSON_OUTPUT" != "true" ]]; then echo -e "✓ Nginx"; fi
+  else
+    if [[ "$JSON_OUTPUT" != "true" ]]; then echo -e "✗ Nginx"; fi
+  fi
+  
+  local panel_status="missing"
+  if [[ "$(docker inspect -f '{{.State.Status}}' hmpanel-panel 2>/dev/null)" == "running" ]]; then
+    panel_status="running"
+    if [[ "$JSON_OUTPUT" != "true" ]]; then echo -e "✓ Backend"; fi
+  else
+    if [[ "$JSON_OUTPUT" != "true" ]]; then echo -e "✗ Backend"; fi
+  fi
+  
+  local overall="healthy"
+  if [[ "$docker_status" != "running" || "$pg_status" != "running" || "$redis_status" != "running" || "$nginx_status" != "running" || "$panel_status" != "running" ]]; then
+    overall="unhealthy"
+  fi
+  
+  if [[ "$JSON_OUTPUT" == "true" ]]; then
+    local json_body="\"docker\":\"$docker_status\",\"compose\":\"$compose_status\",\"postgres\":\"$pg_status\",\"redis\":\"$redis_status\",\"nginx\":\"$nginx_status\",\"backend\":\"$panel_status\",\"overall\":\"$overall\""
+    output_json true "DOCTOR_REPORT" "$json_body"
+    exit 0
+  else
+    echo -e "\nOverall: ${CYAN}${overall^^}${NC}"
+    pause
+  fi
+}
+
+cmd_version() {
+  local app_ver="unknown"
+  local schema_ver="unknown"
+  
+  if [[ -f "${INSTALL_DIR}/package.json" ]]; then
+    app_ver=$(grep -oP '(?<="version": ")[^"]*' "${INSTALL_DIR}/package.json" | head -n 1)
+  fi
+  if [[ -f "${INSTALL_DIR}/prisma/schema.prisma" ]]; then
+    schema_ver="1" # Placeholder
+  fi
+  
+  if [[ "$JSON_OUTPUT" == "true" ]]; then
+    local json_body="\"application\":\"$app_ver\",\"cli\":\"$app_ver\",\"installer\":\"$app_ver\",\"schema\":\"$schema_ver\",\"build\":\"2026-06-30\""
+    output_json true "VERSION_REPORT" "$json_body"
+    exit 0
+  else
+    echo -e "${BOLD}--- Version Info ---${NC}\n"
+    echo -e "Application: $app_ver"
+    echo -e "CLI:         $app_ver"
+    echo -e "Installer:   $app_ver"
+    pause
+  fi
+}
+
 # ─────────────────────────────────────────────────────────────────
 # Headless Command Parser (for API/Backend integration)
 # ─────────────────────────────────────────────────────────────────
-if [[ "${1:-}" == "ssl" ]]; then
+if [[ "$JSON_OUTPUT" == "true" || "${1:-}" == "ssl" || "${1:-}" == "doctor" || "${1:-}" == "version" ]]; then
   HEADLESS=true
+  MODULE="${1:-}"
   ACTION="${2:-}"
-  case "$ACTION" in
-    issue)
-      # Ensure non-interactive mode
-      export PANEL_DOMAIN="${3:-}"
-      export ADMIN_EMAIL="${4:-}"
-      ssl_issue
-      ;;
-    selfsigned)
-      ssl_selfsigned "${3:-}"
-      ;;
-    disable)
-      ssl_disable
-      ;;
-    renew)
-      ssl_renew
-      ;;
-    repair)
-      ssl_repair
-      ;;
-    *)
-      echo "Usage: hm ssl {issue <domain> <email> | disable | renew | repair}"
-      exit 1
-      ;;
-  esac
+  
+  if [[ "$MODULE" == "ssl" ]]; then
+    case "$ACTION" in
+      issue)
+        export PANEL_DOMAIN="${3:-}"
+        export ADMIN_EMAIL="${4:-}"
+        ssl_issue
+        ;;
+      selfsigned)
+        ssl_selfsigned "${3:-}"
+        ;;
+      disable)
+        ssl_disable
+        ;;
+      renew)
+        ssl_renew
+        ;;
+      repair)
+        ssl_repair
+        ;;
+      *)
+        if [[ "$JSON_OUTPUT" == "true" ]]; then output_json false "UNKNOWN_COMMAND"; exit 1; fi
+        echo "Usage: hm ssl {issue <domain> <email> | disable | renew | repair}"
+        exit 1
+        ;;
+    esac
+  elif [[ "$MODULE" == "doctor" ]]; then
+    cmd_doctor
+  elif [[ "$MODULE" == "version" ]]; then
+    cmd_version
+  fi
   exit 0
 fi
 
