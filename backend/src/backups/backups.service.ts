@@ -1,10 +1,11 @@
 import { Injectable, Logger, InternalServerErrorException, NotFoundException, BadRequestException } from '@nestjs/common';
-import { spawn } from 'child_process';
+import { spawn, exec } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as crypto from 'crypto';
 import * as zlib from 'zlib';
-import { Readable } from 'stream';
-import * as readline from 'readline';
+import { promisify } from 'util';
+const execPromise = promisify(exec);
 
 @Injectable()
 export class BackupsService {
@@ -17,7 +18,17 @@ export class BackupsService {
     }
   }
 
-  async generateBackup() {
+  private async calculateChecksum(filePath: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const hash = crypto.createHash('sha256');
+      const stream = fs.createReadStream(filePath);
+      stream.on('error', err => reject(err));
+      stream.on('data', chunk => hash.update(chunk));
+      stream.on('end', () => resolve(hash.digest('hex')));
+    });
+  }
+
+  async generateBackup(type: 'full' | 'database' | 'config' = 'full') {
     const databaseUrl = process.env.DATABASE_URL;
     if (!databaseUrl) {
       throw new InternalServerErrorException('DATABASE_URL is not configured');
@@ -27,49 +38,90 @@ export class BackupsService {
     parsedUrl.searchParams.delete('schema');
     const cleanDatabaseUrl = parsedUrl.toString();
 
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const backupId = Date.now().toString();
-    const backupFile = path.join(this.backupsDir, `backup-${backupId}.sql.gz`);
+    const backupFile = path.join(this.backupsDir, `backup_${type}_${timestamp}.tar.gz`);
+    const tempDir = path.join(this.backupsDir, `temp_${backupId}`);
+    
+    fs.mkdirSync(tempDir, { recursive: true });
 
-    return new Promise((resolve, reject) => {
-      this.logger.log(`Starting backup: ${backupFile}`);
-      
-      const pgDump = spawn('pg_dump', [cleanDatabaseUrl, '-cO', '--if-exists'], { shell: false });
-      const gzip = zlib.createGzip();
-      const outStream = fs.createWriteStream(backupFile);
+    try {
+      const checksums: Record<string, string> = {};
 
-      let errorMsg = '';
+      if (type === 'full' || type === 'database') {
+        const dbFile = path.join(tempDir, 'database.sql.gz');
+        await new Promise((resolve, reject) => {
+          this.logger.log('Exporting database...');
+          const pgDump = spawn('pg_dump', [cleanDatabaseUrl, '-c', '-O', '--if-exists'], { shell: false });
+          const gzip = zlib.createGzip();
+          const outStream = fs.createWriteStream(dbFile);
 
-      pgDump.stderr.on('data', (data) => {
-        errorMsg += data.toString();
-      });
-
-      pgDump.on('error', (err) => {
-        if (fs.existsSync(backupFile)) fs.unlinkSync(backupFile);
-        reject(new InternalServerErrorException('pg_dump failed to start: ' + err.message));
-      });
-
-      pgDump.on('close', (code) => {
-        if (code !== 0) {
-          if (fs.existsSync(backupFile)) fs.unlinkSync(backupFile);
-          reject(new InternalServerErrorException(`pg_dump exited with code ${code}: ${errorMsg}`));
-          return;
-        }
-      });
-
-      // Pipeline
-      pgDump.stdout.pipe(gzip).pipe(outStream)
-        .on('finish', () => {
-          if (errorMsg && errorMsg.toLowerCase().includes('error')) {
-            this.logger.warn(`pg_dump had warnings: ${errorMsg}`);
-          }
-          this.logger.log(`Backup completed successfully: ${backupFile}`);
-          resolve({ id: backupId, file: `backup-${backupId}.sql.gz` });
-        })
-        .on('error', (err) => {
-          if (fs.existsSync(backupFile)) fs.unlinkSync(backupFile);
-          reject(new InternalServerErrorException('Failed to write backup file: ' + err.message));
+          pgDump.stdout.pipe(gzip).pipe(outStream)
+            .on('finish', () => resolve(true))
+            .on('error', err => reject(err));
+            
+          pgDump.on('error', err => reject(err));
+          pgDump.on('close', code => {
+            if (code !== 0) reject(new Error(`pg_dump exited with code ${code}`));
+          });
         });
-    });
+        checksums['database.sql.gz'] = await this.calculateChecksum(dbFile);
+      }
+
+      if (type === 'full' || type === 'config') {
+        this.logger.log('Archiving configuration...');
+        const confTemp = path.join(this.backupsDir, `temp_conf_${backupId}`);
+        fs.mkdirSync(confTemp, { recursive: true });
+        
+        // Use standard Node.js path resolutions to find .env and nginx.
+        // Assuming we are running from /app in the docker container.
+        const appRoot = process.cwd();
+        
+        if (fs.existsSync(path.join(appRoot, '.env'))) {
+          fs.copyFileSync(path.join(appRoot, '.env'), path.join(confTemp, '.env'));
+        }
+        
+        if (fs.existsSync(path.join(appRoot, 'nginx_host'))) {
+          await execPromise(`cp -r "${path.join(appRoot, 'nginx_host')}" "${path.join(confTemp, 'nginx')}"`);
+        }
+
+        const confFile = path.join(tempDir, 'config.tar.gz');
+        await execPromise(`tar -czf "${confFile}" -C "${confTemp}" .`);
+        await execPromise(`rm -rf "${confTemp}"`);
+        
+        checksums['config.tar.gz'] = await this.calculateChecksum(confFile);
+      }
+
+      let appVer = '1.0.0';
+      try {
+        const pkg = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf-8'));
+        appVer = pkg.version;
+      } catch (e) {}
+
+      const manifest = {
+        version: appVer,
+        schemaVersion: "1",
+        timestamp: new Date().toISOString(),
+        type: type,
+        domain: process.env.PANEL_DOMAIN || 'localhost',
+        checksums
+      };
+
+      fs.writeFileSync(path.join(tempDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
+
+      this.logger.log('Creating final tar.gz archive...');
+      await execPromise(`tar -czf "${backupFile}" -C "${tempDir}" .`);
+
+      this.logger.log(`Backup completed successfully: ${backupFile}`);
+      return { id: path.basename(backupFile), file: path.basename(backupFile), type, size: fs.statSync(backupFile).size };
+    } catch (error) {
+      this.logger.error('Backup generation failed', error);
+      throw new InternalServerErrorException('Backup failed: ' + error.message);
+    } finally {
+      if (fs.existsSync(tempDir)) {
+        await execPromise(`rm -rf "${tempDir}"`).catch(() => {});
+      }
+    }
   }
 
   async getBackupFilePath(id: string) {
@@ -78,7 +130,7 @@ export class BackupsService {
     let filePath = path.join(this.backupsDir, `backup-${safeId}.sql.gz`);
     
     if (!fs.existsSync(filePath)) {
-      filePath = path.join(this.backupsDir, `backup-${safeId}.gz`);
+      filePath = path.join(this.backupsDir, safeId);
       if (!fs.existsSync(filePath)) {
         throw new NotFoundException('Backup file not found');
       }
@@ -88,9 +140,8 @@ export class BackupsService {
 
   async analyzeBackup(file: Express.Multer.File) {
     const safeName = path.basename(file.originalname);
-    const isGzip = safeName.endsWith('.gz');
-    if (!isGzip && !safeName.endsWith('.sql')) {
-      throw new BadRequestException('Unsupported file format. Please upload .sql or .sql.gz');
+    if (!safeName.endsWith('.tar.gz') && !safeName.endsWith('.sql.gz') && !safeName.endsWith('.sql')) {
+      throw new BadRequestException('Unsupported file format. Please upload .tar.gz, .sql, or .sql.gz');
     }
 
     const tempId = Date.now().toString();
@@ -99,92 +150,58 @@ export class BackupsService {
 
     this.logger.log(`Analyzing backup: ${tempFilePath}`);
 
-    const counts = { admins: 0, clients: 0, panels: 0, inbounds: 0 };
-    let currentTable: string | null = null;
-
     try {
-      const inStream = fs.createReadStream(tempFilePath);
-      const rl = readline.createInterface({
-        input: isGzip ? inStream.pipe(zlib.createGunzip()) : inStream,
-        crlfDelay: Infinity
-      });
-
-      for await (const line of rl) {
-        if (line.startsWith('COPY public."Admin"')) { currentTable = 'admins'; continue; }
-        if (line.startsWith('COPY public."Client"')) { currentTable = 'clients'; continue; }
-        if (line.startsWith('COPY public."Panel"')) { currentTable = 'panels'; continue; }
-        if (line.startsWith('COPY public."Inbound"')) { currentTable = 'inbounds'; continue; }
-        if (line.startsWith('\\.')) { currentTable = null; continue; }
-        
-        if (currentTable && line.trim() && !line.startsWith('--')) {
-          counts[currentTable as keyof typeof counts]++;
-        }
+      if (safeName.endsWith('.sql') || safeName.endsWith('.sql.gz')) {
+        // Legacy Support
+        return {
+          id: `temp-restore-${tempId}-${safeName}`,
+          fileName: safeName,
+          type: 'database',
+          sizeBytes: file.size,
+          uploadDate: new Date(),
+          isLegacy: true,
+          warnings: ['This is a legacy SQL backup format. Full rollback functionality may be limited.']
+        };
       }
+
+      // New format .tar.gz
+      const tempExtractDir = path.join(this.backupsDir, `temp_extract_${tempId}`);
+      fs.mkdirSync(tempExtractDir, { recursive: true });
       
-      this.logger.log(`Analysis complete: ${JSON.stringify(counts)}`);
-      return { id: tempId, fileName: safeName, counts };
-    } catch (err) {
+      await execPromise(`tar -xzf "${tempFilePath}" -C "${tempExtractDir}" manifest.json`);
+      
+      if (!fs.existsSync(path.join(tempExtractDir, 'manifest.json'))) {
+        throw new BadRequestException('Invalid backup archive: missing manifest.json');
+      }
+
+      const manifestStr = fs.readFileSync(path.join(tempExtractDir, 'manifest.json'), 'utf-8');
+      const manifest = JSON.parse(manifestStr);
+
+      await execPromise(`rm -rf "${tempExtractDir}"`);
+
+      return {
+        id: `temp-restore-${tempId}-${safeName}`,
+        fileName: safeName,
+        type: manifest.type || 'full',
+        domain: manifest.domain,
+        version: manifest.version,
+        schemaVersion: manifest.schemaVersion,
+        sizeBytes: file.size,
+        uploadDate: new Date(manifest.timestamp || Date.now()),
+        isLegacy: false,
+        warnings: []
+      };
+    } catch (error) {
       if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
-      throw new InternalServerErrorException('Failed to analyze backup: ' + (err as Error).message);
+      throw new BadRequestException(`Failed to analyze backup: ${error.message}`);
     }
   }
 
+  async restoreBackup(backupId: string) {
+    throw new BadRequestException('To perform a full transactional restore, please run "hm restore" on the host server CLI. The web UI currently only supports downloading backups.');
+  }
+
   async applyBackup(id: string, fileName: string) {
-    const databaseUrl = process.env.DATABASE_URL;
-    if (!databaseUrl) {
-      throw new InternalServerErrorException('DATABASE_URL is not configured');
-    }
-
-    const parsedUrl = new URL(databaseUrl);
-    parsedUrl.searchParams.delete('schema');
-    const cleanDatabaseUrl = parsedUrl.toString();
-
-    const safeName = path.basename(fileName);
-    const safeId = path.basename(id);
-    const tempFilePath = path.join(this.backupsDir, `temp-restore-${safeId}-${safeName}`);
-    const isGzip = safeName.endsWith('.gz');
-
-    if (!fs.existsSync(tempFilePath)) {
-      throw new NotFoundException('Backup file has expired or was not found');
-    }
-
-    return new Promise((resolve, reject) => {
-      this.logger.log(`Starting restore from file: ${tempFilePath}`);
-      
-      const psql = spawn('psql', [cleanDatabaseUrl, '-v', 'ON_ERROR_STOP=0'], { shell: false });
-      
-      let errorMsg = '';
-      psql.stderr.on('data', (data) => {
-        errorMsg += data.toString();
-      });
-
-      psql.on('error', (err) => {
-        if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
-        reject(new InternalServerErrorException('psql failed to start: ' + err.message));
-      });
-
-      psql.on('close', (code) => {
-        if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
-        if (code !== 0 && code !== 3) {
-          reject(new InternalServerErrorException(`psql exited with code ${code}: ${errorMsg}`));
-        } else {
-          this.logger.log('Restore completed');
-          resolve({ success: true });
-        }
-      });
-
-      const inStream = fs.createReadStream(tempFilePath);
-      
-      if (isGzip) {
-        const gunzip = zlib.createGunzip();
-        inStream.pipe(gunzip).pipe(psql.stdin).on('error', (err) => {
-           reject(new InternalServerErrorException('Failed to extract backup: ' + err.message));
-        });
-      } else {
-        inStream.pipe(psql.stdin).on('error', (err) => {
-           reject(new InternalServerErrorException('Failed to read backup: ' + err.message));
-        });
-      }
-    });
+    throw new BadRequestException('To perform a full transactional restore, please run "hm restore" on the host server CLI.');
   }
 }

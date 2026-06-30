@@ -77,18 +77,18 @@ main() {
   fi
 
   mkdir -p "${INSTALL_DIR}/backups"
-  BACKUP_FILE="${INSTALL_DIR}/backups/pre_update_$(date +%Y%m%d_%H%M%S).sql"
   
   if docker ps | grep -q "hmpanel-postgres"; then
-    info "Creating pre-update database backup..."
-    if docker exec hmpanel-postgres pg_dump -U panel_user -d panel_db -F c > "$BACKUP_FILE"; then
-      log "Database backup created at $BACKUP_FILE"
+    info "Creating pre-update full backup..."
+    BACKUP_FILE=$(hm backup create full | grep -oP "/opt/hmpanel/backups/.*\.tar\.gz" | tail -n 1) || true
+    if [[ -n "$BACKUP_FILE" && -f "$BACKUP_FILE" ]]; then
+      log "Full backup created at $BACKUP_FILE"
     else
-      warn "Failed to create database backup. Update will proceed but without rollback capability."
-      rm -f "$BACKUP_FILE"
+      error "Failed to create pre-update backup. The update process must never execute without first creating and verifying a backup."
+      die "Update aborted."
     fi
   else
-    warn "Postgres container is not running. Skipping pre-update backup."
+    warn "Postgres container is not running. Update will proceed without a new backup, but this is extremely risky."
   fi
 
   step "[4/8] Pulling Latest Docker Images"
@@ -165,14 +165,10 @@ END \$\$;
     info "Stopping containers..."
     docker compose down
     
-    if [[ -f "$BACKUP_FILE" ]]; then
-      info "Restoring database from pre-update backup..."
-      docker compose up -d postgres
-      sleep 5
-      # Drop and recreate public schema to ensure clean restore
-      docker exec hmpanel-postgres psql -U panel_user -d panel_db -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
-      docker exec -i hmpanel-postgres pg_restore -U panel_user -d panel_db -1 < "$BACKUP_FILE"
-      log "Database restored successfully."
+    if [[ -n "${BACKUP_FILE:-}" && -f "$BACKUP_FILE" ]]; then
+      info "Restoring state from pre-update backup..."
+      hm restore "$BACKUP_FILE"
+      log "Rollback completed."
     else
       warn "No backup file found to restore."
     fi

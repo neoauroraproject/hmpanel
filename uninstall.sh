@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════
-#  HMPanel Panel — Uninstaller v1.0
+#  HMPanel Panel — Uninstaller v2.0
 #  https://github.com/HMPanel/panel
 # ═══════════════════════════════════════════════════════════════════
 set -euo pipefail
@@ -25,11 +25,79 @@ check_root() {
   if [[ $EUID -ne 0 ]]; then
     die "This uninstaller must be run as root. Use: sudo bash uninstall.sh"
   fi
-  log "Running as root"
+}
+
+remove_cron_and_aliases() {
+  info "Checking for cron jobs..."
+  if crontab -l &>/dev/null; then
+    crontab -l | grep -v "acme.sh" | crontab - || true
+    log "acme.sh cron jobs removed"
+  fi
+
+  info "Checking for shell aliases..."
+  if [[ -f ~/.bashrc ]]; then
+    sed -i '/alias hm=/d' ~/.bashrc
+    sed -i '/alias hmpanel=/d' ~/.bashrc
+    log "Shell aliases removed"
+  fi
+}
+
+verify_uninstallation() {
+  step "Auditing Uninstallation"
+  local remaining_artifacts=0
+
+  echo -e "${BOLD}Checking for remaining artifacts...${NC}"
+
+  if [[ -f /usr/local/bin/hmpanel ]]; then
+    warn "/usr/local/bin/hmpanel still exists."
+    remaining_artifacts=$((remaining_artifacts+1))
+  fi
+
+  if [[ -f /usr/local/bin/hm ]]; then
+    warn "/usr/local/bin/hm still exists."
+    remaining_artifacts=$((remaining_artifacts+1))
+  fi
+
+  if systemctl list-units --full -all | grep -Fq "hmpanel-panel.service"; then
+    warn "hmpanel-panel.service still exists in systemd."
+    remaining_artifacts=$((remaining_artifacts+1))
+  fi
+
+  if docker ps -a --format '{{.Names}}' | grep -Eq "^(panel-app|panel-frontend|postgres|redis)$"; then
+    warn "Docker containers (panel-app, panel-frontend, postgres, redis) still exist."
+    remaining_artifacts=$((remaining_artifacts+1))
+  fi
+
+  if docker network ls --format '{{.Name}}' | grep -Fq "hmpanel_default"; then
+    warn "Docker network 'hmpanel_default' still exists."
+    remaining_artifacts=$((remaining_artifacts+1))
+  fi
+
+  if [[ "$1" == "complete" ]]; then
+    if [[ -d "/opt/hmpanel" ]]; then
+      warn "Installation directory /opt/hmpanel still exists."
+      remaining_artifacts=$((remaining_artifacts+1))
+    fi
+
+    if docker volume ls --format '{{.Name}}' | grep -Eq "^hmpanel_"; then
+      warn "Docker volumes (hmpanel_*) still exist."
+      remaining_artifacts=$((remaining_artifacts+1))
+    fi
+  fi
+
+  if [[ $remaining_artifacts -eq 0 ]]; then
+    echo ""
+    log "Audit passed! No remaining artifacts found."
+    echo -e "${GREEN}${BOLD}HMPanel Panel has been successfully uninstalled.${NC}"
+  else
+    echo ""
+    error "Audit failed! Found $remaining_artifacts remaining artifacts."
+    echo -e "${YELLOW}Please remove them manually or run the script again.${NC}"
+  fi
 }
 
 main() {
-  echo -e "${RED}${BOLD}HMPanel Panel Uninstaller v1.0${NC}"
+  echo -e "${RED}${BOLD}HMPanel Panel Uninstaller v2.0${NC}"
   warn "This script will stop and remove HMPanel Panel."
   echo ""
 
@@ -43,45 +111,59 @@ main() {
 
   info "Detected install directory: ${INSTALL_DIR}"
   
-  # Ask for confirmation
-  read -rp "  Are you sure you want to uninstall HMPanel Panel? [y/N]: " CONFIRM_UNINSTALL
-  if [[ "${CONFIRM_UNINSTALL,,}" != "y" ]]; then
-    die "Uninstall cancelled."
-  fi
-
-  # Ask about database and user data
-  REMOVE_DATA="n"
+  echo -e "${CYAN}${BOLD}Select Uninstall Mode:${NC}"
+  echo -e "  1. ${BOLD}Standard Uninstall${NC} - Removes application only. Preserves database, backups, and user data."
+  echo -e "  2. ${BOLD}Complete Removal${NC} - Removes EVERYTHING including database, volumes, backups, and configuration."
+  echo -e "  3. Cancel"
   echo ""
-  echo -e "${YELLOW}${BOLD}  WARNING: Removing data is irreversible!${NC}"
-  echo -e "  Do you want to delete all persistent data? This includes:"
-  echo -e "    - PostgreSQL Database (hmpanel_pgdata)"
-  echo -e "    - Redis cache data (hmpanel_redisdata)"
-  echo -e "    - Uploaded files & logs (hmpanel_uploads, hmpanel_logs)"
-  echo -e "    - Backups (hmpanel_backups)"
-  echo -e "    - SSL Certificates (hmpanel_certbot_certs)"
-  read -rp "  Delete all persistent data? [y/N]: " REMOVE_DATA_CHOICE
-  if [[ "${REMOVE_DATA_CHOICE,,}" == "y" ]]; then
-    REMOVE_DATA="y"
-  fi
+  read -rp "Select an option [1-3]: " UNINSTALL_MODE
+
+  case $UNINSTALL_MODE in
+    1)
+      REMOVE_DATA="n"
+      log "Selected: Standard Uninstall"
+      ;;
+    2)
+      echo ""
+      echo -e "${YELLOW}${BOLD}  WARNING: Complete Removal is irreversible!${NC}"
+      echo -e "  This will permanently delete all persistent data, including:"
+      echo -e "    - PostgreSQL Database"
+      echo -e "    - Redis cache data"
+      echo -e "    - Uploaded files & logs"
+      echo -e "    - All Backups"
+      echo -e "    - SSL Certificates"
+      echo ""
+      read -rp "  Are you absolutely sure you want to proceed with Complete Removal? [y/N]: " CONFIRM_COMPLETE
+      if [[ "${CONFIRM_COMPLETE,,}" != "y" ]]; then
+        die "Uninstall cancelled."
+      fi
+      REMOVE_DATA="y"
+      log "Selected: Complete Removal"
+      ;;
+    3|*)
+      die "Uninstall cancelled."
+      ;;
+  esac
 
   step "Stopping Services"
   if [[ -f "${INSTALL_DIR}/docker-compose.yml" ]]; then
     cd "$INSTALL_DIR"
     info "Stopping docker containers..."
     if [[ "$REMOVE_DATA" == "y" ]]; then
-      # Down and remove volumes
-      docker compose down -v --rmi local || true
-      log "Docker containers, images, and volumes stopped and removed"
+      docker compose down -v --rmi all || true
+      log "Docker containers, networks, volumes, and images stopped and removed."
     else
       docker compose down || true
-      log "Docker containers stopped"
+      log "Docker containers and networks stopped."
     fi
   else
-    warn "docker-compose.yml not found. Skipping container teardown."
+    warn "docker-compose.yml not found. Attempting manual container stop..."
+    docker stop panel-app panel-frontend postgres redis &>/dev/null || true
+    docker rm panel-app panel-frontend postgres redis &>/dev/null || true
   fi
 
   step "Removing Systemd Service"
-  if [[ -f /etc/systemd/system/hmpanel-panel.service ]]; then
+  if systemctl list-units --full -all | grep -Fq "hmpanel-panel.service"; then
     info "Disabling and removing systemd service..."
     systemctl stop hmpanel-panel || true
     systemctl disable hmpanel-panel || true
@@ -92,24 +174,51 @@ main() {
     log "No systemd service found"
   fi
 
+  step "Removing CLI Binaries"
+  rm -f /usr/local/bin/hmpanel
+  rm -f /usr/local/bin/hm
+  log "CLI binaries removed"
+
   if [[ "$REMOVE_DATA" == "y" ]]; then
-    step "Removing Files & Folders"
+    remove_cron_and_aliases
+  fi
+
+  step "Removing Installation Files"
+  if [[ "$REMOVE_DATA" == "y" ]]; then
     info "Deleting installation folder: ${INSTALL_DIR}..."
     rm -rf "$INSTALL_DIR"
-    log "Files deleted"
+    log "Installation files deleted"
 
-    # Force delete named volumes just in case they weren't cleaned up by docker compose down -v
     info "Cleaning up leftover Docker volumes..."
     docker volume rm hmpanel_pgdata hmpanel_redisdata hmpanel_uploads hmpanel_backups hmpanel_logs hmpanel_certbot_certs hmpanel_certbot_www &>/dev/null || true
     log "Docker volumes cleaned"
   else
-    step "Keeping Files & Folders"
-    info "Installation folder preserved at: ${INSTALL_DIR}"
-    info "Persistent Docker volumes preserved."
+    info "Cleaning up application files in ${INSTALL_DIR}..."
+    if [[ -d "${INSTALL_DIR}/backups" ]]; then
+      mv "${INSTALL_DIR}/backups" /tmp/hmpanel_backups_save
+    fi
+    if [[ -f "${INSTALL_DIR}/.env" ]]; then
+      mv "${INSTALL_DIR}/.env" /tmp/hmpanel_env_save
+    fi
+    
+    rm -rf "$INSTALL_DIR"
+    mkdir -p "$INSTALL_DIR"
+    
+    if [[ -d /tmp/hmpanel_backups_save ]]; then
+      mv /tmp/hmpanel_backups_save "${INSTALL_DIR}/backups"
+    fi
+    if [[ -f /tmp/hmpanel_env_save ]]; then
+      mv /tmp/hmpanel_env_save "${INSTALL_DIR}/.env"
+    fi
+    log "Application files removed, configuration and backups preserved in ${INSTALL_DIR}"
   fi
 
-  echo ""
-  log "HMPanel Panel uninstalled successfully!"
+  # Run Audit
+  if [[ "$REMOVE_DATA" == "y" ]]; then
+    verify_uninstallation "complete"
+  else
+    verify_uninstallation "standard"
+  fi
 }
 
 main "$@"

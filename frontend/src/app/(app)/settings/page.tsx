@@ -196,22 +196,36 @@ export default function GlobalSettingsPage() {
   );
 }
 
+interface RestoreAnalysis {
+  id: string;
+  fileName: string;
+  type: string;
+  domain?: string;
+  version?: string;
+  schemaVersion?: string;
+  sizeBytes: number;
+  uploadDate: string;
+  isLegacy: boolean;
+  warnings: string[];
+}
+
 function BackupRestoreCard() {
   const toast = useToast((s) => s.push);
   const [isRestoring, setIsRestoring] = useState(false);
   const [isBackingUp, setIsBackingUp] = useState(false);
+  const [backupType, setBackupType] = useState('full');
   const [restoreAnalysis, setRestoreAnalysis] = useState<RestoreAnalysis | null>(null);
   
   const handleBackup = async () => {
     setIsBackingUp(true);
     try {
-      const res = await api.post<{ id: string }>("/backups", { type: "postgres" });
+      const res = await api.post<{ id: string }>("/backups", { type: backupType });
       const backupId = res.data.id;
       const downloadRes = await api.get(`/backups/${backupId}/download`, { responseType: 'blob' });
       const url = window.URL.createObjectURL(new Blob([downloadRes.data]));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `backup-${backupId}.gz`);
+      link.setAttribute('download', backupId); // API already returns full filename in id
       document.body.appendChild(link);
       link.click();
       link.parentNode?.removeChild(link);
@@ -275,20 +289,38 @@ function BackupRestoreCard() {
       </div>
 
       <div className="flex flex-col sm:flex-row gap-4">
-        <button
-          onClick={handleBackup}
-          disabled={isBackingUp || isRestoring}
-          className="flex-1 flex items-center justify-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm font-medium text-emerald-600 hover:bg-emerald-500/20 disabled:opacity-50 transition-colors"
-        >
-          {isBackingUp ? <Spinner className="w-5 h-5 text-emerald-500" /> : <Download size={18} />}
-          Download Backup
-        </button>
+        <div className="flex-1 flex flex-col gap-2 p-4 rounded-xl border border-emerald-500/20 bg-emerald-500/5">
+          <label className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">Backup Type</label>
+          <select 
+            value={backupType}
+            onChange={e => setBackupType(e.target.value)}
+            className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-900 dark:text-white"
+            disabled={isBackingUp || isRestoring}
+          >
+            <option value="full">Full Backup (Database + Config)</option>
+            <option value="database">Database Only</option>
+            <option value="config">Configuration Only</option>
+          </select>
+          <button
+            onClick={handleBackup}
+            disabled={isBackingUp || isRestoring}
+            className="mt-2 w-full flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors"
+          >
+            {isBackingUp ? <Spinner className="w-4 h-4" /> : <Download size={16} />}
+            Download Backup
+          </button>
+        </div>
 
-        <label className="flex-1 flex items-center justify-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm font-medium text-amber-600 hover:bg-amber-500/20 cursor-pointer disabled:opacity-50 transition-colors">
-          {isRestoring && !restoreAnalysis ? <Spinner className="w-5 h-5 text-amber-500" /> : <Upload size={18} />}
-          Restore Database
-          <input type="file" accept=".sql,.gz" className="hidden" onChange={handleRestoreUpload} disabled={isRestoring || isBackingUp} />
-        </label>
+        <div className="flex-1 flex flex-col justify-end gap-2 p-4 rounded-xl border border-amber-500/20 bg-amber-500/5">
+          <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-2">
+            Upload a .tar.gz or legacy .sql.gz backup file to restore. Note: Transactional restores currently require using the CLI.
+          </p>
+          <label className="w-full flex items-center justify-center gap-2 rounded-lg border-2 border-dashed border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm font-medium text-amber-600 hover:bg-amber-500/20 cursor-pointer disabled:opacity-50 transition-colors">
+            {isRestoring && !restoreAnalysis ? <Spinner className="w-5 h-5 text-amber-500" /> : <Upload size={18} />}
+            Upload Archive
+            <input type="file" accept=".sql,.gz,.tar.gz" className="hidden" onChange={handleRestoreUpload} disabled={isRestoring || isBackingUp} />
+          </label>
+        </div>
       </div>
 
       {restoreAnalysis && (
@@ -300,27 +332,48 @@ function BackupRestoreCard() {
           >
             <h3 className="text-xl font-bold text-zinc-900 dark:text-white mb-2">Confirm Restore</h3>
             <p className="text-sm text-zinc-500 mb-6">
-              This backup contains the following data. Applying it will completely overwrite your current database. This action cannot be undone.
+              You are about to restore this backup. Note: Full transactional restores currently must be executed from the CLI.
             </p>
 
             <div className="bg-zinc-50 dark:bg-zinc-950 rounded-xl p-4 mb-6 space-y-3">
               <div className="flex justify-between items-center pb-2 border-b border-zinc-200 dark:border-zinc-800/50">
-                <span className="text-zinc-500">Admins</span>
-                <span className="font-semibold text-zinc-800 dark:text-zinc-200">{restoreAnalysis.counts?.admins}</span>
+                <span className="text-zinc-500">File</span>
+                <span className="font-mono text-xs text-zinc-800 dark:text-zinc-200">{restoreAnalysis.fileName}</span>
               </div>
               <div className="flex justify-between items-center pb-2 border-b border-zinc-200 dark:border-zinc-800/50">
-                <span className="text-zinc-500">Panels</span>
-                <span className="font-semibold text-zinc-800 dark:text-zinc-200">{restoreAnalysis.counts?.panels}</span>
+                <span className="text-zinc-500">Type</span>
+                <span className="font-semibold text-zinc-800 dark:text-zinc-200 uppercase">{restoreAnalysis.type}</span>
               </div>
-              <div className="flex justify-between items-center pb-2 border-b border-zinc-200 dark:border-zinc-800/50">
-                <span className="text-zinc-500">Clients</span>
-                <span className="font-semibold text-zinc-800 dark:text-zinc-200">{restoreAnalysis.counts?.clients}</span>
-              </div>
+              {!restoreAnalysis.isLegacy && (
+                <>
+                  <div className="flex justify-between items-center pb-2 border-b border-zinc-200 dark:border-zinc-800/50">
+                    <span className="text-zinc-500">App Version</span>
+                    <span className="font-semibold text-zinc-800 dark:text-zinc-200">{restoreAnalysis.version}</span>
+                  </div>
+                  <div className="flex justify-between items-center pb-2 border-b border-zinc-200 dark:border-zinc-800/50">
+                    <span className="text-zinc-500">Timestamp</span>
+                    <span className="font-semibold text-zinc-800 dark:text-zinc-200">{new Date(restoreAnalysis.uploadDate).toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between items-center pb-2 border-b border-zinc-200 dark:border-zinc-800/50">
+                    <span className="text-zinc-500">Domain</span>
+                    <span className="font-semibold text-zinc-800 dark:text-zinc-200">{restoreAnalysis.domain}</span>
+                  </div>
+                </>
+              )}
               <div className="flex justify-between items-center">
-                <span className="text-zinc-500">Inbounds</span>
-                <span className="font-semibold text-zinc-800 dark:text-zinc-200">{restoreAnalysis.counts?.inbounds}</span>
+                <span className="text-zinc-500">Size</span>
+                <span className="font-semibold text-zinc-800 dark:text-zinc-200">{(restoreAnalysis.sizeBytes / 1024 / 1024).toFixed(2)} MB</span>
               </div>
             </div>
+
+            {restoreAnalysis.warnings?.length > 0 && (
+              <div className="mb-6 p-3 rounded-lg bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20">
+                <p className="text-xs font-semibold text-amber-800 dark:text-amber-400 mb-1">Warnings:</p>
+                <ul className="list-disc pl-4 text-xs text-amber-700 dark:text-amber-500">
+                  {restoreAnalysis.warnings.map((w, i) => <li key={i}>{w}</li>)}
+                </ul>
+              </div>
+            )}
 
             <div className="flex gap-3">
               <button

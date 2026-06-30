@@ -321,26 +321,189 @@ cmd_update() {
   pause
 }
 
-cmd_backup() {
-  echo -e "${BOLD}--- Create Backup ---${NC}\n"
-  local filename="backup_$(date +%F_%H-%M-%S).sql"
+do_backup() {
+  local backup_type="${1:-full}" # full, database, config
+  local silent="${2:-false}"
+  
+  local app_ver="unknown"
+  if [[ -f "${INSTALL_DIR}/package.json" ]]; then
+    app_ver=$(grep -oP '(?<="version": ")[^"]*' "${INSTALL_DIR}/package.json" | head -n 1 || echo "unknown")
+  fi
+  
+  local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+  local filename="backup_${backup_type}_$(date +%F_%H-%M-%S).tar.gz"
   local filepath="${BACKUP_DIR}/${filename}"
   
-  echo -e "Creating database backup..."
-  if docker exec -t hmpanel-postgres pg_dumpall -c -U panel_user > "$filepath"; then
+  local temp_dir=$(mktemp -d)
+  
+  if [[ "$silent" != "true" ]]; then echo "Creating $backup_type backup..."; fi
+  
+  local checksums=""
+  
+  if [[ "$backup_type" == "database" || "$backup_type" == "full" ]]; then
+    if [[ "$silent" != "true" ]]; then echo " -> Exporting database..."; fi
+    if docker exec -t hmpanel-postgres pg_dumpall -c -U panel_user | gzip > "${temp_dir}/database.sql.gz"; then
+      local db_sum=$(sha256sum "${temp_dir}/database.sql.gz" | awk '{print $1}')
+      checksums+="\"database.sql.gz\": \"$db_sum\""
+    else
+      if [[ "$silent" != "true" ]]; then echo -e "${RED}✘ Database export failed.${NC}"; fi
+      rm -rf "$temp_dir"
+      return 1
+    fi
+  fi
+  
+  if [[ "$backup_type" == "config" || "$backup_type" == "full" ]]; then
+    if [[ "$silent" != "true" ]]; then echo " -> Archiving configuration..."; fi
+    local conf_temp=$(mktemp -d)
+    cp "${INSTALL_DIR}/.env" "$conf_temp/" 2>/dev/null || true
+    cp -r "${INSTALL_DIR}/nginx" "$conf_temp/" 2>/dev/null || true
+    tar -czf "${temp_dir}/config.tar.gz" -C "$conf_temp" .
+    rm -rf "$conf_temp"
+    
+    local conf_sum=$(sha256sum "${temp_dir}/config.tar.gz" | awk '{print $1}')
+    if [[ -n "$checksums" ]]; then checksums+=", "; fi
+    checksums+="\"config.tar.gz\": \"$conf_sum\""
+  fi
+  
+  cat > "${temp_dir}/manifest.json" <<EOF
+{
+  "version": "$app_ver",
+  "schemaVersion": "1",
+  "timestamp": "$timestamp",
+  "type": "$backup_type",
+  "domain": "${PANEL_DOMAIN:-localhost}",
+  "checksums": {
+    $checksums
+  }
+}
+EOF
+
+  tar -czf "$filepath" -C "$temp_dir" .
+  rm -rf "$temp_dir"
+  
+  if [[ "$silent" != "true" ]]; then
     echo -e "${GREEN}✔ Backup completed successfully!${NC}"
     echo -e "Saved to: ${CYAN}${filepath}${NC}"
-  else
-    echo -e "${RED}✘ Backup failed.${NC}"
-    rm -f "$filepath"
   fi
+  echo "$filepath"
+  return 0
+}
+
+cmd_backup() {
+  echo -e "${BOLD}--- Create Backup ---${NC}\n"
+  echo "1. Full Backup (Database + Config)"
+  echo "2. Database Only"
+  echo "3. Configuration Only"
+  echo "0. Cancel"
+  read -rp "Select backup type: " btype
+  
+  case $btype in
+    1) do_backup "full" "false" ;;
+    2) do_backup "database" "false" ;;
+    3) do_backup "config" "false" ;;
+    *) echo "Cancelled." ;;
+  esac
   pause
+}
+
+do_restore() {
+  local filepath="$1"
+  local silent="${2:-false}"
+  
+  if [[ ! -f "$filepath" ]]; then
+    if [[ "$silent" != "true" ]]; then echo -e "${RED}✘ File not found: ${filepath}${NC}"; fi
+    return 1
+  fi
+  
+  local temp_dir=$(mktemp -d)
+  
+  if [[ "$filepath" == *.sql || "$filepath" == *.sql.gz ]]; then
+    # Legacy Restore
+    if [[ "$silent" != "true" ]]; then echo "Legacy SQL backup detected. Proceeding with database restore..."; fi
+    if [[ "$filepath" == *.sql.gz ]]; then
+      zcat "$filepath" | docker exec -i hmpanel-postgres psql -U panel_user -d panel_db >/dev/null 2>&1
+    else
+      cat "$filepath" | docker exec -i hmpanel-postgres psql -U panel_user -d panel_db >/dev/null 2>&1
+    fi
+    local ret=$?
+    rm -rf "$temp_dir"
+    if [[ $ret -eq 0 ]]; then
+      if [[ "$silent" != "true" ]]; then echo -e "${GREEN}✔ Legacy restore completed successfully!${NC}"; fi
+      return 0
+    else
+      if [[ "$silent" != "true" ]]; then echo -e "${RED}✘ Legacy restore failed.${NC}"; fi
+      return 1
+    fi
+  fi
+  
+  # New Tar.gz Restore (Transactional)
+  tar -xzf "$filepath" -C "$temp_dir"
+  if [[ ! -f "${temp_dir}/manifest.json" ]]; then
+    if [[ "$silent" != "true" ]]; then echo -e "${RED}✘ Invalid backup format: missing manifest.json${NC}"; fi
+    rm -rf "$temp_dir"
+    return 1
+  fi
+  
+  local btype=$(grep -oP '(?<="type": ")[^"]*' "${temp_dir}/manifest.json" || echo "unknown")
+  if [[ "$silent" != "true" ]]; then echo "Starting transactional restore ($btype)..."; fi
+  
+  # 1. Create Rollback Backup
+  if [[ "$silent" != "true" ]]; then echo "Creating automatic rollback backup..."; fi
+  local rollback_file=$(do_backup "full" "true")
+  if [[ -z "$rollback_file" || ! -f "$rollback_file" ]]; then
+    if [[ "$silent" != "true" ]]; then echo -e "${RED}✘ Failed to create rollback backup. Restore aborted.${NC}"; fi
+    rm -rf "$temp_dir"
+    return 1
+  fi
+  
+  # 2. Execute Restore
+  local restore_failed=0
+  
+  if [[ -f "${temp_dir}/database.sql.gz" ]]; then
+    if [[ "$silent" != "true" ]]; then echo "Restoring database..."; fi
+    if ! zcat "${temp_dir}/database.sql.gz" | docker exec -i hmpanel-postgres psql -U panel_user -d panel_db >/dev/null 2>&1; then
+      if [[ "$silent" != "true" ]]; then echo -e "${RED}✘ Database restore failed.${NC}"; fi
+      restore_failed=1
+    fi
+  fi
+  
+  if [[ $restore_failed -eq 0 && -f "${temp_dir}/config.tar.gz" ]]; then
+    if [[ "$silent" != "true" ]]; then echo "Restoring configuration..."; fi
+    tar -xzf "${temp_dir}/config.tar.gz" -C "${INSTALL_DIR}"
+    docker restart hmpanel-nginx >/dev/null 2>&1 || true
+    docker restart hmpanel-panel hmpanel-app >/dev/null 2>&1 || true
+    sleep 3
+  fi
+  
+  # 3. Verify
+  if [[ $restore_failed -eq 0 ]]; then
+    if [[ "$silent" != "true" ]]; then echo "Verifying end-to-end health..."; fi
+    # Simple check for now, backend should be up
+    if ! curl -s --connect-timeout 5 "http://localhost:3000/api/health" | grep -q "ok"; then
+      if [[ "$silent" != "true" ]]; then echo -e "${RED}✘ Health verification failed!${NC}"; fi
+      restore_failed=1
+    fi
+  fi
+  
+  # 4. Commit or Rollback
+  if [[ $restore_failed -eq 1 ]]; then
+    if [[ "$silent" != "true" ]]; then echo -e "${YELLOW}Rolling back to previous state...${NC}"; fi
+    # Recursively call do_restore with rollback file
+    do_restore "$rollback_file" "true"
+    if [[ "$silent" != "true" ]]; then echo -e "${RED}✘ Restore failed and rollback was applied.${NC}"; fi
+    rm -rf "$temp_dir"
+    return 1
+  else
+    if [[ "$silent" != "true" ]]; then echo -e "${GREEN}✔ Restore completed and verified!${NC}"; fi
+    rm -rf "$temp_dir"
+    return 0
+  fi
 }
 
 cmd_restore() {
   echo -e "${BOLD}--- Restore Backup ---${NC}\n"
   echo "Available backups in ${BACKUP_DIR}:"
-  ls -1 "${BACKUP_DIR}"/*.sql 2>/dev/null | awk -F/ '{print " - " $NF}' || echo "  (No .sql backups found)"
+  ls -1 "${BACKUP_DIR}"/*.sql "${BACKUP_DIR}"/*.tar.gz 2>/dev/null | awk -F/ '{print " - " $NF}' || echo "  (No backups found)"
   
   echo ""
   read -rp "Enter the exact filename to restore (or press Enter to cancel): " filename
@@ -355,7 +518,7 @@ cmd_restore() {
     return
   fi
 
-  echo -e "${YELLOW}⚠ WARNING: Restoring will overwrite the current database entirely!${NC}"
+  echo -e "${YELLOW}⚠ WARNING: Restoring will overwrite the current installation entirely!${NC}"
   read -rp "Are you absolutely sure? [y/N]: " confirm
   if [[ "${confirm,,}" != "y" ]]; then
     echo "Restore cancelled."
@@ -363,12 +526,7 @@ cmd_restore() {
     return
   fi
 
-  echo -e "\nRestoring database..."
-  if cat "$filepath" | docker exec -i hmpanel-postgres psql -U panel_user -d panel_db >/dev/null 2>&1; then
-    echo -e "${GREEN}✔ Restore completed successfully!${NC}"
-  else
-    echo -e "${RED}✘ Restore failed.${NC}"
-  fi
+  do_restore "$filepath" "false"
   pause
 }
 
@@ -1194,7 +1352,7 @@ cmd_version() {
 # ─────────────────────────────────────────────────────────────────
 # Headless Command Parser (for API/Backend integration)
 # ─────────────────────────────────────────────────────────────────
-if [[ "$JSON_OUTPUT" == "true" || "${1:-}" == "ssl" || "${1:-}" == "doctor" || "${1:-}" == "version" ]]; then
+if [[ "$JSON_OUTPUT" == "true" || "${1:-}" == "ssl" || "${1:-}" == "doctor" || "${1:-}" == "version" || "${1:-}" == "backup" || "${1:-}" == "restore" ]]; then
   HEADLESS=true
   MODULE="${1:-}"
   ACTION="${2:-}"
@@ -1230,6 +1388,21 @@ if [[ "$JSON_OUTPUT" == "true" || "${1:-}" == "ssl" || "${1:-}" == "doctor" || "
         exit 1
         ;;
     esac
+  elif [[ "$MODULE" == "backup" ]]; then
+    if [[ "$ACTION" == "create" ]]; then
+      local btype="${3:-full}"
+      do_backup "$btype" "true"
+    else
+      echo "Usage: hm backup create {full|database|config}"
+      exit 1
+    fi
+  elif [[ "$MODULE" == "restore" ]]; then
+    if [[ -n "$ACTION" ]]; then
+      do_restore "$ACTION" "true"
+    else
+      echo "Usage: hm restore <filepath>"
+      exit 1
+    fi
   elif [[ "$MODULE" == "doctor" ]]; then
     cmd_doctor
   elif [[ "$MODULE" == "version" ]]; then
