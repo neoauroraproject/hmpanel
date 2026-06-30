@@ -55,6 +55,14 @@ output_json() {
   echo "$json"
 }
 
+stream_progress() {
+  if [[ "$JSON_OUTPUT" == "true" ]]; then
+    echo "PROGRESS: $1" >&2
+  else
+    echo -e "${CYAN}➜ $1${NC}"
+  fi
+}
+
 ensure_env_variables() {
   local env_file="${INSTALL_DIR}/.env"
   if [[ -f "$env_file" ]]; then
@@ -118,6 +126,7 @@ verify_port_80() {
 
 write_http_nginx_template() {
   local target_file="$1"
+  local srv_name="${2:-${PANEL_DOMAIN:-${DOMAIN:-_}}}"
   cat > "$target_file" <<'EOF'
 user nginx;
 worker_processes auto;
@@ -176,7 +185,7 @@ http {
 
     server {
         listen 80;
-        server_name _;
+        server_name SERVER_NAME_PLACEHOLDER;
 
         # ── Backend API ──────────────────────────────────────────
         location /api/ {
@@ -206,6 +215,7 @@ http {
     }
 }
 EOF
+  sed -i "s/SERVER_NAME_PLACEHOLDER/$srv_name/g" "$target_file"
 }
 
 # Colors
@@ -483,6 +493,7 @@ ssl_issue() {
     fi
   fi
 
+  stream_progress "Checking DNS..."
   if ! verify_dns "$PANEL_DOMAIN"; then
     if [[ "$JSON_OUTPUT" == "true" ]]; then
       output_json false "DNS_ERROR"
@@ -494,6 +505,7 @@ ssl_issue() {
     fi
   fi
   
+  stream_progress "Checking Port..."
   if ! verify_port_80; then
     if [[ "$JSON_OUTPUT" == "true" ]]; then
       output_json false "PORT_BUSY"
@@ -505,6 +517,7 @@ ssl_issue() {
     fi
   fi
 
+  stream_progress "Preparing environment..."
   # Stop nginx
   docker stop hmpanel-nginx >/dev/null 2>&1 || true
 
@@ -515,6 +528,7 @@ ssl_issue() {
   # ACME (Let's Encrypt / ZeroSSL)
   if command -v git &>/dev/null && command -v curl &>/dev/null && command -v socat &>/dev/null; then
     if [[ ! -d "${INSTALL_DIR}/acme.sh" ]]; then
+      stream_progress "Installing acme.sh..."
       if [[ "$JSON_OUTPUT" != "true" ]]; then echo "Installing acme.sh..."; fi
       if git clone https://github.com/acmesh-official/acme.sh.git /tmp/acme.sh >/dev/null 2>&1; then
         (
@@ -532,6 +546,7 @@ ssl_issue() {
   if [[ -f "${INSTALL_DIR}/acme.sh/acme.sh" ]]; then
     for ca in "letsencrypt" "zerossl"; do
       if [[ "$cert_obtained" == false ]]; then
+        stream_progress "Issuing Certificate via $ca..."
         echo "Trying acme.sh ($ca)..."
         "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" --set-default-ca --server "$ca" >/dev/null 2>&1
         if "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" --issue -d "$PANEL_DOMAIN" --standalone >/dev/null 2>&1; then
@@ -548,6 +563,7 @@ ssl_issue() {
 
   # Certbot fallback
   if [[ "$cert_obtained" == false ]]; then
+    stream_progress "Issuing Certificate via Certbot..."
     echo "Trying Certbot..."
     local certbot_exit=1
     if command -v certbot &>/dev/null; then
@@ -584,11 +600,14 @@ ssl_issue() {
       sed -i 's/# SSL disabled/listen 443 ssl;/' "${INSTALL_DIR}/nginx/nginx.conf.template" 2>/dev/null || true
     fi
 
+    stream_progress "Restarting Nginx..."
     docker start hmpanel-nginx >/dev/null 2>&1 || true
     sleep 2
     
+    stream_progress "Verifying..."
     # We won't call verify_nginx_status interactively if in JSON mode
     if [[ "$JSON_OUTPUT" == "true" ]]; then
+      stream_progress "Completed."
       output_json true "SSL_ISSUED" "\"provider\":\"$provider\",\"domain\":\"$PANEL_DOMAIN\""
       exit 0
     else
@@ -638,6 +657,128 @@ ssl_selfsigned() {
     verify_nginx_status
   fi
   pause
+}
+
+ssl_transactional() {
+  local action="$1"
+  stream_progress "Initiating Transactional SSL workflow..."
+  local SSL_DIR="${INSTALL_DIR}/nginx/ssl"
+  local BACKUP_DIR="${INSTALL_DIR}/backups/ssl_rollback_$(date +%s)"
+  
+  mkdir -p "$BACKUP_DIR"
+  cp "${INSTALL_DIR}/.env" "$BACKUP_DIR/.env.backup" 2>/dev/null || true
+  cp "${INSTALL_DIR}/nginx/nginx.conf.template" "$BACKUP_DIR/nginx.conf.template.backup" 2>/dev/null || true
+  cp -r "$SSL_DIR" "$BACKUP_DIR/ssl_backup" 2>/dev/null || true
+
+  local env_hash_before
+  env_hash_before=$(md5sum "${INSTALL_DIR}/.env" 2>/dev/null | awk '{print $1}')
+
+  stream_progress "Attempting to issue certificate..."
+  
+  local issue_out
+  local issue_code=0
+  issue_out=$( ( eval "$action" ) ) || issue_code=$?
+
+  local containers_restarted=false
+
+  if [[ $issue_code -eq 0 ]]; then
+    stream_progress "Certificate issued successfully."
+    
+    local env_hash_after
+    env_hash_after=$(md5sum "${INSTALL_DIR}/.env" 2>/dev/null | awk '{print $1}')
+    
+    stream_progress "Reloading Nginx gracefully..."
+    docker exec hmpanel-nginx nginx -s reload >/dev/null 2>&1 || docker restart hmpanel-nginx >/dev/null 2>&1
+    
+    if [[ "$env_hash_before" != "$env_hash_after" ]]; then
+      stream_progress "Configuration changed. Restarting application containers..."
+      docker restart hmpanel-panel hmpanel-app >/dev/null 2>&1 || true
+      containers_restarted=true
+    else
+      stream_progress "Configuration unchanged. Skipping application restarts."
+    fi
+    
+    if verify_e2e_health "$PANEL_DOMAIN"; then
+      echo "$issue_out"
+      rm -rf "$BACKUP_DIR"
+      exit 0
+    fi
+    # If verify fails, fall through to rollback
+    issue_out="{\"success\":false,\"code\":\"E2E_VERIFY_FAILED\",\"reason\":\"End-to-end verification failed after issuance.\"}"
+  fi
+
+  stream_progress "Workflow failed. Rolling back to previous state..."
+  
+  # Restore backups
+  cp "$BACKUP_DIR/.env.backup" "${INSTALL_DIR}/.env" 2>/dev/null || true
+  cp "$BACKUP_DIR/nginx.conf.template.backup" "${INSTALL_DIR}/nginx/nginx.conf.template" 2>/dev/null || true
+  rm -rf "$SSL_DIR"
+  cp -r "$BACKUP_DIR/ssl_backup" "$SSL_DIR" 2>/dev/null || true
+  
+  stream_progress "Reloading Nginx to apply rollback..."
+  docker exec hmpanel-nginx nginx -s reload >/dev/null 2>&1 || docker restart hmpanel-nginx >/dev/null 2>&1
+  
+  if [[ "$containers_restarted" == "true" ]] || [[ "$issue_code" -ne 0 ]]; then
+    stream_progress "Restarting application containers to restore state..."
+    docker restart hmpanel-panel hmpanel-app >/dev/null 2>&1 || true
+  fi
+  
+  rm -rf "$BACKUP_DIR"
+  
+  echo "$issue_out"
+  exit 1
+}
+
+verify_e2e_health() {
+  local domain="$1"
+  stream_progress "Running end-to-end verification for $domain..."
+  
+  # 1. Wait for containers to boot/reload
+  sleep 3
+
+  # 2. Verify TLS handshake
+  stream_progress "Verifying TLS Handshake..."
+  if ! curl -s -k -v -I --connect-timeout 5 "https://$domain" 2>&1 | grep -q "SSL connection using"; then
+    stream_progress "TLS Handshake failed!"
+    return 1
+  fi
+
+  # 3. Verify Certificate Validity
+  stream_progress "Verifying Certificate Validity..."
+  if ! echo | openssl s_client -connect "${domain}:443" -servername "${domain}" 2>/dev/null | openssl x509 -noout -checkend 0 >/dev/null 2>&1; then
+    stream_progress "Certificate validity check failed! Certificate may be expired or invalid."
+    return 1
+  fi
+
+  # 4. Verify Backend Accessibility
+  stream_progress "Verifying Backend API Health..."
+  local backend_health
+  backend_health=$(curl -s -k --connect-timeout 5 "https://$domain/api/health" || echo "FAIL")
+  if [[ "$backend_health" != *"status"* ]] && [[ "$backend_health" != *"ok"* ]]; then
+    stream_progress "Backend API Health check failed! Response: $backend_health"
+    return 1
+  fi
+
+  # 5. Verify Frontend Accessibility
+  stream_progress "Verifying Frontend Accessibility..."
+  local frontend_status
+  frontend_status=$(curl -s -o /dev/null -w "%{http_code}" -k --connect-timeout 5 "https://$domain" || echo "000")
+  if [[ "$frontend_status" != "200" ]]; then
+    stream_progress "Frontend Accessibility check failed! HTTP Code: $frontend_status"
+    return 1
+  fi
+
+  # 6. Verify Subscription Proxy Endpoint
+  stream_progress "Verifying Subscription Proxy Endpoint..."
+  local sub_status
+  sub_status=$(curl -s -o /dev/null -w "%{http_code}" -k --connect-timeout 5 "https://$domain/sub/healthcheck" || echo "000")
+  if [[ "$sub_status" == "502" ]] || [[ "$sub_status" == "000" ]]; then
+    stream_progress "Subscription Proxy routing failed! HTTP Code: $sub_status"
+    return 1
+  fi
+
+  stream_progress "End-to-End Verification Passed!"
+  return 0
 }
 
 ssl_enable() {
@@ -1063,10 +1204,11 @@ if [[ "$JSON_OUTPUT" == "true" || "${1:-}" == "ssl" || "${1:-}" == "doctor" || "
       issue)
         export PANEL_DOMAIN="${3:-}"
         export ADMIN_EMAIL="${4:-}"
-        ssl_issue
+        ssl_transactional "ssl_issue"
         ;;
       selfsigned)
-        ssl_selfsigned "${3:-}"
+        export PANEL_DOMAIN="${3:-}"
+        ssl_transactional "ssl_selfsigned ${3:-}"
         ;;
       disable)
         ssl_disable
@@ -1077,9 +1219,14 @@ if [[ "$JSON_OUTPUT" == "true" || "${1:-}" == "ssl" || "${1:-}" == "doctor" || "
       repair)
         ssl_repair
         ;;
+      change-domain)
+        export PANEL_DOMAIN="${3:-}"
+        export ADMIN_EMAIL="${4:-}"
+        ssl_transactional "ssl_issue"
+        ;;
       *)
         if [[ "$JSON_OUTPUT" == "true" ]]; then output_json false "UNKNOWN_COMMAND"; exit 1; fi
-        echo "Usage: hm ssl {issue <domain> <email> | disable | renew | repair}"
+        echo "Usage: hm ssl {issue <domain> <email> | change-domain <domain> <email> | disable | renew | repair}"
         exit 1
         ;;
     esac

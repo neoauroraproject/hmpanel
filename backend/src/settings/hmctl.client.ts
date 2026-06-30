@@ -39,4 +39,55 @@ export class HmctlClient {
       throw new Error(`Host command failed: ${error.message}`);
     }
   }
+
+  executeStream(module: string, action: string, args: string[] = []): import('rxjs').Observable<any> {
+    const { spawn } = require('child_process');
+    const { Observable } = require('rxjs');
+    return new Observable((subscriber: any) => {
+      this.logger.log(`Executing HMCTL (Stream): hm ${module} ${action} --json`);
+      
+      const childArgs = ['exec', 'hmpanel-host-agent', 'chroot', '/host', '/usr/local/bin/hm', module, action, ...args, '--json'];
+      const child = spawn('docker', childArgs);
+
+      let stdoutData = '';
+
+      child.stdout.on('data', (data: Buffer) => {
+        stdoutData += data.toString();
+      });
+
+      child.stderr.on('data', (data: Buffer) => {
+        const text = data.toString();
+        const lines = text.split('\n');
+        for (const line of lines) {
+          if (line.includes('PROGRESS:')) {
+            const progressMsg = line.split('PROGRESS:')[1].trim();
+            subscriber.next({ type: 'progress', message: progressMsg });
+          }
+        }
+      });
+
+      child.on('close', (code: number) => {
+        try {
+          if (stdoutData.trim()) {
+            const jsonOutput = JSON.parse(stdoutData);
+            if (!jsonOutput.success && jsonOutput.code) {
+               subscriber.next({ type: 'error', error: jsonOutput });
+            } else {
+               subscriber.next({ type: 'complete', data: jsonOutput });
+            }
+          } else {
+             subscriber.next({ type: 'error', error: { message: 'No output from HMCTL', code } });
+          }
+        } catch (e) {
+           subscriber.next({ type: 'error', error: { message: 'Failed to parse JSON', stdout: stdoutData } });
+        }
+        subscriber.complete();
+      });
+      
+      child.on('error', (err: any) => {
+        subscriber.next({ type: 'error', error: { message: err.message } });
+        subscriber.complete();
+      });
+    });
+  }
 }

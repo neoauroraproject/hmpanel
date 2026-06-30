@@ -267,18 +267,8 @@ collect_user_input() {
     fi
     DOMAIN="$DETECTED_IP"
     
-    echo ""
-    echo -e "  ${BOLD}Enable SSL for IP access?${NC} (Uses ZeroSSL for public IP)"
-    echo -e "  ${BOLD}1${NC}) Yes"
-    echo -e "  ${BOLD}2${NC}) No"
-    read -rp "  Select option [1]: " SSL_CHOICE_INPUT || true
-    [[ -z "$SSL_CHOICE_INPUT" ]] && SSL_CHOICE_INPUT=1
-    
-    if [[ "$SSL_CHOICE_INPUT" == 1 ]]; then
-      SSL_CHOICE=1 # ACME IP Cert
-    else
-      SSL_CHOICE=3 # Disabled
-    fi
+    echo -e "  ${YELLOW}ℹ IP installations skip SSL setup (HTTP only).${NC}"
+    SSL_CHOICE=3 # Disabled
   else
     echo ""
     read -rp "  Enter domain name (e.g. panel.example.com): " DOMAIN || true
@@ -343,6 +333,7 @@ ssl_label() {
 
 write_http_nginx_template() {
   local target_file="$1"
+  local srv_name="${2:-${PANEL_DOMAIN:-${DOMAIN:-_}}}"
   cat > "$target_file" <<'EOF'
 user nginx;
 worker_processes auto;
@@ -401,7 +392,7 @@ http {
 
     server {
         listen 80;
-        server_name _;
+        server_name SERVER_NAME_PLACEHOLDER;
 
         # ── Backend API ──────────────────────────────────────────
         location /api/ {
@@ -431,6 +422,7 @@ http {
     }
 }
 EOF
+  sed -i "s/SERVER_NAME_PLACEHOLDER/$srv_name/g" "$target_file"
 }
 
 verify_dns() {
@@ -944,8 +936,7 @@ step_8_ssl() {
 
   # ── HTTP-only (chosen or fallen back to) ──────────────────────
   if [[ "$SSL_CHOICE" == 3 ]]; then
-    log "SSL disabled (HTTP only)"
-    hm ssl disable
+    log "SSL disabled (HTTP only). Skipping SSL commands."
     SSL_STATUS="disabled"
   fi
 }

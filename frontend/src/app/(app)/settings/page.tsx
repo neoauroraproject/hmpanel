@@ -40,6 +40,8 @@ export default function GlobalSettingsPage() {
   const [form, setForm] = useState({
     cleanup_threshold_days: 30,
   });
+  
+  const [isSslModalOpen, setIsSslModalOpen] = useState(false);
 
   useEffect(() => {
     if (settings) {
@@ -104,7 +106,20 @@ export default function GlobalSettingsPage() {
           </Card>
 
           <BackupRestoreCard />
-          <SslManagementCard />
+          <Card className="p-0 overflow-hidden hover:border-indigo-500 transition-colors cursor-pointer">
+            <div className="p-6 flex items-center justify-between" onClick={() => setIsSslModalOpen(true)}>
+              <div className="flex items-center gap-4">
+                <div className="p-3 rounded-lg bg-indigo-500/10 text-indigo-500">
+                  <Shield size={24} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-zinc-800 dark:text-zinc-100">SSL Management</h3>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">Manage platform access mode and certificates.</p>
+                </div>
+              </div>
+              <ChevronRight className="text-zinc-400" />
+            </div>
+          </Card>
         </div>
 
         {/* Quick Links and About */}
@@ -175,6 +190,7 @@ export default function GlobalSettingsPage() {
           </Card>
         </div>
       </div>
+      <SslManagerModal isOpen={isSslModalOpen} onClose={() => setIsSslModalOpen(false)} />
     </motion.div>
   );
 }
@@ -339,153 +355,6 @@ interface SslStatus {
     expiration?: string;
     daysRemaining?: number;
     issuer?: string;
-  };
-  warning?: string;
-  diagnostics?: any;
-}
-
-function SslManagementCard() {
-  const toast = useToast((s) => s.push);
-  const qc = useQueryClient();
-  
-  const { data: sslInfo, isLoading, refetch } = useQuery({
-    queryKey: ["sslStatus"],
-    queryFn: async () => (await api.get<SslStatus>("/settings/ssl")).data,
-  });
-
-  const renewSsl = useMutation({
-    mutationFn: async () => (await api.post("/settings/ssl/renew")).data,
-    onSuccess: () => {
-      toast("SSL certificate renewed successfully");
-      refetch();
-    },
-    onError: (e: Error & { response?: { data?: { message?: string } } }) => toast(e.response?.data?.message || "Failed to renew certificate", "error"),
-  });
-
-  const switchMode = useMutation({
-    mutationFn: async (enableHttps: boolean) => (await api.post("/settings/ssl/switch", { enableHttps })).data,
-    onSuccess: (data: { https: boolean }) => {
-      toast(`Successfully switched to ${data.https ? 'HTTPS' : 'HTTP'}. Reloading...`);
-      setTimeout(() => window.location.reload(), 2000);
-    },
-    onError: (e: Error & { response?: { data?: { message?: string } } }) => toast(e.response?.data?.message || "Failed to switch mode", "error"),
-  });
-
-  if (isLoading) return <Card className="p-6 flex justify-center"><Spinner /></Card>;
-
-  return (
-    <Card className="p-6">
-      <div className="flex items-center gap-3 mb-6">
-        <div className="p-2 rounded-lg bg-indigo-500/10 text-indigo-500">
-          <Shield size={20} />
-        </div>
-        <div>
-          <h3 className="text-lg font-bold text-zinc-800 dark:text-zinc-100">SSL Management</h3>
-          <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">Manage platform access mode and certificates.</p>
-        </div>
-      </div>
-
-      <div className="bg-zinc-50 dark:bg-zinc-900/50 rounded-xl p-4 mb-6 space-y-3 text-sm">
-        <div className="flex justify-between items-center pb-2 border-b border-zinc-200 dark:border-zinc-800/50">
-          <span className="text-zinc-500">Current Access Mode</span>
-          <span className="font-semibold text-zinc-800 dark:text-zinc-200">{sslInfo?.mode || 'Unknown'}</span>
-        </div>
-        <div className="flex justify-between items-center pb-2 border-b border-zinc-200 dark:border-zinc-800/50">
-          <span className="text-zinc-500">Provider</span>
-          <span className="font-semibold text-zinc-800 dark:text-zinc-200">{sslInfo?.provider || 'Unknown'}</span>
-        </div>
-        <div className="flex justify-between items-center pb-2 border-b border-zinc-200 dark:border-zinc-800/50">
-          <span className="text-zinc-500">Certificate Status</span>
-          <span className={`font-semibold ${sslInfo?.certificate?.exists ? 'text-emerald-500' : 'text-red-500'}`}>
-            {sslInfo?.certificate?.exists ? 'Valid / Active' : 'Not Found'}
-          </span>
-        </div>
-        {sslInfo?.warning && (
-          <div className="flex items-start gap-2 mt-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400">
-            <Info size={16} className="mt-0.5 shrink-0" />
-            <span className="text-xs leading-relaxed">{sslInfo.warning}</span>
-          </div>
-        )}
-
-        {sslInfo?.certificate?.exists && (
-          <>
-            <div className="flex justify-between items-center pb-2 border-b border-zinc-200 dark:border-zinc-800/50 mt-4">
-              <span className="text-zinc-500">Certificate Path</span>
-              <span className="font-mono text-xs text-zinc-600 dark:text-zinc-400 max-w-[200px] truncate" title={sslInfo.certPath}>
-                {sslInfo.certPath || 'Unknown'}
-              </span>
-            </div>
-            <div className="flex justify-between items-center pb-2 border-b border-zinc-200 dark:border-zinc-800/50">
-              <span className="text-zinc-500">Issuer</span>
-              <span className="font-semibold text-zinc-800 dark:text-zinc-200">{sslInfo.certificate.issuer || 'Unknown'}</span>
-            </div>
-            <div className="flex justify-between items-center pb-2 border-b border-zinc-200 dark:border-zinc-800/50">
-              <span className="text-zinc-500">Expiration Date</span>
-              <span className="font-semibold text-zinc-800 dark:text-zinc-200">
-                {sslInfo.certificate.expiration ? new Date(sslInfo.certificate.expiration).toLocaleString() : 'Unknown'}
-              </span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-zinc-500">Days Remaining</span>
-              <span className={`font-semibold ${(sslInfo.certificate.daysRemaining || 0) > 15 ? 'text-emerald-500' : 'text-amber-500'}`}>
-                {sslInfo.certificate.daysRemaining || 0} days
-              </span>
-            </div>
-          </>
-        )}
-
-        {sslInfo?.diagnostics && (
-          <div className="mt-6 p-4 rounded-lg bg-zinc-100 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700/50">
-            <h4 className="text-xs font-bold text-zinc-600 dark:text-zinc-400 mb-3 uppercase tracking-wider">Detection Diagnostics</h4>
-            <div className="space-y-2 text-xs">
-              <div className="flex justify-between">
-                <span className="text-zinc-500">Last Check</span>
-                <span className="text-zinc-700 dark:text-zinc-300">{sslInfo.diagnostics.lastCheckTime ? new Date(sslInfo.diagnostics.lastCheckTime).toLocaleTimeString() : 'N/A'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-zinc-500">Probed Domain</span>
-                <span className="font-mono text-zinc-700 dark:text-zinc-300">{sslInfo.diagnostics.domainProbed || 'N/A'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-zinc-500">TLS Handshake</span>
-                <span className="text-zinc-700 dark:text-zinc-300">{sslInfo.diagnostics.tlsHandshakeStatus || 'Unknown'}</span>
-              </div>
-              {sslInfo.diagnostics.lastProbeError && (
-                <div className="flex justify-between">
-                  <span className="text-zinc-500">Last Error</span>
-                  <span className="text-red-500 max-w-[200px] truncate" title={sslInfo.diagnostics.lastProbeError}>{sslInfo.diagnostics.lastProbeError}</span>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-      </div>
-
-      <div className="flex flex-col sm:flex-row gap-3">
-        {sslInfo?.provider === 'ACME.sh' && (
-          <button
-            onClick={() => renewSsl.mutate()}
-            disabled={renewSsl.isPending}
-            className="flex-1 flex items-center justify-center gap-2 rounded-lg border border-indigo-500/20 bg-indigo-500/10 px-4 py-2.5 text-sm font-medium text-indigo-600 hover:bg-indigo-500/20 disabled:opacity-50 transition-colors"
-          >
-            {renewSsl.isPending ? <Spinner className="w-4 h-4 text-indigo-500" /> : <RefreshCw size={16} />}
-            Renew Now
-          </button>
-        )}
-        <button
-          onClick={() => refetch()}
-          className="flex-1 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-4 py-2.5 text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors"
-        >
-          Recheck Status
-        </button>
-        <button
-          onClick={() => switchMode.mutate(!sslInfo?.isHttpsEnabled)}
-          disabled={switchMode.isPending}
-          className="flex-1 rounded-lg bg-zinc-900 dark:bg-white px-4 py-2.5 text-sm font-medium text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-100 disabled:opacity-50 transition-colors"
-        >
-          Switch to {sslInfo?.isHttpsEnabled ? 'HTTP' : 'HTTPS'}
-        </button>
       </div>
     </Card>
   );

@@ -170,14 +170,18 @@ export class SslService {
       // Also we can check if ACME is installed locally
       const isAcmeInstalled = fs.existsSync(this.acmeShPath);
 
+      const envProvider = process.env.SSL_PROVIDER;
+
       if (exists) {
-        if (letsEncryptMount) {
+        if (envProvider === 'self-signed') {
+          provider = 'Self Signed';
+        } else if (envProvider === 'certbot' || letsEncryptMount) {
           provider = 'Certbot';
-          certPathInUse = letsEncryptMount.Destination;
-        } else if (isAcmeInstalled) {
-          provider = 'ACME.sh';
+          certPathInUse = letsEncryptMount ? letsEncryptMount.Destination : certPathInUse;
+        } else if (envProvider === 'letsencrypt' || envProvider === 'zerossl' || isAcmeInstalled) {
+          provider = envProvider && envProvider !== 'none' ? envProvider : 'ACME.sh';
         } else {
-          provider = 'Custom Certificate';
+          provider = 'Uploaded Custom Certificate';
         }
       } else if (isHttpsEnabled) {
         // Reverse proxy scenario where HTTPS is enabled but nginx container does not handle certs directly
@@ -305,6 +309,59 @@ export class SslService {
     } catch (e) {
       throw new HttpException('Failed to switch SSL mode: ' + e.message, HttpStatus.INTERNAL_SERVER_ERROR);
     }
+  }
+
+  private stream$ = new import('rxjs').Subject<{ data: any }>();
+
+  getStream() {
+    return this.stream$.asObservable();
+  }
+
+  async issue(domain: string, email: string, selfSigned: boolean = false) {
+    const action = selfSigned ? 'selfsigned' : 'issue';
+    const args = selfSigned ? [domain] : [domain, email];
+    
+    return new Promise((resolve, reject) => {
+      this.hmctl.executeStream('ssl', action, args).subscribe({
+        next: (event) => {
+          if (event.type === 'progress') {
+             this.stream$.next({ data: { type: 'progress', message: event.message } });
+          } else if (event.type === 'complete') {
+             this.stream$.next({ data: { type: 'complete', data: event.data } });
+             resolve(event.data);
+          } else if (event.type === 'error') {
+             this.stream$.next({ data: { type: 'error', error: event.error } });
+             reject(new HttpException(event.error.message || 'Error', HttpStatus.INTERNAL_SERVER_ERROR));
+          }
+        },
+        error: (err) => {
+          this.stream$.next({ data: { type: 'error', error: err } });
+          reject(new HttpException(err.message, HttpStatus.INTERNAL_SERVER_ERROR));
+        }
+      });
+    });
+  }
+
+  async changeDomain(domain: string, email: string) {
+    return new Promise((resolve, reject) => {
+      this.hmctl.executeStream('ssl', 'change-domain', [domain, email]).subscribe({
+        next: (event) => {
+          if (event.type === 'progress') {
+             this.stream$.next({ data: { type: 'progress', message: event.message } });
+          } else if (event.type === 'complete') {
+             this.stream$.next({ data: { type: 'complete', data: event.data } });
+             resolve(event.data);
+          } else if (event.type === 'error') {
+             this.stream$.next({ data: { type: 'error', error: event.error } });
+             reject(new HttpException(event.error.message || 'Error', HttpStatus.INTERNAL_SERVER_ERROR));
+          }
+        },
+        error: (err) => {
+          this.stream$.next({ data: { type: 'error', error: err } });
+          reject(new HttpException(err.message, HttpStatus.INTERNAL_SERVER_ERROR));
+        }
+      });
+    });
   }
 
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
