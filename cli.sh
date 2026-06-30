@@ -30,7 +30,7 @@ update_env() {
 # ─────────────────────────────────────────────────────────────────
 # Global API Constants & Helpers
 # ─────────────────────────────────────────────────────────────────
-OPERATION_ID=$(tr -dc a-f0-9 </dev/urandom | head -c 8 || echo "unknown")
+OPERATION_ID=$(date +%s%N 2>/dev/null | md5sum 2>/dev/null | head -c 8 || echo "unknown")
 JSON_OUTPUT=false
 if [[ " $* " == *" --json "* ]]; then
   JSON_OUTPUT=true
@@ -735,8 +735,7 @@ ssl_issue() {
   if [[ -f "${INSTALL_DIR}/acme.sh/acme.sh" ]]; then
     for ca in "letsencrypt" "zerossl"; do
       if [[ "$cert_obtained" == false ]]; then
-        stream_progress "Issuing Certificate via $ca..."
-        echo "Trying acme.sh ($ca)..."
+        stream_progress "Trying acme.sh ($ca)..."
         "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" --set-default-ca --server "$ca" >/dev/null 2>&1
         if "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" --issue -d "$PANEL_DOMAIN" --standalone >/dev/null 2>&1; then
           "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" --install-cert -d "$PANEL_DOMAIN" \
@@ -744,7 +743,7 @@ ssl_issue() {
             --key-file "${SSL_DIR}/privkey.pem" >/dev/null 2>&1
           cert_obtained=true
           provider="$ca"
-          echo -e "${GREEN}✔ Certificate issued successfully via $ca${NC}"
+          stream_progress "Certificate issued successfully via $ca"
         fi
       fi
     done
@@ -752,8 +751,7 @@ ssl_issue() {
 
   # Certbot fallback
   if [[ "$cert_obtained" == false ]]; then
-    stream_progress "Issuing Certificate via Certbot..."
-    echo "Trying Certbot..."
+    stream_progress "Trying Certbot..."
     local certbot_exit=1
     if command -v certbot &>/dev/null; then
       certbot certonly --standalone --non-interactive --agree-tos -m "admin@$PANEL_DOMAIN" -d "$PANEL_DOMAIN" >/dev/null 2>&1
@@ -773,7 +771,7 @@ ssl_issue() {
       fi
       cert_obtained=true
       provider="certbot"
-      echo -e "${GREEN}✔ Certificate issued successfully via Certbot${NC}"
+      stream_progress "Certificate issued successfully via Certbot"
     fi
   fi
 
