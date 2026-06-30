@@ -620,8 +620,8 @@ verify_nginx_status() {
 
 ssl_fallback_to_http() {
   local reason="${1:-Unknown SSL failure}"
-  echo -e "${RED}✘ SSL failed: ${reason}${NC}"
-  echo -e "${YELLOW}⚠ Falling back to HTTP — panel will be accessible via HTTP${NC}"
+  echo -e "${RED}✘ SSL failed: ${reason}${NC}" >&2
+  echo -e "${YELLOW}⚠ Falling back to HTTP — panel will be accessible via HTTP${NC}" >&2
 
   update_env "PANEL_PROTOCOL" "http"
   update_env "SSL_ENABLED" "false"
@@ -634,8 +634,7 @@ ssl_fallback_to_http() {
   fi
   write_http_nginx_template "${INSTALL_DIR}/nginx/nginx.conf.template"
 
-  docker compose -f "${INSTALL_DIR}/docker-compose.yml" down nginx >/dev/null 2>&1 || true
-  docker compose -f "${INSTALL_DIR}/docker-compose.yml" up -d nginx >/dev/null 2>&1 || true
+  (sleep 2 && docker exec hmpanel-nginx sh -c "envsubst '\$APP_PORT \$BACKEND_PORT' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && nginx -s reload") >/dev/null 2>&1 &
 }
 
 ssl_issue() {
@@ -878,19 +877,17 @@ ssl_transactional() {
     env_hash_after=$(md5sum "${INSTALL_DIR}/.env" 2>/dev/null | awk '{print $1}')
     
     stream_progress "Reloading Nginx gracefully..."
-    docker exec hmpanel-nginx nginx -s reload >/dev/null 2>&1 || docker restart hmpanel-nginx >/dev/null 2>&1
-    
-    if [[ "$env_hash_before" != "$env_hash_after" ]]; then
-      stream_progress "Configuration changed. Restarting application containers..."
-      docker restart hmpanel-panel hmpanel-app >/dev/null 2>&1 || true
-      containers_restarted=true
-    else
-      stream_progress "Configuration unchanged. Skipping application restarts."
-    fi
+    docker exec hmpanel-nginx sh -c "envsubst '\$APP_PORT \$BACKEND_PORT' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && nginx -s reload" >/dev/null 2>&1 || docker restart hmpanel-nginx >/dev/null 2>&1
     
     local verify_out
     verify_out=$(verify_e2e_health "$PANEL_DOMAIN")
     if echo "$verify_out" | grep -q '"success": true'; then
+      if [[ "$env_hash_before" != "$env_hash_after" ]]; then
+        stream_progress "Configuration changed. Restarting application containers in background..."
+        (sleep 2 && docker restart hmpanel-panel hmpanel-app) >/dev/null 2>&1 &
+      else
+        stream_progress "Configuration unchanged. Skipping application restarts."
+      fi
       echo "$issue_out"
       rm -rf "$BACKUP_DIR"
       exit 0
@@ -908,12 +905,7 @@ ssl_transactional() {
   cp -r "$BACKUP_DIR/ssl_backup" "$SSL_DIR" 2>/dev/null || true
   
   stream_progress "Reloading Nginx to apply rollback..."
-  docker exec hmpanel-nginx nginx -s reload >/dev/null 2>&1 || docker restart hmpanel-nginx >/dev/null 2>&1
-  
-  if [[ "$containers_restarted" == "true" ]] || [[ "$issue_code" -ne 0 ]]; then
-    stream_progress "Restarting application containers to restore state..."
-    docker restart hmpanel-panel hmpanel-app >/dev/null 2>&1 || true
-  fi
+  docker exec hmpanel-nginx sh -c "envsubst '\$APP_PORT \$BACKEND_PORT' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && nginx -s reload" >/dev/null 2>&1 || docker restart hmpanel-nginx >/dev/null 2>&1
   
   rm -rf "$BACKUP_DIR"
   
@@ -1228,13 +1220,20 @@ verify_e2e_health() {
 }
 
 ssl_enable() {
-  echo -e "${BOLD}--- Enable HTTPS ---${NC}\n"
+  if [[ "$JSON_OUTPUT" != "true" ]]; then
+    echo -e "${BOLD}--- Enable HTTPS ---${NC}\n"
+  fi
   local cert_file="${INSTALL_DIR}/nginx/ssl/fullchain.pem"
   
   if [[ ! -f "$cert_file" ]]; then
-    echo -e "${YELLOW}⚠ Certificate missing. Automatically running SSL Issue workflow...${NC}"
-    ssl_issue
-    return
+    if [[ "$JSON_OUTPUT" == "true" ]]; then
+      output_json false "CERTIFICATE_MISSING" "{\"reason\":\"Certificate file fullchain.pem not found.\"}"
+      exit 1
+    else
+      echo -e "${YELLOW}⚠ Certificate missing. Automatically running SSL Issue workflow...${NC}"
+      ssl_issue
+      return
+    fi
   fi
 
   local end_date
@@ -1244,12 +1243,17 @@ ssl_enable() {
   local current_epoch=$(date +%s)
   
   if [[ -n "$expiration_epoch" && $expiration_epoch -lt $current_epoch ]]; then
-    echo -e "${YELLOW}⚠ Certificate expired. Automatically renewing...${NC}"
-    ssl_renew
-    return
+    if [[ "$JSON_OUTPUT" == "true" ]]; then
+      output_json false "CERTIFICATE_EXPIRED" "{\"reason\":\"Certificate expired on $end_date.\"}"
+      exit 1
+    else
+      echo -e "${YELLOW}⚠ Certificate expired. Automatically renewing...${NC}"
+      ssl_renew
+      return
+    fi
   fi
 
-  echo "Enabling HTTPS..."
+  if [[ "$JSON_OUTPUT" != "true" ]]; then echo "Enabling HTTPS..."; fi
   update_env "PANEL_PROTOCOL" "https"
   update_env "SSL_ENABLED" "true"
   source "${INSTALL_DIR}/.env"
@@ -1259,10 +1263,16 @@ ssl_enable() {
     cp "${INSTALL_DIR}/nginx/nginx.conf.template.ssl" "${INSTALL_DIR}/nginx/nginx.conf.template"
   fi
 
-  docker restart hmpanel-nginx >/dev/null 2>&1 || true
-  sleep 2
-  verify_nginx_status
-  pause
+  # Defer Nginx reload to avoid Network Error in headless mode
+  (sleep 2 && docker exec hmpanel-nginx sh -c "envsubst '\$APP_PORT \$BACKEND_PORT' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && nginx -s reload") >/dev/null 2>&1 &
+
+  if [[ "$JSON_OUTPUT" == "true" ]]; then
+    output_json true "HTTPS_ENABLED"
+    exit 0
+  else
+    verify_nginx_status
+    pause
+  fi
 }
 
 ssl_disable() {
@@ -1655,6 +1665,9 @@ if [[ "$JSON_OUTPUT" == "true" || "${1:-}" == "ssl" || "${1:-}" == "doctor" || "
       selfsigned)
         export PANEL_DOMAIN="${3:-}"
         ssl_transactional "ssl_selfsigned ${3:-}"
+        ;;
+      enable)
+        ssl_enable
         ;;
       disable)
         ssl_disable

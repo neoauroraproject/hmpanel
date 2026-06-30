@@ -304,7 +304,7 @@ export class SslService {
 
   async switchMode(enableHttps: boolean) {
     try {
-      const cmdAction = enableHttps ? 'repair' : 'disable';
+      const cmdAction = enableHttps ? 'enable' : 'disable';
       await this.hmctl.execute('ssl', cmdAction);
       return { success: true, https: enableHttps };
     } catch (e) {
