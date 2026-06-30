@@ -613,14 +613,10 @@ step_1_configuration() {
 
   # Configure nginx for HTTP-only AFTER files are in place
   if [[ "$SSL_CHOICE" == 3 ]]; then
-<<<<<<< HEAD
-    sed -i 's/listen 443 ssl;/# SSL disabled/' "${INSTALL_DIR}/nginx/nginx.conf.template" 2>/dev/null || true
-=======
     if [[ -f "${INSTALL_DIR}/nginx/nginx.conf.template" ]] && ! [[ -f "${INSTALL_DIR}/nginx/nginx.conf.template.ssl" ]]; then
       cp "${INSTALL_DIR}/nginx/nginx.conf.template" "${INSTALL_DIR}/nginx/nginx.conf.template.ssl"
     fi
     write_http_nginx_template "${INSTALL_DIR}/nginx/nginx.conf.template"
->>>>>>> aa2f827 (feat: redesign SSL Manager, introduce strict verification and API capability resolver)
     info "Nginx configured for HTTP-only mode"
   fi
 }
@@ -880,8 +876,6 @@ step_8_ssl() {
   SSL_STATUS="disabled"
 
   if [[ "$SSL_CHOICE" == 1 ]]; then
-<<<<<<< HEAD
-=======
     # ── Verify DNS and Port 80 availability ──────────────────────
     if ! verify_dns "$DOMAIN"; then
       ssl_fallback_to_http "DNS verification failed for $DOMAIN"
@@ -891,7 +885,6 @@ step_8_ssl() {
       ssl_fallback_to_http "Port 80 is occupied"
       return 0
     fi
->>>>>>> aa2f827 (feat: redesign SSL Manager, introduce strict verification and API capability resolver)
 
     # ── 1. Install dependencies ──────────────────────────────────
     set +e
