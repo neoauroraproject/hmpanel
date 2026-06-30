@@ -103,11 +103,11 @@ run_with_spinner() {
   "${cmd[@]}" > "$tmp_out" 2>&1 &
   local pid=$!
 
-  local spin='-\|/'
+  local spinner=( "⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏" )
   local i=0
   while kill -0 $pid 2>/dev/null; do
-    i=$(( (i+1) % 4 ))
-    echo -ne "\r  ${YELLOW}${spin:$i:1}${NC}  $msg..."
+    i=$(( (i+1) % 10 ))
+    echo -ne "\r\033[K  ${CYAN}${spinner[$i]}${NC}  $msg..."
     sleep 0.1
   done
   echo -ne "\r\033[K" # Clear line
@@ -150,8 +150,8 @@ check_os() {
   case "$OS_ID" in
     ubuntu|debian|linuxmint)
       PKG_MANAGER="apt-get"
-      PKG_UPDATE="apt-get update -qq"
-      PKG_INSTALL="apt-get install -y -qq"
+      PKG_UPDATE="DEBIAN_FRONTEND=noninteractive apt-get update -qq"
+      PKG_INSTALL="DEBIAN_FRONTEND=noninteractive apt-get install -y -qq"
       ;;
     centos|rhel|fedora|rocky|almalinux)
       PKG_MANAGER="yum"
@@ -161,8 +161,8 @@ check_os() {
     *)
       warn "Unsupported OS: $OS_ID $OS_VERSION. Continuing anyway..."
       PKG_MANAGER="apt-get"
-      PKG_UPDATE="apt-get update -qq"
-      PKG_INSTALL="apt-get install -y -qq"
+      PKG_UPDATE="DEBIAN_FRONTEND=noninteractive apt-get update -qq"
+      PKG_INSTALL="DEBIAN_FRONTEND=noninteractive apt-get install -y -qq"
       ;;
   esac
   log "OS detected: $PRETTY_NAME"
