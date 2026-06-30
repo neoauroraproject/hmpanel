@@ -16,7 +16,9 @@ export class PanelsScheduler {
   @Cron(CronExpression.EVERY_30_SECONDS)
   async handleGlobalSync() {
     if (this.isSyncing) {
-      this.logger.warn('Previous global sync is still running. Skipping this cycle.');
+      this.logger.warn(
+        'Previous global sync is still running. Skipping this cycle.',
+      );
       return;
     }
 
@@ -24,15 +26,19 @@ export class PanelsScheduler {
     this.logger.log('Starting global panel sync...');
 
     try {
-      const panels = await this.prisma.panel.findMany({ select: { id: true, name: true } });
-      
+      const panels = await this.prisma.panel.findMany({
+        select: { id: true, name: true },
+      });
+
       for (const panel of panels) {
         try {
           await this.panelsService.sync(panel.id);
           this.logger.debug(`Synced panel ${panel.name} successfully.`);
         } catch (error) {
-          this.logger.error(`Failed to sync panel ${panel.name}: ${error.message}`);
-          
+          this.logger.error(
+            `Failed to sync panel ${panel.name}: ${error.message}`,
+          );
+
           await this.prisma.syncState.upsert({
             where: { panelId: panel.id },
             update: {
@@ -45,12 +51,12 @@ export class PanelsScheduler {
               lastSync: new Date(0),
               status: 'offline',
               errorLogs: error.message,
-            }
+            },
           });
 
           await this.prisma.panel.update({
             where: { id: panel.id },
-            data: { status: 'offline', lastOnline: null }
+            data: { status: 'offline', lastOnline: null },
           });
         }
       }

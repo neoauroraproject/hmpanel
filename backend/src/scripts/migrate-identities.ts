@@ -3,30 +3,32 @@ import * as crypto from 'crypto';
 
 export async function runIdentityMigration(prisma: PrismaClient) {
   console.log('Starting identity migration (v1.3.0-identity-split)...');
-  
+
   // 1. Fetch all clients with their inbounds
   const clients = await prisma.client.findMany({
     include: {
       inbounds: {
         include: {
-          inbound: true
-        }
-      }
-    }
+          inbound: true,
+        },
+      },
+    },
   });
 
   console.log(`Found ${clients.length} clients to migrate.`);
 
   for (const client of clients) {
     if (client.inbounds.length === 0) {
-      console.log(`Client ${client.email} has no inbounds. Setting panelId to a dummy value or skipping.`);
+      console.log(
+        `Client ${client.email} has no inbounds. Setting panelId to a dummy value or skipping.`,
+      );
       // If we must set a panelId but there are no inbounds, we can't reliably guess the panel.
       // But let's check if there are any panels.
       const firstPanel = await prisma.panel.findFirst();
       if (firstPanel) {
         await prisma.client.update({
           where: { id: client.id },
-          data: { panelId: firstPanel.id }
+          data: { panelId: firstPanel.id },
         });
       }
       continue;
@@ -47,7 +49,7 @@ export async function runIdentityMigration(prisma: PrismaClient) {
     const primaryPanelId = uniquePanels[0];
     await prisma.client.update({
       where: { id: client.id },
-      data: { panelId: primaryPanelId }
+      data: { panelId: primaryPanelId },
     });
 
     // For any additional panels, we must DUPLICATE the client
@@ -56,8 +58,10 @@ export async function runIdentityMigration(prisma: PrismaClient) {
       const newId = crypto.randomUUID();
 
       // Find inbounds for this specific panel
-      const inboundsForThisPanel = client.inbounds.filter(ci => ci.inbound?.panelId === additionalPanelId);
-      
+      const inboundsForThisPanel = client.inbounds.filter(
+        (ci) => ci.inbound?.panelId === additionalPanelId,
+      );
+
       // Create a duplicate client record
       await prisma.client.create({
         data: {
@@ -85,11 +89,11 @@ export async function runIdentityMigration(prisma: PrismaClient) {
           createdAt: client.createdAt,
           // Re-link the inbounds to the new client
           inbounds: {
-            create: inboundsForThisPanel.map(ci => ({
-              inboundId: ci.inboundId
-            }))
-          }
-        }
+            create: inboundsForThisPanel.map((ci) => ({
+              inboundId: ci.inboundId,
+            })),
+          },
+        },
       });
 
       // Remove the old links from the primary client
@@ -98,9 +102,9 @@ export async function runIdentityMigration(prisma: PrismaClient) {
           where: {
             clientId_inboundId: {
               clientId: client.id,
-              inboundId: ci.inboundId
-            }
-          }
+              inboundId: ci.inboundId,
+            },
+          },
         });
       }
     }
@@ -109,6 +113,6 @@ export async function runIdentityMigration(prisma: PrismaClient) {
   console.log('Migration complete.');
   return {
     clientsMigrated: clients.length,
-    success: true
+    success: true,
   };
 }

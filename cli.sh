@@ -223,6 +223,216 @@ EOF
   sed -i "s/SERVER_NAME_PLACEHOLDER/$srv_name/g" "$target_file"
 }
 
+write_ssl_nginx_template() {
+  local target_file="$1"
+  local srv_name="${2:-${PANEL_DOMAIN:-${DOMAIN:-_}}}"
+  cat > "$target_file" <<'EOF'
+user nginx;
+worker_processes auto;
+error_log /var/log/nginx/error.log warn;
+pid /var/run/nginx.pid;
+
+events {
+    worker_connections 1024;
+    use epoll;
+    multi_accept on;
+}
+
+http {
+    include       /etc/nginx/mime.types;
+    default_type  application/octet-stream;
+
+    log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                    '$status $body_bytes_sent "$http_referer" '
+                    '"$http_user_agent" "$http_x_forwarded_for"';
+
+    access_log /var/log/nginx/access.log main;
+
+    sendfile        on;
+    tcp_nopush      on;
+    tcp_nodelay     on;
+    keepalive_timeout 65;
+    types_hash_max_size 2048;
+    client_max_body_size 50M;
+
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    # Gzip compression
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 6;
+    gzip_types text/plain text/css text/xml application/json application/javascript application/xml+rss image/svg+xml;
+
+    # Rate limiting
+    limit_req_zone $binary_remote_addr zone=api_limit:10m rate=30r/s;
+    limit_req_zone $binary_remote_addr zone=login_limit:10m rate=5r/m;
+
+    upstream backend {
+        server panel-app:${BACKEND_PORT};
+        keepalive 32;
+    }
+
+    upstream frontend {
+        server panel-app:${APP_PORT};
+        keepalive 32;
+    }
+
+    # HTTP → HTTPS redirect
+    server {
+        listen 80;
+        server_name SERVER_NAME_PLACEHOLDER localhost 127.0.0.1;
+
+        # Redirect all other HTTP traffic to HTTPS
+        location / {
+            return 301 https://$host$request_uri;
+        }
+    }
+
+    # HTTPS — Main application server
+    server {
+        listen 443 ssl;
+        http2 on;
+        server_name SERVER_NAME_PLACEHOLDER;
+
+        # SSL certificates (auto-updated by certbot or manual)
+        ssl_certificate     /etc/nginx/ssl/fullchain.pem;
+        ssl_certificate_key /etc/nginx/ssl/privkey.pem;
+
+        # Modern SSL configuration
+        ssl_protocols TLSv1.2 TLSv1.3;
+        ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
+        ssl_prefer_server_ciphers off;
+        ssl_session_cache shared:SSL:10m;
+        ssl_session_timeout 1d;
+        ssl_session_tickets off;
+
+        # HSTS
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+        # ── Backend API ──────────────────────────────────────────
+        location /api/ {
+            limit_req zone=api_limit burst=50 nodelay;
+            proxy_pass http://backend/;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection 'upgrade';
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_cache_bypass $http_upgrade;
+            proxy_read_timeout 300s;
+            proxy_connect_timeout 75s;
+        }
+
+        # ── WebSockets ───────────────────────────────────────────
+        location /socket.io/ {
+            proxy_pass http://backend/socket.io/;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection 'upgrade';
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_cache_bypass $http_upgrade;
+            proxy_read_timeout 300s;
+            proxy_connect_timeout 75s;
+        }
+
+        # Rate-limit login endpoint
+        location = /api/auth/login {
+            limit_req zone=login_limit burst=5 nodelay;
+            proxy_pass http://backend/auth/login;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        # 🛡️ Subscription proxy (public) 🚀
+        location /s/ {
+            proxy_pass http://backend/s/;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        # 🛡️ Subscription assets proxy (3x-ui static files) 🚀
+        location /sub/ {
+            proxy_pass http://backend/sub/;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        # ── Frontend ─────────────────────────────────────────────
+        location / {
+            proxy_pass http://frontend/;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection 'upgrade';
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_cache_bypass $http_upgrade;
+        }
+
+        # ── Static assets (cache aggressively) ───────────────────
+        location /_next/static/ {
+            proxy_pass http://frontend/_next/static/;
+            proxy_cache_valid 200 1y;
+            add_header Cache-Control "public, max-age=31536000, immutable";
+        }
+    }
+}
+EOF
+  sed -i "s/SERVER_NAME_PLACEHOLDER/$srv_name/g" "$target_file"
+}
+
+LOCKFILE="/tmp/hmpanel_ssl.lock"
+
+acquire_ssl_lock() {
+  if [[ -f "$LOCKFILE" ]]; then
+    local pid
+    pid=$(cat "$LOCKFILE" 2>/dev/null || echo "")
+    if [[ -n "$pid" && "$pid" != "$$" ]] && kill -0 "$pid" 2>/dev/null; then
+      if [[ "${JSON_OUTPUT:-}" == "true" ]]; then
+        output_json false "SSL_OPERATION_IN_PROGRESS" "{\"reason\":\"SSL operation already in progress (PID $pid).\"}"
+        exit 49
+      else
+        echo -e "${RED}✘ SSL operation already in progress (PID $pid).${NC}"
+        exit 1
+      fi
+    fi
+  fi
+  echo "$$" > "$LOCKFILE"
+  # Set trap to clean up on exit
+  trap 'rm -f "$LOCKFILE"' EXIT
+}
+
+reload_nginx() {
+  local domain="${PANEL_DOMAIN:-${DOMAIN:-localhost}}"
+  docker exec \
+    -e APP_PORT="${APP_PORT:-3000}" \
+    -e BACKEND_PORT="${BACKEND_PORT:-4000}" \
+    -e PANEL_DOMAIN="$domain" \
+    hmpanel-nginx sh -c "envsubst '\$APP_PORT \$BACKEND_PORT \$PANEL_DOMAIN' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && nginx -s reload" >/dev/null 2>&1 || docker restart hmpanel-nginx >/dev/null 2>&1
+}
+
+reload_nginx_deferred() {
+  (sleep 2 && reload_nginx) >/dev/null 2>&1 &
+}
+
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -635,13 +845,14 @@ ssl_fallback_to_http() {
   write_http_nginx_template "${INSTALL_DIR}/nginx/nginx.conf.template"
 
   if docker ps --format '{{.Names}}' | grep -q "^hmpanel-nginx$"; then
-    (sleep 2 && docker exec hmpanel-nginx sh -c "envsubst '\$APP_PORT \$BACKEND_PORT' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && nginx -s reload") >/dev/null 2>&1 &
+    reload_nginx_deferred
   else
     (sleep 2 && docker start hmpanel-nginx) >/dev/null 2>&1 &
   fi
 }
 
 ssl_issue() {
+  acquire_ssl_lock
   if [[ "$JSON_OUTPUT" != "true" ]]; then
     echo -e "${BOLD}--- Issue / Renew SSL ---${NC}\n"
   fi
@@ -785,11 +996,7 @@ ssl_issue() {
     update_env "SSL_PROVIDER" "$provider"
     update_env "NEXT_PUBLIC_API_URL" "https://${PANEL_DOMAIN}/api"
 
-    if [[ -f "${INSTALL_DIR}/nginx/nginx.conf.template.ssl" ]]; then
-      cp "${INSTALL_DIR}/nginx/nginx.conf.template.ssl" "${INSTALL_DIR}/nginx/nginx.conf.template"
-    else
-      sed -i 's/# SSL disabled/listen 443 ssl;/' "${INSTALL_DIR}/nginx/nginx.conf.template" 2>/dev/null || true
-    fi
+    write_ssl_nginx_template "${INSTALL_DIR}/nginx/nginx.conf.template" "$PANEL_DOMAIN"
 
     stream_progress "Restarting Nginx..."
     docker start hmpanel-nginx >/dev/null 2>&1 || true
@@ -816,6 +1023,7 @@ ssl_issue() {
 }
 
 ssl_selfsigned() {
+  acquire_ssl_lock
   local domain="${1:-localhost}"
   if [[ "$JSON_OUTPUT" != "true" ]]; then
     echo -e "${BOLD}--- Generating Self-Signed SSL ---${NC}\n"
@@ -838,9 +1046,7 @@ ssl_selfsigned() {
   update_env "SSL_PROVIDER" "self-signed"
   update_env "NEXT_PUBLIC_API_URL" "https://${domain}/api"
 
-  if [[ -f "${INSTALL_DIR}/nginx/nginx.conf.template.ssl" ]]; then
-    cp "${INSTALL_DIR}/nginx/nginx.conf.template.ssl" "${INSTALL_DIR}/nginx/nginx.conf.template"
-  fi
+  write_ssl_nginx_template "${INSTALL_DIR}/nginx/nginx.conf.template" "$domain"
 
   docker start hmpanel-nginx >/dev/null 2>&1 || true
   sleep 2
@@ -855,6 +1061,7 @@ ssl_selfsigned() {
 }
 
 ssl_transactional() {
+  acquire_ssl_lock
   local action="$1"
   stream_progress "Initiating Transactional SSL workflow..."
   local SSL_DIR="${INSTALL_DIR}/nginx/ssl"
@@ -883,7 +1090,7 @@ ssl_transactional() {
     env_hash_after=$(md5sum "${INSTALL_DIR}/.env" 2>/dev/null | awk '{print $1}')
     
     stream_progress "Reloading Nginx gracefully..."
-    docker exec hmpanel-nginx sh -c "envsubst '\$APP_PORT \$BACKEND_PORT' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && nginx -s reload" >/dev/null 2>&1 || docker restart hmpanel-nginx >/dev/null 2>&1
+    reload_nginx
     
     local verify_out
     verify_out=$(verify_e2e_health "$PANEL_DOMAIN")
@@ -911,7 +1118,7 @@ ssl_transactional() {
   cp -r "$BACKUP_DIR/ssl_backup" "$SSL_DIR" 2>/dev/null || true
   
   stream_progress "Reloading Nginx to apply rollback..."
-  docker exec hmpanel-nginx sh -c "envsubst '\$APP_PORT \$BACKEND_PORT' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && nginx -s reload" >/dev/null 2>&1 || docker restart hmpanel-nginx >/dev/null 2>&1
+  reload_nginx
   
   if ! verify_nginx_status "true"; then
     stream_progress "Rollback failed to start Nginx. Falling back to HTTP..."
@@ -1090,11 +1297,11 @@ verify_nginx() {
 
 verify_tcp() {
   local domain="$1"
-  if timeout 2 bash -c "</dev/tcp/$domain/443" 2>/dev/null; then
-    VERIFY_STEP_MESSAGE="Port 443 accepting connections"
+  if timeout 2 bash -c "</dev/tcp/127.0.0.1/443" 2>/dev/null; then
+    VERIFY_STEP_MESSAGE="Port 443 accepting connections locally"
     return 0
   else
-    VERIFY_STEP_MESSAGE="Connection refused or timed out"
+    VERIFY_STEP_MESSAGE="Connection refused or timed out on 127.0.0.1:443"
     return 1
   fi
 }
@@ -1102,7 +1309,7 @@ verify_tcp() {
 verify_https_respond() {
   local domain="$1"
   local out
-  if out=$(curl -s -k -o /dev/null -w "%{http_code}" --connect-timeout 2 "https://$domain" 2>/dev/null); then
+  if out=$(curl -s -k -o /dev/null -w "%{http_code}" --connect-timeout 2 --resolve "$domain:443:127.0.0.1" "https://$domain" 2>/dev/null); then
     if [[ "$out" != "000" ]]; then
       VERIFY_STEP_MESSAGE="HTTPS responding (HTTP $out)"
       return 0
@@ -1115,12 +1322,12 @@ verify_https_respond() {
 verify_tls() {
   local domain="$1"
   local out
-  out=$(curl -s -k -v -I --connect-timeout 5 "https://$domain" 2>&1)
+  out=$(curl -s -k -v -I --connect-timeout 5 --resolve "$domain:443:127.0.0.1" "https://$domain" 2>&1)
   if echo "$out" | grep -q "SSL connection using"; then
     VERIFY_STEP_MESSAGE="TLS connection established"
     if [[ -n "$VERIFY_LOG_FILE" ]]; then 
       echo "[verify_tls] $out" | grep -E "SSL connection|Server certificate" >> "$VERIFY_LOG_FILE"
-      echo | openssl s_client -connect "${domain}:443" -servername "${domain}" 2>/dev/null | openssl x509 -noout -subject -issuer -dates >> "$VERIFY_LOG_FILE"
+      echo | openssl s_client -connect "127.0.0.1:443" -servername "${domain}" 2>/dev/null | openssl x509 -noout -subject -issuer -dates >> "$VERIFY_LOG_FILE"
     fi
     return 0
   else
@@ -1136,7 +1343,7 @@ verify_tls() {
 verify_http_redirect() {
   local domain="$1"
   local out
-  out=$(curl -s -I -o /dev/null -w "%{http_code}" --connect-timeout 5 "http://$domain" 2>/dev/null || echo "000")
+  out=$(curl -s -I -o /dev/null -w "%{http_code}" --connect-timeout 5 --resolve "$domain:80:127.0.0.1" "http://$domain" 2>/dev/null || echo "000")
   if [[ "$out" == "301" || "$out" == "302" || "$out" == "308" ]]; then
     VERIFY_STEP_MESSAGE="HTTP to HTTPS redirect working"
     VERIFY_STEP_DETAILS="{\"httpCode\": \"$out\"}"
@@ -1151,7 +1358,7 @@ verify_http_redirect() {
 verify_backend() {
   local domain="$1"
   local out
-  out=$(curl -s -k --connect-timeout 5 "https://$domain/api/health" 2>/dev/null || echo "FAIL")
+  out=$(curl -s -k --connect-timeout 5 --resolve "$domain:443:127.0.0.1" "https://$domain/api/health" 2>/dev/null || echo "FAIL")
   if [[ "$out" == *"status"* || "$out" == *"ok"* ]]; then
     VERIFY_STEP_MESSAGE="Backend healthy"
     VERIFY_STEP_DETAILS="{\"response\": \"ok\"}"
@@ -1168,7 +1375,7 @@ verify_backend() {
 verify_frontend() {
   local domain="$1"
   local out
-  out=$(curl -s -o /dev/null -w "%{http_code}" -k --connect-timeout 5 "https://$domain" 2>/dev/null || echo "000")
+  out=$(curl -s -o /dev/null -w "%{http_code}" -k --connect-timeout 5 --resolve "$domain:443:127.0.0.1" "https://$domain" 2>/dev/null || echo "000")
   if [[ "$out" == "200" ]]; then
     VERIFY_STEP_MESSAGE="Frontend reachable"
     VERIFY_STEP_DETAILS="{\"httpCode\": \"$out\"}"
@@ -1183,7 +1390,7 @@ verify_frontend() {
 verify_subscription() {
   local domain="$1"
   local out
-  out=$(curl -s -o /dev/null -w "%{http_code}" -k --connect-timeout 5 "https://$domain/sub/healthcheck" 2>/dev/null || echo "000")
+  out=$(curl -s -o /dev/null -w "%{http_code}" -k --connect-timeout 5 --resolve "$domain:443:127.0.0.1" "https://$domain/sub/healthcheck" 2>/dev/null || echo "000")
   if [[ "$out" != "502" && "$out" != "000" ]]; then
     VERIFY_STEP_MESSAGE="Subscription endpoint reachable (HTTP $out)"
     VERIFY_STEP_DETAILS="{\"httpCode\": \"$out\"}"
@@ -1231,6 +1438,7 @@ verify_e2e_health() {
 }
 
 ssl_enable() {
+  acquire_ssl_lock
   if [[ "$JSON_OUTPUT" != "true" ]]; then
     echo -e "${BOLD}--- Enable HTTPS ---${NC}\n"
   fi
@@ -1270,12 +1478,9 @@ ssl_enable() {
   source "${INSTALL_DIR}/.env"
   update_env "NEXT_PUBLIC_API_URL" "https://${PANEL_DOMAIN}/api"
 
-  if [[ -f "${INSTALL_DIR}/nginx/nginx.conf.template.ssl" ]]; then
-    cp "${INSTALL_DIR}/nginx/nginx.conf.template.ssl" "${INSTALL_DIR}/nginx/nginx.conf.template"
-  fi
+  write_ssl_nginx_template "${INSTALL_DIR}/nginx/nginx.conf.template" "$PANEL_DOMAIN"
 
-  # Defer Nginx reload to avoid Network Error in headless mode
-  (sleep 2 && docker exec hmpanel-nginx sh -c "envsubst '\$APP_PORT \$BACKEND_PORT' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && nginx -s reload") >/dev/null 2>&1 &
+  reload_nginx_deferred
 
   if [[ "$JSON_OUTPUT" == "true" ]]; then
     output_json true "HTTPS_ENABLED"
@@ -1287,6 +1492,7 @@ ssl_enable() {
 }
 
 ssl_disable() {
+  acquire_ssl_lock
   if [[ "$JSON_OUTPUT" != "true" ]]; then
     echo -e "${BOLD}--- Disable HTTPS ---${NC}\n"
     echo -e "${YELLOW}⚠ Warning: This will switch the panel to HTTP mode.${NC}"
@@ -1313,6 +1519,7 @@ ssl_disable() {
 }
 
 ssl_renew() {
+  acquire_ssl_lock
   if [[ "$JSON_OUTPUT" != "true" ]]; then
     echo -e "${BOLD}--- Renew Existing Certificate ---${NC}\n"
   fi
@@ -1354,7 +1561,7 @@ ssl_renew() {
     fi
   fi
 
-  docker restart hmpanel-nginx >/dev/null 2>&1 || true
+  reload_nginx
   
   if [[ "$JSON_OUTPUT" == "true" ]]; then
     # We must escape newlines for valid JSON
@@ -1410,44 +1617,70 @@ ssl_test_dns() {
 }
 
 ssl_repair() {
+  acquire_ssl_lock
   if [[ "$JSON_OUTPUT" != "true" ]]; then
     echo -e "${BOLD}--- Repair SSL ---${NC}\n"
-    echo "Checking configuration..."
+    echo "Rebuilding configuration..."
   fi
   source "${INSTALL_DIR}/.env"
-  if [[ "${SSL_ENABLED}" == "true" ]]; then
-    if [[ "$JSON_OUTPUT" != "true" ]]; then echo "Desired State: HTTPS"; fi
-    local cert_file="${INSTALL_DIR}/nginx/ssl/fullchain.pem"
-    if [[ ! -f "$cert_file" ]]; then
-      if [[ "$JSON_OUTPUT" != "true" ]]; then echo -e "${RED}✘ Certificate missing. Trying to reissue...${NC}"; fi
-      ssl_issue
-      return
-    fi
-    local end_date=$(openssl x509 -enddate -noout -in "$cert_file" 2>/dev/null | cut -d= -f2 || echo "")
-    local expiration_epoch=$(date -d "$end_date" +%s 2>/dev/null || echo "")
-    local current_epoch=$(date +%s)
-    if [[ -n "$expiration_epoch" && $expiration_epoch -lt $current_epoch ]]; then
-      if [[ "$JSON_OUTPUT" != "true" ]]; then echo -e "${RED}✘ Certificate expired. Trying to renew...${NC}"; fi
-      ssl_renew
-      return
-    fi
-    if [[ "$JSON_OUTPUT" != "true" ]]; then echo "Certificate looks valid. Verifying nginx..."; fi
-    
-    if [[ "$JSON_OUTPUT" == "true" ]]; then
-      output_json true "REPAIR_SUCCESS"
-      exit 0
+  local domain="${PANEL_DOMAIN:-${DOMAIN:-localhost}}"
+  
+  # 1. Rediscover installed certificates
+  local cert_file="${INSTALL_DIR}/nginx/ssl/fullchain.pem"
+  local key_file="${INSTALL_DIR}/nginx/ssl/privkey.pem"
+  local cert_exists=false
+  if [[ -f "$cert_file" && -f "$key_file" ]]; then
+    cert_exists=true
+  fi
+
+  # 2. Detect certificate provider
+  local provider="none"
+  if [[ "$cert_exists" == "true" ]]; then
+    local issuer
+    issuer=$(openssl x509 -issuer -noout -in "$cert_file" 2>/dev/null || echo "")
+    if [[ "$issuer" == *"Let's Encrypt"* ]]; then
+      provider="letsencrypt"
+    elif [[ "$issuer" == *"ZeroSSL"* ]]; then
+      provider="zerossl"
+    elif [[ "$issuer" == *"localhost"* || "$issuer" == *"State"* ]]; then
+      provider="self-signed"
     else
-      verify_nginx_status
-      pause
+      provider="uploaded"
     fi
+  fi
+
+  # 3. Rebuild SSL state & Nginx config
+  if [[ "$cert_exists" == "true" ]]; then
+    update_env "PANEL_PROTOCOL" "https"
+    update_env "SSL_ENABLED" "true"
+    update_env "SSL_PROVIDER" "$provider"
+    update_env "NEXT_PUBLIC_API_URL" "https://${domain}/api"
+    write_ssl_nginx_template "${INSTALL_DIR}/nginx/nginx.conf.template" "$domain"
   else
-    if [[ "$JSON_OUTPUT" == "true" ]]; then
-      output_json true "HTTP_MODE"
-      exit 0
+    update_env "PANEL_PROTOCOL" "http"
+    update_env "SSL_ENABLED" "false"
+    update_env "SSL_PROVIDER" "none"
+    update_env "NEXT_PUBLIC_API_URL" "http://${domain}/api"
+    write_http_nginx_template "${INSTALL_DIR}/nginx/nginx.conf.template" "$domain"
+  fi
+
+  # 4. Reload Nginx
+  reload_nginx
+
+  # 5. Verify HTTP & HTTPS E2E
+  local verify_out
+  verify_out=$(verify_e2e_health "$domain")
+
+  if [[ "$JSON_OUTPUT" == "true" ]]; then
+    echo "$verify_out"
+    exit 0
+  else
+    if echo "$verify_out" | grep -q '"success": true'; then
+      echo -e "${GREEN}✔ SSL repaired successfully!${NC}"
     else
-      echo "Desired State is HTTP. Nothing to repair."
-      pause
+      echo -e "${RED}✘ Repair completed but verification failed.${NC}"
     fi
+    pause
   fi
 }
 
@@ -1455,12 +1688,49 @@ ssl_status() {
   echo -e "${BOLD}--- SSL Status ---${NC}\n"
   source "${INSTALL_DIR}/.env"
   
+  local cert_file="${INSTALL_DIR}/nginx/ssl/fullchain.pem"
+  local key_file="${INSTALL_DIR}/nginx/ssl/privkey.pem"
+  local cert_exists=false
+  if [[ -f "$cert_file" && -f "$key_file" ]]; then
+    cert_exists=true
+  fi
+
+  local nginx_ssl=false
+  if docker exec hmpanel-nginx cat /etc/nginx/nginx.conf 2>/dev/null | grep -q "listen 443 ssl"; then
+    nginx_ssl=true
+  fi
+
+  local nginx_server_name=""
+  nginx_server_name=$(docker exec hmpanel-nginx cat /etc/nginx/nginx.conf 2>/dev/null | grep "server_name" | grep -v "_" | awk '{print $2}' | tr -d ';' | head -n1)
+  
+  local is_corrupted=false
+  # Consistency validation
+  if [[ "${SSL_ENABLED:-}" == "true" && "${PANEL_PROTOCOL:-}" != "https" ]] || [[ "${SSL_ENABLED:-}" != "true" && "${PANEL_PROTOCOL:-}" == "https" ]]; then
+    is_corrupted=true
+  fi
+  if [[ "${SSL_ENABLED:-}" == "true" && ("${SSL_PROVIDER:-none}" == "none" || -z "${SSL_PROVIDER:-}") ]]; then
+    is_corrupted=true
+  fi
+  if [[ "${SSL_ENABLED:-}" == "true" && "$cert_exists" == false ]]; then
+    is_corrupted=true
+  fi
+  if [[ "${SSL_ENABLED:-}" == "true" && "$nginx_ssl" == false ]] || [[ "${SSL_ENABLED:-}" != "true" && "$nginx_ssl" == true ]]; then
+    is_corrupted=true
+  fi
+  if [[ "${SSL_ENABLED:-}" == "true" && -n "${PANEL_DOMAIN:-}" && "$nginx_server_name" != "$PANEL_DOMAIN" && "$nginx_server_name" != "_" ]]; then
+    is_corrupted=true
+  fi
+
+  if [[ "$is_corrupted" == "true" ]]; then
+    echo -e "${RED}${BOLD}Configuration State Corrupted${NC}"
+    echo -e "${RED}The system SSL state is inconsistent. Please run Repair SSL to rebuild it.${NC}\n"
+  fi
+
   echo -e "Desired State:    ${CYAN}${PANEL_PROTOCOL^^}${NC}"
   echo -e "Provider:         ${CYAN}${SSL_PROVIDER}${NC}"
   echo -e "Domain:           ${CYAN}${PANEL_DOMAIN}${NC}"
   
-  local cert_file="${INSTALL_DIR}/nginx/ssl/fullchain.pem"
-  if [[ -f "$cert_file" ]]; then
+  if [[ "$cert_exists" == "true" ]]; then
     local end_date=$(openssl x509 -enddate -noout -in "$cert_file" 2>/dev/null | cut -d= -f2)
     local expiration_epoch=$(date -d "$end_date" +%s 2>/dev/null)
     local current_epoch=$(date +%s)
@@ -1485,21 +1755,163 @@ ssl_status() {
     echo -e "Nginx Status:     ${RED}${nginx_status}${NC}"
   fi
 
-  if curl -skL "http://127.0.0.1/api/health" &>/dev/null; then
-    echo -e "HTTP Reachable:   ${GREEN}Yes${NC}"
+  echo -e "\n--- Diagnostics ---"
+  
+  # DNS check
+  local ip=""
+  if [[ -n "${PANEL_DOMAIN:-}" && "${PANEL_DOMAIN}" != "localhost" ]]; then
+    ip=$(dig +short "$PANEL_DOMAIN" 2>/dev/null | tail -n1)
+    if [[ -n "$ip" ]]; then
+      printf "%-22s %s\n" "DNS Resolution" "${GREEN}PASS${NC}"
+      printf "%-22s %s\n" "Resolved IP" "${CYAN}${ip}${NC}"
+    else
+      printf "%-22s %s\n" "DNS Resolution" "${RED}FAIL${NC}"
+    fi
   else
-    echo -e "HTTP Reachable:   ${RED}No${NC}"
+    printf "%-22s %s\n" "DNS Resolution" "${YELLOW}SKIP (localhost/IP)${NC}"
   fi
 
-  if curl -skL "https://127.0.0.1/api/health" &>/dev/null; then
-    echo -e "HTTPS Reachable:  ${GREEN}Yes${NC}"
-  else
-    echo -e "HTTPS Reachable:  ${RED}No${NC}"
+  # Expected Server IP
+  local public_ip
+  public_ip=$(curl -s --connect-timeout 2 https://api.ipify.org || echo "")
+  if [[ -n "$public_ip" ]]; then
+    printf "%-22s %s\n" "Expected Server IP" "${CYAN}${public_ip}${NC}"
   fi
 
-  if [[ "${PANEL_PROTOCOL}" == "https" && ! -f "$cert_file" ]]; then
-    echo -e "\n${YELLOW}⚠ Discrepancy: Desired state is HTTPS but certificate is missing. Run Repair SSL.${NC}"
+  # HTTP/HTTPS Virtual Host
+  if [[ "$nginx_status" == "running" ]]; then
+    if docker exec hmpanel-nginx cat /etc/nginx/nginx.conf 2>/dev/null | grep -q "listen 80"; then
+      printf "%-22s %s\n" "HTTP Virtual Host" "${GREEN}PASS${NC}"
+    else
+      printf "%-22s %s\n" "HTTP Virtual Host" "${RED}FAIL${NC}"
+    fi
+
+    if [[ "$nginx_ssl" == "true" ]]; then
+      printf "%-22s %s\n" "HTTPS Virtual Host" "${GREEN}PASS${NC}"
+    else
+      printf "%-22s %s\n" "HTTPS Virtual Host" "${RED}FAIL${NC}"
+    fi
+
+    if [[ -n "${PANEL_DOMAIN:-}" && ("$nginx_server_name" == "$PANEL_DOMAIN" || "$nginx_server_name" == "_") ]]; then
+      printf "%-22s %s\n" "server_name" "${GREEN}PASS${NC}"
+    else
+      printf "%-22s %s\n" "server_name" "${RED}FAIL${NC}"
+    fi
+  else
+    printf "%-22s %s\n" "HTTP Virtual Host" "${RED}FAIL${NC}"
+    printf "%-22s %s\n" "HTTPS Virtual Host" "${RED}FAIL${NC}"
+    printf "%-22s %s\n" "server_name" "${RED}FAIL${NC}"
   fi
+
+  # TCP 80 / 443
+  if timeout 2 bash -c "</dev/tcp/127.0.0.1/80" 2>/dev/null; then
+    printf "%-22s %s\n" "TCP 80" "${GREEN}PASS${NC}"
+  else
+    printf "%-22s %s\n" "TCP 80" "${RED}FAIL${NC}"
+  fi
+
+  if timeout 2 bash -c "</dev/tcp/127.0.0.1/443" 2>/dev/null; then
+    printf "%-22s %s\n" "TCP 443" "${GREEN}PASS${NC}"
+  else
+    printf "%-22s %s\n" "TCP 443" "${RED}FAIL${NC}"
+  fi
+
+  # Cert Existence & Valid
+  if [[ "$cert_exists" == "true" ]]; then
+    printf "%-22s %s\n" "Certificate Exists" "${GREEN}PASS${NC}"
+    local exp_epoch=$(date -d "$end_date" +%s 2>/dev/null)
+    local cur_epoch=$(date +%s)
+    if [[ -n "$exp_epoch" && $exp_epoch -gt $cur_epoch ]]; then
+      printf "%-22s %s\n" "Certificate Valid" "${GREEN}PASS${NC}"
+    else
+      printf "%-22s %s\n" "Certificate Valid" "${RED}FAIL${NC}"
+    fi
+  else
+    printf "%-22s %s\n" "Certificate Exists" "${RED}FAIL${NC}"
+    printf "%-22s %s\n" "Certificate Valid" "${RED}FAIL${NC}"
+  fi
+
+  # Nginx Config & Listening 443
+  if [[ "$nginx_status" == "running" ]]; then
+    if docker exec hmpanel-nginx nginx -t &>/dev/null; then
+      printf "%-22s %s\n" "Nginx Config" "${GREEN}PASS${NC}"
+    else
+      printf "%-22s %s\n" "Nginx Config" "${RED}FAIL${NC}"
+    fi
+
+    if docker exec hmpanel-nginx netstat -tuln 2>/dev/null | grep -q ":443 "; then
+      printf "%-22s %s\n" "Nginx Listening 443" "${GREEN}PASS${NC}"
+    else
+      printf "%-22s %s\n" "Nginx Listening 443" "${RED}FAIL${NC}"
+    fi
+  else
+    printf "%-22s %s\n" "Nginx Config" "${RED}FAIL${NC}"
+    printf "%-22s %s\n" "Nginx Listening 443" "${RED}FAIL${NC}"
+  fi
+
+  # TLS Handshake & Certificate Loaded
+  local tls_handshake=false
+  if [[ "$nginx_status" == "running" && "$nginx_ssl" == "true" && -n "${PANEL_DOMAIN:-}" ]]; then
+    if curl -s -k -v -I --connect-timeout 2 --resolve "${PANEL_DOMAIN}:443:127.0.0.1" "https://${PANEL_DOMAIN}" 2>&1 | grep -q "SSL connection using"; then
+      tls_handshake=true
+    fi
+  fi
+
+  if [[ "$tls_handshake" == "true" ]]; then
+    printf "%-22s %s\n" "Certificate Loaded" "${GREEN}PASS${NC}"
+    printf "%-22s %s\n" "TLS Handshake" "${GREEN}PASS${NC}"
+  else
+    printf "%-22s %s\n" "Certificate Loaded" "${RED}FAIL${NC}"
+    printf "%-22s %s\n" "TLS Handshake" "${RED}FAIL${NC}"
+  fi
+
+  # Health checks
+  if curl -s -o /dev/null -w "%{http_code}" --connect-timeout 2 "http://127.0.0.1/api/health" | grep -q "200"; then
+    printf "%-22s %s\n" "HTTP Health" "${GREEN}PASS${NC}"
+  else
+    printf "%-22s %s\n" "HTTP Health" "${RED}FAIL${NC}"
+  fi
+
+  local https_health=false
+  if [[ "$nginx_status" == "running" && "$nginx_ssl" == "true" && -n "${PANEL_DOMAIN:-}" ]]; then
+    if curl -s -k -o /dev/null -w "%{http_code}" --connect-timeout 2 --resolve "${PANEL_DOMAIN}:443:127.0.0.1" "https://${PANEL_DOMAIN}/api/health" | grep -q "200"; then
+      https_health=true
+    fi
+  fi
+
+  if [[ "$https_health" == "true" ]]; then
+    printf "%-22s %s\n" "HTTPS Health" "${GREEN}PASS${NC}"
+  else
+    printf "%-22s %s\n" "HTTPS Health" "${RED}FAIL${NC}"
+  fi
+
+  if curl -s --connect-timeout 2 "http://panel-app:4000/health" &>/dev/null || curl -s --connect-timeout 2 "http://127.0.0.1:4000/health" &>/dev/null; then
+    printf "%-22s %s\n" "Backend" "${GREEN}PASS${NC}"
+  else
+    printf "%-22s %s\n" "Backend" "${RED}FAIL${NC}"
+  fi
+
+  if curl -s --connect-timeout 2 "http://panel-app:3000" &>/dev/null || curl -s --connect-timeout 2 "http://127.0.0.1:3000" &>/dev/null; then
+    printf "%-22s %s\n" "Frontend" "${GREEN}PASS${NC}"
+  else
+    printf "%-22s %s\n" "Frontend" "${RED}FAIL${NC}"
+  fi
+
+  # Redirect
+  local redirect_ok=false
+  if [[ -n "${PANEL_DOMAIN:-}" && "${PANEL_DOMAIN}" != "localhost" ]]; then
+    local r_code
+    r_code=$(curl -s -I -o /dev/null -w "%{http_code}" --connect-timeout 2 --resolve "${PANEL_DOMAIN}:80:127.0.0.1" "http://${PANEL_DOMAIN}" || echo "000")
+    if [[ "$r_code" == "301" || "$r_code" == "302" || "$r_code" == "308" ]]; then
+      redirect_ok=true
+    fi
+  fi
+  if [[ "$redirect_ok" == "true" ]]; then
+    printf "%-22s %s\n" "Redirect" "${GREEN}PASS${NC}"
+  else
+    printf "%-22s %s\n" "Redirect" "${RED}FAIL${NC}"
+  fi
+
   pause
 }
 

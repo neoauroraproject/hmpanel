@@ -1,5 +1,22 @@
-import { Controller, Post, Get, Param, Res, UseGuards, UseInterceptors, UploadedFile, BadRequestException, Body } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation, ApiConsumes, ApiBody } from '@nestjs/swagger';
+import {
+  Controller,
+  Post,
+  Get,
+  Param,
+  Res,
+  UseGuards,
+  UseInterceptors,
+  UploadedFile,
+  BadRequestException,
+  Body,
+} from '@nestjs/common';
+import {
+  ApiTags,
+  ApiBearerAuth,
+  ApiOperation,
+  ApiConsumes,
+  ApiBody,
+} from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { RolesGuard, Roles } from '../common/roles.guard';
 import { BackupsService } from './backups.service';
@@ -29,7 +46,9 @@ export class BackupsController {
 
   @Post('analyze-upload')
   @UseInterceptors(FileInterceptor('file'))
-  @ApiOperation({ summary: 'Upload and analyze a database backup before restoring' })
+  @ApiOperation({
+    summary: 'Upload and analyze a database backup before restoring',
+  })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
@@ -51,8 +70,13 @@ export class BackupsController {
 
   @Post('restore-apply/:id')
   @ApiOperation({ summary: 'Apply a previously analyzed backup' })
-  @ApiBody({ schema: { type: 'object', properties: { fileName: { type: 'string' } } } })
-  async applyBackup(@Param('id') id: string, @Body('fileName') fileName: string) {
+  @ApiBody({
+    schema: { type: 'object', properties: { fileName: { type: 'string' } } },
+  })
+  async applyBackup(
+    @Param('id') id: string,
+    @Body('fileName') fileName: string,
+  ) {
     if (!fileName) {
       throw new BadRequestException('fileName is required');
     }

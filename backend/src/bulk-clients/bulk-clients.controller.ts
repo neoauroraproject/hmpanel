@@ -12,20 +12,41 @@ export class BulkClientsController {
   constructor(private bulkClientsService: BulkClientsService) {}
 
   @Post('enable')
-  @ApiOperation({ summary: 'Bulk enable clients (uses 3.4.2 endpoint when available, falls back to sequential)' })
+  @ApiOperation({
+    summary:
+      'Bulk enable clients (uses 3.4.2 endpoint when available, falls back to sequential)',
+  })
   bulkEnable(@Req() req: AuthRequest, @Body() body: { ids: string[] }) {
-    return this.bulkClientsService.bulkEnable(req.user.id, req.user.role, body.ids);
+    return this.bulkClientsService.bulkEnable(
+      req.user.id,
+      req.user.role,
+      body.ids,
+    );
   }
 
   @Post('disable')
-  @ApiOperation({ summary: 'Bulk disable clients (uses 3.4.2 endpoint when available, falls back to sequential)' })
+  @ApiOperation({
+    summary:
+      'Bulk disable clients (uses 3.4.2 endpoint when available, falls back to sequential)',
+  })
   bulkDisable(@Req() req: AuthRequest, @Body() body: { ids: string[] }) {
-    return this.bulkClientsService.bulkDisable(req.user.id, req.user.role, body.ids);
+    return this.bulkClientsService.bulkDisable(
+      req.user.id,
+      req.user.role,
+      body.ids,
+    );
   }
 
   @Post('export-subs')
-  @ApiOperation({ summary: 'Export subscription links for selected clients as downloadable TXT' })
+  @ApiOperation({
+    summary:
+      'Export subscription links for selected clients as downloadable TXT',
+  })
   exportSubs(@Req() req: AuthRequest, @Body() body: { ids: string[] }) {
-    return this.bulkClientsService.exportSubscriptionLinks(req.user.id, req.user.role, body.ids);
+    return this.bulkClientsService.exportSubscriptionLinks(
+      req.user.id,
+      req.user.role,
+      body.ids,
+    );
   }
 }

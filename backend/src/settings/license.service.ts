@@ -11,7 +11,7 @@ export const PREMIUM_FEATURES = [
   'XRAY_PRO',
 ] as const;
 
-export type PremiumFeature = typeof PREMIUM_FEATURES[number];
+export type PremiumFeature = (typeof PREMIUM_FEATURES)[number];
 
 @Injectable()
 export class LicenseService {
@@ -26,7 +26,7 @@ export class LicenseService {
     // In the future, this will check the 'LICENSE_KEY' from settings
     // const licenseKey = await this.settingsService.getSetting('LICENSE_KEY');
     // return verifyLicense(licenseKey, feature);
-    
+
     return true; // All features are active for now
   }
 

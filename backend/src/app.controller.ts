@@ -6,7 +6,7 @@ import { SettingsService } from './settings/settings.service';
 export class AppController {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly settings: SettingsService
+    private readonly settings: SettingsService,
   ) {}
 
   @Get('health')

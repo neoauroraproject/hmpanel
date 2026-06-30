@@ -33,11 +33,10 @@ export class StatsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private startLiveSpeedBroadcast() {
     this.interval = setInterval(() => {
       if (!this.server) return;
-      
+
       const speedData = this.monitoringService.getLatestServerStatus();
-      
+
       this.server.emit('live-speed', speedData);
-      
     }, 3000); // Poll cache every 3 seconds and broadcast
   }
 }

@@ -1,6 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { ApiCapabilityResolver, PanelCapabilities, ResolvedCapabilities } from './api-capability.resolver';
+import {
+  ApiCapabilityResolver,
+  PanelCapabilities,
+  ResolvedCapabilities,
+} from './api-capability.resolver';
 
 export interface ScanResult {
   capabilities: PanelCapabilities;
@@ -13,7 +17,7 @@ export class PanelCapabilitiesService {
 
   constructor(
     private prisma: PrismaService,
-    private apiCapabilityResolver: ApiCapabilityResolver
+    private apiCapabilityResolver: ApiCapabilityResolver,
   ) {}
 
   /**
@@ -27,10 +31,18 @@ export class PanelCapabilitiesService {
    * Performs capability resolution and persists results to the database.
    * Fills both the new JSON capabilities field, capabilityHash, and legacy boolean columns.
    */
-  async scanAndPersist(panelId: string, apiVersion: string): Promise<PanelCapabilities> {
-    this.logger.log(`[CAP_SERVICE] Scanning and persisting capabilities for panel ${panelId} (API: ${apiVersion})...`);
-    
-    const { capabilities, hash } = this.apiCapabilityResolver.resolve(apiVersion, '1.0');
+  async scanAndPersist(
+    panelId: string,
+    apiVersion: string,
+  ): Promise<PanelCapabilities> {
+    this.logger.log(
+      `[CAP_SERVICE] Scanning and persisting capabilities for panel ${panelId} (API: ${apiVersion})...`,
+    );
+
+    const { capabilities, hash } = this.apiCapabilityResolver.resolve(
+      apiVersion,
+      '1.0',
+    );
 
     await this.prisma.panel.update({
       where: { id: panelId },
@@ -40,7 +52,7 @@ export class PanelCapabilitiesService {
         capabilitySchemaVersion: '1.0',
         lastCapabilityScan: new Date(),
         capabilityHash: hash,
-        
+
         // Transitional Migration: Populate both new and legacy columns
         capClientsApi: !!capabilities.clientsApi,
         capPagination: !!capabilities.pagination,
@@ -50,10 +62,12 @@ export class PanelCapabilitiesService {
         capBulkEnable: !!capabilities.bulkEnable,
         capBulkDisable: !!capabilities.bulkDisable,
         capBulkExport: !!capabilities.bulkExport,
-      }
+      },
     });
 
-    this.logger.log(`[CAP_SERVICE] Successfully updated capabilities for panel ${panelId}`);
+    this.logger.log(
+      `[CAP_SERVICE] Successfully updated capabilities for panel ${panelId}`,
+    );
     return capabilities;
   }
 }

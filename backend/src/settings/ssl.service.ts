@@ -5,7 +5,12 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
-import { HmctlClient } from './hmctl.client';
+import * as dns from 'dns';
+import * as net from 'net';
+import * as https from 'https';
+import { TLSSocket } from 'tls';
+import axios from 'axios';
+import { HmctlClient, HmctlEvent } from './hmctl.client';
 
 const execAsync = promisify(exec);
 
@@ -16,273 +21,430 @@ export class SslService {
   private readonly nginxConfPath = '/app/nginx_host/nginx.conf.template';
   private readonly acmeShPath = '/app/acme.sh/acme.sh';
 
+  private isExecuting = false;
+
+  private getLiveEnv(): Record<string, string> {
+    const env: Record<string, string> = {};
+    try {
+      const envPath = '/app/.env';
+      if (fs.existsSync(envPath)) {
+        const content = fs.readFileSync(envPath, 'utf8');
+        const lines = content.split('\n');
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (trimmed && !trimmed.startsWith('#') && trimmed.includes('=')) {
+            const idx = trimmed.indexOf('=');
+            const key = trimmed.substring(0, idx).trim();
+            let val = trimmed.substring(idx + 1).trim();
+            if (
+              (val.startsWith('"') && val.endsWith('"')) ||
+              (val.startsWith("'") && val.endsWith("'"))
+            ) {
+              val = val.substring(1, val.length - 1);
+            }
+            env[key] = val;
+          }
+        }
+      }
+    } catch (e: any) {
+      const msg = e instanceof Error ? e.message : String(e);
+      this.logger.warn('Failed to read live .env file: ' + msg);
+    }
+    return env;
+  }
+
   private get domain() {
-    return process.env.DOMAIN || process.env.PANEL_DOMAIN || 'localhost';
+    const liveEnv = this.getLiveEnv();
+    return (
+      liveEnv.DOMAIN ||
+      liveEnv.PANEL_DOMAIN ||
+      process.env.DOMAIN ||
+      process.env.PANEL_DOMAIN ||
+      'localhost'
+    );
   }
 
   private getPeerCertificate(hostname: string): Promise<any> {
     return new Promise((resolve, reject) => {
-      const https = require('https');
-      const req = https.request({
-        hostname,
-        port: 443,
-        method: 'HEAD',
-        rejectUnauthorized: false,
-        timeout: 3000
-      }, (res: any) => {
-        const cert = res.socket.getPeerCertificate();
-        if (cert && Object.keys(cert).length > 0) {
-          resolve(cert);
-        } else {
-          reject(new Error('No certificate presented'));
-        }
-      });
+      const req = https.request(
+        {
+          hostname,
+          port: 443,
+          method: 'HEAD',
+          rejectUnauthorized: false,
+          timeout: 3000,
+        },
+        (res) => {
+          const socket = res.socket as TLSSocket | undefined;
+          const cert = socket ? socket.getPeerCertificate() : null;
+          if (cert && Object.keys(cert).length > 0) {
+            resolve(cert);
+          } else {
+            reject(new Error('No certificate presented'));
+          }
+        },
+      );
       req.on('error', reject);
-      req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
+      req.on('timeout', () => {
+        req.destroy();
+        reject(new Error('Timeout'));
+      });
       req.end();
     });
   }
 
-  private lastSuccessfulState: any = null;
+  private lastSuccessfulState: Record<string, unknown> | null = null;
   private readonly CACHE_FILE = path.join('/app/uploads', '.ssl_cache.json');
-  private lastDiagnostics: any = {
-    lastCheckTime: null,
-    lastProbeError: null,
-    domainProbed: null,
-    tlsHandshakeStatus: 'Pending',
-    certificateExpiration: null,
-    certificateIssuer: null
-  };
 
   constructor(private hmctl: HmctlClient) {
     this.loadCache();
   }
 
-
   private loadCache() {
     try {
       if (fs.existsSync(this.CACHE_FILE)) {
         const data = fs.readFileSync(this.CACHE_FILE, 'utf8');
-        this.lastSuccessfulState = JSON.parse(data);
+        this.lastSuccessfulState = JSON.parse(data) as Record<string, unknown>;
       }
-    } catch (e) {
-      this.logger.warn('Could not load SSL cache from disk: ' + e.message);
+    } catch (e: any) {
+      const msg = e instanceof Error ? e.message : String(e);
+      this.logger.warn('Could not load SSL cache from disk: ' + msg);
     }
   }
 
   private saveCache() {
     try {
-      // Ensure directory exists (uploads directory is mounted by default)
       if (!fs.existsSync('/app/uploads')) {
         fs.mkdirSync('/app/uploads', { recursive: true });
       }
-      fs.writeFileSync(this.CACHE_FILE, JSON.stringify(this.lastSuccessfulState), 'utf8');
-    } catch (e) {
-      this.logger.warn('Could not save SSL cache to disk: ' + e.message);
+      fs.writeFileSync(
+        this.CACHE_FILE,
+        JSON.stringify(this.lastSuccessfulState),
+        'utf8',
+      );
+    } catch (e: any) {
+      const msg = e instanceof Error ? e.message : String(e);
+      this.logger.warn('Could not save SSL cache to disk: ' + msg);
     }
   }
 
   async getStatus() {
-    let exists = false;
-    let expiration = null;
-    let daysRemaining = null;
-    let issuer = null;
-    let provider = 'Unknown';
-    let certPathInUse = 'Not Found';
-    let isHttpsEnabled = false;
-    let currentError = null;
+    const liveEnv = this.getLiveEnv();
+    const sslEnabled = liveEnv.SSL_ENABLED === 'true';
+    const protocol = liveEnv.PANEL_PROTOCOL || 'http';
+    const providerEnv = liveEnv.SSL_PROVIDER || 'none';
+    const domain = this.domain;
 
-    this.lastDiagnostics.domainProbed = this.domain;
-    this.lastDiagnostics.lastCheckTime = new Date().toISOString();
-
-    // We will attempt to run `docker exec hmpanel-nginx` to inspect the actual live container state.
-    // This is required because the certs and configurations are not mapped to the panel container.
+    let isNginxRunning = false;
+    let nginxConfOut = '';
     try {
-      // Check for HTTPS enabled in nginx configuration
-      const { stdout: nginxConfOut } = await execAsync('docker exec hmpanel-nginx cat /etc/nginx/nginx.conf 2>/dev/null || true');
-      if (nginxConfOut.includes('listen 443 ssl') || nginxConfOut.includes('ssl_certificate')) {
-        isHttpsEnabled = true;
+      const { stdout } = await execAsync(
+        'docker inspect -f "{{.State.Status}}" hmpanel-nginx 2>/dev/null || echo "missing"',
+      );
+      isNginxRunning = stdout.trim() === 'running';
+      if (isNginxRunning) {
+        const { stdout: conf } = await execAsync(
+          'docker exec hmpanel-nginx cat /etc/nginx/nginx.conf 2>/dev/null || true',
+        );
+        nginxConfOut = conf;
       }
+    } catch (e: any) {
+      const msg = e instanceof Error ? e.message : String(e);
+      this.logger.warn('Failed to check Nginx status: ' + msg);
+    }
 
-      // Check if certificate file exists in nginx container
-      const { stdout: certLsOut } = await execAsync('docker exec hmpanel-nginx ls /etc/nginx/ssl/fullchain.pem 2>/dev/null || true');
-      if (certLsOut.includes('/etc/nginx/ssl/fullchain.pem')) {
-        exists = true;
-        certPathInUse = '/etc/nginx/ssl/fullchain.pem';
+    const isHttpsInNginx =
+      nginxConfOut.includes('listen 443 ssl') ||
+      nginxConfOut.includes('ssl_certificate');
 
-        // Extract certificate details using LOCAL openssl (panel container has openssl installed)
-        // The cert is mounted at /etc/nginx/ssl/ in both nginx and panel containers
-        try {
-          const localCertPath = '/etc/nginx/ssl/fullchain.pem';
-          if (fs.existsSync(localCertPath)) {
-            const { stdout: enddateOut } = await execAsync(`openssl x509 -enddate -noout -in ${localCertPath}`);
-            const { stdout: issuerOut } = await execAsync(`openssl x509 -issuer -noout -in ${localCertPath}`);
-            
-            const dateStr = enddateOut.replace('notAfter=', '').trim();
-            const expDate = new Date(dateStr);
-            expiration = expDate.toISOString();
-            
-            const now = new Date();
-            const diffTime = Math.abs(expDate.getTime() - now.getTime());
-            daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-            if (expDate.getTime() < now.getTime()) {
-              daysRemaining = -daysRemaining;
-            }
+    const localCertPath = '/etc/nginx/ssl/fullchain.pem';
+    const localKeyPath = '/etc/nginx/ssl/privkey.pem';
+    const certExists =
+      fs.existsSync(localCertPath) && fs.existsSync(localKeyPath);
 
-            issuer = issuerOut.replace('issuer=', '').trim();
-            this.lastDiagnostics.certificateExpiration = expiration;
-            this.lastDiagnostics.certificateIssuer = issuer;
-            this.lastDiagnostics.tlsHandshakeStatus = 'Local Certificate Parsed';
-          } else {
-            // Fallback: try docker exec into nginx (unlikely to have openssl but worth trying)
-            const { stdout: enddateOut } = await execAsync('docker exec hmpanel-nginx openssl x509 -enddate -noout -in /etc/nginx/ssl/fullchain.pem');
-            const { stdout: issuerOut } = await execAsync('docker exec hmpanel-nginx openssl x509 -issuer -noout -in /etc/nginx/ssl/fullchain.pem');
-            
-            const dateStr = enddateOut.replace('notAfter=', '').trim();
-            const expDate = new Date(dateStr);
-            expiration = expDate.toISOString();
-            
-            const now = new Date();
-            const diffTime = Math.abs(expDate.getTime() - now.getTime());
-            daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-            if (expDate.getTime() < now.getTime()) {
-              daysRemaining = -daysRemaining;
-            }
-
-            issuer = issuerOut.replace('issuer=', '').trim();
-            this.lastDiagnostics.certificateExpiration = expiration;
-            this.lastDiagnostics.certificateIssuer = issuer;
-            this.lastDiagnostics.tlsHandshakeStatus = 'Local File System Checked';
-          }
-        } catch (certError) {
-          currentError = certError.message;
-          this.logger.error('Failed to parse certificate', certError.message);
+    // DNS Resolution
+    let dnsStatus = 'FAIL';
+    let resolvedIp = 'N/A';
+    try {
+      if (domain !== 'localhost' && !/^[0-9.]+$/.test(domain)) {
+        const ips = await dns.promises.resolve4(domain);
+        if (ips && ips.length > 0) {
+          dnsStatus = 'PASS';
+          resolvedIp = ips[0];
         }
+      } else {
+        dnsStatus = 'N/A';
+        resolvedIp = '127.0.0.1';
       }
+    } catch {
+      dnsStatus = 'FAIL';
+    }
 
-      // Detect SSL Provider via inspecting the hmpanel-nginx container mounts
-      const { stdout: inspectOut } = await execAsync('docker inspect hmpanel-nginx');
-      const nginxData = JSON.parse(inspectOut);
-      const mounts = nginxData[0]?.Mounts || [];
+    // Expected Server IP
+    let expectedServerIp = 'N/A';
+    try {
+      const ipRes = await axios.get<string>('https://api.ipify.org', {
+        timeout: 2000,
+      });
+      expectedServerIp = ipRes.data.trim();
+    } catch {
+      expectedServerIp = 'Unknown';
+    }
 
-      // Check for Let's Encrypt / Certbot mounts
-      const letsEncryptMount = mounts.find((m: any) => m.Destination.includes('letsencrypt') || m.Source.includes('letsencrypt'));
-      
-      // Also we can check if ACME is installed locally
-      const isAcmeInstalled = fs.existsSync(this.acmeShPath);
-
-      const envProvider = process.env.SSL_PROVIDER;
-
-      if (exists) {
-        if (envProvider === 'self-signed') {
-          provider = 'Self Signed';
-        } else if (envProvider === 'certbot' || letsEncryptMount) {
-          provider = 'Certbot';
-          certPathInUse = letsEncryptMount ? letsEncryptMount.Destination : certPathInUse;
-        } else if (envProvider === 'letsencrypt' || envProvider === 'zerossl' || isAcmeInstalled) {
-          provider = envProvider && envProvider !== 'none' ? envProvider : 'ACME.sh';
-        } else {
-          provider = 'Uploaded Custom Certificate';
-        }
-      } else if (isHttpsEnabled) {
-        // Reverse proxy scenario where HTTPS is enabled but nginx container does not handle certs directly
-        exists = true;
-        provider = 'Reverse Proxy / Custom';
-        certPathInUse = 'External / Host Managed';
+    // Nginx Listening 443
+    let nginxListening443 = 'FAIL';
+    try {
+      if (isNginxRunning) {
+        const { stdout } = await execAsync(
+          'docker exec hmpanel-nginx netstat -tuln 2>/dev/null || docker exec hmpanel-nginx ss -tuln 2>/dev/null || true',
+        );
+        nginxListening443 = stdout.includes(':443') ? 'PASS' : 'FAIL';
       }
+    } catch {
+      // ignore
+    }
 
-    } catch (e) {
-      this.logger.warn('Docker socket access failed. Falling back to live HTTPS probe...');
-      
-      // Fallback: Live HTTPS probe trying multiple internal and external hostnames
-      let cert = null;
-      let usedHostname = '';
-      const hostnamesToTry = [];
-      
-      // Only probe the actual domain, never localhost or 127.0.0.1
-      if (this.domain && this.domain !== 'localhost' && this.domain !== '127.0.0.1') {
-        hostnamesToTry.push(this.domain);
+    // Nginx Config Test
+    let nginxConfigTest = 'FAIL';
+    try {
+      if (isNginxRunning) {
+        await execAsync('docker exec hmpanel-nginx nginx -t');
+        nginxConfigTest = 'PASS';
       }
+    } catch {
+      // ignore
+    }
 
-      // ALWAYS fallback to internal nginx container to read the active certificate if external probe fails or domain is not set
-      hostnamesToTry.push('hmpanel-nginx');
+    // TCP checks
+    const checkPort = (port: number): Promise<'PASS' | 'FAIL'> => {
+      return new Promise((resolve) => {
+        const socket = new net.Socket();
+        socket.setTimeout(1500);
+        socket.on('connect', () => {
+          socket.destroy();
+          resolve('PASS');
+        });
+        socket.on('error', () => {
+          socket.destroy();
+          resolve('FAIL');
+        });
+        socket.on('timeout', () => {
+          socket.destroy();
+          resolve('FAIL');
+        });
+        socket.connect(port, isNginxRunning ? 'hmpanel-nginx' : '127.0.0.1');
+      });
+    };
+    const tcp80 = await checkPort(80);
+    const tcp443 = await checkPort(443);
 
-      for (const host of hostnamesToTry) {
-        try {
-          cert = await this.getPeerCertificate(host);
-          usedHostname = host;
-          this.lastDiagnostics.tlsHandshakeStatus = `Success via ${host}`;
-          this.lastDiagnostics.lastProbeError = null;
-          break; // Stop at first successful probe
-        } catch (err) {
-          currentError = err.message;
-          this.lastDiagnostics.lastProbeError = `Failed on ${host}: ${err.message}`;
-        }
-      }
+    // Cert validation
+    let certificateValid = 'FAIL';
+    let expiration: string | null = null;
+    let daysRemaining: number | null = null;
+    let issuer: string | null = null;
 
-      if (cert) {
-        exists = true;
-        isHttpsEnabled = true;
-        certPathInUse = `Live Probe via ${usedHostname}`;
-        
-        const expDate = new Date(cert.valid_to);
+    if (certExists) {
+      try {
+        const { stdout: enddateOut } = await execAsync(
+          `openssl x509 -enddate -noout -in ${localCertPath}`,
+        );
+        const { stdout: issuerOut } = await execAsync(
+          `openssl x509 -issuer -noout -in ${localCertPath}`,
+        );
+
+        const dateStr = enddateOut.replace('notAfter=', '').trim();
+        const expDate = new Date(dateStr);
         expiration = expDate.toISOString();
-        
+
         const now = new Date();
         const diffTime = Math.abs(expDate.getTime() - now.getTime());
         daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
         if (expDate.getTime() < now.getTime()) {
           daysRemaining = -daysRemaining;
+          certificateValid = 'FAIL';
+        } else {
+          certificateValid = 'PASS';
         }
-
-        const certIssuer = cert.issuer?.CN || cert.issuer?.O || 'Unknown Issuer';
-        issuer = certIssuer;
-        provider = 'Unknown';
-
-        this.lastDiagnostics.certificateExpiration = expiration;
-        this.lastDiagnostics.certificateIssuer = issuer;
-      } else {
-        this.logger.error('All live HTTPS probes failed. SSL is likely disabled, misconfigured, or inaccessible from container.');
-        provider = 'Unknown / Diagnostic Mode';
-        this.lastDiagnostics.tlsHandshakeStatus = 'Failed all probes';
+        issuer = issuerOut.replace('issuer=', '').trim();
+      } catch (certError: unknown) {
+        const msg =
+          certError instanceof Error ? certError.message : String(certError);
+        this.logger.error('Failed to parse cert: ' + msg);
       }
     }
 
+    // Peer Cert loaded
+    let certificateLoaded = 'FAIL';
+    let tlsHandshake = 'FAIL';
+    if (isNginxRunning && isHttpsInNginx) {
+      try {
+        await this.getPeerCertificate('hmpanel-nginx');
+        certificateLoaded = 'PASS';
+        tlsHandshake = 'PASS';
+      } catch {
+        // ignore
+      }
+    }
+
+    // HTTP/HTTPS Health checks
+    let httpHealth = 'FAIL';
+    let httpsHealth = 'FAIL';
+    try {
+      const httpRes = await axios.get<unknown>(
+        'http://hmpanel-nginx/api/health',
+        { timeout: 2000 },
+      );
+      if (httpRes.status === 200) httpHealth = 'PASS';
+    } catch {
+      // ignore
+    }
+
+    try {
+      const agent = new https.Agent({ rejectUnauthorized: false });
+      const httpsRes = await axios.get<unknown>(
+        'https://hmpanel-nginx/api/health',
+        { httpsAgent: agent, timeout: 2000 },
+      );
+      if (httpsRes.status === 200) httpsHealth = 'PASS';
+    } catch {
+      // ignore
+    }
+
+    // Backend / Frontend
+    let backend = 'FAIL';
+    let frontend = 'FAIL';
+    try {
+      const backendRes = await axios.get<unknown>(
+        'http://localhost:4000/health',
+        { timeout: 1500 },
+      );
+      if (backendRes.status === 200) backend = 'PASS';
+    } catch {
+      // ignore
+    }
+
+    try {
+      const frontendRes = await axios.get<unknown>('http://localhost:3000', {
+        timeout: 1500,
+      });
+      if (frontendRes.status === 200) frontend = 'PASS';
+    } catch {
+      // ignore
+    }
+
+    // HTTP Redirect
+    let redirect = 'FAIL';
+    if (sslEnabled) {
+      try {
+        const res = await axios.get<unknown>('http://hmpanel-nginx', {
+          maxRedirects: 0,
+          validateStatus: (status: number) => status >= 300 && status < 400,
+          timeout: 1500,
+        });
+        const loc = (res.headers.location as string) || '';
+        redirect = loc.startsWith('https://') ? 'PASS' : 'FAIL';
+      } catch {
+        redirect = 'FAIL';
+      }
+    } else {
+      redirect = 'N/A';
+    }
+
+    // server_name check
+    let serverName = 'FAIL';
+    const serverNameLine = nginxConfOut
+      .split('\n')
+      .find((line) => line.includes('server_name'));
+    if (serverNameLine) {
+      if (serverNameLine.includes(domain) || serverNameLine.includes('_')) {
+        serverName = 'PASS';
+      }
+    }
+
+    // Consistency check
+    let isCorrupted = false;
+    const isIpOrLocalhost = /^[0-9.]+$/.test(domain) || domain === 'localhost';
+
+    if (sslEnabled) {
+      if (isIpOrLocalhost) isCorrupted = true;
+      if (protocol !== 'https') isCorrupted = true;
+      if (providerEnv === 'none' || !providerEnv) isCorrupted = true;
+      if (!certExists) isCorrupted = true;
+      if (!isHttpsInNginx) isCorrupted = true;
+    } else {
+      if (protocol === 'https') isCorrupted = true;
+      if (providerEnv !== 'none' && providerEnv !== '') isCorrupted = true;
+      if (isHttpsInNginx) isCorrupted = true;
+    }
+
+    const diagnostics = {
+      lastCheckTime: new Date().toISOString(),
+      lastProbeError: null,
+      domainProbed: domain,
+      tlsHandshakeStatus: tlsHandshake === 'PASS' ? 'Success' : 'Failed',
+      certificateExpiration: expiration,
+      certificateIssuer: issuer,
+      dnsResolution: dnsStatus,
+      resolvedIp,
+      expectedServerIp,
+      httpVirtualHost:
+        isNginxRunning && nginxConfOut.includes('listen 80') ? 'PASS' : 'FAIL',
+      httpsVirtualHost: isHttpsInNginx ? 'PASS' : 'FAIL',
+      serverName,
+      tcp80,
+      tcp443,
+      certificateExists: certExists ? 'PASS' : 'FAIL',
+      certificateValid,
+      certificateLoaded,
+      nginxConfig: nginxConfigTest,
+      nginxListening443,
+      tlsHandshake,
+      httpHealth,
+      httpsHealth,
+      backend,
+      frontend,
+      redirect,
+    };
+
     // Determine mode
-    const isIp = /^[0-9\.]+$/.test(this.domain);
     let mode = '';
-    if (isIp && isHttpsEnabled) mode = 'IP HTTPS';
-    else if (isIp && !isHttpsEnabled) mode = 'IP HTTP';
-    else if (!isIp && isHttpsEnabled) mode = 'Domain HTTPS';
-    else mode = 'Domain HTTP';
+    if (isCorrupted) {
+      mode = 'Configuration State Corrupted';
+    } else if (isIpOrLocalhost && isHttpsInNginx) {
+      mode = 'IP HTTPS';
+    } else if (isIpOrLocalhost && !isHttpsInNginx) {
+      mode = 'IP HTTP';
+    } else if (!isIpOrLocalhost && isHttpsInNginx) {
+      mode = 'Domain HTTPS';
+    } else {
+      mode = 'Domain HTTP';
+    }
 
-    let warning = null;
-
-    // Caching Logic: If current check failed but we have a cached valid state, fallback to cache
-    if (!exists && this.lastSuccessfulState && this.lastSuccessfulState.certificate?.exists) {
-      warning = 'Live detection failed. Showing last known valid configuration. Error: ' + (currentError || 'Timeout');
-      return {
-        ...this.lastSuccessfulState,
-        warning,
-        diagnostics: this.lastDiagnostics
-      };
+    let warning: string | null = null;
+    if (isCorrupted) {
+      warning =
+        'Configuration State Corrupted: SSL state is inconsistent. Nginx, .env, or certificate files do not match.';
     }
 
     const result = {
       mode,
-      domain: this.domain,
-      isHttpsEnabled,
-      provider,
-      certPath: certPathInUse,
+      domain,
+      isHttpsEnabled: isHttpsInNginx,
+      provider: providerEnv,
+      certPath: certExists ? '/etc/nginx/ssl/fullchain.pem' : 'Not Found',
       certificate: {
-        exists,
-        ...(exists && expiration ? { expiration, daysRemaining, issuer } : {})
+        exists: certExists,
+        ...(certExists && expiration
+          ? { expiration, daysRemaining, issuer }
+          : {}),
       },
       warning,
-      diagnostics: this.lastDiagnostics
+      diagnostics,
+      isCorrupted,
     };
 
-    if (exists) {
+    if (certExists) {
       this.lastSuccessfulState = result;
       this.saveCache();
     }
@@ -291,99 +453,236 @@ export class SslService {
   }
 
   async renew() {
+    if (this.isExecuting) {
+      throw new HttpException(
+        'SSL operation already in progress.',
+        HttpStatus.CONFLICT,
+      );
+    }
+    this.isExecuting = true;
+    const opId = Math.random().toString(16).substring(2, 8);
+    this.logger.log(`[SSL][${opId}] Triggering host renewal...`);
     try {
-      this.logger.log(`Triggering host renewal...`);
-      const result = await this.hmctl.execute('ssl', 'renew');
-      this.logger.log(`Renewal result: ${JSON.stringify(result)}`);
+      const result = (await this.hmctl.execute('ssl', 'renew', [], opId)) as {
+        log?: string;
+      };
+      this.logger.log(
+        `[SSL][${opId}] Renewal result: ${JSON.stringify(result)}`,
+      );
       return { success: true, log: result.log || 'Success' };
-    } catch (e) {
-      this.logger.error('Renewal failed', e);
-      throw new HttpException('Renewal failed: ' + e.message, HttpStatus.INTERNAL_SERVER_ERROR);
+    } catch (e: unknown) {
+      const errMsg = e instanceof Error ? e.message : String(e);
+      this.logger.error(`[SSL][${opId}] Renewal failed: ` + errMsg, e);
+      throw new HttpException(
+        'Renewal failed: ' + errMsg,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    } finally {
+      this.isExecuting = false;
     }
   }
 
   async switchMode(enableHttps: boolean) {
+    if (this.isExecuting) {
+      throw new HttpException(
+        'SSL operation already in progress.',
+        HttpStatus.CONFLICT,
+      );
+    }
+    this.isExecuting = true;
+    const opId = Math.random().toString(16).substring(2, 8);
+    const cmdAction = enableHttps ? 'enable' : 'disable';
+    this.logger.log(`[SSL][${opId}] Triggering switchMode: ${cmdAction}`);
+
+    this.stream$ = new ReplaySubject<{ data: unknown }>(100);
+
     return new Promise((resolve, reject) => {
-      const cmdAction = enableHttps ? 'enable' : 'disable';
-      this.stream$ = new ReplaySubject<{ data: any }>(100);
-      
-      this.hmctl.executeStream('ssl', cmdAction).subscribe({
-        next: (event) => {
+      this.hmctl.executeStream('ssl', cmdAction, [], opId).subscribe({
+        next: (event: HmctlEvent) => {
           if (event.type === 'progress') {
-             this.stream$?.next({ data: { type: 'progress', message: event.message } });
+            this.stream$?.next({
+              data: { type: 'progress', message: event.message },
+            });
           } else if (event.type === 'complete') {
-             this.stream$?.next({ data: { type: 'complete', data: event.data } });
-             resolve({ success: true, https: enableHttps });
+            this.stream$?.next({
+              data: { type: 'complete', data: event.data },
+            });
+            resolve({ success: true, https: enableHttps });
           } else if (event.type === 'error') {
-             this.stream$?.next({ data: { type: 'error', error: event.error } });
-             reject(new HttpException(event.error?.message || 'Error', HttpStatus.INTERNAL_SERVER_ERROR));
+            this.stream$?.next({ data: { type: 'error', error: event.error } });
+            reject(
+              new HttpException(
+                event.error?.message || 'Error',
+                HttpStatus.INTERNAL_SERVER_ERROR,
+              ),
+            );
           }
         },
-        error: (err) => {
-          this.stream$?.next({ data: { type: 'error', error: err } });
-          reject(new HttpException(err.message, HttpStatus.INTERNAL_SERVER_ERROR));
-        }
+        error: (err: unknown) => {
+          const message = err instanceof Error ? err.message : String(err);
+          this.stream$?.next({ data: { type: 'error', error: { message } } });
+          reject(new HttpException(message, HttpStatus.INTERNAL_SERVER_ERROR));
+        },
       });
+    }).finally(() => {
+      this.isExecuting = false;
     });
   }
 
-  private stream$: ReplaySubject<{ data: any }> | null = null;
+  private stream$: ReplaySubject<{ data: unknown }> | null = null;
 
   getStream() {
     if (!this.stream$) {
-      this.stream$ = new ReplaySubject<{ data: any }>(100);
+      this.stream$ = new ReplaySubject<{ data: unknown }>(100);
     }
     return this.stream$.asObservable();
   }
 
   async issue(domain: string, email: string, selfSigned: boolean = false) {
+    if (this.isExecuting) {
+      throw new HttpException(
+        'SSL operation already in progress.',
+        HttpStatus.CONFLICT,
+      );
+    }
+    this.isExecuting = true;
+    const opId = Math.random().toString(16).substring(2, 8);
     const action = selfSigned ? 'selfsigned' : 'issue';
     const args = selfSigned ? [domain] : [domain, email];
-    
-    this.stream$ = new ReplaySubject<{ data: any }>(100);
-    
+    this.logger.log(
+      `[SSL][${opId}] Triggering issue: ${action} for domain: ${domain}`,
+    );
+
+    this.stream$ = new ReplaySubject<{ data: unknown }>(100);
+
     return new Promise((resolve, reject) => {
-      this.hmctl.executeStream('ssl', action, args).subscribe({
-        next: (event) => {
+      this.hmctl.executeStream('ssl', action, args, opId).subscribe({
+        next: (event: HmctlEvent) => {
           if (event.type === 'progress') {
-             this.stream$?.next({ data: { type: 'progress', message: event.message } });
+            this.stream$?.next({
+              data: { type: 'progress', message: event.message },
+            });
           } else if (event.type === 'complete') {
-             this.stream$?.next({ data: { type: 'complete', data: event.data } });
-             resolve(event.data);
+            this.stream$?.next({
+              data: { type: 'complete', data: event.data },
+            });
+            resolve(event.data);
           } else if (event.type === 'error') {
-             this.stream$?.next({ data: { type: 'error', error: event.error } });
-             reject(new HttpException(event.error.message || 'Error', HttpStatus.INTERNAL_SERVER_ERROR));
+            this.stream$?.next({ data: { type: 'error', error: event.error } });
+            reject(
+              new HttpException(
+                event.error?.message || 'Error',
+                HttpStatus.INTERNAL_SERVER_ERROR,
+              ),
+            );
           }
         },
-        error: (err) => {
-          this.stream$?.next({ data: { type: 'error', error: err } });
-          reject(new HttpException(err.message, HttpStatus.INTERNAL_SERVER_ERROR));
-        }
+        error: (err: unknown) => {
+          const message = err instanceof Error ? err.message : String(err);
+          this.stream$?.next({ data: { type: 'error', error: { message } } });
+          reject(new HttpException(message, HttpStatus.INTERNAL_SERVER_ERROR));
+        },
       });
+    }).finally(() => {
+      this.isExecuting = false;
     });
   }
 
   async changeDomain(domain: string, email: string) {
-    this.stream$ = new ReplaySubject<{ data: any }>(100);
-    
+    if (this.isExecuting) {
+      throw new HttpException(
+        'SSL operation already in progress.',
+        HttpStatus.CONFLICT,
+      );
+    }
+    this.isExecuting = true;
+    const opId = Math.random().toString(16).substring(2, 8);
+    this.logger.log(`[SSL][${opId}] Triggering changeDomain: ${domain}`);
+
+    this.stream$ = new ReplaySubject<{ data: unknown }>(100);
+
     return new Promise((resolve, reject) => {
-      this.hmctl.executeStream('ssl', 'change-domain', [domain, email]).subscribe({
-        next: (event) => {
+      this.hmctl
+        .executeStream('ssl', 'change-domain', [domain, email], opId)
+        .subscribe({
+          next: (event: HmctlEvent) => {
+            if (event.type === 'progress') {
+              this.stream$?.next({
+                data: { type: 'progress', message: event.message },
+              });
+            } else if (event.type === 'complete') {
+              this.stream$?.next({
+                data: { type: 'complete', data: event.data },
+              });
+              resolve(event.data);
+            } else if (event.type === 'error') {
+              this.stream$?.next({
+                data: { type: 'error', error: event.error },
+              });
+              reject(
+                new HttpException(
+                  event.error?.message || 'Error',
+                  HttpStatus.INTERNAL_SERVER_ERROR,
+                ),
+              );
+            }
+          },
+          error: (err: unknown) => {
+            const message = err instanceof Error ? err.message : String(err);
+            this.stream$?.next({ data: { type: 'error', error: { message } } });
+            reject(
+              new HttpException(message, HttpStatus.INTERNAL_SERVER_ERROR),
+            );
+          },
+        });
+    }).finally(() => {
+      this.isExecuting = false;
+    });
+  }
+
+  async repair() {
+    if (this.isExecuting) {
+      throw new HttpException(
+        'SSL operation already in progress.',
+        HttpStatus.CONFLICT,
+      );
+    }
+    this.isExecuting = true;
+    const opId = Math.random().toString(16).substring(2, 8);
+    this.logger.log(`[SSL][${opId}] Triggering repair`);
+
+    this.stream$ = new ReplaySubject<{ data: unknown }>(100);
+
+    return new Promise((resolve, reject) => {
+      this.hmctl.executeStream('ssl', 'repair', [], opId).subscribe({
+        next: (event: HmctlEvent) => {
           if (event.type === 'progress') {
-             this.stream$?.next({ data: { type: 'progress', message: event.message } });
+            this.stream$?.next({
+              data: { type: 'progress', message: event.message },
+            });
           } else if (event.type === 'complete') {
-             this.stream$?.next({ data: { type: 'complete', data: event.data } });
-             resolve(event.data);
+            this.stream$?.next({
+              data: { type: 'complete', data: event.data },
+            });
+            resolve(event.data);
           } else if (event.type === 'error') {
-             this.stream$?.next({ data: { type: 'error', error: event.error } });
-             reject(new HttpException(event.error.message || 'Error', HttpStatus.INTERNAL_SERVER_ERROR));
+            this.stream$?.next({ data: { type: 'error', error: event.error } });
+            reject(
+              new HttpException(
+                event.error?.message || 'Error',
+                HttpStatus.INTERNAL_SERVER_ERROR,
+              ),
+            );
           }
         },
-        error: (err) => {
-          this.stream$?.next({ data: { type: 'error', error: err } });
-          reject(new HttpException(err.message, HttpStatus.INTERNAL_SERVER_ERROR));
-        }
+        error: (err: unknown) => {
+          const message = err instanceof Error ? err.message : String(err);
+          this.stream$?.next({ data: { type: 'error', error: { message } } });
+          reject(new HttpException(message, HttpStatus.INTERNAL_SERVER_ERROR));
+        },
       });
+    }).finally(() => {
+      this.isExecuting = false;
     });
   }
 
@@ -391,9 +690,11 @@ export class SslService {
   async handleCron() {
     this.logger.log('Running daily ACME renewal check via host...');
     try {
-      const result = await this.hmctl.execute('ssl', 'renew');
+      const result = (await this.hmctl.execute('ssl', 'renew')) as {
+        log?: string;
+      };
       this.logger.log('ACME cron result: ' + JSON.stringify(result));
-    } catch (e) {
+    } catch (e: any) {
       this.logger.error('ACME cron failed', e);
     }
   }

@@ -9,7 +9,9 @@ export class SubscriptionsController {
   constructor(private readonly subscriptionsService: SubscriptionsService) {}
 
   @Get(':id')
-  @ApiOperation({ summary: 'Get public subscription portal info for a client UUID/ID' })
+  @ApiOperation({
+    summary: 'Get public subscription portal info for a client UUID/ID',
+  })
   getSubscriptionDetails(@Param('id') id: string) {
     return this.subscriptionsService.getSubscriptionDetails(id);
   }
@@ -27,16 +29,27 @@ export class PublicSubController {
   constructor(private readonly subscriptionsService: SubscriptionsService) {}
 
   @Get(':token')
-  @ApiOperation({ summary: 'Get raw native subscription content proxy or redirect browsers to portal' })
-  async proxySubscription(@Param('token') token: string, @Req() req: Request, @Res() res: Response) {
+  @ApiOperation({
+    summary:
+      'Get raw native subscription content proxy or redirect browsers to portal',
+  })
+  async proxySubscription(
+    @Param('token') token: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
     const userAgent = (req.headers['user-agent'] || '').toLowerCase();
-    const isBrowser = userAgent.includes('mozilla') || userAgent.includes('chrome') || userAgent.includes('safari') || userAgent.includes('edge');
+    const isBrowser =
+      userAgent.includes('mozilla') ||
+      userAgent.includes('chrome') ||
+      userAgent.includes('safari') ||
+      userAgent.includes('edge');
 
     // If it's a browser (and they didn't explicitly request raw), redirect to the React portal themes
     if (isBrowser && !req.query.raw) {
-       return res.redirect(`/p/${token}`);
+      return res.redirect(`/p/${token}`);
     }
-    
+
     // Otherwise, for VPN apps (v2rayng, shadowrocket, etc.), proxy the raw config stream
     return this.subscriptionsService.proxySubscription(token, req, res);
   }

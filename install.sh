@@ -569,33 +569,7 @@ ssl_fallback_to_http() {
   log "HTTP-only mode active. You can add SSL later via: hmpanel -> SSL Management"
 }
 
-# ─────────────────────────────────────────────────────────────────
-# SSL Fallback — called from ANY point in the SSL process on failure
-# Ensures nginx always ends up running on HTTP no matter what went wrong
-# ─────────────────────────────────────────────────────────────────
-ssl_fallback_to_http() {
-  local reason="${1:-Unknown SSL failure}"
-  error "SSL failed: ${reason}"
-  warn "⚠  Falling back to HTTP — panel will be accessible via http://${DOMAIN:-localhost}"
 
-  SSL_CHOICE=3
-  SSL_STATUS="disabled"
-
-  # Patch nginx config to disable SSL block (idempotent — safe to run multiple times)
-  if [[ -f "${INSTALL_DIR}/nginx/nginx.conf.template" ]]; then
-    sed -i 's/listen 443 ssl;/# SSL disabled/' "${INSTALL_DIR}/nginx/nginx.conf.template" 2>/dev/null || true
-  fi
-
-  # Update NEXT_PUBLIC_API_URL in .env to http so the frontend does not try https
-  if [[ -f "${INSTALL_DIR}/.env" ]]; then
-    sed -i "s|NEXT_PUBLIC_API_URL=https://|NEXT_PUBLIC_API_URL=http://|g" "${INSTALL_DIR}/.env" 2>/dev/null || true
-  fi
-
-  # Restart nginx to pick up the patched config
-  docker restart hmpanel-nginx >/dev/null 2>&1 || true
-
-  log "HTTP-only mode active. You can add SSL later via: hmpanel -> SSL Management"
-}
 
 install_dependencies() {
   step "Installing System Dependencies"

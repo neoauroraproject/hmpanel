@@ -24,10 +24,18 @@ export class StatsService {
     startMonth.setHours(0, 0, 0, 0);
 
     const [
-      panelsTotal, panelsOnline,
-      adminsTotal, adminsActive, adminsSuspended,
-      clientsTotal, clientsEnabled, clientsExpired,
-      trafficSold, trafficActualUsed, totalAdminBalance, thresholdSetting
+      panelsTotal,
+      panelsOnline,
+      adminsTotal,
+      adminsActive,
+      adminsSuspended,
+      clientsTotal,
+      clientsEnabled,
+      clientsExpired,
+      trafficSold,
+      trafficActualUsed,
+      totalAdminBalance,
+      thresholdSetting,
     ] = await Promise.all([
       this.prisma.panel.count(),
       this.prisma.panel.count({ where: { status: 'online' } }),
@@ -35,46 +43,69 @@ export class StatsService {
       this.prisma.admin.count({ where: { status: 'active' } }),
       this.prisma.admin.count({ where: { status: 'suspended' } }),
       this.prisma.panel.aggregate({ _sum: { clientCount: true } }),
-      this.prisma.client.count({ where: { enable: true, adminId: { not: null } } }),
-      this.prisma.client.count({ where: { expiryTime: { gt: 0n, lt: BigInt(now) }, adminId: { not: null } } }),
+      this.prisma.client.count({
+        where: { enable: true, adminId: { not: null } },
+      }),
+      this.prisma.client.count({
+        where: {
+          expiryTime: { gt: 0n, lt: BigInt(now) },
+          adminId: { not: null },
+        },
+      }),
       // Total traffic ever sold/credited to admins
-      this.prisma.trafficTransaction.aggregate({ _sum: { amount: true }, where: { type: 'CREDIT' } }),
+      this.prisma.trafficTransaction.aggregate({
+        _sum: { amount: true },
+        where: { type: 'CREDIT' },
+      }),
       // Actual usage charged (USAGE_CHARGE) — reliable even after migration
-      this.prisma.trafficTransaction.aggregate({ _sum: { amount: true }, where: { type: 'USAGE_CHARGE' } }),
+      this.prisma.trafficTransaction.aggregate({
+        _sum: { amount: true },
+        where: { type: 'USAGE_CHARGE' },
+      }),
       // Sum of current admin balances (= allocated - deducted)
       this.prisma.admin.aggregate({ _sum: { balance: true } }),
-      this.prisma.systemSetting.findUnique({ where: { key: 'cleanup_threshold_days' } }),
+      this.prisma.systemSetting.findUnique({
+        where: { key: 'cleanup_threshold_days' },
+      }),
     ]);
 
-    const thresholdDays = thresholdSetting ? Number(thresholdSetting.value.replace(/"/g, '')) || 30 : 30;
+    const thresholdDays = thresholdSetting
+      ? Number(thresholdSetting.value.replace(/"/g, '')) || 30
+      : 30;
     const thresholdMs = thresholdDays * 24 * 60 * 60 * 1000;
-    
-    const cleanupCandidates = await this.prisma.client.count({ 
-      where: { expiryTime: { gt: 0n, lt: BigInt(now - thresholdMs) }, adminId: { not: null } } 
+
+    const cleanupCandidates = await this.prisma.client.count({
+      where: {
+        expiryTime: { gt: 0n, lt: BigInt(now - thresholdMs) },
+        adminId: { not: null },
+      },
     });
 
     // Remaining = sum of all admin balances (most accurate: reflects all deductions/refunds)
-    const remaining = BigInt(Math.round(Math.max(0, totalAdminBalance._sum.balance ?? 0)));
+    const remaining = BigInt(
+      Math.round(Math.max(0, totalAdminBalance._sum.balance ?? 0)),
+    );
     // Total assigned = sum of all CREDIT transactions ever
     const trafficSoldTotal = trafficSold._sum.amount ?? 0n;
     // Actual usage from USAGE_CHARGE transactions (for USAGE mode admins)
     const trafficUsedFromTx = trafficActualUsed._sum.amount ?? 0n;
     // For display: use the allocated-remaining as "used" (covers both ALLOCATION and USAGE modes)
-    const trafficUsed = trafficSoldTotal > remaining ? trafficSoldTotal - remaining : 0n;
+    const trafficUsed =
+      trafficSoldTotal > remaining ? trafficSoldTotal - remaining : 0n;
 
     let todayUsage = 0n;
     let monthlyUsage = 0n;
-    
+
     // Analyze SystemStats to compute true network usage
     const systemStats = await this.prisma.systemStats.findMany({
       where: { recordedAt: { gte: startMonth } },
       orderBy: { recordedAt: 'asc' },
-      select: { serverId: true, netUp: true, netDown: true, recordedAt: true }
+      select: { serverId: true, netUp: true, netDown: true, recordedAt: true },
     });
 
     for (const stat of systemStats) {
       const delta = stat.netUp + stat.netDown;
-      
+
       monthlyUsage += delta;
       if (stat.recordedAt >= startToday) {
         todayUsage += delta;
@@ -82,9 +113,22 @@ export class StatsService {
     }
 
     return {
-      panels: { total: panelsTotal, online: panelsOnline, offline: panelsTotal - panelsOnline },
-      admins: { total: adminsTotal, active: adminsActive, suspended: adminsSuspended },
-      clients: { total: clientsTotal._sum?.clientCount ?? 0, active: clientsEnabled, expired: clientsExpired, cleanupCandidates },
+      panels: {
+        total: panelsTotal,
+        online: panelsOnline,
+        offline: panelsTotal - panelsOnline,
+      },
+      admins: {
+        total: adminsTotal,
+        active: adminsActive,
+        suspended: adminsSuspended,
+      },
+      clients: {
+        total: clientsTotal._sum?.clientCount ?? 0,
+        active: clientsEnabled,
+        expired: clientsExpired,
+        cleanupCandidates,
+      },
       usage: {
         today: todayUsage.toString(),
         monthly: monthlyUsage.toString(),
@@ -100,7 +144,14 @@ export class StatsService {
   async resellerOverview(adminId: string, panelId?: string) {
     const admin = await this.prisma.admin.findUnique({
       where: { id: adminId },
-      select: { balance: true, maxClients: true, expiryTime: true, totalAssigned: true, trafficMode: true, gracePeriodStart: true }
+      select: {
+        balance: true,
+        maxClients: true,
+        expiryTime: true,
+        totalAssigned: true,
+        trafficMode: true,
+        gracePeriodStart: true,
+      },
     });
 
     if (!admin) throw new Error('Admin not found');
@@ -109,35 +160,51 @@ export class StatsService {
     if (panelId) {
       whereClause.inbounds = {
         some: {
-          inbound: { panelId }
-        }
+          inbound: { panelId },
+        },
       };
     }
 
     const clients = await this.prisma.client.findMany({
       where: whereClause,
-      select: { id: true, email: true, remark: true, up: true, down: true, total: true, expiryTime: true, enable: true, flow: true, limitIp: true, inbounds: { include: { inbound: { include: { panel: true } } } } }
+      select: {
+        id: true,
+        email: true,
+        remark: true,
+        up: true,
+        down: true,
+        total: true,
+        expiryTime: true,
+        enable: true,
+        flow: true,
+        limitIp: true,
+        inbounds: { include: { inbound: { include: { panel: true } } } },
+      },
     });
 
-    const thresholdSetting = await this.prisma.systemSetting.findUnique({ where: { key: 'cleanup_threshold_days' } });
-    const thresholdDays = thresholdSetting ? Number(thresholdSetting.value.replace(/"/g, '')) || 30 : 30;
+    const thresholdSetting = await this.prisma.systemSetting.findUnique({
+      where: { key: 'cleanup_threshold_days' },
+    });
+    const thresholdDays = thresholdSetting
+      ? Number(thresholdSetting.value.replace(/"/g, '')) || 30
+      : 30;
     const thresholdMs = thresholdDays * 24 * 60 * 60 * 1000;
 
     let todayUsage = 0n;
     let monthlyUsage = 0n;
-    
+
     const startToday = new Date(new Date().setHours(0, 0, 0, 0));
     const startMonth = new Date();
     startMonth.setDate(1);
     startMonth.setHours(0, 0, 0, 0);
 
     const transactions = await this.prisma.trafficTransaction.findMany({
-      where: { 
+      where: {
         type: 'USAGE_CHARGE',
         createdAt: { gte: startMonth },
-        client: { adminId }
+        client: { adminId },
       },
-      select: { amount: true, createdAt: true }
+      select: { amount: true, createdAt: true },
     });
 
     for (const t of transactions) {
@@ -162,10 +229,14 @@ export class StatsService {
       const used = Number(c.up) + Number(c.down);
       const total = Number(c.total);
       const isDepleted = total > 0 && used >= total;
-      const isTrafficLow = total > 0 && !isDepleted && (used / total) >= 0.8;
-      const isExpiringSoon = c.expiryTime > 0n && c.expiryTime > BigInt(now) && c.expiryTime <= BigInt(now + SEVEN_DAYS);
+      const isTrafficLow = total > 0 && !isDepleted && used / total >= 0.8;
+      const isExpiringSoon =
+        c.expiryTime > 0n &&
+        c.expiryTime > BigInt(now) &&
+        c.expiryTime <= BigInt(now + SEVEN_DAYS);
       const isExpired = c.expiryTime > 0n && c.expiryTime <= BigInt(now);
-      const isCleanupCandidate = c.expiryTime > 0n && c.expiryTime <= BigInt(now - thresholdMs);
+      const isCleanupCandidate =
+        c.expiryTime > 0n && c.expiryTime <= BigInt(now - thresholdMs);
       const isDisabled = !c.enable;
 
       if (isDepleted) depletedCount++;
@@ -174,7 +245,13 @@ export class StatsService {
       if (isExpiringSoon) expiringSoonCount++;
       if (isCleanupCandidate) cleanupCandidatesCount++;
 
-      if (isDepleted || isDisabled || isTrafficLow || isExpiringSoon || isExpired) {
+      if (
+        isDepleted ||
+        isDisabled ||
+        isTrafficLow ||
+        isExpiringSoon ||
+        isExpired
+      ) {
         attentionClients.push({
           id: c.id,
           email: c.email,
@@ -194,7 +271,7 @@ export class StatsService {
             trafficLow: isTrafficLow,
             expiringSoon: isExpiringSoon,
             expired: isExpired,
-          }
+          },
         });
       }
     }
@@ -213,7 +290,10 @@ export class StatsService {
       return score(b) - score(a);
     });
 
-    const summary = calculateAdminTrafficSummary(admin.totalAssigned, admin.balance);
+    const summary = calculateAdminTrafficSummary(
+      admin.totalAssigned,
+      admin.balance,
+    );
 
     return {
       admin: {
@@ -237,7 +317,7 @@ export class StatsService {
         cleanupCandidates: cleanupCandidatesCount,
       },
       priorityClients: attentionClients.slice(0, 5),
-      clientEmails: clients.map(c => c.email)
+      clientEmails: clients.map((c) => c.email),
     };
   }
 
@@ -245,10 +325,27 @@ export class StatsService {
   async trafficSeries(range: '24h' | '7d' | '30d') {
     const now = Date.now();
     const cfg = {
-      '24h': { since: now - DAY, bucket: HOUR, fmt: (d: Date) => `${d.getHours()}:00` },
-      '7d': { since: now - 7 * DAY, bucket: DAY, fmt: (d: Date) => d.toLocaleDateString(undefined, { weekday: 'short' }) },
-      '30d': { since: now - 30 * DAY, bucket: DAY, fmt: (d: Date) => d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) },
-    }[range] ?? { since: now - DAY, bucket: HOUR, fmt: (d: Date) => `${d.getHours()}:00` };
+      '24h': {
+        since: now - DAY,
+        bucket: HOUR,
+        fmt: (d: Date) => `${d.getHours()}:00`,
+      },
+      '7d': {
+        since: now - 7 * DAY,
+        bucket: DAY,
+        fmt: (d: Date) => d.toLocaleDateString(undefined, { weekday: 'short' }),
+      },
+      '30d': {
+        since: now - 30 * DAY,
+        bucket: DAY,
+        fmt: (d: Date) =>
+          d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+      },
+    }[range] ?? {
+      since: now - DAY,
+      bucket: HOUR,
+      fmt: (d: Date) => `${d.getHours()}:00`,
+    };
 
     const rows = await this.prisma.systemStats.findMany({
       where: { recordedAt: { gte: new Date(cfg.since) } },
@@ -275,24 +372,26 @@ export class StatsService {
     const clients = await this.prisma.client.findMany({
       where: { adminId: { not: null } },
       select: {
-        up: true, down: true, createdAt: true,
+        up: true,
+        down: true,
+        createdAt: true,
         admin: { select: { username: true, trafficMode: true, id: true } },
         inbounds: {
           select: {
             inbound: {
               select: {
                 tag: true,
-                panel: { select: { name: true } }
-              }
-            }
-          }
+                panel: { select: { name: true } },
+              },
+            },
+          },
         },
       },
     });
 
-    const mappedClients = clients.map(c => ({
+    const mappedClients = clients.map((c) => ({
       ...c,
-      inbound: c.inbounds?.[0]?.inbound || null
+      inbound: c.inbounds?.[0]?.inbound || null,
     }));
 
     // New clients per day (last 30d)
@@ -303,21 +402,30 @@ export class StatsService {
       byDay.set(key, (byDay.get(key) ?? 0) + 1);
     }
     const newClients = [...byDay.entries()].sort().map(([date, count]) => ({
-      date: new Date(date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+      date: new Date(date).toLocaleDateString(undefined, {
+        month: 'short',
+        day: 'numeric',
+      }),
       count,
     }));
 
     const aggTop10 = (m: Map<string, number>) => {
       const sorted = [...m.entries()].sort((a, b) => b[1] - a[1]);
-      const top10 = sorted.slice(0, 10).map(([name, bytes]) => ({ name, bytes }));
-      const othersBytes = sorted.slice(10).reduce((sum, [, bytes]) => sum + bytes, 0);
+      const top10 = sorted
+        .slice(0, 10)
+        .map(([name, bytes]) => ({ name, bytes }));
+      const othersBytes = sorted
+        .slice(10)
+        .reduce((sum, [, bytes]) => sum + bytes, 0);
       if (othersBytes > 0) {
         top10.push({ name: 'Other', bytes: othersBytes });
       }
       return top10;
     };
 
-    const aggAllTime = (keyFn: (c: (typeof mappedClients)[number]) => string) => {
+    const aggAllTime = (
+      keyFn: (c: (typeof mappedClients)[number]) => string,
+    ) => {
       const m = new Map<string, number>();
       for (const c of mappedClients) {
         const used = Number(c.up) + Number(c.down);
@@ -329,11 +437,14 @@ export class StatsService {
     // Calculate 24h usage using TrafficTransaction for USAGE and approximating for ALLOCATION if needed,
     // or just computing what's available. For simplicity, we use USAGE_CHARGE transactions.
     const tx24h = await this.prisma.trafficTransaction.findMany({
-      where: { 
+      where: {
         createdAt: { gte: since24h },
-        type: 'USAGE_CHARGE'
+        type: 'USAGE_CHARGE',
       },
-      select: { amount: true, admin: { select: { username: true, trafficMode: true } } }
+      select: {
+        amount: true,
+        admin: { select: { username: true, trafficMode: true } },
+      },
     });
 
     const admin24hMap = new Map<string, number>();
@@ -345,20 +456,26 @@ export class StatsService {
     return {
       allTime: {
         newClients,
-        byAdmin: aggAllTime((c) => c.admin ? `${c.admin.username} (${c.admin.trafficMode})` : 'Unassigned'),
+        byAdmin: aggAllTime((c) =>
+          c.admin
+            ? `${c.admin.username} (${c.admin.trafficMode})`
+            : 'Unassigned',
+        ),
         byInbound: aggAllTime((c) => c.inbound?.tag || 'Unknown'),
         byPanel: aggAllTime((c) => c.inbound?.panel?.name || 'Unknown'),
         byTrafficMode: aggAllTime((c) => c.admin?.trafficMode || 'Unassigned'),
       },
       last24h: {
         byAdmin: aggTop10(admin24hMap),
-      }
+      },
     };
   }
 
   /** Live monitoring snapshot (host metrics are simulated for the demo). */
   async monitoring() {
-    const servers = await this.prisma.server.findMany({ select: { id: true, name: true } });
+    const servers = await this.prisma.server.findMany({
+      select: { id: true, name: true },
+    });
     const serverStats = await Promise.all(
       servers.map(async (s) => {
         const latest = await this.prisma.systemStats.findFirst({
@@ -377,15 +494,23 @@ export class StatsService {
       }),
     );
 
-    const panels = await this.prisma.panel.findMany({ select: { name: true, status: true } });
+    const panels = await this.prisma.panel.findMany({
+      select: { name: true, status: true },
+    });
     const [lastSync, failedJobs] = await Promise.all([
-      this.prisma.syncState.findFirst({ orderBy: { lastSync: 'desc' }, select: { lastSync: true } }),
+      this.prisma.syncState.findFirst({
+        orderBy: { lastSync: 'desc' },
+        select: { lastSync: true },
+      }),
       this.prisma.syncState.count({ where: { status: 'failure' } }),
     ]);
 
     return {
       servers: serverStats,
-      xray: panels.map((p) => ({ panel: p.name, status: p.status === 'online' ? 'running' : 'stopped' })),
+      xray: panels.map((p) => ({
+        panel: p.name,
+        status: p.status === 'online' ? 'running' : 'stopped',
+      })),
       lastSync: lastSync?.lastSync ?? null,
       pendingJobs: 0,
       failedJobs,
@@ -409,7 +534,10 @@ export class StatsService {
 
   /** Quick action: restart Xray across all online panels. */
   async restartXray() {
-    const panels = await this.prisma.panel.findMany({ where: { status: 'online' }, select: { id: true } });
+    const panels = await this.prisma.panel.findMany({
+      where: { status: 'online' },
+      select: { id: true },
+    });
     let restarted = 0;
     for (const p of panels) {
       try {
@@ -419,9 +547,11 @@ export class StatsService {
         console.error(`Restart failed for panel ${p.id}:`, err);
       }
     }
-    return { restarted, message: `Xray restart issued on ${restarted} online panel(s)` };
+    return {
+      restarted,
+      message: `Xray restart issued on ${restarted} online panel(s)`,
+    };
   }
-
 
   /** Real-time system diagnostics without any mock data. */
   async getDiagnostics() {
@@ -433,7 +563,7 @@ export class StatsService {
         connectedPanels: 0,
         importedInbounds: 0,
         importedClients: 0,
-      }
+      },
     };
 
     // 1. Check Database (PostgreSQL)
@@ -450,7 +580,10 @@ export class StatsService {
     const redisStart = Date.now();
     try {
       const Redis = require('ioredis');
-      const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', { maxRetriesPerRequest: 1, connectTimeout: 2000 });
+      const redis = new Redis(
+        process.env.REDIS_URL || 'redis://localhost:6379',
+        { maxRetriesPerRequest: 1, connectTimeout: 2000 },
+      );
       await redis.ping();
       diagnostics.redis.status = 'online';
       diagnostics.redis.latencyMs = Date.now() - redisStart;
@@ -474,12 +607,12 @@ export class StatsService {
             latencyMs: true,
             status: true,
             errorLogs: true,
-          }
-        }
-      }
+          },
+        },
+      },
     });
 
-    diagnostics.panels = panels.map(p => ({
+    diagnostics.panels = panels.map((p) => ({
       name: p.name,
       version: p.version || 'unknown',
       status: p.status,
@@ -489,7 +622,9 @@ export class StatsService {
       errorLogs: p.syncState?.errorLogs || null,
     }));
 
-    diagnostics.stats.connectedPanels = panels.filter(p => p.status === 'online').length;
+    diagnostics.stats.connectedPanels = panels.filter(
+      (p) => p.status === 'online',
+    ).length;
     diagnostics.stats.importedInbounds = await this.prisma.inbound.count();
     diagnostics.stats.importedClients = await this.prisma.client.count();
 
@@ -504,7 +639,11 @@ export class StatsService {
     const ramUsagePercent = totalMem > 0 ? (usedMem / totalMem) * 100 : 0;
 
     const cpus = os.cpus();
-    let user = 0, nice = 0, sys = 0, idle = 0, irq = 0;
+    let user = 0,
+      nice = 0,
+      sys = 0,
+      idle = 0,
+      irq = 0;
     for (const cpu of cpus) {
       user += cpu.times.user;
       nice += cpu.times.nice;

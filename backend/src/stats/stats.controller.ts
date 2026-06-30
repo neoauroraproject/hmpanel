@@ -13,11 +13,16 @@ import { PremiumGuard } from '../common/guards/premium.guard';
 @Roles('SUPER_ADMIN')
 @Controller('stats')
 export class StatsController {
-  constructor(private stats: StatsService, private panelsService: PanelsService) {}
+  constructor(
+    private stats: StatsService,
+    private panelsService: PanelsService,
+  ) {}
 
   @Get('onlines')
   @Roles('SUPER_ADMIN', 'RESELLER')
-  @ApiOperation({ summary: 'Get live online client emails directly from panels' })
+  @ApiOperation({
+    summary: 'Get live online client emails directly from panels',
+  })
   async getLiveOnlines(@Query('panelId') panelId?: string) {
     const panelsToQuery = panelId ? [panelId] : [];
     const emails = await this.panelsService.getLiveOnlineEmails(panelsToQuery);
@@ -33,7 +38,10 @@ export class StatsController {
   @Get('reseller-overview')
   @Roles('SUPER_ADMIN', 'RESELLER')
   @ApiOperation({ summary: 'Dashboard KPI cards for resellers' })
-  resellerOverview(@Req() req: AuthRequest, @Query('panelId') panelId?: string) {
+  resellerOverview(
+    @Req() req: AuthRequest,
+    @Query('panelId') panelId?: string,
+  ) {
     return this.stats.resellerOverview(req.user.id, panelId);
   }
 
@@ -44,19 +52,25 @@ export class StatsController {
   }
 
   @Get('trends')
-  @ApiOperation({ summary: 'New-clients / by-admin / by-inbound / by-panel trends' })
+  @ApiOperation({
+    summary: 'New-clients / by-admin / by-inbound / by-panel trends',
+  })
   trends() {
     return this.stats.trends();
   }
 
   @Get('monitoring')
-  @ApiOperation({ summary: 'Live monitoring snapshot (CPU/RAM/disk/net, Xray, sync)' })
+  @ApiOperation({
+    summary: 'Live monitoring snapshot (CPU/RAM/disk/net, Xray, sync)',
+  })
   monitoring() {
     return this.stats.monitoring();
   }
 
   @Get('system')
-  @ApiOperation({ summary: 'Live host machine system resources (CPU, RAM, Disk)' })
+  @ApiOperation({
+    summary: 'Live host machine system resources (CPU, RAM, Disk)',
+  })
   systemResources() {
     return this.stats.systemResources();
   }
@@ -72,7 +86,6 @@ export class StatsController {
   restartXray() {
     return this.stats.restartXray();
   }
-
 
   @Get('diagnostics')
   @ApiOperation({ summary: 'Run system diagnostics' })

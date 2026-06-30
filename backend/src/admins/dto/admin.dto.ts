@@ -1,4 +1,11 @@
-import { IsString, MinLength, IsOptional, IsNumber, IsEnum, IsArray } from 'class-validator';
+import {
+  IsString,
+  MinLength,
+  IsOptional,
+  IsNumber,
+  IsEnum,
+  IsArray,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateAdminDto {
@@ -9,10 +16,18 @@ export class CreateAdminDto {
   @ApiPropertyOptional() @IsOptional() @IsString() status?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() trafficMode?: string;
   @ApiPropertyOptional() @IsOptional() @IsNumber() balance?: number;
-  @ApiPropertyOptional({ type: [String] }) @IsOptional() @IsArray() @IsString({ each: true }) inboundIds?: string[];
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  inboundIds?: string[];
   @ApiPropertyOptional() @IsOptional() @IsNumber() expiryTime?: number;
   @ApiPropertyOptional() @IsOptional() @IsNumber() maxClients?: number;
-  @ApiPropertyOptional({ type: [String] }) @IsOptional() @IsArray() @IsString({ each: true }) permissions?: string[];
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  permissions?: string[];
   @ApiPropertyOptional() @IsOptional() refundOnDelete?: boolean;
   @ApiPropertyOptional() @IsOptional() refundOnEdit?: boolean;
 }
@@ -24,9 +39,17 @@ export class UpdateAdminDto {
   @ApiPropertyOptional() @IsOptional() @IsString() trafficMode?: string;
   @ApiPropertyOptional() @IsOptional() @IsNumber() expiryTime?: number;
   @ApiPropertyOptional() @IsOptional() @IsNumber() maxClients?: number;
-  @ApiPropertyOptional({ type: [String] }) @IsOptional() @IsArray() @IsString({ each: true }) permissions?: string[];
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  permissions?: string[];
   @ApiPropertyOptional() @IsOptional() @IsString() password?: string;
-  @ApiPropertyOptional({ type: [String] }) @IsOptional() @IsArray() @IsString({ each: true }) inboundIds?: string[];
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  inboundIds?: string[];
   @ApiPropertyOptional() @IsOptional() portalSettings?: Record<string, any>;
   @ApiPropertyOptional() @IsOptional() refundOnDelete?: boolean;
   @ApiPropertyOptional() @IsOptional() refundOnEdit?: boolean;

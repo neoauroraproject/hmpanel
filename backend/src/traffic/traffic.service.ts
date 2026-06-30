@@ -34,7 +34,10 @@ export class TrafficService {
   /** Deduct quota when creating a client (Allocation mode) */
   async provision(adminId: string, clientId: string, amountBytes: bigint) {
     return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      const admin = await tx.admin.findUniqueOrThrow({ where: { id: adminId }, select: { balance: true, trafficMode: true } });
+      const admin = await tx.admin.findUniqueOrThrow({
+        where: { id: adminId },
+        select: { balance: true, trafficMode: true },
+      });
 
       if (admin.trafficMode === 'ALLOCATION') {
         if (admin.balance < Number(amountBytes)) {
@@ -56,14 +59,22 @@ export class TrafficService {
           action: 'CLIENT_PROVISIONING',
           description: 'Client provisioned',
           balanceBefore: admin.balance,
-          balanceAfter: admin.trafficMode === 'ALLOCATION' ? admin.balance - Number(amountBytes) : admin.balance,
+          balanceAfter:
+            admin.trafficMode === 'ALLOCATION'
+              ? admin.balance - Number(amountBytes)
+              : admin.balance,
         },
       });
     });
   }
 
   /** Refund remaining traffic when deleting a client */
-  async refund(adminId: string, clientId: string, totalBytes: bigint, usedBytes: bigint) {
+  async refund(
+    adminId: string,
+    clientId: string,
+    totalBytes: bigint,
+    usedBytes: bigint,
+  ) {
     const remaining = totalBytes - usedBytes;
     if (remaining <= 0n) return; // Nothing to refund — all consumed
 
@@ -90,7 +101,13 @@ export class TrafficService {
   }
 
   /** Get ledger for an admin */
-  async getLedger(adminId: string, page = 1, limit = 100, type?: string, search?: string) {
+  async getLedger(
+    adminId: string,
+    page = 1,
+    limit = 100,
+    type?: string,
+    search?: string,
+  ) {
     const where: Prisma.TrafficTransactionWhereInput = {
       adminId,
       ...(type ? { type: type as any } : {}),
@@ -110,8 +127,15 @@ export class TrafficService {
         skip: (page - 1) * limit,
         take: limit,
         select: {
-          id: true, amount: true, type: true, description: true, createdAt: true,
-          balanceBefore: true, balanceAfter: true, action: true, targetClientUuid: true,
+          id: true,
+          amount: true,
+          type: true,
+          description: true,
+          createdAt: true,
+          balanceBefore: true,
+          balanceAfter: true,
+          action: true,
+          targetClientUuid: true,
           client: { select: { id: true, email: true, uuid: true } },
         },
         orderBy: { createdAt: 'desc' },
@@ -119,23 +143,23 @@ export class TrafficService {
       this.prisma.trafficTransaction.count({ where }),
       this.prisma.trafficTransaction.aggregate({
         where: { ...where, type: 'CREDIT' },
-        _sum: { amount: true }
+        _sum: { amount: true },
       }),
       this.prisma.trafficTransaction.aggregate({
         where: { ...where, type: 'DEBIT' },
-        _sum: { amount: true }
-      })
+        _sum: { amount: true },
+      }),
     ]);
 
-    return { 
-      data, 
-      total, 
-      page, 
+    return {
+      data,
+      total,
+      page,
       limit,
       totals: {
         credit: creditAgg._sum.amount?.toString() || '0',
-        debit: debitAgg._sum.amount?.toString() || '0'
-      }
+        debit: debitAgg._sum.amount?.toString() || '0',
+      },
     };
   }
 }

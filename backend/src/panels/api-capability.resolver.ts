@@ -25,7 +25,7 @@ export interface ResolvedCapabilities {
 @Injectable()
 export class ApiCapabilityResolver {
   private readonly logger = new Logger(ApiCapabilityResolver.name);
-  
+
   // Cache parsed capability maps by: fileHash -> ResolvedCapabilities
   private cache = new Map<string, ResolvedCapabilities>();
 
@@ -34,11 +34,15 @@ export class ApiCapabilityResolver {
    * matching the panel version, bypassing the need for HTTP wrong-method probing.
    */
   resolve(apiVersion: string, schemaVersion: string): ResolvedCapabilities {
-    this.logger.log(`[CAP_RESOLVER] Resolving capabilities for API ${apiVersion} (schema ${schemaVersion})...`);
-    
+    this.logger.log(
+      `[CAP_RESOLVER] Resolving capabilities for API ${apiVersion} (schema ${schemaVersion})...`,
+    );
+
     // Clean apiVersion (e.g. "3.4.2" -> [3, 4, 2])
     const vMatch = apiVersion.match(/(\d+)\.(\d+)(?:\.(\d+))?/);
-    let major = 3, minor = 4, patch = 2;
+    let major = 3,
+      minor = 4,
+      patch = 2;
     if (vMatch) {
       major = parseInt(vMatch[1] || '3', 10);
       minor = parseInt(vMatch[2] || '0', 10);
@@ -53,8 +57,8 @@ export class ApiCapabilityResolver {
       // Find all available spec files: apiXXX.json
       const files = fs.existsSync(docsDir) ? fs.readdirSync(docsDir) : [];
       const specs = files
-        .filter(f => /^api\d+\.json$/.test(f))
-        .map(f => {
+        .filter((f) => /^api\d+\.json$/.test(f))
+        .map((f) => {
           const numStr = f.replace('api', '').replace('.json', '');
           const maj = parseInt(numStr.charAt(0) || '0', 10);
           const min = parseInt(numStr.charAt(1) || '0', 10);
@@ -65,8 +69,10 @@ export class ApiCapabilityResolver {
 
       if (specs.length > 0) {
         // 1. Try exact Minor version match (or higher patch)
-        const exactMinor = specs.find(s => s.maj === major && s.min === minor);
-        
+        const exactMinor = specs.find(
+          (s) => s.maj === major && s.min === minor,
+        );
+
         if (exactMinor) {
           specFile = exactMinor.file;
         } else {
@@ -78,26 +84,42 @@ export class ApiCapabilityResolver {
 
       if (!specFile) {
         this.logger.warn(`[CAP_RESOLVER] No spec files found in ${docsDir}.`);
-        const fallbackCaps = this.getDefaultCapabilities(major >= 3 && minor >= 4);
+        const fallbackCaps = this.getDefaultCapabilities(
+          major >= 3 && minor >= 4,
+        );
         return { capabilities: fallbackCaps, hash: 'fallback-no-specs' };
       }
 
       if (compatibilityMode) {
-        this.logger.warn(`[CAP_RESOLVER] Compatibility Mode | Panel Version: ${apiVersion} | Spec Version: ${specFile} | Schema Version: ${schemaVersion}`);
+        this.logger.warn(
+          `[CAP_RESOLVER] Compatibility Mode | Panel Version: ${apiVersion} | Spec Version: ${specFile} | Schema Version: ${schemaVersion}`,
+        );
       }
 
       const specPath = path.join(docsDir, specFile);
       if (!fs.existsSync(specPath)) {
-        this.logger.warn(`OpenAPI spec not found at ${specPath}, falling back to default capabilities`);
-        const fallbackCaps = this.getDefaultCapabilities(major >= 3 && minor >= 4);
-        return { capabilities: fallbackCaps, hash: `fallback-missing-${specFile}` };
+        this.logger.warn(
+          `OpenAPI spec not found at ${specPath}, falling back to default capabilities`,
+        );
+        const fallbackCaps = this.getDefaultCapabilities(
+          major >= 3 && minor >= 4,
+        );
+        return {
+          capabilities: fallbackCaps,
+          hash: `fallback-missing-${specFile}`,
+        };
       }
 
       const raw = fs.readFileSync(specPath, 'utf8');
-      const fileHash = require('crypto').createHash('sha256').update(raw).digest('hex');
+      const fileHash = require('crypto')
+        .createHash('sha256')
+        .update(raw)
+        .digest('hex');
 
       if (this.cache.has(fileHash)) {
-        this.logger.log(`[CAP_RESOLVER] Returning cached capabilities for hash: ${fileHash}`);
+        this.logger.log(
+          `[CAP_RESOLVER] Returning cached capabilities for hash: ${fileHash}`,
+        );
         return this.cache.get(fileHash)!;
       }
 
@@ -107,7 +129,9 @@ export class ApiCapabilityResolver {
       const capabilities: PanelCapabilities = {
         clientsApi: paths.includes('/panel/api/clients/list'),
         pagination: paths.includes('/panel/api/clients/list/paged'),
-        slimInbounds: paths.includes('/panel/api/inbounds/options') || paths.includes('/panel/api/inbounds/list/slim'),
+        slimInbounds:
+          paths.includes('/panel/api/inbounds/options') ||
+          paths.includes('/panel/api/inbounds/list/slim'),
         observatory: paths.includes('/panel/api/server/xrayObservatory'),
         websocket: paths.includes('/panel/api/server/websocket'),
         bulkEnable: paths.includes('/panel/api/clients/bulkEnable'),
@@ -118,14 +142,21 @@ export class ApiCapabilityResolver {
         bulkResetTraffic: paths.includes('/panel/api/clients/bulkResetTraffic'),
       };
 
-      this.logger.log(`[CAP_RESOLVER] Resolved: ${Object.entries(capabilities).filter(c => c[1]).map(c => c[0]).join(', ')}`);
-      
+      this.logger.log(
+        `[CAP_RESOLVER] Resolved: ${Object.entries(capabilities)
+          .filter((c) => c[1])
+          .map((c) => c[0])
+          .join(', ')}`,
+      );
+
       const result = { capabilities, hash: fileHash };
       this.cache.set(fileHash, result);
       return result;
     } catch (err: any) {
       this.logger.error(`Failed to resolve capabilities: ${err.message}`);
-      const fallbackCaps = this.getDefaultCapabilities(major >= 3 && minor >= 4);
+      const fallbackCaps = this.getDefaultCapabilities(
+        major >= 3 && minor >= 4,
+      );
       return { capabilities: fallbackCaps, hash: 'fallback-error' };
     }
   }

@@ -1,4 +1,10 @@
-import { Injectable, Logger, InternalServerErrorException, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  InternalServerErrorException,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { spawn, exec } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -10,7 +16,8 @@ const execPromise = promisify(exec);
 @Injectable()
 export class BackupsService {
   private readonly logger = new Logger(BackupsService.name);
-  private readonly backupsDir = process.env.BACKUP_PATH || path.join(process.cwd(), 'backups');
+  private readonly backupsDir =
+    process.env.BACKUP_PATH || path.join(process.cwd(), 'backups');
 
   constructor() {
     if (!fs.existsSync(this.backupsDir)) {
@@ -22,8 +29,8 @@ export class BackupsService {
     return new Promise((resolve, reject) => {
       const hash = crypto.createHash('sha256');
       const stream = fs.createReadStream(filePath);
-      stream.on('error', err => reject(err));
-      stream.on('data', chunk => hash.update(chunk));
+      stream.on('error', (err) => reject(err));
+      stream.on('data', (chunk) => hash.update(chunk));
       stream.on('end', () => resolve(hash.digest('hex')));
     });
   }
@@ -40,9 +47,12 @@ export class BackupsService {
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const backupId = Date.now().toString();
-    const backupFile = path.join(this.backupsDir, `backup_${type}_${timestamp}.tar.gz`);
+    const backupFile = path.join(
+      this.backupsDir,
+      `backup_${type}_${timestamp}.tar.gz`,
+    );
     const tempDir = path.join(this.backupsDir, `temp_${backupId}`);
-    
+
     fs.mkdirSync(tempDir, { recursive: true });
 
     try {
@@ -52,17 +62,24 @@ export class BackupsService {
         const dbFile = path.join(tempDir, 'database.sql.gz');
         await new Promise((resolve, reject) => {
           this.logger.log('Exporting database...');
-          const pgDump = spawn('pg_dump', [cleanDatabaseUrl, '-c', '-O', '--if-exists'], { shell: false });
+          const pgDump = spawn(
+            'pg_dump',
+            [cleanDatabaseUrl, '-c', '-O', '--if-exists'],
+            { shell: false },
+          );
           const gzip = zlib.createGzip();
           const outStream = fs.createWriteStream(dbFile);
 
-          pgDump.stdout.pipe(gzip).pipe(outStream)
+          pgDump.stdout
+            .pipe(gzip)
+            .pipe(outStream)
             .on('finish', () => resolve(true))
-            .on('error', err => reject(err));
-            
-          pgDump.on('error', err => reject(err));
-          pgDump.on('close', code => {
-            if (code !== 0) reject(new Error(`pg_dump exited with code ${code}`));
+            .on('error', (err) => reject(err));
+
+          pgDump.on('error', (err) => reject(err));
+          pgDump.on('close', (code) => {
+            if (code !== 0)
+              reject(new Error(`pg_dump exited with code ${code}`));
           });
         });
         checksums['database.sql.gz'] = await this.calculateChecksum(dbFile);
@@ -72,48 +89,63 @@ export class BackupsService {
         this.logger.log('Archiving configuration...');
         const confTemp = path.join(this.backupsDir, `temp_conf_${backupId}`);
         fs.mkdirSync(confTemp, { recursive: true });
-        
+
         // Use standard Node.js path resolutions to find .env and nginx.
         // Assuming we are running from /app in the docker container.
         const appRoot = process.cwd();
-        
+
         if (fs.existsSync(path.join(appRoot, '.env'))) {
-          fs.copyFileSync(path.join(appRoot, '.env'), path.join(confTemp, '.env'));
+          fs.copyFileSync(
+            path.join(appRoot, '.env'),
+            path.join(confTemp, '.env'),
+          );
         }
-        
+
         if (fs.existsSync(path.join(appRoot, 'nginx_host'))) {
-          await execPromise(`cp -r "${path.join(appRoot, 'nginx_host')}" "${path.join(confTemp, 'nginx')}"`);
+          await execPromise(
+            `cp -r "${path.join(appRoot, 'nginx_host')}" "${path.join(confTemp, 'nginx')}"`,
+          );
         }
 
         const confFile = path.join(tempDir, 'config.tar.gz');
         await execPromise(`tar -czf "${confFile}" -C "${confTemp}" .`);
         await execPromise(`rm -rf "${confTemp}"`);
-        
+
         checksums['config.tar.gz'] = await this.calculateChecksum(confFile);
       }
 
       let appVer = '1.0.0';
       try {
-        const pkg = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf-8'));
+        const pkg = JSON.parse(
+          fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf-8'),
+        );
         appVer = pkg.version;
       } catch (e) {}
 
       const manifest = {
         version: appVer,
-        schemaVersion: "1",
+        schemaVersion: '1',
         timestamp: new Date().toISOString(),
         type: type,
         domain: process.env.PANEL_DOMAIN || 'localhost',
-        checksums
+        checksums,
       };
 
-      fs.writeFileSync(path.join(tempDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
+      fs.writeFileSync(
+        path.join(tempDir, 'manifest.json'),
+        JSON.stringify(manifest, null, 2),
+      );
 
       this.logger.log('Creating final tar.gz archive...');
       await execPromise(`tar -czf "${backupFile}" -C "${tempDir}" .`);
 
       this.logger.log(`Backup completed successfully: ${backupFile}`);
-      return { id: path.basename(backupFile), file: path.basename(backupFile), type, size: fs.statSync(backupFile).size };
+      return {
+        id: path.basename(backupFile),
+        file: path.basename(backupFile),
+        type,
+        size: fs.statSync(backupFile).size,
+      };
     } catch (error) {
       this.logger.error('Backup generation failed', error);
       throw new InternalServerErrorException('Backup failed: ' + error.message);
@@ -128,7 +160,7 @@ export class BackupsService {
     // Strip out potential directory traversal
     const safeId = path.basename(id);
     let filePath = path.join(this.backupsDir, `backup-${safeId}.sql.gz`);
-    
+
     if (!fs.existsSync(filePath)) {
       filePath = path.join(this.backupsDir, safeId);
       if (!fs.existsSync(filePath)) {
@@ -140,12 +172,21 @@ export class BackupsService {
 
   async analyzeBackup(file: Express.Multer.File) {
     const safeName = path.basename(file.originalname);
-    if (!safeName.endsWith('.tar.gz') && !safeName.endsWith('.sql.gz') && !safeName.endsWith('.sql')) {
-      throw new BadRequestException('Unsupported file format. Please upload .tar.gz, .sql, or .sql.gz');
+    if (
+      !safeName.endsWith('.tar.gz') &&
+      !safeName.endsWith('.sql.gz') &&
+      !safeName.endsWith('.sql')
+    ) {
+      throw new BadRequestException(
+        'Unsupported file format. Please upload .tar.gz, .sql, or .sql.gz',
+      );
     }
 
     const tempId = Date.now().toString();
-    const tempFilePath = path.join(this.backupsDir, `temp-restore-${tempId}-${safeName}`);
+    const tempFilePath = path.join(
+      this.backupsDir,
+      `temp-restore-${tempId}-${safeName}`,
+    );
     fs.writeFileSync(tempFilePath, file.buffer);
 
     this.logger.log(`Analyzing backup: ${tempFilePath}`);
@@ -160,21 +201,33 @@ export class BackupsService {
           sizeBytes: file.size,
           uploadDate: new Date(),
           isLegacy: true,
-          warnings: ['This is a legacy SQL backup format. Full rollback functionality may be limited.']
+          warnings: [
+            'This is a legacy SQL backup format. Full rollback functionality may be limited.',
+          ],
         };
       }
 
       // New format .tar.gz
-      const tempExtractDir = path.join(this.backupsDir, `temp_extract_${tempId}`);
+      const tempExtractDir = path.join(
+        this.backupsDir,
+        `temp_extract_${tempId}`,
+      );
       fs.mkdirSync(tempExtractDir, { recursive: true });
-      
-      await execPromise(`tar -xzf "${tempFilePath}" -C "${tempExtractDir}" manifest.json`);
-      
+
+      await execPromise(
+        `tar -xzf "${tempFilePath}" -C "${tempExtractDir}" manifest.json`,
+      );
+
       if (!fs.existsSync(path.join(tempExtractDir, 'manifest.json'))) {
-        throw new BadRequestException('Invalid backup archive: missing manifest.json');
+        throw new BadRequestException(
+          'Invalid backup archive: missing manifest.json',
+        );
       }
 
-      const manifestStr = fs.readFileSync(path.join(tempExtractDir, 'manifest.json'), 'utf-8');
+      const manifestStr = fs.readFileSync(
+        path.join(tempExtractDir, 'manifest.json'),
+        'utf-8',
+      );
       const manifest = JSON.parse(manifestStr);
 
       await execPromise(`rm -rf "${tempExtractDir}"`);
@@ -189,19 +242,25 @@ export class BackupsService {
         sizeBytes: file.size,
         uploadDate: new Date(manifest.timestamp || Date.now()),
         isLegacy: false,
-        warnings: []
+        warnings: [],
       };
     } catch (error) {
       if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
-      throw new BadRequestException(`Failed to analyze backup: ${error.message}`);
+      throw new BadRequestException(
+        `Failed to analyze backup: ${error.message}`,
+      );
     }
   }
 
   async restoreBackup(backupId: string) {
-    throw new BadRequestException('To perform a full transactional restore, please run "hm restore" on the host server CLI. The web UI currently only supports downloading backups.');
+    throw new BadRequestException(
+      'To perform a full transactional restore, please run "hm restore" on the host server CLI. The web UI currently only supports downloading backups.',
+    );
   }
 
   async applyBackup(id: string, fileName: string) {
-    throw new BadRequestException('To perform a full transactional restore, please run "hm restore" on the host server CLI.');
+    throw new BadRequestException(
+      'To perform a full transactional restore, please run "hm restore" on the host server CLI.',
+    );
   }
 }

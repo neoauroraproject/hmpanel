@@ -1,12 +1,11 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Shield, RefreshCw, X, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
-import { useToast } from "@/components/toast";
-import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/store/auth";
+import { motion } from "framer-motion";
 
 interface SslStatus {
   mode: string;
@@ -21,13 +20,34 @@ interface SslStatus {
     issuer?: string;
   };
   warning?: string;
+  isCorrupted?: boolean;
+  diagnostics?: {
+    dnsResolution: string;
+    resolvedIp: string;
+    expectedServerIp: string;
+    httpVirtualHost: string;
+    httpsVirtualHost: string;
+    serverName: string;
+    tcp80: string;
+    tcp443: string;
+    certificateExists: string;
+    certificateValid: string;
+    certificateLoaded: string;
+    nginxConfig: string;
+    nginxListening443: string;
+    tlsHandshake: string;
+    httpHealth: string;
+    httpsHealth: string;
+    backend: string;
+    frontend: string;
+    redirect: string;
+  };
 }
 
 export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
-  const qc = useQueryClient();
-  const toast = useToast((s) => s.push);
   const token = useAuth((s) => s.token);
   const isSuccessRef = React.useRef(false);
+  const isExecutingRef = React.useRef(false);
 
   const { data: sslInfo, isLoading, refetch } = useQuery({
     queryKey: ["sslStatus"],
@@ -86,6 +106,9 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
         // parse error
       }
     };
+    eventSource.onopen = () => {
+      setLogs(["Starting workflow..."]);
+    };
     eventSource.onerror = () => {
       // Do not close. Allow browser to auto-reconnect when Nginx is restarting.
     };
@@ -93,6 +116,8 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
   };
 
   const executeAction = async (actionFn: () => Promise<any>) => {
+    if (isExecutingRef.current) return;
+    isExecutingRef.current = true;
     setView("progress");
     setWorkflowState("running");
     setLogs(["Starting workflow..."]);
@@ -100,7 +125,6 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
     const es = startStream();
     try {
       await actionFn();
-      // Refetch info
       refetch();
     } catch (err: any) {
       if (isSuccessRef.current) return;
@@ -108,6 +132,8 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
       setWorkflowState("error");
       setWorkflowError(err.response?.data?.message || err.message || "Failed to execute action.");
       es.close();
+    } finally {
+      isExecutingRef.current = false;
     }
   };
 
@@ -130,7 +156,7 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
   };
 
   const handleRepair = () => {
-    executeAction(() => api.post("/settings/ssl/switch", { enableHttps: true }));
+    executeAction(() => api.post("/settings/ssl/repair"));
   };
 
   if (!isOpen) return null;
@@ -143,7 +169,6 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.95 }}
         className="relative w-full max-w-2xl bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
       >
         <div className="flex items-center justify-between p-6 border-b border-zinc-200 dark:border-zinc-800">
@@ -187,7 +212,7 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
               </div>
 
               {workflowState === "error" && (
-                <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-600 dark:text-red-400 text-sm">
+                <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-650 dark:text-red-400 text-sm">
                   {workflowError}
                 </div>
               )}
@@ -272,11 +297,27 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
                 <div className="p-4 bg-zinc-50 dark:bg-zinc-900/50 rounded-xl border border-zinc-200 dark:border-zinc-800/50">
                   <p className="text-xs text-zinc-500 mb-1">Mode</p>
                   <p className="font-medium flex items-center gap-2">
-                    <span className={`w-2 h-2 rounded-full ${sslInfo?.isHttpsEnabled ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-                    {sslInfo?.isHttpsEnabled ? "HTTPS Active" : "HTTP Only"}
+                    <span className={`w-2 h-2 rounded-full ${sslInfo?.isCorrupted ? 'bg-red-500' : sslInfo?.isHttpsEnabled ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                    {sslInfo?.isCorrupted ? "Corrupted" : sslInfo?.isHttpsEnabled ? "HTTPS Active" : "HTTP Only"}
                   </p>
                 </div>
               </div>
+
+              {sslInfo?.isCorrupted && (
+                <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-650 dark:text-red-400 text-sm flex gap-3 items-start">
+                  <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-bold text-red-650 dark:text-red-300">Configuration State Corrupted</p>
+                    <p className="mt-1">The system's SSL configuration is inconsistent. Nginx configuration, .env file, or mounted certificates do not match. Please use the Repair Config button below to restore consistency.</p>
+                  </div>
+                </div>
+              )}
+
+              {sslInfo?.warning && !sslInfo?.isCorrupted && (
+                <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-650 dark:text-amber-400 text-sm">
+                  {sslInfo.warning}
+                </div>
+              )}
 
               {sslInfo?.certificate?.exists ? (
                 <div className="space-y-4 border-t border-zinc-200 dark:border-zinc-800 pt-6">
@@ -309,11 +350,11 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
                       Repair Config
                     </button>
                     {!isIp && (
-                      <button onClick={() => { setForm({...form, domain: sslInfo.domain}); setView("change"); }} className="col-span-2 py-2.5 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-lg font-medium hover:bg-zinc-800 dark:hover:bg-zinc-100 transition-colors">
+                      <button onClick={() => { setForm({ domain: sslInfo.domain, email: "admin@" + sslInfo.domain, selfSigned: false }); setView("change"); }} className="col-span-2 py-2.5 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-lg font-medium hover:bg-zinc-800 dark:hover:bg-zinc-100 transition-colors">
                         Change Domain
                       </button>
                     )}
-                    <button onClick={handleDisable} className="col-span-2 py-2.5 border border-red-200 dark:border-red-900 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors">
+                    <button onClick={handleDisable} className="col-span-2 py-2.5 border border-red-200 dark:border-red-900 text-red-650 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors">
                       Disable HTTPS
                     </button>
                   </div>
@@ -333,13 +374,132 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
                       <button onClick={() => { setForm({ domain: sslInfo?.domain || "", email: "admin@" + (sslInfo?.domain || "example.com"), selfSigned: false }); setView("issue"); }} className="w-full py-3 bg-indigo-600 text-white font-medium rounded-xl hover:bg-indigo-500 transition-colors shadow-lg shadow-indigo-500/20">
                         Setup HTTPS Now
                       </button>
-                      {sslInfo?.isHttpsEnabled && (
-                        <button onClick={handleDisable} className="w-full py-3 border border-red-200 dark:border-red-900 text-red-600 font-medium rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                      {(sslInfo?.isHttpsEnabled || sslInfo?.isCorrupted) && (
+                        <button onClick={handleDisable} className="w-full py-3 border border-red-200 dark:border-red-900 text-red-650 font-medium rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
                           Fallback to HTTP Mode
+                        </button>
+                      )}
+                      {sslInfo?.isCorrupted && (
+                        <button onClick={handleRepair} className="w-full py-3 bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white font-medium rounded-xl hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors">
+                          Repair Config
                         </button>
                       )}
                     </div>
                   )}
+                </div>
+              )}
+
+              {sslInfo?.diagnostics && (
+                <div className="space-y-3 border-t border-zinc-200 dark:border-zinc-800 pt-6">
+                  <h3 className="font-bold text-sm text-zinc-700 dark:text-zinc-300">SSL Verification Checklist</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs font-mono bg-zinc-50 dark:bg-zinc-950 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800">
+                    <div className="flex justify-between items-center py-1 border-b border-zinc-100 dark:border-zinc-850">
+                      <span className="text-zinc-500">DNS Resolution:</span>
+                      <span className={sslInfo.diagnostics.dnsResolution === 'PASS' ? 'text-emerald-500 font-bold' : sslInfo.diagnostics.dnsResolution === 'N/A' ? 'text-zinc-500' : 'text-red-500 font-bold'}>
+                        {sslInfo.diagnostics.dnsResolution} ({sslInfo.diagnostics.resolvedIp})
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center py-1 border-b border-zinc-100 dark:border-zinc-850">
+                      <span className="text-zinc-500">Expected Server IP:</span>
+                      <span className="text-zinc-700 dark:text-zinc-300">{sslInfo.diagnostics.expectedServerIp}</span>
+                    </div>
+                    <div className="flex justify-between items-center py-1 border-b border-zinc-100 dark:border-zinc-850">
+                      <span className="text-zinc-500">HTTP Virtual Host:</span>
+                      <span className={sslInfo.diagnostics.httpVirtualHost === 'PASS' ? 'text-emerald-500 font-bold' : 'text-red-500 font-bold'}>
+                        {sslInfo.diagnostics.httpVirtualHost}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center py-1 border-b border-zinc-100 dark:border-zinc-850">
+                      <span className="text-zinc-500">HTTPS Virtual Host:</span>
+                      <span className={sslInfo.diagnostics.httpsVirtualHost === 'PASS' ? 'text-emerald-500 font-bold' : 'text-red-500 font-bold'}>
+                        {sslInfo.diagnostics.httpsVirtualHost}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center py-1 border-b border-zinc-100 dark:border-zinc-850">
+                      <span className="text-zinc-500">server_name:</span>
+                      <span className={sslInfo.diagnostics.serverName === 'PASS' ? 'text-emerald-500 font-bold' : 'text-red-500 font-bold'}>
+                        {sslInfo.diagnostics.serverName}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center py-1 border-b border-zinc-100 dark:border-zinc-850">
+                      <span className="text-zinc-500">TCP Port 80:</span>
+                      <span className={sslInfo.diagnostics.tcp80 === 'PASS' ? 'text-emerald-500 font-bold' : 'text-red-500 font-bold'}>
+                        {sslInfo.diagnostics.tcp80}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center py-1 border-b border-zinc-100 dark:border-zinc-850">
+                      <span className="text-zinc-500">TCP Port 443:</span>
+                      <span className={sslInfo.diagnostics.tcp443 === 'PASS' ? 'text-emerald-500 font-bold' : 'text-red-500 font-bold'}>
+                        {sslInfo.diagnostics.tcp443}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center py-1 border-b border-zinc-100 dark:border-zinc-850">
+                      <span className="text-zinc-500">Certificate Exists:</span>
+                      <span className={sslInfo.diagnostics.certificateExists === 'PASS' ? 'text-emerald-500 font-bold' : 'text-red-500 font-bold'}>
+                        {sslInfo.diagnostics.certificateExists}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center py-1 border-b border-zinc-100 dark:border-zinc-850">
+                      <span className="text-zinc-500">Certificate Valid:</span>
+                      <span className={sslInfo.diagnostics.certificateValid === 'PASS' ? 'text-emerald-500 font-bold' : 'text-red-500 font-bold'}>
+                        {sslInfo.diagnostics.certificateValid}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center py-1 border-b border-zinc-100 dark:border-zinc-850">
+                      <span className="text-zinc-500">Certificate Loaded:</span>
+                      <span className={sslInfo.diagnostics.certificateLoaded === 'PASS' ? 'text-emerald-500 font-bold' : 'text-red-500 font-bold'}>
+                        {sslInfo.diagnostics.certificateLoaded}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center py-1 border-b border-zinc-100 dark:border-zinc-850">
+                      <span className="text-zinc-500">Nginx Config Check:</span>
+                      <span className={sslInfo.diagnostics.nginxConfig === 'PASS' ? 'text-emerald-500 font-bold' : 'text-red-500 font-bold'}>
+                        {sslInfo.diagnostics.nginxConfig}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center py-1 border-b border-zinc-100 dark:border-zinc-850">
+                      <span className="text-zinc-500">Nginx Listening 443:</span>
+                      <span className={sslInfo.diagnostics.nginxListening443 === 'PASS' ? 'text-emerald-500 font-bold' : 'text-red-500 font-bold'}>
+                        {sslInfo.diagnostics.nginxListening443}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center py-1 border-b border-zinc-100 dark:border-zinc-850">
+                      <span className="text-zinc-500">TLS Handshake:</span>
+                      <span className={sslInfo.diagnostics.tlsHandshake === 'PASS' ? 'text-emerald-500 font-bold' : 'text-red-500 font-bold'}>
+                        {sslInfo.diagnostics.tlsHandshake}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center py-1 border-b border-zinc-100 dark:border-zinc-850">
+                      <span className="text-zinc-500">HTTP Health:</span>
+                      <span className={sslInfo.diagnostics.httpHealth === 'PASS' ? 'text-emerald-500 font-bold' : 'text-red-500 font-bold'}>
+                        {sslInfo.diagnostics.httpHealth}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center py-1 border-b border-zinc-100 dark:border-zinc-850">
+                      <span className="text-zinc-500">HTTPS Health:</span>
+                      <span className={sslInfo.diagnostics.httpsHealth === 'PASS' ? 'text-emerald-500 font-bold' : 'text-red-500 font-bold'}>
+                        {sslInfo.diagnostics.httpsHealth}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center py-1 border-b border-zinc-100 dark:border-zinc-850">
+                      <span className="text-zinc-500">Backend API:</span>
+                      <span className={sslInfo.diagnostics.backend === 'PASS' ? 'text-emerald-500 font-bold' : 'text-red-500 font-bold'}>
+                        {sslInfo.diagnostics.backend}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center py-1 border-b border-zinc-100 dark:border-zinc-850">
+                      <span className="text-zinc-500">Frontend SPA:</span>
+                      <span className={sslInfo.diagnostics.frontend === 'PASS' ? 'text-emerald-500 font-bold' : 'text-red-500 font-bold'}>
+                        {sslInfo.diagnostics.frontend}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center py-1 border-b border-zinc-100 dark:border-zinc-850 col-span-1 sm:col-span-2">
+                      <span className="text-zinc-500">HTTP to HTTPS Redirect:</span>
+                      <span className={sslInfo.diagnostics.redirect === 'PASS' ? 'text-emerald-500 font-bold' : sslInfo.diagnostics.redirect === 'N/A' ? 'text-zinc-500' : 'text-red-500 font-bold'}>
+                        {sslInfo.diagnostics.redirect}
+                      </span>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

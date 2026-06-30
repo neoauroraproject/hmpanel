@@ -1,4 +1,11 @@
-import { Injectable, ConflictException, NotFoundException, BadRequestException, Logger, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  ConflictException,
+  NotFoundException,
+  BadRequestException,
+  Logger,
+  OnModuleInit,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PanelsService } from '../panels/panels.service';
 import { calculateAdminTrafficSummary } from '../common/utils/traffic.util';
@@ -7,7 +14,10 @@ import * as bcrypt from 'bcryptjs';
 @Injectable()
 export class AdminsService implements OnModuleInit {
   private readonly logger = new Logger(AdminsService.name);
-  constructor(private prisma: PrismaService, private panelsService: PanelsService) {}
+  constructor(
+    private prisma: PrismaService,
+    private panelsService: PanelsService,
+  ) {}
 
   async onModuleInit() {
     try {
@@ -17,7 +27,9 @@ export class AdminsService implements OnModuleInit {
         const email = process.env.INITIAL_ADMIN_EMAIL || 'admin@example.com';
         const password = process.env.INITIAL_ADMIN_PASSWORD || 'admin123';
 
-        this.logger.log(`No admins found. Creating initial SUPER_ADMIN (${username})...`);
+        this.logger.log(
+          `No admins found. Creating initial SUPER_ADMIN (${username})...`,
+        );
         const hash = await bcrypt.hash(password, 10);
         await this.prisma.admin.create({
           data: {
@@ -36,7 +48,20 @@ export class AdminsService implements OnModuleInit {
     }
   }
 
-  async create(data: { username: string; email: string; password: string; role?: string; trafficMode?: string; balance?: number; inboundIds?: string[]; expiryTime?: number; maxClients?: number; permissions?: string[]; refundOnDelete?: boolean; refundOnEdit?: boolean }) {
+  async create(data: {
+    username: string;
+    email: string;
+    password: string;
+    role?: string;
+    trafficMode?: string;
+    balance?: number;
+    inboundIds?: string[];
+    expiryTime?: number;
+    maxClients?: number;
+    permissions?: string[];
+    refundOnDelete?: boolean;
+    refundOnEdit?: boolean;
+  }) {
     // Allow admin creation regardless of sync state since we enforce selection in the UI.
 
     const exists = await this.prisma.admin.findFirst({
@@ -60,20 +85,40 @@ export class AdminsService implements OnModuleInit {
         refundOnDelete: data.refundOnDelete ?? true,
         refundOnEdit: data.refundOnEdit ?? true,
       },
-      select: { id: true, username: true, email: true, role: true, balance: true, trafficMode: true, status: true, expiryTime: true, maxClients: true, permissions: true, refundOnDelete: true, refundOnEdit: true, createdAt: true },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        role: true,
+        balance: true,
+        trafficMode: true,
+        status: true,
+        expiryTime: true,
+        maxClients: true,
+        permissions: true,
+        refundOnDelete: true,
+        refundOnEdit: true,
+        createdAt: true,
+      },
     });
 
     if (data.inboundIds?.length) {
       await this.prisma.adminInbound.createMany({
-        data: data.inboundIds.map((inboundId) => ({ adminId: admin.id, inboundId })),
+        data: data.inboundIds.map((inboundId) => ({
+          adminId: admin.id,
+          inboundId,
+        })),
         skipDuplicates: true,
       });
     }
 
-
-
     await this.prisma.auditLog.create({
-      data: { action: 'ADMIN_CREATED', entity: 'Admin', entityId: admin.id, adminId: admin.id }
+      data: {
+        action: 'ADMIN_CREATED',
+        entity: 'Admin',
+        entityId: admin.id,
+        adminId: admin.id,
+      },
     });
 
     if (data.balance && data.balance > 0) {
@@ -86,14 +131,23 @@ export class AdminsService implements OnModuleInit {
           description: 'Initial Allocation',
           balanceBefore: 0,
           balanceAfter: data.balance,
-        }
+        },
       });
     }
 
     return { ...admin, expiryTime: Number(admin.expiryTime) };
   }
 
-  async findAll(page = 1, limit = 50, filters: { search?: string; status?: string; inboundId?: string; panelId?: string } = {}) {
+  async findAll(
+    page = 1,
+    limit = 50,
+    filters: {
+      search?: string;
+      status?: string;
+      inboundId?: string;
+      panelId?: string;
+    } = {},
+  ) {
     const where: any = {};
     if (filters.search) {
       where.OR = [
@@ -115,19 +169,33 @@ export class AdminsService implements OnModuleInit {
         skip: (page - 1) * limit,
         take: limit,
         select: {
-          id: true, username: true, email: true, role: true,
-          balance: true, trafficMode: true, status: true, createdAt: true,
-          expiryTime: true, maxClients: true, permissions: true, portalSettings: true, refundOnDelete: true, refundOnEdit: true,
+          id: true,
+          username: true,
+          email: true,
+          role: true,
+          balance: true,
+          trafficMode: true,
+          status: true,
+          createdAt: true,
+          expiryTime: true,
+          maxClients: true,
+          permissions: true,
+          portalSettings: true,
+          refundOnDelete: true,
+          refundOnEdit: true,
           totalAssigned: true,
-          _count: { select: { clients: true } }
+          _count: { select: { clients: true } },
         },
         orderBy: { createdAt: 'desc' },
       }),
       this.prisma.admin.count({ where }),
     ]);
 
-    const mappedData = data.map(admin => {
-      const summary = calculateAdminTrafficSummary(admin.totalAssigned, admin.balance);
+    const mappedData = data.map((admin) => {
+      const summary = calculateAdminTrafficSummary(
+        admin.totalAssigned,
+        admin.balance,
+      );
       return {
         ...admin,
         expiryTime: Number(admin.expiryTime),
@@ -143,17 +211,43 @@ export class AdminsService implements OnModuleInit {
     const admin = await this.prisma.admin.findUnique({
       where: { id },
       select: {
-        id: true, username: true, email: true, role: true,
-        balance: true, trafficMode: true, status: true, createdAt: true,
-        expiryTime: true, maxClients: true, permissions: true, portalSettings: true, refundOnDelete: true, refundOnEdit: true,
+        id: true,
+        username: true,
+        email: true,
+        role: true,
+        balance: true,
+        trafficMode: true,
+        status: true,
+        createdAt: true,
+        expiryTime: true,
+        maxClients: true,
+        permissions: true,
+        portalSettings: true,
+        refundOnDelete: true,
+        refundOnEdit: true,
         totalAssigned: true,
         _count: { select: { clients: true } },
-        adminInbounds: { select: { inbound: { select: { id: true, tag: true, port: true, protocol: true, panel: { select: { id: true, name: true } } } } } },
+        adminInbounds: {
+          select: {
+            inbound: {
+              select: {
+                id: true,
+                tag: true,
+                port: true,
+                protocol: true,
+                panel: { select: { id: true, name: true } },
+              },
+            },
+          },
+        },
       },
     });
     if (!admin) throw new NotFoundException('Admin not found');
 
-    const summary = calculateAdminTrafficSummary(admin.totalAssigned, admin.balance);
+    const summary = calculateAdminTrafficSummary(
+      admin.totalAssigned,
+      admin.balance,
+    );
     return {
       ...admin,
       expiryTime: Number(admin.expiryTime),
@@ -162,30 +256,55 @@ export class AdminsService implements OnModuleInit {
     };
   }
 
-  async update(id: string, data: { password?: string; email?: string; balance?: number; status?: string; trafficMode?: string; expiryTime?: number; maxClients?: number; permissions?: string[]; inboundIds?: string[]; portalSettings?: any; refundOnDelete?: boolean; refundOnEdit?: boolean }) {
+  async update(
+    id: string,
+    data: {
+      password?: string;
+      email?: string;
+      balance?: number;
+      status?: string;
+      trafficMode?: string;
+      expiryTime?: number;
+      maxClients?: number;
+      permissions?: string[];
+      inboundIds?: string[];
+      portalSettings?: any;
+      refundOnDelete?: boolean;
+      refundOnEdit?: boolean;
+    },
+  ) {
     const existing = await this.findOne(id);
     const updateData: any = {};
     if (data.email !== undefined) updateData.email = data.email;
     if (data.balance !== undefined) updateData.balance = data.balance;
     if (data.status !== undefined) updateData.status = data.status;
     if (data.maxClients !== undefined) updateData.maxClients = data.maxClients;
-    if (data.permissions !== undefined) updateData.permissions = data.permissions;
-    if (data.refundOnDelete !== undefined) updateData.refundOnDelete = data.refundOnDelete;
-    if (data.refundOnEdit !== undefined) updateData.refundOnEdit = data.refundOnEdit;
-    
+    if (data.permissions !== undefined)
+      updateData.permissions = data.permissions;
+    if (data.refundOnDelete !== undefined)
+      updateData.refundOnDelete = data.refundOnDelete;
+    if (data.refundOnEdit !== undefined)
+      updateData.refundOnEdit = data.refundOnEdit;
+
     if (data.password) {
       updateData.passwordHash = await bcrypt.hash(data.password, 10);
     }
 
-    if (data.expiryTime !== undefined) updateData.expiryTime = BigInt(data.expiryTime);
-    if (data.trafficMode !== undefined) updateData.trafficMode = data.trafficMode as never;
-    if (data.portalSettings !== undefined) updateData.portalSettings = data.portalSettings;
+    if (data.expiryTime !== undefined)
+      updateData.expiryTime = BigInt(data.expiryTime);
+    if (data.trafficMode !== undefined)
+      updateData.trafficMode = data.trafficMode as never;
+    if (data.portalSettings !== undefined)
+      updateData.portalSettings = data.portalSettings;
 
     if (data.inboundIds !== undefined) {
       await this.prisma.adminInbound.deleteMany({ where: { adminId: id } });
       if (data.inboundIds.length > 0) {
         await this.prisma.adminInbound.createMany({
-          data: data.inboundIds.map((inboundId) => ({ adminId: id, inboundId })),
+          data: data.inboundIds.map((inboundId) => ({
+            adminId: id,
+            inboundId,
+          })),
           skipDuplicates: true,
         });
       }
@@ -201,11 +320,29 @@ export class AdminsService implements OnModuleInit {
     const admin = await this.prisma.admin.update({
       where: { id },
       data: updateData,
-      select: { id: true, username: true, email: true, role: true, balance: true, trafficMode: true, status: true, expiryTime: true, maxClients: true, permissions: true, refundOnDelete: true, refundOnEdit: true },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        role: true,
+        balance: true,
+        trafficMode: true,
+        status: true,
+        expiryTime: true,
+        maxClients: true,
+        permissions: true,
+        refundOnDelete: true,
+        refundOnEdit: true,
+      },
     });
 
     await this.prisma.auditLog.create({
-      data: { action: 'ADMIN_UPDATED', entity: 'Admin', entityId: admin.id, adminId: admin.id }
+      data: {
+        action: 'ADMIN_UPDATED',
+        entity: 'Admin',
+        entityId: admin.id,
+        adminId: admin.id,
+      },
     });
 
     if (data.balance !== undefined && data.balance !== existing.balance) {
@@ -219,7 +356,7 @@ export class AdminsService implements OnModuleInit {
           description: diff > 0 ? 'Admin Recharge' : 'Admin Deduction',
           balanceBefore: existing.balance,
           balanceAfter: data.balance,
-        }
+        },
       });
     }
 
@@ -228,19 +365,31 @@ export class AdminsService implements OnModuleInit {
 
   async remove(id: string) {
     const admin = await this.findOne(id);
-    const clientCount = await this.prisma.client.count({ where: { adminId: id } });
+    const clientCount = await this.prisma.client.count({
+      where: { adminId: id },
+    });
     if (clientCount > 0) {
       throw new BadRequestException('Cannot delete admin with active clients');
     }
-    
+
     await this.prisma.auditLog.create({
-      data: { action: 'ADMIN_DELETED', entity: 'Admin', entityId: id }
+      data: { action: 'ADMIN_DELETED', entity: 'Admin', entityId: id },
     });
 
     if (admin.role === 'RESELLER') {
-      this.logger.warn(`Reseller ${admin.username} deleted. Group ${admin.username} in 3x-ui has been orphaned, not deleted per policy.`);
+      this.logger.warn(
+        `Reseller ${admin.username} deleted. Group ${admin.username} in 3x-ui has been orphaned, not deleted per policy.`,
+      );
       await this.prisma.auditLog.create({
-        data: { action: 'GROUP_ORPHANED', entity: 'Admin', entityId: id, details: { groupName: admin.username, message: 'Group was left in panel intentionally.' } }
+        data: {
+          action: 'GROUP_ORPHANED',
+          entity: 'Admin',
+          entityId: id,
+          details: {
+            groupName: admin.username,
+            message: 'Group was left in panel intentionally.',
+          },
+        },
       });
     }
 
@@ -249,7 +398,10 @@ export class AdminsService implements OnModuleInit {
   }
 
   /** Fix a migrated admin: set balance from trafficPool or provided value, set up adminInbounds */
-  async fixMigratedAdmin(id: string, data: { balanceGb?: number; inboundIds?: string[] }) {
+  async fixMigratedAdmin(
+    id: string,
+    data: { balanceGb?: number; inboundIds?: string[] },
+  ) {
     const admin = await this.findOne(id);
     const updateData: any = {};
 
@@ -259,7 +411,9 @@ export class AdminsService implements OnModuleInit {
       updateData.balance = newBalance;
 
       // Create a CREDIT transaction if admin has no transactions
-      const existingTx = await this.prisma.trafficTransaction.count({ where: { adminId: id, type: 'CREDIT' } });
+      const existingTx = await this.prisma.trafficTransaction.count({
+        where: { adminId: id, type: 'CREDIT' },
+      });
       if (existingTx === 0) {
         await this.prisma.trafficTransaction.create({
           data: {
@@ -270,17 +424,21 @@ export class AdminsService implements OnModuleInit {
             description: 'Migration Fix — Manual Balance Set',
             balanceBefore: admin.balance,
             balanceAfter: newBalance,
-          }
+          },
         });
       }
     } else if (admin.balance === 0) {
       // Try to sync from trafficPool
-      const pool = await this.prisma.trafficPool.findFirst({ where: { adminId: id } });
+      const pool = await this.prisma.trafficPool.findFirst({
+        where: { adminId: id },
+      });
       if (pool && pool.totalLimit > 0n) {
         const balanceFromPool = Number(pool.totalLimit);
         updateData.balance = balanceFromPool;
-        
-        const existingTx = await this.prisma.trafficTransaction.count({ where: { adminId: id, type: 'CREDIT' } });
+
+        const existingTx = await this.prisma.trafficTransaction.count({
+          where: { adminId: id, type: 'CREDIT' },
+        });
         if (existingTx === 0) {
           await this.prisma.trafficTransaction.create({
             data: {
@@ -291,7 +449,7 @@ export class AdminsService implements OnModuleInit {
               description: 'Migration Fix — Balance Synced from TrafficPool',
               balanceBefore: admin.balance,
               balanceAfter: balanceFromPool,
-            }
+            },
           });
         }
       }
@@ -311,7 +469,12 @@ export class AdminsService implements OnModuleInit {
     }
 
     await this.prisma.auditLog.create({
-      data: { action: 'ADMIN_MIGRATION_FIX', entity: 'Admin', entityId: id, adminId: id }
+      data: {
+        action: 'ADMIN_MIGRATION_FIX',
+        entity: 'Admin',
+        entityId: id,
+        adminId: id,
+      },
     });
 
     return this.findOne(id);
@@ -319,14 +482,20 @@ export class AdminsService implements OnModuleInit {
   async auditRefunds() {
     const resellers = await this.prisma.admin.findMany({
       where: { role: 'RESELLER' },
-      select: { id: true, username: true, email: true, balance: true, totalAssigned: true }
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        balance: true,
+        totalAssigned: true,
+      },
     });
 
     const report = [];
 
     for (const admin of resellers) {
       const transactions = await this.prisma.trafficTransaction.findMany({
-        where: { adminId: admin.id }
+        where: { adminId: admin.id },
       });
 
       let allocated = 0n;
@@ -346,9 +515,11 @@ export class AdminsService implements OnModuleInit {
       const expectedBalance = allocated + refunded - netConsumed;
       const currentBalance = admin.balance;
       const difference = currentBalance - Number(expectedBalance);
-      
-      const suspicious = refunded > allocated || currentBalance > Number(expectedBalance) + 1048576; // 1MB tolerance
-      
+
+      const suspicious =
+        refunded > allocated ||
+        currentBalance > Number(expectedBalance) + 1048576; // 1MB tolerance
+
       report.push({
         adminId: admin.id,
         username: admin.username,
@@ -365,7 +536,7 @@ export class AdminsService implements OnModuleInit {
 
     return {
       totalResellers: report.length,
-      suspiciousAccounts: report.filter(r => r.suspicious).length,
+      suspiciousAccounts: report.filter((r) => r.suspicious).length,
       report,
     };
   }

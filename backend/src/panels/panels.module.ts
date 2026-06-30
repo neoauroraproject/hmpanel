@@ -9,7 +9,12 @@ import { SettingsModule } from '../settings/settings.module';
 @Module({
   imports: [forwardRef(() => SettingsModule)],
   controllers: [PanelsController],
-  providers: [PanelsService, PanelsScheduler, PanelCapabilitiesService, ApiCapabilityResolver],
+  providers: [
+    PanelsService,
+    PanelsScheduler,
+    PanelCapabilitiesService,
+    ApiCapabilityResolver,
+  ],
   exports: [PanelsService, PanelCapabilitiesService, ApiCapabilityResolver],
 })
 export class PanelsModule {}

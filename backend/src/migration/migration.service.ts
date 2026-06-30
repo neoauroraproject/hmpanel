@@ -18,18 +18,30 @@ export class MigrationService {
   async validateBackup(filePath: string) {
     try {
       const db = new Database(filePath, { fileMustExist: true });
-      const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as any[];
-      const tableNames = tables.map(t => t.name);
+      const tables = db
+        .prepare("SELECT name FROM sqlite_master WHERE type='table'")
+        .all() as any[];
+      const tableNames = tables.map((t) => t.name);
 
-      if (!tableNames.includes('panels') || !tableNames.includes('admins') || !tableNames.includes('sanaei_users')) {
+      if (
+        !tableNames.includes('panels') ||
+        !tableNames.includes('admins') ||
+        !tableNames.includes('sanaei_users')
+      ) {
         db.close();
-        throw new BadRequestException('Invalid database schema. Missing required tables.');
+        throw new BadRequestException(
+          'Invalid database schema. Missing required tables.',
+        );
       }
 
       this.currentBackupPath = filePath;
       db.close();
 
-      return { valid: true, message: 'Database validated successfully', path: filePath };
+      return {
+        valid: true,
+        message: 'Database validated successfully',
+        path: filePath,
+      };
     } catch (error: any) {
       this.logger.error('Database validation failed', error);
       throw new BadRequestException(`Validation failed: ${error.message}`);
@@ -37,13 +49,20 @@ export class MigrationService {
   }
 
   async preview() {
-    if (!this.currentBackupPath) throw new BadRequestException('No backup uploaded');
+    if (!this.currentBackupPath)
+      throw new BadRequestException('No backup uploaded');
     const db = new Database(this.currentBackupPath, { fileMustExist: true });
-    
+
     try {
-      const panelsCount = (db.prepare('SELECT COUNT(*) as count FROM panels').get() as any).count;
-      const adminsCount = (db.prepare('SELECT COUNT(*) as count FROM admins').get() as any).count;
-      const usersCount = (db.prepare('SELECT COUNT(*) as count FROM sanaei_users').get() as any).count;
+      const panelsCount = (
+        db.prepare('SELECT COUNT(*) as count FROM panels').get() as any
+      ).count;
+      const adminsCount = (
+        db.prepare('SELECT COUNT(*) as count FROM admins').get() as any
+      ).count;
+      const usersCount = (
+        db.prepare('SELECT COUNT(*) as count FROM sanaei_users').get() as any
+      ).count;
 
       return {
         panels: panelsCount,
@@ -56,9 +75,10 @@ export class MigrationService {
   }
 
   async importData() {
-    if (!this.currentBackupPath) throw new BadRequestException('No backup uploaded');
+    if (!this.currentBackupPath)
+      throw new BadRequestException('No backup uploaded');
     const db = new Database(this.currentBackupPath, { fileMustExist: true });
-    
+
     // Begin our Prisma transaction manually since we are inserting multiple distinct domains
     // Actually, due to the complexity and needed fallbacks, we will insert them sequentially but wrap in error handling
     let importedPanels = 0;
@@ -69,7 +89,7 @@ export class MigrationService {
       let defaultServer = await this.prisma.server.findFirst();
       if (!defaultServer) {
         defaultServer = await this.prisma.server.create({
-          data: { name: 'Default Server', ipAddress: '127.0.0.1' }
+          data: { name: 'Default Server', ipAddress: '127.0.0.1' },
         });
       }
 
@@ -81,7 +101,7 @@ export class MigrationService {
         let apiBaseUrl = p.url;
         try {
           const urlObj = new URL(p.url);
-          let path = urlObj.pathname.replace(/\/$/, '');
+          const path = urlObj.pathname.replace(/\/$/, '');
           const panelIndex = path.indexOf('/panel');
           if (panelIndex !== -1) {
             webBasePath = path.substring(0, panelIndex);
@@ -90,10 +110,14 @@ export class MigrationService {
           }
           apiBaseUrl = `${urlObj.origin}${webBasePath}`;
         } catch (err) {
-          this.logger.warn(`Failed to parse URL for panel ${p.name}: ${p.url}. Using raw URL.`);
+          this.logger.warn(
+            `Failed to parse URL for panel ${p.name}: ${p.url}. Using raw URL.`,
+          );
         }
 
-        const existing = await this.prisma.panel.findFirst({ where: { name: p.name } });
+        const existing = await this.prisma.panel.findFirst({
+          where: { name: p.name },
+        });
         if (existing) {
           // Update existing panel to apply correct URLs/tokens
           await this.prisma.panel.update({
@@ -108,7 +132,7 @@ export class MigrationService {
               panelType: p.panel_type || '3x-ui',
               webBasePath: webBasePath,
               apiBaseUrl: apiBaseUrl,
-            }
+            },
           });
           this.logger.log(`Updated existing panel: ${p.name}`);
         } else {
@@ -126,7 +150,7 @@ export class MigrationService {
               panelType: p.panel_type || '3x-ui',
               webBasePath: webBasePath,
               apiBaseUrl: apiBaseUrl,
-            }
+            },
           });
           importedPanels++;
         }
@@ -135,14 +159,19 @@ export class MigrationService {
       // 3. Import Admins
       const admins = db.prepare('SELECT * FROM admins').all() as any[];
       for (const a of admins) {
-        let admin = await this.prisma.admin.findUnique({ where: { username: a.username } });
-        
+        let admin = await this.prisma.admin.findUnique({
+          where: { username: a.username },
+        });
+
         // Calculate balance from legacy data
         // a.traffic = total allocated bytes, a.remaining_traffic = bytes left
         const totalTraffic = a.traffic ? BigInt(a.traffic) : 0n;
-        const remainingTraffic = a.remaining_traffic != null ? BigInt(a.remaining_traffic) : totalTraffic;
+        const remainingTraffic =
+          a.remaining_traffic != null
+            ? BigInt(a.remaining_traffic)
+            : totalTraffic;
         const balanceBytes = remainingTraffic; // balance = what they have left
-        
+
         if (!admin) {
           admin = await this.prisma.admin.create({
             data: {
@@ -151,34 +180,38 @@ export class MigrationService {
               passwordHash: a.hashed_password,
               role: 'RESELLER',
               status: a.is_active ? 'active' : 'suspended',
-              expiryTime: a.expiry_date ? BigInt(new Date(a.expiry_date).getTime()) : 0n,
+              expiryTime: a.expiry_date
+                ? BigInt(new Date(a.expiry_date).getTime())
+                : 0n,
               // Set balance from migration data
               balance: Number(balanceBytes),
               trafficMode: 'ALLOCATION', // Default for migrated admins
-            }
+            },
           });
           importedAdmins++;
 
           // Create a trafficTransaction record for the total allocation (for dashboard tracking)
           if (totalTraffic > 0n) {
-            await this.prisma.trafficTransaction.create({
-              data: {
-                adminId: admin.id,
-                amount: totalTraffic,
-                type: 'CREDIT',
-                action: 'MIGRATION_INITIAL_ALLOCATION',
-                description: 'Migration Import — Initial Allocation',
-                balanceBefore: 0,
-                balanceAfter: Number(balanceBytes),
-              }
-            }).catch(() => {});
+            await this.prisma.trafficTransaction
+              .create({
+                data: {
+                  adminId: admin.id,
+                  amount: totalTraffic,
+                  type: 'CREDIT',
+                  action: 'MIGRATION_INITIAL_ALLOCATION',
+                  description: 'Migration Import — Initial Allocation',
+                  balanceBefore: 0,
+                  balanceAfter: Number(balanceBytes),
+                },
+              })
+              .catch(() => {});
           }
         } else {
           // Update existing admin balance from migration data if not already set
           if (admin.balance === 0 && balanceBytes > 0n) {
             await this.prisma.admin.update({
               where: { id: admin.id },
-              data: { balance: Number(balanceBytes) }
+              data: { balance: Number(balanceBytes) },
             });
           }
         }
@@ -186,14 +219,18 @@ export class MigrationService {
         // Legacy: also create trafficPool if schema requires it
         if (a.traffic && a.traffic > 0) {
           const poolBytes = BigInt(a.traffic);
-          const existingPool = await this.prisma.trafficPool.findFirst({ where: { adminId: admin.id } });
+          const existingPool = await this.prisma.trafficPool.findFirst({
+            where: { adminId: admin.id },
+          });
           if (!existingPool) {
-            await this.prisma.trafficPool.create({
-              data: {
-                adminId: admin.id,
-                totalLimit: poolBytes,
-              }
-            }).catch(() => {});
+            await this.prisma.trafficPool
+              .create({
+                data: {
+                  adminId: admin.id,
+                  totalLimit: poolBytes,
+                },
+              })
+              .catch(() => {});
           }
         }
       }
@@ -235,7 +272,11 @@ export class MigrationService {
           totalSyncedClients += syncResult.syncedClients;
         }
       } catch (err: any) {
-        reports.push({ panelName: panel.name, success: false, error: err.message });
+        reports.push({
+          panelName: panel.name,
+          success: false,
+          error: err.message,
+        });
       }
     }
 
@@ -243,27 +284,34 @@ export class MigrationService {
     for (const legacyUser of this.sanaeiUsersCache) {
       const client = await this.prisma.client.findFirst({
         where: { email: legacyUser.username },
-        include: { inbounds: true }
+        include: { inbounds: true },
       });
-      const admin = await this.prisma.admin.findUnique({ where: { username: legacyUser.owner } });
-      
+      const admin = await this.prisma.admin.findUnique({
+        where: { username: legacyUser.owner },
+      });
+
       if (client && admin) {
         await this.prisma.client.update({
           where: { id: client.id },
-          data: { adminId: admin.id, ownerTag: 'Whale Migration' }
+          data: { adminId: admin.id, ownerTag: 'Whale Migration' },
         });
         matchedOwnerships++;
 
         // Auto-assign adminInbound if not already set, using the client's inbounds
         if (client.inbounds && client.inbounds.length > 0) {
           for (const ci of client.inbounds) {
-            const existingAdminInbound = await this.prisma.adminInbound.findFirst({
-              where: { adminId: admin.id, inboundId: ci.inboundId }
-            });
+            const existingAdminInbound =
+              await this.prisma.adminInbound.findFirst({
+                where: { adminId: admin.id, inboundId: ci.inboundId },
+              });
             if (!existingAdminInbound) {
-              await this.prisma.adminInbound.create({
-                data: { adminId: admin.id, inboundId: ci.inboundId }
-              }).catch(() => {/* skip duplicates */});
+              await this.prisma.adminInbound
+                .create({
+                  data: { adminId: admin.id, inboundId: ci.inboundId },
+                })
+                .catch(() => {
+                  /* skip duplicates */
+                });
             }
           }
         }
@@ -274,23 +322,29 @@ export class MigrationService {
 
     // Also try to set adminInbound from sanaei_users inbound_id if present
     // This covers the case where admins have inbound_id set in the legacy database
-    const adminsWithInboundId = this.sanaeiUsersCache.filter(u => u.inbound_id);
+    const adminsWithInboundId = this.sanaeiUsersCache.filter(
+      (u) => u.inbound_id,
+    );
     for (const legacyUser of adminsWithInboundId) {
-      const admin = await this.prisma.admin.findUnique({ where: { username: legacyUser.owner || legacyUser.username } });
+      const admin = await this.prisma.admin.findUnique({
+        where: { username: legacyUser.owner || legacyUser.username },
+      });
       if (!admin) continue;
-      
+
       // Find inbound by matching the port/tag from legacy inbound_id
       const inbound = await this.prisma.inbound.findFirst({
-        where: { port: Number(legacyUser.inbound_id) || undefined }
+        where: { port: Number(legacyUser.inbound_id) || undefined },
       });
       if (inbound) {
         const existingAdminInbound = await this.prisma.adminInbound.findFirst({
-          where: { adminId: admin.id, inboundId: inbound.id }
+          where: { adminId: admin.id, inboundId: inbound.id },
         });
         if (!existingAdminInbound) {
-          await this.prisma.adminInbound.create({
-            data: { adminId: admin.id, inboundId: inbound.id }
-          }).catch(() => {});
+          await this.prisma.adminInbound
+            .create({
+              data: { adminId: admin.id, inboundId: inbound.id },
+            })
+            .catch(() => {});
         }
       }
     }
@@ -312,7 +366,11 @@ export class MigrationService {
         for (const [groupName, emails] of Object.entries(groupAssignments)) {
           if (emails.length === 0) continue;
           try {
-            const res = await this.panelsService.assignClientToGroup(panel.id, emails, groupName);
+            const res = await this.panelsService.assignClientToGroup(
+              panel.id,
+              emails,
+              groupName,
+            );
             if (res && res.success) {
               successfulGroups.add(groupName);
               clientsAssignedToGroups += emails.length;

@@ -35,15 +35,26 @@ export class SslController {
   @Post('issue')
   @Roles('SUPER_ADMIN')
   @ApiOperation({ summary: 'Issue a new SSL certificate' })
-  async issue(@Body() body: { domain: string; email: string; selfSigned?: boolean }) {
+  async issue(
+    @Body() body: { domain: string; email: string; selfSigned?: boolean },
+  ) {
     return this.sslService.issue(body.domain, body.email, body.selfSigned);
   }
 
   @Post('change-domain')
   @Roles('SUPER_ADMIN')
-  @ApiOperation({ summary: 'Change the domain and issue a new certificate with rollback' })
+  @ApiOperation({
+    summary: 'Change the domain and issue a new certificate with rollback',
+  })
   async changeDomain(@Body() body: { domain: string; email: string }) {
     return this.sslService.changeDomain(body.domain, body.email);
+  }
+
+  @Post('repair')
+  @Roles('SUPER_ADMIN')
+  @ApiOperation({ summary: 'Repair the system SSL configuration' })
+  async repair() {
+    return this.sslService.repair();
   }
 
   @Sse('stream')

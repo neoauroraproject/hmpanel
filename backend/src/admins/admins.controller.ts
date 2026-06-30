@@ -1,4 +1,16 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards, Req, ForbiddenException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+  Req,
+  ForbiddenException,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { RolesGuard, Roles } from '../common/roles.guard';
@@ -24,14 +36,19 @@ export class AdminsController {
   @Roles('SUPER_ADMIN')
   @ApiOperation({ summary: 'List all admins' })
   findAll(
-    @Query('page') page?: string, 
+    @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('search') search?: string,
     @Query('status') status?: string,
     @Query('inboundId') inboundId?: string,
-    @Query('panelId') panelId?: string
+    @Query('panelId') panelId?: string,
   ) {
-    return this.adminsService.findAll(Number(page) || 1, Number(limit) || 50, { search, status, inboundId, panelId });
+    return this.adminsService.findAll(Number(page) || 1, Number(limit) || 50, {
+      search,
+      status,
+      inboundId,
+      panelId,
+    });
   }
 
   @Get('audit-refunds')
@@ -52,7 +69,11 @@ export class AdminsController {
 
   @Patch(':id')
   @ApiOperation({ summary: 'Update admin' })
-  update(@Req() req: AuthRequest, @Param('id') id: string, @Body() dto: UpdateAdminDto) {
+  update(
+    @Req() req: AuthRequest,
+    @Param('id') id: string,
+    @Body() dto: UpdateAdminDto,
+  ) {
     if (req.user.role !== 'SUPER_ADMIN' && req.user.id !== id) {
       throw new ForbiddenException('You can only update your own profile');
     }
@@ -68,8 +89,14 @@ export class AdminsController {
 
   @Post(':id/fix-migration')
   @Roles('SUPER_ADMIN')
-  @ApiOperation({ summary: 'Fix migrated admin: sync balance from trafficPool and set up adminInbound' })
-  fixMigration(@Param('id') id: string, @Body() dto: { balanceGb?: number; inboundIds?: string[] }) {
+  @ApiOperation({
+    summary:
+      'Fix migrated admin: sync balance from trafficPool and set up adminInbound',
+  })
+  fixMigration(
+    @Param('id') id: string,
+    @Body() dto: { balanceGb?: number; inboundIds?: string[] },
+  ) {
     return this.adminsService.fixMigratedAdmin(id, dto);
   }
 }

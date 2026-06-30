@@ -1,4 +1,13 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { RolesGuard, Roles } from '../common/roles.guard';
@@ -14,7 +23,9 @@ export class PanelsController {
 
   @Post('test-connection')
   @ApiOperation({ summary: 'Test connectivity to a panel URL' })
-  testConnection(@Body() dto: { url: string; apiToken?: string; panelId?: string }) {
+  testConnection(
+    @Body() dto: { url: string; apiToken?: string; panelId?: string },
+  ) {
     return this.panelsService.testConnection(dto);
   }
 
@@ -27,12 +38,25 @@ export class PanelsController {
 
   @Post()
   @ApiOperation({ summary: 'Register a 3x-ui panel' })
-  register(@Body() dto: { serverId?: string; name: string; url: string; subUrl?: string; apiToken?: string; username?: string; password?: string }) {
+  register(
+    @Body()
+    dto: {
+      serverId?: string;
+      name: string;
+      url: string;
+      subUrl?: string;
+      apiToken?: string;
+      username?: string;
+      password?: string;
+    },
+  ) {
     return this.panelsService.register(dto);
   }
 
   @Get()
-  @ApiOperation({ summary: 'List all panels with sync health and client counts' })
+  @ApiOperation({
+    summary: 'List all panels with sync health and client counts',
+  })
   findAll() {
     return this.panelsService.findAll();
   }
@@ -50,14 +74,27 @@ export class PanelsController {
   }
 
   @Post(':id/scan-capabilities')
-  @ApiOperation({ summary: 'Manually trigger a deep scan of panel capabilities based on OpenAPI spec' })
+  @ApiOperation({
+    summary:
+      'Manually trigger a deep scan of panel capabilities based on OpenAPI spec',
+  })
   scanCapabilities(@Param('id') id: string) {
     return this.panelsService.scanCapabilities(id);
   }
 
   @Patch(':id')
   @ApiOperation({ summary: 'Update panel' })
-  update(@Param('id') id: string, @Body() dto: { name?: string; url?: string; subUrl?: string; apiToken?: string; status?: string }) {
+  update(
+    @Param('id') id: string,
+    @Body()
+    dto: {
+      name?: string;
+      url?: string;
+      subUrl?: string;
+      apiToken?: string;
+      status?: string;
+    },
+  ) {
     return this.panelsService.update(id, dto);
   }
 

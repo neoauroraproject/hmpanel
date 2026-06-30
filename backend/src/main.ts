@@ -23,9 +23,7 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   app.enableCors({ exposedHeaders: ['Content-Disposition'] });
-  app.useGlobalPipes(
-    new ValidationPipe({ whitelist: true, transform: true }),
-  );
+  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
 
   const config = new DocumentBuilder()
     .setTitle('Panel API')
@@ -45,13 +43,16 @@ async function bootstrap() {
 
   // Create shared agents to reuse connections and avoid TCP/SSL handshake bottlenecks
   // when the browser requests dozens of assets concurrently.
-  const sharedHttpsAgent = new https.Agent({ rejectUnauthorized: false, keepAlive: true });
+  const sharedHttpsAgent = new https.Agent({
+    rejectUnauthorized: false,
+    keepAlive: true,
+  });
   const sharedHttpAgent = new (require('http').Agent)({ keepAlive: true });
 
   expressApp.use('/sub', async (req: any, res: any, next: any) => {
     // Only handle GET requests for assets
     if (req.method !== 'GET') return next();
-    
+
     try {
       // req.path is relative to mount point, e.g. "/assets/vendor.js"
       const assetPath = req.path.replace(/^\//, '');
@@ -62,7 +63,8 @@ async function bootstrap() {
       const panels = await prisma.panel.findMany({
         where: { status: 'ONLINE' },
       });
-      const allPanels = panels.length > 0 ? panels : await prisma.panel.findMany();
+      const allPanels =
+        panels.length > 0 ? panels : await prisma.panel.findMany();
 
       if (allPanels.length === 0) {
         return res.status(404).send('No panel available');
@@ -96,7 +98,13 @@ async function bootstrap() {
             timeout: 15000,
           });
 
-          const fwdHeaders = ['content-type', 'content-length', 'cache-control', 'last-modified', 'etag'];
+          const fwdHeaders = [
+            'content-type',
+            'content-length',
+            'cache-control',
+            'last-modified',
+            'etag',
+          ];
           for (const h of fwdHeaders) {
             if (response.headers[h]) {
               res.setHeader(h, response.headers[h]);
@@ -110,7 +118,9 @@ async function bootstrap() {
       }
 
       if (lastError) {
-        logger.error(`Sub asset proxy failed for ${assetPath}: ${lastError.message}`);
+        logger.error(
+          `Sub asset proxy failed for ${assetPath}: ${lastError.message}`,
+        );
       }
       res.status(404).send('Asset not found');
     } catch (err: any) {

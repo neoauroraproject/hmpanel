@@ -1,4 +1,9 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import Redis from 'ioredis';
 
 @Injectable()
@@ -35,10 +40,18 @@ export class RedisLockService implements OnModuleInit, OnModuleDestroy {
   async acquireLock(key: string, ttlMs: number = 30000): Promise<boolean> {
     try {
       // SET key value NX PX ttl
-      const result = await this.redisClient.set(key, 'LOCKED', 'PX', ttlMs, 'NX');
+      const result = await this.redisClient.set(
+        key,
+        'LOCKED',
+        'PX',
+        ttlMs,
+        'NX',
+      );
       return result === 'OK';
     } catch (error) {
-      this.logger.error(`Error acquiring lock for key ${key}: ${error.message}`);
+      this.logger.error(
+        `Error acquiring lock for key ${key}: ${error.message}`,
+      );
       return false; // Fail safe by denying the lock
     }
   }
@@ -51,7 +64,9 @@ export class RedisLockService implements OnModuleInit, OnModuleDestroy {
     try {
       await this.redisClient.del(key);
     } catch (error) {
-      this.logger.error(`Error releasing lock for key ${key}: ${error.message}`);
+      this.logger.error(
+        `Error releasing lock for key ${key}: ${error.message}`,
+      );
     }
   }
 }

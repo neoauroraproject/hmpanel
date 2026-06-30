@@ -2,7 +2,8 @@ import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 
 export const ROLES_KEY = 'roles';
-export const Roles = (...roles: string[]) =>
+export const Roles =
+  (...roles: string[]) =>
   (target: any, key?: string, descriptor?: any) => {
     Reflect.defineMetadata(ROLES_KEY, roles, descriptor?.value ?? target);
     return descriptor ?? target;

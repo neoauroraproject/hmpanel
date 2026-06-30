@@ -58,7 +58,7 @@ http {
     # ─────────────────────────────────────────────────────────────
     server {
         listen 80;
-        server_name _;
+        server_name ${PANEL_DOMAIN} localhost 127.0.0.1;
 
         # Redirect all other HTTP traffic to HTTPS
         location / {
@@ -72,7 +72,7 @@ http {
     server {
         listen 443 ssl;
         http2 on;
-        server_name _;
+        server_name ${PANEL_DOMAIN};
 
         # SSL certificates (auto-updated by certbot or manual)
         ssl_certificate     /etc/nginx/ssl/fullchain.pem;

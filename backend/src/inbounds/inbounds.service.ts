@@ -8,9 +8,7 @@ export class InboundsService {
   /** List inbounds. Super-admins see all; resellers only their assigned inbounds. */
   async findAll(adminId: string, role: string) {
     const where =
-      role === 'SUPER_ADMIN'
-        ? {}
-        : { adminAccess: { some: { adminId } } };
+      role === 'SUPER_ADMIN' ? {} : { adminAccess: { some: { adminId } } };
 
     return this.prisma.inbound.findMany({
       where,

@@ -1,8 +1,24 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Query, Req, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { ClientsService } from './clients.service';
-import { CreateClientDto, UpdateClientDto, BulkClientDto, BulkCreateClientDto } from './dto/client.dto';
+import {
+  CreateClientDto,
+  UpdateClientDto,
+  BulkClientDto,
+  BulkCreateClientDto,
+} from './dto/client.dto';
 import type { AuthRequest } from '../common/auth-request';
 
 @ApiTags('Clients')
@@ -26,8 +42,15 @@ export class ClientsController {
 
   @Post('bulk-create/validate')
   @ApiOperation({ summary: 'Validate parameters for bulk client creation' })
-  validateBulkCreate(@Req() req: AuthRequest, @Body() dto: BulkCreateClientDto) {
-    return this.clientsService.validateBulkCreate(req.user.id, req.user.role, dto);
+  validateBulkCreate(
+    @Req() req: AuthRequest,
+    @Body() dto: BulkCreateClientDto,
+  ) {
+    return this.clientsService.validateBulkCreate(
+      req.user.id,
+      req.user.role,
+      dto,
+    );
   }
 
   @Get('groups')
@@ -37,7 +60,10 @@ export class ClientsController {
   }
 
   @Post('bulk')
-  @ApiOperation({ summary: 'Bulk action on clients (enable/disable/delete/addTraffic/addDays/assignGroup)' })
+  @ApiOperation({
+    summary:
+      'Bulk action on clients (enable/disable/delete/addTraffic/addDays/assignGroup)',
+  })
   bulk(@Req() req: AuthRequest, @Body() dto: BulkClientDto) {
     return this.clientsService.bulk(req.user.id, req.user.role, dto);
   }
@@ -49,7 +75,9 @@ export class ClientsController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'List clients (scoped by role, filterable, paginated)' })
+  @ApiOperation({
+    summary: 'List clients (scoped by role, filterable, paginated)',
+  })
   findAll(
     @Req() req: AuthRequest,
     @Query('page') page?: string,
@@ -63,8 +91,10 @@ export class ClientsController {
     @Query('trafficRange') trafficRange?: string,
   ) {
     return this.clientsService.findAll(
-      req.user.id, req.user.role,
-      Number(page) || 1, Number(limit) || 25,
+      req.user.id,
+      req.user.role,
+      Number(page) || 1,
+      Number(limit) || 25,
       { search, status, inboundId, panelId, adminId, expiry, trafficRange },
     );
   }
@@ -83,7 +113,11 @@ export class ClientsController {
 
   @Patch(':id')
   @ApiOperation({ summary: 'Update client' })
-  update(@Req() req: AuthRequest, @Param('id') id: string, @Body() dto: UpdateClientDto) {
+  update(
+    @Req() req: AuthRequest,
+    @Param('id') id: string,
+    @Body() dto: UpdateClientDto,
+  ) {
     return this.clientsService.update(id, req.user.id, req.user.role, dto);
   }
 

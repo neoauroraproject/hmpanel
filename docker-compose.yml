@@ -66,10 +66,11 @@ services:
     environment:
       - APP_PORT=${APP_PORT:-3000}
       - BACKEND_PORT=${BACKEND_PORT:-4000}
+      - PANEL_DOMAIN=${PANEL_DOMAIN:-localhost}
     volumes:
       - ./nginx/nginx.conf.template:/etc/nginx/nginx.conf.template:ro
       - ./nginx/ssl:/etc/nginx/ssl:ro
-    command: /bin/sh -c "envsubst '$${APP_PORT} $${BACKEND_PORT}' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && exec nginx -g 'daemon off;'"
+    command: /bin/sh -c "envsubst '\$${APP_PORT} \$${BACKEND_PORT} \$${PANEL_DOMAIN}' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && exec nginx -g 'daemon off;'"
     depends_on:
       - panel-app
     networks:

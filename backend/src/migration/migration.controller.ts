@@ -1,6 +1,20 @@
-import { Controller, Post, UseInterceptors, UploadedFile, UseGuards, Req, BadRequestException } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  UseInterceptors,
+  UploadedFile,
+  UseGuards,
+  Req,
+  BadRequestException,
+} from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes, ApiBody } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiBearerAuth,
+  ApiConsumes,
+  ApiBody,
+} from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { MigrationService } from './migration.service';
 import { RolesGuard, Roles } from '../common/roles.guard';
@@ -31,15 +45,22 @@ export class MigrationController {
   constructor(private readonly migrationService: MigrationService) {}
 
   @Post('upload')
-  @UseInterceptors(FileInterceptor('file', {
-    storage,
-    fileFilter: (req, file, cb) => {
-      if (!file.originalname.match(/\.db$/)) {
-        return cb(new BadRequestException('Only .db SQLite database files are allowed!'), false);
-      }
-      cb(null, true);
-    },
-  }))
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage,
+      fileFilter: (req, file, cb) => {
+        if (!file.originalname.match(/\.db$/)) {
+          return cb(
+            new BadRequestException(
+              'Only .db SQLite database files are allowed!',
+            ),
+            false,
+          );
+        }
+        cb(null, true);
+      },
+    }),
+  )
   @ApiOperation({ summary: 'Upload Whale Panel SQLite Backup (.db)' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -72,7 +93,12 @@ export class MigrationController {
 
   @Post('sync')
   @ApiOperation({ summary: 'Run post-import synchronization' })
-  @ApiBody({ schema: { type: 'object', properties: { createGroups: { type: 'boolean', default: true } } } })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { createGroups: { type: 'boolean', default: true } },
+    },
+  })
   async runSync(@Req() req: AuthRequest) {
     const createGroups = req.body?.createGroups ?? true;
     return this.migrationService.runPostImportSync(createGroups);

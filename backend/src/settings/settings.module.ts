@@ -10,8 +10,20 @@ import { PrismaModule } from '../prisma/prisma.module';
 
 @Module({
   imports: [PrismaModule],
-  providers: [SettingsService, LicenseService, SslService, DiagnosticService, HmctlClient],
+  providers: [
+    SettingsService,
+    LicenseService,
+    SslService,
+    DiagnosticService,
+    HmctlClient,
+  ],
   controllers: [SettingsController, SslController],
-  exports: [SettingsService, LicenseService, SslService, DiagnosticService, HmctlClient],
+  exports: [
+    SettingsService,
+    LicenseService,
+    SslService,
+    DiagnosticService,
+    HmctlClient,
+  ],
 })
 export class SettingsModule {}

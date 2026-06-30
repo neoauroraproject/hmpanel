@@ -28,10 +28,7 @@ export class BulkClientsService {
    * Build subscription URL for a client, reusing the same logic as
    * ClientsService.getQrCode().
    */
-  private buildSubUrl(
-    subUrlBase: string,
-    subIdOrEmail: string,
-  ): string {
+  private buildSubUrl(subUrlBase: string, subIdOrEmail: string): string {
     try {
       const pUrl = new URL(subUrlBase);
       const pathname = pUrl.pathname.endsWith('/sub/')
@@ -158,9 +155,14 @@ export class BulkClientsService {
   // ─── Bulk Enable ─────────────────────────────────────────────────────────────
 
   async bulkEnable(adminId: string, role: string, clientIds: string[]) {
-    if (!clientIds?.length) throw new BadRequestException('No clients selected');
+    if (!clientIds?.length)
+      throw new BadRequestException('No clients selected');
 
-    const { clients, byPanel } = await this.loadAndGroupClients(adminId, role, clientIds);
+    const { clients, byPanel } = await this.loadAndGroupClients(
+      adminId,
+      role,
+      clientIds,
+    );
     if (!clients.length) return { affected: 0 };
 
     const results = { success: 0, failed: 0, errors: [] as string[] };
@@ -168,9 +170,15 @@ export class BulkClientsService {
     for (const [panelId, { panel, emails }] of byPanel) {
       if (panel.capabilities?.bulkEnable) {
         // ── 3.4.2 optimized path: single bulk request ──
-        this.logger.log(`[BULK_ENABLE] Using 3.4.2 bulkEnable for panel ${panel.name} (${emails.length} clients)`);
+        this.logger.log(
+          `[BULK_ENABLE] Using 3.4.2 bulkEnable for panel ${panel.name} (${emails.length} clients)`,
+        );
 
-        const result = await this.callBulkEndpoint(panel, '/panel/api/clients/bulkEnable', { emails });
+        const result = await this.callBulkEndpoint(
+          panel,
+          '/panel/api/clients/bulkEnable',
+          { emails },
+        );
 
         if (result.success) {
           const changed = result.data?.changed ?? emails.length;
@@ -182,21 +190,41 @@ export class BulkClientsService {
           }
         } else {
           // Bulk endpoint failed — fall back to sequential for this panel
-          this.logger.warn(`[BULK_ENABLE] 3.4.2 bulkEnable failed for panel ${panel.name}: ${result.error}. Falling back to sequential.`);
-          await this.sequentialToggle(adminId, role, clients.filter(c => c.inbounds?.[0]?.inbound?.panel?.id === panelId), 'enable', results);
+          this.logger.warn(
+            `[BULK_ENABLE] 3.4.2 bulkEnable failed for panel ${panel.name}: ${result.error}. Falling back to sequential.`,
+          );
+          await this.sequentialToggle(
+            adminId,
+            role,
+            clients.filter(
+              (c) => c.inbounds?.[0]?.inbound?.panel?.id === panelId,
+            ),
+            'enable',
+            results,
+          );
         }
       } else {
         // ── 3.3.1 fallback: sequential ──
-        this.logger.log(`[BULK_ENABLE] Panel ${panel.name} does not support bulkEnable, using sequential fallback`);
-        await this.sequentialToggle(adminId, role, clients.filter(c => c.inbounds?.[0]?.inbound?.panel?.id === panelId), 'enable', results);
+        this.logger.log(
+          `[BULK_ENABLE] Panel ${panel.name} does not support bulkEnable, using sequential fallback`,
+        );
+        await this.sequentialToggle(
+          adminId,
+          role,
+          clients.filter(
+            (c) => c.inbounds?.[0]?.inbound?.panel?.id === panelId,
+          ),
+          'enable',
+          results,
+        );
       }
     }
 
     // Update local DB state for successfully enabled clients
     if (results.success > 0) {
       const enabledEmails = clients
-        .filter(c => !results.errors.some(e => e.startsWith(c.email + ':')))
-        .map(c => c.id);
+        .filter((c) => !results.errors.some((e) => e.startsWith(c.email + ':')))
+        .map((c) => c.id);
 
       if (enabledEmails.length > 0) {
         await this.prisma.client.updateMany({
@@ -217,13 +245,19 @@ export class BulkClientsService {
           success: results.success,
           failed: results.failed,
           errors: results.errors,
-          optimized: [...byPanel.values()].some(g => g.panel.capabilities?.bulkEnable),
+          optimized: [...byPanel.values()].some(
+            (g) => g.panel.capabilities?.bulkEnable,
+          ),
         },
       },
     });
 
     if (results.failed > 0) {
-      return { affected: results.success, failed: results.failed, errors: results.errors };
+      return {
+        affected: results.success,
+        failed: results.failed,
+        errors: results.errors,
+      };
     }
     return { affected: results.success };
   }
@@ -231,9 +265,14 @@ export class BulkClientsService {
   // ─── Bulk Disable ────────────────────────────────────────────────────────────
 
   async bulkDisable(adminId: string, role: string, clientIds: string[]) {
-    if (!clientIds?.length) throw new BadRequestException('No clients selected');
+    if (!clientIds?.length)
+      throw new BadRequestException('No clients selected');
 
-    const { clients, byPanel } = await this.loadAndGroupClients(adminId, role, clientIds);
+    const { clients, byPanel } = await this.loadAndGroupClients(
+      adminId,
+      role,
+      clientIds,
+    );
     if (!clients.length) return { affected: 0 };
 
     const results = { success: 0, failed: 0, errors: [] as string[] };
@@ -241,9 +280,15 @@ export class BulkClientsService {
     for (const [panelId, { panel, emails }] of byPanel) {
       if (panel.capabilities?.bulkDisable) {
         // ── 3.4.2 optimized path ──
-        this.logger.log(`[BULK_DISABLE] Using 3.4.2 bulkDisable for panel ${panel.name} (${emails.length} clients)`);
+        this.logger.log(
+          `[BULK_DISABLE] Using 3.4.2 bulkDisable for panel ${panel.name} (${emails.length} clients)`,
+        );
 
-        const result = await this.callBulkEndpoint(panel, '/panel/api/clients/bulkDisable', { emails });
+        const result = await this.callBulkEndpoint(
+          panel,
+          '/panel/api/clients/bulkDisable',
+          { emails },
+        );
 
         if (result.success) {
           const changed = result.data?.changed ?? emails.length;
@@ -254,21 +299,41 @@ export class BulkClientsService {
             results.errors.push(`${s.email}: ${s.reason}`);
           }
         } else {
-          this.logger.warn(`[BULK_DISABLE] 3.4.2 bulkDisable failed for panel ${panel.name}: ${result.error}. Falling back to sequential.`);
-          await this.sequentialToggle(adminId, role, clients.filter(c => c.inbounds?.[0]?.inbound?.panel?.id === panelId), 'disable', results);
+          this.logger.warn(
+            `[BULK_DISABLE] 3.4.2 bulkDisable failed for panel ${panel.name}: ${result.error}. Falling back to sequential.`,
+          );
+          await this.sequentialToggle(
+            adminId,
+            role,
+            clients.filter(
+              (c) => c.inbounds?.[0]?.inbound?.panel?.id === panelId,
+            ),
+            'disable',
+            results,
+          );
         }
       } else {
         // ── 3.3.1 fallback ──
-        this.logger.log(`[BULK_DISABLE] Panel ${panel.name} does not support bulkDisable, using sequential fallback`);
-        await this.sequentialToggle(adminId, role, clients.filter(c => c.inbounds?.[0]?.inbound?.panel?.id === panelId), 'disable', results);
+        this.logger.log(
+          `[BULK_DISABLE] Panel ${panel.name} does not support bulkDisable, using sequential fallback`,
+        );
+        await this.sequentialToggle(
+          adminId,
+          role,
+          clients.filter(
+            (c) => c.inbounds?.[0]?.inbound?.panel?.id === panelId,
+          ),
+          'disable',
+          results,
+        );
       }
     }
 
     // Update local DB
     if (results.success > 0) {
       const disabledEmails = clients
-        .filter(c => !results.errors.some(e => e.startsWith(c.email + ':')))
-        .map(c => c.id);
+        .filter((c) => !results.errors.some((e) => e.startsWith(c.email + ':')))
+        .map((c) => c.id);
 
       if (disabledEmails.length > 0) {
         await this.prisma.client.updateMany({
@@ -289,13 +354,19 @@ export class BulkClientsService {
           success: results.success,
           failed: results.failed,
           errors: results.errors,
-          optimized: [...byPanel.values()].some(g => g.panel.capabilities?.bulkDisable),
+          optimized: [...byPanel.values()].some(
+            (g) => g.panel.capabilities?.bulkDisable,
+          ),
         },
       },
     });
 
     if (results.failed > 0) {
-      return { affected: results.success, failed: results.failed, errors: results.errors };
+      return {
+        affected: results.success,
+        failed: results.failed,
+        errors: results.errors,
+      };
     }
     return { affected: results.success };
   }
@@ -313,7 +384,7 @@ export class BulkClientsService {
     // updates with full panel sync + atomic operations
     try {
       const response = await this.clientsService.bulk(adminId, role, {
-        ids: clients.map(c => c.id),
+        ids: clients.map((c) => c.id),
         action,
       });
       results.success += response.affected ?? 0;
@@ -329,8 +400,13 @@ export class BulkClientsService {
 
   // ─── Export Subscription Links ──────────────────────────────────────────────
 
-  async exportSubscriptionLinks(adminId: string, role: string, clientIds: string[]) {
-    if (!clientIds?.length) throw new BadRequestException('No clients selected');
+  async exportSubscriptionLinks(
+    adminId: string,
+    role: string,
+    clientIds: string[],
+  ) {
+    if (!clientIds?.length)
+      throw new BadRequestException('No clients selected');
 
     const scope: Prisma.ClientWhereInput = { id: { in: clientIds } };
     if (role !== 'SUPER_ADMIN') scope.adminId = adminId;
