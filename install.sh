@@ -98,9 +98,8 @@ run_with_spinner() {
   
   local tmp_out
   tmp_out=$(mktemp)
-  
-  # Run command in background
-  "${cmd[@]}" > "$tmp_out" 2>&1 &
+  # Run command in background safely, preserving inline environment variables
+  eval "$(printf "%q " "${cmd[@]}")" > "$tmp_out" 2>&1 &
   local pid=$!
 
   local spinner=( "⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏" )
