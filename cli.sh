@@ -61,23 +61,27 @@ verify_dns() {
 
 verify_port_80() {
   echo "Checking if port 80 is available..."
+  local port_in_use=false
   if command -v ss &>/dev/null; then
-    if ss -tuln | grep -q ":80 "; then
-      local holding_process
-      holding_process=$(lsof -i :80 -t 2>/dev/null | xargs ps -o comm= -p 2>/dev/null || echo "")
-      if [[ "$holding_process" != "docker" && "$holding_process" != "" ]]; then
-        echo -e "${YELLOW}⚠ Port 80 is occupied by host process: $holding_process${NC}"
-        return 1
-      fi
-    fi
+    if ss -tuln | grep -q ":80 "; then port_in_use=true; fi
   elif command -v netstat &>/dev/null; then
-    if netstat -tuln | grep -q ":80 "; then
-      local holding_process
-      holding_process=$(lsof -i :80 -t 2>/dev/null | xargs ps -o comm= -p 2>/dev/null || echo "")
-      if [[ "$holding_process" != "docker" && "$holding_process" != "" ]]; then
-        echo -e "${YELLOW}⚠ Port 80 is occupied by host process: $holding_process${NC}"
-        return 1
-      fi
+    if netstat -tuln | grep -q ":80 "; then port_in_use=true; fi
+  fi
+
+  if [[ "$port_in_use" == true ]]; then
+    local holding_process
+    holding_process=$(lsof -i :80 -t 2>/dev/null | xargs ps -o comm= -p 2>/dev/null | head -n 1 || echo "")
+    if [[ "$holding_process" == "docker" || "$holding_process" == "docker-proxy" ]]; then
+      echo -e "${CYAN}ℹ Detected process: ${holding_process}${NC}"
+      echo -e "${GREEN}✔ Decision: Expected Docker process. Continuing...${NC}"
+      return 0
+    elif [[ "$holding_process" != "" ]]; then
+      echo -e "${YELLOW}⚠ Detected process: ${holding_process}${NC}"
+      echo -e "${RED}✘ Decision: External process detected. Cannot continue with SSL on port 80.${NC}"
+      return 1
+    else
+      echo -e "${YELLOW}⚠ Port 80 is occupied by an unknown process. Cannot continue with SSL on port 80.${NC}"
+      return 1
     fi
   fi
   echo -e "${GREEN}✔ Port 80 is available${NC}"
@@ -229,8 +233,10 @@ cmd_status() {
   fi
 
   local app_version="Unknown"
-  if docker inspect hmpanel-panel >/dev/null 2>&1; then
-    # Try to grab the exact tag or version if possible, fallback to checking image
+  if docker exec hmpanel-panel node -p "require('./package.json').version" >/dev/null 2>&1; then
+    app_version=$(docker exec hmpanel-panel node -p "require('./package.json').version" | tr -d '\r')
+  elif docker inspect hmpanel-panel >/dev/null 2>&1; then
+    # Fallback to checking image tag if container is down or node fails
     local image_name
     image_name=$(docker inspect -f '{{.Config.Image}}' hmpanel-panel 2>/dev/null)
     app_version="${image_name##*:}"
@@ -377,8 +383,12 @@ verify_nginx_status() {
 
   echo "Verifying Nginx endpoints..."
   local curl_success=false
-  for i in {1..5}; do
-    if curl -skL "https://127.0.0.1/api/health" &>/dev/null || curl -skL "http://127.0.0.1/api/health" &>/dev/null; then
+  for i in {1..15}; do
+    local code_https code_http
+    code_https=$(curl -s -o /dev/null -w "%{http_code}" -k "https://127.0.0.1/api/health" || echo "000")
+    code_http=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1/api/health" || echo "000")
+    
+    if [[ "$code_https" == "200" || "$code_http" == "200" ]]; then
       curl_success=true
       break
     fi
@@ -426,8 +436,9 @@ ssl_issue() {
   echo -e "${BOLD}--- Issue / Renew SSL ---${NC}\n"
   source "${INSTALL_DIR}/.env"
 
-  if [[ -z "${PANEL_DOMAIN:-}" || "$PANEL_DOMAIN" == "localhost" ]]; then
-    echo -e "${RED}✘ Invalid domain/IP in .env: ${PANEL_DOMAIN:-None}${NC}"
+  if [[ -z "${PANEL_DOMAIN:-}" || "$PANEL_DOMAIN" == "localhost" || "$PANEL_DOMAIN" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo -e "${YELLOW}⚠ IP address or localhost detected (${PANEL_DOMAIN:-None}). Skipping SSL workflow entirely.${NC}"
+    ssl_fallback_to_http "SSL cannot be installed for raw IP addresses or localhost."
     pause
     return
   fi

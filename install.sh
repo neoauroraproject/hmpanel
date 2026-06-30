@@ -64,6 +64,13 @@ ensure_env_variables() {
 # Banner
 # ─────────────────────────────────────────────────────────────────
 print_banner() {
+  local version="Unknown"
+  local script_dir
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  if [[ -f "$script_dir/package.json" ]]; then
+    version=$(grep -m1 '"version":' "$script_dir/package.json" | cut -d'"' -f4 || echo "Unknown")
+  fi
+
   echo -e "${CYAN}${BOLD}"
   echo "  ██╗  ██╗███╗   ███╗██████╗  █████╗ ███╗   ██╗███████╗██╗     "
   echo "  ██║  ██║████╗ ████║██╔══██╗██╔══██╗████╗  ██║██╔════╝██║     "
@@ -72,7 +79,11 @@ print_banner() {
   echo "  ██║  ██║██║ ╚═╝ ██║██║     ██║  ██║██║ ╚████║███████╗███████╗"
   echo "  ╚═╝  ╚═╝╚═╝     ╚═╝╚═╝     ╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝╚══════╝"
   echo ""
-  echo "  HMPanel v1.1 — Community Edition"
+  if [[ "$version" != "Unknown" ]]; then
+    echo "  HMPanel v${version} — Community Edition"
+  else
+    echo "  HMPanel — Community Edition"
+  fi
   echo "  Interactive Installer"
   echo -e "${NC}"
 }
@@ -440,23 +451,27 @@ verify_dns() {
 
 verify_port_80() {
   info "Checking if port 80 is available..."
+  local port_in_use=false
   if command -v ss &>/dev/null; then
-    if ss -tuln | grep -q ":80 "; then
-      local holding_process
-      holding_process=$(lsof -i :80 -t 2>/dev/null | xargs ps -o comm= -p 2>/dev/null || echo "")
-      if [[ "$holding_process" != "docker" && "$holding_process" != "" ]]; then
-        warn "Port 80 is occupied by host process: $holding_process"
-        return 1
-      fi
-    fi
+    if ss -tuln | grep -q ":80 "; then port_in_use=true; fi
   elif command -v netstat &>/dev/null; then
-    if netstat -tuln | grep -q ":80 "; then
-      local holding_process
-      holding_process=$(lsof -i :80 -t 2>/dev/null | xargs ps -o comm= -p 2>/dev/null || echo "")
-      if [[ "$holding_process" != "docker" && "$holding_process" != "" ]]; then
-        warn "Port 80 is occupied by host process: $holding_process"
-        return 1
-      fi
+    if netstat -tuln | grep -q ":80 "; then port_in_use=true; fi
+  fi
+
+  if [[ "$port_in_use" == true ]]; then
+    local holding_process
+    holding_process=$(lsof -i :80 -t 2>/dev/null | xargs ps -o comm= -p 2>/dev/null | head -n 1 || echo "")
+    if [[ "$holding_process" == "docker" || "$holding_process" == "docker-proxy" ]]; then
+      info "Detected process: ${holding_process}"
+      log "Decision: Expected Docker process. Continuing..."
+      return 0
+    elif [[ "$holding_process" != "" ]]; then
+      warn "Detected process: ${holding_process}"
+      error "Decision: External process detected. Cannot continue with SSL on port 80."
+      return 1
+    else
+      warn "Port 80 is occupied by an unknown process. Cannot continue with SSL on port 80."
+      return 1
     fi
   fi
   log "Port 80 is available"
@@ -490,8 +505,12 @@ verify_nginx_status() {
   # ── Verify Endpoint Reachability ──
   info "Verifying Nginx endpoints..."
   local curl_success=false
-  for i in {1..5}; do
-    if curl -skL "https://127.0.0.1/api/health" &>/dev/null || curl -skL "http://127.0.0.1/api/health" &>/dev/null; then
+  for i in {1..15}; do
+    local code_https code_http
+    code_https=$(curl -s -o /dev/null -w "%{http_code}" -k "https://127.0.0.1/api/health" || echo "000")
+    code_http=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1/api/health" || echo "000")
+    
+    if [[ "$code_https" == "200" || "$code_http" == "200" ]]; then
       curl_success=true
       break
     fi
@@ -625,6 +644,7 @@ step_2_environment() {
   step "[2/10] Environment"
   
   if [[ -f "${INSTALL_DIR}/.env" ]]; then
+    export IS_FRESH_INSTALL="false"
     info "Existing database detected."
     log "Reusing existing PostgreSQL credentials."
     ensure_env_variables
@@ -633,6 +653,7 @@ step_2_environment() {
     export POSTGRES_USER
     export POSTGRES_DB
   else
+    export IS_FRESH_INSTALL="true"
     JWT_SECRET=$(openssl rand -hex 64)
     POSTGRES_PASSWORD=$(openssl rand -hex 24)
     REDIS_PASSWORD=$(openssl rand -hex 24)
@@ -808,30 +829,34 @@ step_6_application() {
   fi
   
   info "Running Database Initialization and Migrations..."
-  
-  info "Applying pre-migration schema fixes for existing clients..."
-  docker exec hmpanel-postgres psql -U panel_user -d panel_db -c "
+
+  if ! run_with_spinner "Applying Schema & Migrations" docker compose run --rm panel-app /bin/sh -c "npx prisma db push --accept-data-loss && node backend/dist/scripts/run-migrations.js"; then
+    die "Failed to initialize database schema."
+  fi
+
+  if [[ "${IS_FRESH_INSTALL:-false}" == "false" ]]; then
+    info "Applying pre-migration schema fixes for existing clients..."
+    docker exec hmpanel-postgres psql -U panel_user -d panel_db -c "
 DO \$\$
 DECLARE
   default_panel_id TEXT;
   default_server_id TEXT;
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Client' AND column_name = 'panelId') THEN
-    SELECT id INTO default_panel_id FROM \"Panel\" LIMIT 1;
-    IF default_panel_id IS NULL THEN
-      default_server_id := gen_random_uuid()::text;
-      INSERT INTO \"Server\" (id, name, \"ipAddress\") VALUES (default_server_id, 'Local', '127.0.0.1');
-      default_panel_id := gen_random_uuid()::text;
-      INSERT INTO \"Panel\" (id, \"serverId\", name, url) VALUES (default_panel_id, default_server_id, 'Default Panel', 'http://127.0.0.1:2053');
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Panel') THEN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Client' AND column_name = 'panelId') THEN
+      SELECT id INTO default_panel_id FROM \"Panel\" LIMIT 1;
+      IF default_panel_id IS NULL THEN
+        default_server_id := gen_random_uuid()::text;
+        INSERT INTO \"Server\" (id, name, \"ipAddress\") VALUES (default_server_id, 'Local', '127.0.0.1');
+        default_panel_id := gen_random_uuid()::text;
+        INSERT INTO \"Panel\" (id, \"serverId\", name, url) VALUES (default_panel_id, default_server_id, 'Default Panel', 'http://127.0.0.1:2053');
+      END IF;
+      ALTER TABLE \"Client\" ADD COLUMN \"panelId\" TEXT;
+      UPDATE \"Client\" SET \"panelId\" = default_panel_id;
     END IF;
-    ALTER TABLE \"Client\" ADD COLUMN \"panelId\" TEXT;
-    UPDATE \"Client\" SET \"panelId\" = default_panel_id;
   END IF;
 END \$\$;
 " || warn "Pre-migration SQL failed, but continuing..."
-
-  if ! run_with_spinner "Applying Schema & Migrations" docker compose run --rm panel-app /bin/sh -c "npx prisma db push --accept-data-loss && node backend/dist/scripts/run-migrations.js"; then
-    die "Failed to initialize database schema."
   fi
 
   if ! run_with_spinner "Starting Application services" docker compose up -d; then
@@ -848,7 +873,9 @@ step_7_health_check() {
 
   info "Waiting for backend API to become healthy..."
   while [[ $attempt -lt $max_attempts ]]; do
-    if docker exec hmpanel-panel curl -sf "http://127.0.0.1:4000/health" &>/dev/null; then
+    local http_code
+    http_code=$(docker exec hmpanel-panel curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:4000/health" || echo "000")
+    if [[ "$http_code" == "200" ]]; then
       echo -ne "\r\033[K"
       log "Backend API is fully operational"
       break
@@ -876,6 +903,13 @@ step_8_ssl() {
   SSL_STATUS="disabled"
 
   if [[ "$SSL_CHOICE" == 1 ]]; then
+    # ── Check if DOMAIN is an IP address ─────────────────────────
+    if [[ "$DOMAIN" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || [[ "$DOMAIN" == "localhost" ]]; then
+      warn "IP address or localhost detected ($DOMAIN). Skipping SSL workflow entirely."
+      ssl_fallback_to_http "SSL cannot be installed for raw IP addresses or localhost."
+      return 0
+    fi
+
     # ── Verify DNS and Port 80 availability ──────────────────────
     if ! verify_dns "$DOMAIN"; then
       ssl_fallback_to_http "DNS verification failed for $DOMAIN"
