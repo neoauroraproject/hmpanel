@@ -4,6 +4,8 @@
 #  https://github.com/neoauroraproject/hmpanel
 # ═══════════════════════════════════════════════════════════════════
 set -euo pipefail
+export DEBIAN_FRONTEND=noninteractive
+
 
 # ─────────────────────────────────────────────────────────────────
 # Colors & formatting
@@ -98,8 +100,16 @@ run_with_spinner() {
   
   local tmp_out
   tmp_out=$(mktemp)
-  # Run command in background safely, preserving inline environment variables
-  eval "$(printf "%q " "${cmd[@]}")" > "$tmp_out" 2>&1 &
+  # Reconstruct the command string safely preserving inline env variables
+  local cmd_str=""
+  for arg in "${cmd[@]}"; do
+    if [[ "$arg" =~ [[:space:]\'\"\|\<\>\&\;\(\)\$\*] ]]; then
+      cmd_str+="'${arg//\'/\'\\\'\'}' "
+    else
+      cmd_str+="$arg "
+    fi
+  done
+  eval "$cmd_str" > "$tmp_out" 2>&1 &
   local pid=$!
 
   local spinner=( "⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏" )
@@ -587,6 +597,23 @@ ssl_fallback_to_http() {
   log "HTTP-only mode active. You can add SSL later via: hmpanel -> SSL Management"
 }
 
+install_dependencies() {
+  step "Installing System Dependencies"
+  
+  ensure_package git git
+  ensure_package curl curl
+  ensure_package openssl openssl
+  ensure_package socat socat
+  
+  if ! command -v dig &>/dev/null; then
+    if [[ "$PKG_MANAGER" == "apt-get" ]]; then
+      ensure_package dig dnsutils
+    else
+      ensure_package dig bind-utils
+    fi
+  fi
+}
+
 # ─────────────────────────────────────────────────────────────────
 # 10 Steps
 # ─────────────────────────────────────────────────────────────────
@@ -612,7 +639,6 @@ step_1_configuration() {
     fi
   else
     info "Downloading files from GitHub..."
-    ensure_package git git
     run_with_spinner "Cloning repository" git clone -b main https://github.com/neoauroraproject/hmpanel.git /tmp/hmpanel_install
     run_with_spinner "Copying files to installation directory" cp -r /tmp/hmpanel_install/* "${INSTALL_DIR}/"
     rm -rf /tmp/hmpanel_install
@@ -731,9 +757,6 @@ EOF
 
 step_3_docker() {
   step "[3/10] Docker"
-  ensure_package curl curl
-  ensure_package openssl openssl
-  ensure_package dig dnsutils || ensure_package dig bind-utils || true
   install_docker
   install_docker_compose
 }
@@ -908,11 +931,6 @@ step_8_ssl() {
       hm ssl disable
       return 0
     fi
-
-    # ── 1. Install dependencies ──────────────────────────────────
-    ensure_package git git
-    ensure_package curl curl
-    ensure_package socat socat
 
     info "Delegating SSL issuance to HMCTL..."
     hm ssl issue "$DOMAIN" "$ADMIN_EMAIL"
@@ -1118,6 +1136,8 @@ main() {
   check_minimum_requirements
 
   collect_user_input
+
+  install_dependencies
 
   step_1_configuration
   step_2_environment

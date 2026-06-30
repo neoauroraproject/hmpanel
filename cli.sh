@@ -637,6 +637,33 @@ ssl_issue() {
   if [[ "$JSON_OUTPUT" != "true" ]]; then
     echo -e "${BOLD}--- Issue / Renew SSL ---${NC}\n"
   fi
+
+  stream_progress "Verifying system dependencies..."
+  local missing_deps=()
+  for dep in git curl socat; do
+    if ! command -v "$dep" &>/dev/null; then
+      missing_deps+=("$dep")
+    fi
+  done
+
+  if [[ ${#missing_deps[@]} -gt 0 ]]; then
+    if [[ "$JSON_OUTPUT" == "true" ]]; then
+      local deps_json=""
+      for dep in "${missing_deps[@]}"; do
+        if [[ -n "$deps_json" ]]; then deps_json+=","; fi
+        deps_json+="\"$dep\""
+      done
+      output_json false "MISSING_DEPENDENCIES" "\"missing\":[$deps_json]"
+      exit 40
+    else
+      echo -e "${RED}✗ Error: Missing required system dependencies: ${missing_deps[*]}${NC}" >&2
+      echo -e "Please run the installer again or install them manually." >&2
+      ssl_fallback_to_http "Missing dependencies: ${missing_deps[*]}"
+      pause
+      return 1
+    fi
+  fi
+
   source "${INSTALL_DIR}/.env"
 
   if [[ -z "${PANEL_DOMAIN:-}" || "$PANEL_DOMAIN" == "localhost" || "$PANEL_DOMAIN" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
