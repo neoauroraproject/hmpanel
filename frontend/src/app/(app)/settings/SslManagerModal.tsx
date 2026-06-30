@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Shield, RefreshCw, X, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useToast } from "@/components/toast";
 import { motion, AnimatePresence } from "framer-motion";
+import { useAuth } from "@/store/auth";
 
 interface SslStatus {
   mode: string;
@@ -25,6 +26,8 @@ interface SslStatus {
 export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const qc = useQueryClient();
   const toast = useToast((s) => s.push);
+  const token = useAuth((s) => s.token);
+  const isSuccessRef = React.useRef(false);
 
   const { data: sslInfo, isLoading, refetch } = useQuery({
     queryKey: ["sslStatus"],
@@ -47,13 +50,16 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
   }, [isOpen]);
 
   const startStream = () => {
-    const eventSource = new EventSource(api.defaults.baseURL + "/settings/ssl/stream");
+    const url = new URL(api.defaults.baseURL + "/settings/ssl/stream", window.location.origin);
+    if (token) url.searchParams.append("token", token);
+    const eventSource = new EventSource(url.toString());
     eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
         if (data.type === "progress") {
           setLogs((prev) => [...prev, data.message]);
         } else if (data.type === "complete") {
+          isSuccessRef.current = true;
           setWorkflowState("success");
           eventSource.close();
         } else if (data.type === "error") {
@@ -75,12 +81,15 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
     setView("progress");
     setWorkflowState("running");
     setLogs(["Starting workflow..."]);
+    isSuccessRef.current = false;
     const es = startStream();
     try {
       await actionFn();
       // Refetch info
       refetch();
     } catch (err: any) {
+      if (isSuccessRef.current) return;
+      if (err.message === "Network Error") return; // Nginx restart drops connection
       setWorkflowState("error");
       setWorkflowError(err.response?.data?.message || err.message || "Failed to execute action.");
       es.close();
