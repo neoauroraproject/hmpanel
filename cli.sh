@@ -634,7 +634,11 @@ ssl_fallback_to_http() {
   fi
   write_http_nginx_template "${INSTALL_DIR}/nginx/nginx.conf.template"
 
-  (sleep 2 && docker exec hmpanel-nginx sh -c "envsubst '\$APP_PORT \$BACKEND_PORT' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && nginx -s reload") >/dev/null 2>&1 &
+  if docker ps --format '{{.Names}}' | grep -q "^hmpanel-nginx$"; then
+    (sleep 2 && docker exec hmpanel-nginx sh -c "envsubst '\$APP_PORT \$BACKEND_PORT' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && nginx -s reload") >/dev/null 2>&1 &
+  else
+    (sleep 2 && docker start hmpanel-nginx) >/dev/null 2>&1 &
+  fi
 }
 
 ssl_issue() {
@@ -823,7 +827,11 @@ ssl_selfsigned() {
   openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
     -keyout "${SSL_DIR}/privkey.pem" \
     -out "${SSL_DIR}/fullchain.pem" \
-    -subj "/C=US/ST=State/L=City/O=Organization/CN=${domain}" >/dev/null 2>&1
+    -subj "/C=US/ST=State/L=City/O=Organization/CN=${domain}" >/dev/null 2>&1 || true
+
+  if [[ ! -f "${SSL_DIR}/fullchain.pem" ]]; then
+    docker run --rm -v "${SSL_DIR}:/ssl" alpine sh -c "apk add --no-cache openssl && openssl req -x509 -nodes -days 3650 -newkey rsa:2048 -keyout /ssl/privkey.pem -out /ssl/fullchain.pem -subj '/C=US/ST=State/L=City/O=Organization/CN=${domain}'" >/dev/null 2>&1 || true
+  fi
 
   update_env "PANEL_PROTOCOL" "https"
   update_env "SSL_ENABLED" "true"
@@ -904,6 +912,11 @@ ssl_transactional() {
   
   stream_progress "Reloading Nginx to apply rollback..."
   docker exec hmpanel-nginx sh -c "envsubst '\$APP_PORT \$BACKEND_PORT' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && nginx -s reload" >/dev/null 2>&1 || docker restart hmpanel-nginx >/dev/null 2>&1
+  
+  if ! verify_nginx_status "true"; then
+    stream_progress "Rollback failed to start Nginx. Falling back to HTTP..."
+    ssl_fallback_to_http "Rollback failed to start Nginx"
+  fi
   
   rm -rf "$BACKUP_DIR"
   

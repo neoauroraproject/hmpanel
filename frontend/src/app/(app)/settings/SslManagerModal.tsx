@@ -87,7 +87,7 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
       }
     };
     eventSource.onerror = () => {
-      eventSource.close();
+      // Do not close. Allow browser to auto-reconnect when Nginx is restarting.
     };
     return eventSource;
   };

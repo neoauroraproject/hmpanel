@@ -127,6 +127,14 @@ main() {
       -keyout "${SSL_DIR}/privkey.pem" \
       -out "${SSL_DIR}/fullchain.pem" \
       -subj "/CN=localhost/O=HMPanel/C=US" >/dev/null 2>&1 || true
+  fi
+
+  if [[ ! -f "${SSL_DIR}/fullchain.pem" ]]; then
+    info "Local openssl failed or missing. Generating certificate using Docker..."
+    docker run --rm -v "${SSL_DIR}:/ssl" alpine sh -c "apk add --no-cache openssl && openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout /ssl/privkey.pem -out /ssl/fullchain.pem -subj '/CN=localhost/O=HMPanel/C=US'" >/dev/null 2>&1 || true
+  fi
+
+  if [[ -f "${SSL_DIR}/privkey.pem" ]]; then
     chmod 600 "${SSL_DIR}/privkey.pem" 2>/dev/null || true
   fi
 
