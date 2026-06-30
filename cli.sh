@@ -36,6 +36,11 @@ if [[ " $* " == *" --json "* ]]; then
   JSON_OUTPUT=true
 fi
 
+DEBUG_MODE=false
+if [[ " $* " == *" --debug "* || " $* " == *" --verbose "* || " $* " == *" -v "* ]]; then
+  DEBUG_MODE=true
+fi
+
 output_json() {
   local success="$1"
   local code="$2"
@@ -59,7 +64,7 @@ stream_progress() {
   if [[ "$JSON_OUTPUT" == "true" ]]; then
     echo "PROGRESS: $1" >&2
   else
-    echo -e "${CYAN}➜ $1${NC}"
+    echo -e "${CYAN}➜ $1${NC}" >&2
   fi
 }
 
@@ -883,13 +888,15 @@ ssl_transactional() {
       stream_progress "Configuration unchanged. Skipping application restarts."
     fi
     
-    if verify_e2e_health "$PANEL_DOMAIN"; then
+    local verify_out
+    verify_out=$(verify_e2e_health "$PANEL_DOMAIN")
+    if echo "$verify_out" | grep -q '"success": true'; then
       echo "$issue_out"
       rm -rf "$BACKUP_DIR"
       exit 0
     fi
     # If verify fails, fall through to rollback
-    issue_out="{\"success\":false,\"code\":\"E2E_VERIFY_FAILED\",\"reason\":\"End-to-end verification failed after issuance.\"}"
+    issue_out="$verify_out"
   fi
 
   stream_progress "Workflow failed. Rolling back to previous state..."
@@ -914,56 +921,304 @@ ssl_transactional() {
   exit 1
 }
 
+# ─────────────────────────────────────────────────────────────────
+# Verification Engine
+# ─────────────────────────────────────────────────────────────────
+
+VERIFY_ENGINE_RESULTS="[]"
+VERIFY_ENGINE_SUCCESS="true"
+VERIFY_LOG_FILE=""
+
+init_verify_engine() {
+  VERIFY_ENGINE_RESULTS="[]"
+  VERIFY_ENGINE_SUCCESS="true"
+  if [[ "$DEBUG_MODE" == "true" ]]; then
+    mkdir -p "${INSTALL_DIR}/logs/ssl"
+    VERIFY_LOG_FILE="${INSTALL_DIR}/logs/ssl/ssl_verify_$(date +%Y-%m-%d_%H-%M-%S).log"
+    # Rotate logs, keep last 10
+    ls -1t "${INSTALL_DIR}/logs/ssl/"*.log 2>/dev/null | tail -n +11 | xargs rm -f 2>/dev/null || true
+  fi
+}
+
+append_verify_result() {
+  local step="$1"
+  local status="$2"
+  local duration="$3"
+  local message="$4"
+  local details="$5"
+  
+  local step_json="{\"operation_id\": \"$OPERATION_ID\", \"step\": \"$step\", \"status\": \"$status\", \"durationMs\": $duration, \"message\": \"$message\", \"details\": $details}"
+  
+  if [[ "$VERIFY_ENGINE_RESULTS" == "[]" ]]; then
+    VERIFY_ENGINE_RESULTS="[ $step_json ]"
+  else
+    VERIFY_ENGINE_RESULTS="${VERIFY_ENGINE_RESULTS%\]}, $step_json ]"
+  fi
+}
+
+run_verify_wait() {
+  local step_name="$1"
+  local check_func="$2"
+  local max_timeout_sec="${3:-60}"
+  local retry_interval_sec="${4:-1}"
+  
+  local start_time=$(date +%s%3N 2>/dev/null || date +%s000)
+  local status="FAIL"
+  local message=""
+  local details="{}"
+  
+  VERIFY_STEP_MESSAGE=""
+  VERIFY_STEP_DETAILS="{}"
+  
+  local start_s=$(date +%s)
+  local end_time=$(( start_s + max_timeout_sec ))
+  
+  local passed=false
+  while [[ $(date +%s) -lt $end_time ]]; do
+    if eval "$check_func"; then
+      passed=true
+      break
+    fi
+    sleep "$retry_interval_sec"
+  done
+  
+  local end_time_ms=$(date +%s%3N 2>/dev/null || date +%s000)
+  local duration=$(( end_time_ms - start_time ))
+  
+  if [[ "$passed" == "true" ]]; then
+    status="PASS"
+    message="${VERIFY_STEP_MESSAGE:-Passed}"
+  else
+    status="FAIL"
+    VERIFY_ENGINE_SUCCESS="false"
+    message="${VERIFY_STEP_MESSAGE:-Timeout exceeded ($max_timeout_sec s)}"
+  fi
+  
+  details="${VERIFY_STEP_DETAILS:-{}}"
+  
+  if [[ -n "$VERIFY_LOG_FILE" ]]; then
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] WAIT_STEP=$step_name STATUS=$status DURATION=${duration}ms MSG=$message" >> "$VERIFY_LOG_FILE"
+    echo "DETAILS: $details" >> "$VERIFY_LOG_FILE"
+  fi
+  
+  append_verify_result "$step_name" "$status" "$duration" "$message" "$details"
+  
+  if [[ "$passed" == "true" ]]; then return 0; else return 1; fi
+}
+
+run_verify_step() {
+  local step_name="$1"
+  local check_func="$2"
+  
+  local start_time=$(date +%s%3N 2>/dev/null || date +%s000)
+  local status="FAIL"
+  local message=""
+  local details="{}"
+  
+  VERIFY_STEP_MESSAGE=""
+  VERIFY_STEP_DETAILS="{}"
+  
+  local passed=false
+  if eval "$check_func"; then
+    passed=true
+  fi
+  
+  local end_time_ms=$(date +%s%3N 2>/dev/null || date +%s000)
+  local duration=$(( end_time_ms - start_time ))
+  
+  if [[ "$passed" == "true" ]]; then
+    status="PASS"
+    message="${VERIFY_STEP_MESSAGE:-Passed}"
+  else
+    status="FAIL"
+    VERIFY_ENGINE_SUCCESS="false"
+    message="${VERIFY_STEP_MESSAGE:-Check failed}"
+  fi
+  
+  details="${VERIFY_STEP_DETAILS:-{}}"
+  
+  if [[ -n "$VERIFY_LOG_FILE" ]]; then
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] STEP=$step_name STATUS=$status DURATION=${duration}ms MSG=$message" >> "$VERIFY_LOG_FILE"
+    echo "DETAILS: $details" >> "$VERIFY_LOG_FILE"
+  fi
+  
+  append_verify_result "$step_name" "$status" "$duration" "$message" "$details"
+  
+  if [[ "$passed" == "true" ]]; then return 0; else return 1; fi
+}
+
+# ----------------- Verification Modules -----------------
+
+verify_dns() {
+  local domain="$1"
+  local ip
+  ip=$(dig +short "$domain" 2>/dev/null | tail -n1)
+  if [[ -n "$ip" ]]; then
+    VERIFY_STEP_MESSAGE="Resolved to $ip"
+    VERIFY_STEP_DETAILS="{\"resolvedIp\": \"$ip\"}"
+    if [[ -n "$VERIFY_LOG_FILE" ]]; then echo "[verify_dns] DNS resolved $domain to $ip" >> "$VERIFY_LOG_FILE"; fi
+    return 0
+  else
+    VERIFY_STEP_MESSAGE="DNS resolution failed"
+    if [[ -n "$VERIFY_LOG_FILE" ]]; then echo "[verify_dns] DNS failed for $domain" >> "$VERIFY_LOG_FILE"; fi
+    return 1
+  fi
+}
+
+verify_nginx() {
+  local out
+  if out=$(docker exec hmpanel-nginx nginx -t 2>&1); then
+    VERIFY_STEP_MESSAGE="Nginx config test passed"
+    if [[ -n "$VERIFY_LOG_FILE" ]]; then echo "[verify_nginx] $out" >> "$VERIFY_LOG_FILE"; fi
+    return 0
+  else
+    VERIFY_STEP_MESSAGE="Nginx config test failed"
+    local esc
+    esc=$(echo "$out" | head -n 5 | sed 's/"/\\"/g' | tr '\n' ' ')
+    VERIFY_STEP_DETAILS="{\"error\": \"$esc\"}"
+    if [[ -n "$VERIFY_LOG_FILE" ]]; then echo "[verify_nginx] $out" >> "$VERIFY_LOG_FILE"; fi
+    return 1
+  fi
+}
+
+verify_tcp() {
+  local domain="$1"
+  if timeout 2 bash -c "</dev/tcp/$domain/443" 2>/dev/null; then
+    VERIFY_STEP_MESSAGE="Port 443 accepting connections"
+    return 0
+  else
+    VERIFY_STEP_MESSAGE="Connection refused or timed out"
+    return 1
+  fi
+}
+
+verify_https_respond() {
+  local domain="$1"
+  local out
+  if out=$(curl -s -k -o /dev/null -w "%{http_code}" --connect-timeout 2 "https://$domain" 2>/dev/null); then
+    if [[ "$out" != "000" ]]; then
+      VERIFY_STEP_MESSAGE="HTTPS responding (HTTP $out)"
+      return 0
+    fi
+  fi
+  VERIFY_STEP_MESSAGE="HTTPS not responding"
+  return 1
+}
+
+verify_tls() {
+  local domain="$1"
+  local out
+  out=$(curl -s -k -v -I --connect-timeout 5 "https://$domain" 2>&1)
+  if echo "$out" | grep -q "SSL connection using"; then
+    VERIFY_STEP_MESSAGE="TLS connection established"
+    if [[ -n "$VERIFY_LOG_FILE" ]]; then 
+      echo "[verify_tls] $out" | grep -E "SSL connection|Server certificate" >> "$VERIFY_LOG_FILE"
+      echo | openssl s_client -connect "${domain}:443" -servername "${domain}" 2>/dev/null | openssl x509 -noout -subject -issuer -dates >> "$VERIFY_LOG_FILE"
+    fi
+    return 0
+  else
+    VERIFY_STEP_MESSAGE="TLS handshake failed"
+    local esc
+    esc=$(echo "$out" | head -n 10 | sed 's/"/\\"/g' | tr '\n' ' ')
+    VERIFY_STEP_DETAILS="{\"error\": \"$esc\"}"
+    if [[ -n "$VERIFY_LOG_FILE" ]]; then echo "[verify_tls] ERROR: $out" >> "$VERIFY_LOG_FILE"; fi
+    return 1
+  fi
+}
+
+verify_http_redirect() {
+  local domain="$1"
+  local out
+  out=$(curl -s -I -o /dev/null -w "%{http_code}" --connect-timeout 5 "http://$domain" 2>/dev/null || echo "000")
+  if [[ "$out" == "301" || "$out" == "302" || "$out" == "308" ]]; then
+    VERIFY_STEP_MESSAGE="HTTP to HTTPS redirect working"
+    VERIFY_STEP_DETAILS="{\"httpCode\": \"$out\"}"
+    return 0
+  else
+    VERIFY_STEP_MESSAGE="HTTP redirect failed (HTTP $out)"
+    VERIFY_STEP_DETAILS="{\"httpCode\": \"$out\"}"
+    return 1
+  fi
+}
+
+verify_backend() {
+  local domain="$1"
+  local out
+  out=$(curl -s -k --connect-timeout 5 "https://$domain/api/health" 2>/dev/null || echo "FAIL")
+  if [[ "$out" == *"status"* || "$out" == *"ok"* ]]; then
+    VERIFY_STEP_MESSAGE="Backend healthy"
+    VERIFY_STEP_DETAILS="{\"response\": \"ok\"}"
+    return 0
+  else
+    VERIFY_STEP_MESSAGE="Backend unreachable"
+    local esc
+    esc=$(echo "$out" | sed 's/"/\\"/g' | tr '\n' ' ')
+    VERIFY_STEP_DETAILS="{\"response\": \"$esc\"}"
+    return 1
+  fi
+}
+
+verify_frontend() {
+  local domain="$1"
+  local out
+  out=$(curl -s -o /dev/null -w "%{http_code}" -k --connect-timeout 5 "https://$domain" 2>/dev/null || echo "000")
+  if [[ "$out" == "200" ]]; then
+    VERIFY_STEP_MESSAGE="Frontend reachable"
+    VERIFY_STEP_DETAILS="{\"httpCode\": \"$out\"}"
+    return 0
+  else
+    VERIFY_STEP_MESSAGE="Frontend returning HTTP $out"
+    VERIFY_STEP_DETAILS="{\"httpCode\": \"$out\"}"
+    return 1
+  fi
+}
+
+verify_subscription() {
+  local domain="$1"
+  local out
+  out=$(curl -s -o /dev/null -w "%{http_code}" -k --connect-timeout 5 "https://$domain/sub/healthcheck" 2>/dev/null || echo "000")
+  if [[ "$out" != "502" && "$out" != "000" ]]; then
+    VERIFY_STEP_MESSAGE="Subscription endpoint reachable (HTTP $out)"
+    VERIFY_STEP_DETAILS="{\"httpCode\": \"$out\"}"
+    return 0
+  else
+    VERIFY_STEP_MESSAGE="Subscription endpoint failed (HTTP $out)"
+    VERIFY_STEP_DETAILS="{\"httpCode\": \"$out\"}"
+    return 1
+  fi
+}
+
+# ----------------- Orchestrator -----------------
+
 verify_e2e_health() {
   local domain="$1"
   stream_progress "Running end-to-end verification for $domain..."
   
-  # 1. Wait for containers to boot/reload
-  sleep 3
-
-  # 2. Verify TLS handshake
-  stream_progress "Verifying TLS Handshake..."
-  if ! curl -s -k -v -I --connect-timeout 5 "https://$domain" 2>&1 | grep -q "SSL connection using"; then
-    stream_progress "TLS Handshake failed!"
-    return 1
+  init_verify_engine
+  
+  if run_verify_wait "NGINX_HEALTH" "verify_nginx" 30 1; then
+    run_verify_step "DNS_RESOLUTION" "verify_dns '$domain'"
+    
+    if run_verify_wait "TCP_443" "verify_tcp '$domain'" 30 1; then
+      if run_verify_wait "HTTPS_ENDPOINT" "verify_https_respond '$domain'" 30 1; then
+        
+        run_verify_step "TLS_HANDSHAKE" "verify_tls '$domain'"
+        run_verify_step "HTTP_REDIRECT" "verify_http_redirect '$domain'"
+        run_verify_step "BACKEND_API" "verify_backend '$domain'"
+        run_verify_step "FRONTEND_ACCESSIBILITY" "verify_frontend '$domain'"
+        run_verify_step "SUBSCRIPTION_ENDPOINT" "verify_subscription '$domain'"
+        
+      fi
+    fi
   fi
-
-  # 3. Verify Certificate Validity
-  stream_progress "Verifying Certificate Validity..."
-  if ! echo | openssl s_client -connect "${domain}:443" -servername "${domain}" 2>/dev/null | openssl x509 -noout -checkend 0 >/dev/null 2>&1; then
-    stream_progress "Certificate validity check failed! Certificate may be expired or invalid."
-    return 1
+  
+  if [[ "$VERIFY_ENGINE_SUCCESS" == "true" ]]; then
+    stream_progress "End-to-End Verification Passed!"
+  else
+    stream_progress "End-to-End Verification Failed!"
   fi
-
-  # 4. Verify Backend Accessibility
-  stream_progress "Verifying Backend API Health..."
-  local backend_health
-  backend_health=$(curl -s -k --connect-timeout 5 "https://$domain/api/health" || echo "FAIL")
-  if [[ "$backend_health" != *"status"* ]] && [[ "$backend_health" != *"ok"* ]]; then
-    stream_progress "Backend API Health check failed! Response: $backend_health"
-    return 1
-  fi
-
-  # 5. Verify Frontend Accessibility
-  stream_progress "Verifying Frontend Accessibility..."
-  local frontend_status
-  frontend_status=$(curl -s -o /dev/null -w "%{http_code}" -k --connect-timeout 5 "https://$domain" || echo "000")
-  if [[ "$frontend_status" != "200" ]]; then
-    stream_progress "Frontend Accessibility check failed! HTTP Code: $frontend_status"
-    return 1
-  fi
-
-  # 6. Verify Subscription Proxy Endpoint
-  stream_progress "Verifying Subscription Proxy Endpoint..."
-  local sub_status
-  sub_status=$(curl -s -o /dev/null -w "%{http_code}" -k --connect-timeout 5 "https://$domain/sub/healthcheck" || echo "000")
-  if [[ "$sub_status" == "502" ]] || [[ "$sub_status" == "000" ]]; then
-    stream_progress "Subscription Proxy routing failed! HTTP Code: $sub_status"
-    return 1
-  fi
-
-  stream_progress "End-to-End Verification Passed!"
-  return 0
+  
+  echo "{\"success\": $VERIFY_ENGINE_SUCCESS, \"code\": \"VERIFICATION_RESULT\", \"details\": $VERIFY_ENGINE_RESULTS}"
 }
 
 ssl_enable() {
