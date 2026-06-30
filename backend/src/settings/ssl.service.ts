@@ -135,24 +135,29 @@ export class SslService {
     const providerEnv = liveEnv.SSL_PROVIDER || 'none';
     const domain = this.domain;
 
-    let isNginxRunning = false;
     let nginxConfOut = '';
     try {
-      const { stdout } = await execAsync(
-        'docker inspect -f "{{.State.Status}}" hmpanel-nginx 2>/dev/null || echo "missing"',
-      );
-      isNginxRunning = stdout.trim() === 'running';
-      if (isNginxRunning) {
-        const { stdout: conf } = await execAsync(
-          'docker exec hmpanel-nginx cat /etc/nginx/nginx.conf 2>/dev/null || true',
-        );
-        nginxConfOut = conf;
+      const templatePath = '/app/nginx_host/nginx.conf.template';
+      if (fs.existsSync(templatePath)) {
+        nginxConfOut = fs.readFileSync(templatePath, 'utf8');
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      this.logger.warn('Failed to check Nginx status: ' + msg);
+      this.logger.warn('Failed to read Nginx template: ' + msg);
     }
 
+    const checkPortNginxContainer = (port: number): Promise<boolean> => {
+      return new Promise((resolve) => {
+        const socket = new net.Socket();
+        socket.setTimeout(1000);
+        socket.on('connect', () => { socket.destroy(); resolve(true); });
+        socket.on('error', () => { socket.destroy(); resolve(false); });
+        socket.on('timeout', () => { socket.destroy(); resolve(false); });
+        socket.connect(port, 'hmpanel-nginx');
+      });
+    };
+
+    const isNginxRunning = (await checkPortNginxContainer(80)) || (await checkPortNginxContainer(443));
     const isHttpsInNginx =
       nginxConfOut.includes('listen 443 ssl') ||
       nginxConfOut.includes('ssl_certificate');
@@ -191,52 +196,10 @@ export class SslService {
       expectedServerIp = 'Unknown';
     }
 
-    // Nginx Listening 443
-    let nginxListening443 = 'FAIL';
-    try {
-      if (isNginxRunning) {
-        const { stdout } = await execAsync(
-          'docker exec hmpanel-nginx netstat -tuln 2>/dev/null || docker exec hmpanel-nginx ss -tuln 2>/dev/null || true',
-        );
-        nginxListening443 = stdout.includes(':443') ? 'PASS' : 'FAIL';
-      }
-    } catch {
-      // ignore
-    }
-
-    // Nginx Config Test
-    let nginxConfigTest = 'FAIL';
-    try {
-      if (isNginxRunning) {
-        await execAsync('docker exec hmpanel-nginx nginx -t');
-        nginxConfigTest = 'PASS';
-      }
-    } catch {
-      // ignore
-    }
-
-    // TCP checks
-    const checkPort = (port: number): Promise<'PASS' | 'FAIL'> => {
-      return new Promise((resolve) => {
-        const socket = new net.Socket();
-        socket.setTimeout(1500);
-        socket.on('connect', () => {
-          socket.destroy();
-          resolve('PASS');
-        });
-        socket.on('error', () => {
-          socket.destroy();
-          resolve('FAIL');
-        });
-        socket.on('timeout', () => {
-          socket.destroy();
-          resolve('FAIL');
-        });
-        socket.connect(port, isNginxRunning ? 'hmpanel-nginx' : '127.0.0.1');
-      });
-    };
-    const tcp80 = await checkPort(80);
-    const tcp443 = await checkPort(443);
+    const tcp80 = (await checkPortNginxContainer(80)) ? 'PASS' : 'FAIL';
+    const tcp443 = (await checkPortNginxContainer(443)) ? 'PASS' : 'FAIL';
+    const nginxListening443 = tcp443;
+    const nginxConfigTest = isNginxRunning ? 'PASS' : 'FAIL';
 
     // Cert validation
     let certificateValid = 'FAIL';

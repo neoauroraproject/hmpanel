@@ -162,6 +162,10 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
     executeAction(() => api.post("/settings/ssl/renew"));
   };
 
+  const handleEnable = () => {
+    executeAction(() => api.post("/settings/ssl/switch", { enableHttps: true }));
+  };
+
   const handleDisable = () => {
     if (confirm("Are you sure you want to disable HTTPS?")) {
       executeAction(() => api.post("/settings/ssl/switch", { enableHttps: false }));
@@ -381,19 +385,35 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
                     </div>
                   ) : (
                     <div className="space-y-4">
-                      <div className="p-4 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/20 rounded-xl text-indigo-600 dark:text-indigo-400 text-sm">
-                        No active certificate found. You can easily issue a free Let&apos;s Encrypt certificate or configure a self-signed one.
-                      </div>
-                      <button onClick={() => { setForm({ domain: sslInfo?.domain || "", email: "admin@" + (sslInfo?.domain || "example.com"), selfSigned: false }); setView("issue"); }} className="w-full py-3 bg-indigo-600 text-white font-medium rounded-xl hover:bg-indigo-500 transition-colors shadow-lg shadow-indigo-500/20">
-                        Setup HTTPS Now
-                      </button>
+                      {sslInfo?.certificate?.exists ? (
+                        <>
+                          <div className="p-4 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-900/50 rounded-xl text-emerald-600 dark:text-emerald-400 text-sm">
+                            An active SSL certificate is present on disk for <strong>{sslInfo.domain}</strong>. You can enable HTTPS mode directly.
+                          </div>
+                          <button onClick={handleEnable} className="w-full py-3 bg-indigo-600 text-white font-medium rounded-xl hover:bg-indigo-500 transition-colors shadow-lg shadow-indigo-500/20">
+                            Enable HTTPS Mode
+                          </button>
+                          <button onClick={() => { setForm({ domain: sslInfo?.domain || "", email: "admin@" + (sslInfo?.domain || "example.com"), selfSigned: false }); setView("issue"); }} className="w-full py-3 bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white font-medium rounded-xl hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors">
+                            Issue New Certificate
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <div className="p-4 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/20 rounded-xl text-indigo-600 dark:text-indigo-400 text-sm">
+                            No active certificate found. You can easily issue a free Let&apos;s Encrypt certificate or configure a self-signed one.
+                          </div>
+                          <button onClick={() => { setForm({ domain: sslInfo?.domain || "", email: "admin@" + (sslInfo?.domain || "example.com"), selfSigned: false }); setView("issue"); }} className="w-full py-3 bg-indigo-600 text-white font-medium rounded-xl hover:bg-indigo-500 transition-colors shadow-lg shadow-indigo-500/20">
+                            Setup HTTPS Now
+                          </button>
+                        </>
+                      )}
                       {(sslInfo?.isHttpsEnabled || sslInfo?.isCorrupted) && (
                         <button onClick={handleDisable} className="w-full py-3 border border-red-200 dark:border-red-900 text-red-650 font-medium rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
                           Fallback to HTTP Mode
                         </button>
                       )}
-                      {sslInfo?.isCorrupted && (
-                        <button onClick={handleRepair} className="w-full py-3 bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white font-medium rounded-xl hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors">
+                      {(sslInfo?.isCorrupted || (sslInfo?.certificate?.exists && !sslInfo?.isHttpsEnabled)) && (
+                        <button onClick={handleRepair} className="w-full py-3 bg-zinc-150 dark:bg-zinc-800 text-zinc-900 dark:text-white font-medium rounded-xl hover:bg-zinc-250 dark:hover:bg-zinc-750 transition-colors">
                           Repair Config
                         </button>
                       )}
