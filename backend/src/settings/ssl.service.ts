@@ -310,17 +310,17 @@ export class SslService {
       this.hmctl.executeStream('ssl', cmdAction).subscribe({
         next: (event) => {
           if (event.type === 'progress') {
-             this.stream$.next({ data: { type: 'progress', message: event.message } });
+             this.stream$?.next({ data: { type: 'progress', message: event.message } });
           } else if (event.type === 'complete') {
-             this.stream$.next({ data: { type: 'complete', data: event.data } });
+             this.stream$?.next({ data: { type: 'complete', data: event.data } });
              resolve({ success: true, https: enableHttps });
           } else if (event.type === 'error') {
-             this.stream$.next({ data: { type: 'error', error: event.error } });
+             this.stream$?.next({ data: { type: 'error', error: event.error } });
              reject(new HttpException(event.error?.message || 'Error', HttpStatus.INTERNAL_SERVER_ERROR));
           }
         },
         error: (err) => {
-          this.stream$.next({ data: { type: 'error', error: err } });
+          this.stream$?.next({ data: { type: 'error', error: err } });
           reject(new HttpException(err.message, HttpStatus.INTERNAL_SERVER_ERROR));
         }
       });
@@ -346,17 +346,17 @@ export class SslService {
       this.hmctl.executeStream('ssl', action, args).subscribe({
         next: (event) => {
           if (event.type === 'progress') {
-             this.stream$.next({ data: { type: 'progress', message: event.message } });
+             this.stream$?.next({ data: { type: 'progress', message: event.message } });
           } else if (event.type === 'complete') {
-             this.stream$.next({ data: { type: 'complete', data: event.data } });
+             this.stream$?.next({ data: { type: 'complete', data: event.data } });
              resolve(event.data);
           } else if (event.type === 'error') {
-             this.stream$.next({ data: { type: 'error', error: event.error } });
+             this.stream$?.next({ data: { type: 'error', error: event.error } });
              reject(new HttpException(event.error.message || 'Error', HttpStatus.INTERNAL_SERVER_ERROR));
           }
         },
         error: (err) => {
-          this.stream$.next({ data: { type: 'error', error: err } });
+          this.stream$?.next({ data: { type: 'error', error: err } });
           reject(new HttpException(err.message, HttpStatus.INTERNAL_SERVER_ERROR));
         }
       });
@@ -370,17 +370,17 @@ export class SslService {
       this.hmctl.executeStream('ssl', 'change-domain', [domain, email]).subscribe({
         next: (event) => {
           if (event.type === 'progress') {
-             this.stream$.next({ data: { type: 'progress', message: event.message } });
+             this.stream$?.next({ data: { type: 'progress', message: event.message } });
           } else if (event.type === 'complete') {
-             this.stream$.next({ data: { type: 'complete', data: event.data } });
+             this.stream$?.next({ data: { type: 'complete', data: event.data } });
              resolve(event.data);
           } else if (event.type === 'error') {
-             this.stream$.next({ data: { type: 'error', error: event.error } });
+             this.stream$?.next({ data: { type: 'error', error: event.error } });
              reject(new HttpException(event.error.message || 'Error', HttpStatus.INTERNAL_SERVER_ERROR));
           }
         },
         error: (err) => {
-          this.stream$.next({ data: { type: 'error', error: err } });
+          this.stream$?.next({ data: { type: 'error', error: err } });
           reject(new HttpException(err.message, HttpStatus.INTERNAL_SERVER_ERROR));
         }
       });
