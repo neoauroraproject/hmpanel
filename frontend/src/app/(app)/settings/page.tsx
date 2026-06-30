@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import { ErrorBox, PageHeader, Spinner, Card } from "@/components/ui";
 import { useToast } from "@/components/toast";
 import { motion } from "framer-motion";
+import { SslManagerModal } from "./SslManagerModal";
 
 interface RestoreAnalysis {
   counts: {
@@ -354,10 +355,7 @@ interface SslStatus {
     exists: boolean;
     expiration?: string;
     daysRemaining?: number;
-    issuer?: string;
-      </div>
-    </Card>
-  );
+  };
 }
 
 function VersionDisplay() {

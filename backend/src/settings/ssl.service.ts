@@ -1,5 +1,6 @@
 import { Injectable, Logger, HttpException, HttpStatus } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { Subject } from 'rxjs';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
@@ -311,7 +312,7 @@ export class SslService {
     }
   }
 
-  private stream$ = new import('rxjs').Subject<{ data: any }>();
+  private stream$ = new Subject<{ data: any }>();
 
   getStream() {
     return this.stream$.asObservable();
