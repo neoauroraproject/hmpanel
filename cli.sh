@@ -276,7 +276,8 @@ do_backup() {
   
   local app_ver="unknown"
   if [[ -f "${INSTALL_DIR}/package.json" ]]; then
-    app_ver=$(grep -oP '(?<="version": ")[^"]*' "${INSTALL_DIR}/package.json" | head -n 1 || echo "unknown")
+    app_ver=$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "${INSTALL_DIR}/package.json" | head -n 1)
+    app_ver="${app_ver:-unknown}"
   fi
   
   local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -393,7 +394,8 @@ do_restore() {
     return 1
   fi
   
-  local btype=$(grep -oP '(?<="type": ")[^"]*' "${temp_dir}/manifest.json" || echo "unknown")
+  local btype=$(sed -n 's/.*"type": *"\([^"]*\)".*/\1/p' "${temp_dir}/manifest.json" | head -n 1)
+  btype="${btype:-unknown}"
   if [[ "$silent" != "true" ]]; then echo "Starting transactional restore ($btype)..."; fi
   
   # 1. Create Rollback Backup
@@ -1695,7 +1697,8 @@ cmd_version() {
   local schema_ver="unknown"
   
   if [[ -f "${INSTALL_DIR}/package.json" ]]; then
-    app_ver=$(grep -oP '(?<="version": ")[^"]*' "${INSTALL_DIR}/package.json" | head -n 1)
+    app_ver=$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "${INSTALL_DIR}/package.json" | head -n 1)
+    app_ver="${app_ver:-unknown}"
   fi
   if [[ -f "${INSTALL_DIR}/prisma/schema.prisma" ]]; then
     schema_ver="1" # Placeholder

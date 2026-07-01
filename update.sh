@@ -81,7 +81,7 @@ main() {
   
   if docker ps | grep -q "hmpanel-postgres"; then
     info "Creating pre-update full backup..."
-    BACKUP_FILE=$(hm backup create full | grep -oP "/opt/hmpanel/backups/.*\.tar\.gz" | tail -n 1) || true
+    BACKUP_FILE=$(hm backup create full | grep -E -o "/opt/hmpanel/backups/[a-zA-Z0-9_.-]+\.tar\.gz" | tail -n 1) || true
     if [[ -n "$BACKUP_FILE" && -f "$BACKUP_FILE" ]]; then
       log "Full backup created at $BACKUP_FILE"
     else
@@ -199,7 +199,7 @@ END \$\$;
     warn "Health check timeout. Check logs: docker compose logs panel-app"
   else
     echo ""
-    log "HMPanel Panel successfully updated to version 1.4.6!"
+    log "HMPanel Panel successfully updated to version 1.4.7!"
   fi
 
   info "Cleaning up old images..."
