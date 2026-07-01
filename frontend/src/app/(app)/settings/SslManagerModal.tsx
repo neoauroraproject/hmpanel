@@ -60,7 +60,7 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
   const [logs, setLogs] = useState<string[]>([]);
   const [workflowState, setWorkflowState] = useState<"idle" | "running" | "success" | "error">("idle");
   const [workflowError, setWorkflowError] = useState("");
-  const [showDiagnostics, setShowDiagnostics] = useState(false);
+
 
   useEffect(() => {
     if (isOpen) {
@@ -306,16 +306,12 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
             </div>
           ) : (
             <div className="space-y-6">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4">
                 <div className="p-4 bg-zinc-50 dark:bg-zinc-900/50 rounded-xl border border-zinc-200 dark:border-zinc-800/50">
                   <p className="text-xs text-zinc-500 mb-1">Current Domain</p>
-                  <p className="font-mono font-medium">{sslInfo?.domain}</p>
-                </div>
-                <div className="p-4 bg-zinc-50 dark:bg-zinc-900/50 rounded-xl border border-zinc-200 dark:border-zinc-800/50">
-                  <p className="text-xs text-zinc-500 mb-1">Mode</p>
-                  <p className="font-medium flex items-center gap-2">
+                  <p className="font-mono font-medium flex items-center gap-2">
                     <span className={`w-2 h-2 rounded-full ${sslInfo?.isCorrupted ? 'bg-red-500' : sslInfo?.isHttpsEnabled ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-                    {sslInfo?.isCorrupted ? "Corrupted" : sslInfo?.isHttpsEnabled ? "HTTPS Active" : "HTTP Only"}
+                    {sslInfo?.domain}
                   </p>
                 </div>
               </div>
@@ -340,14 +336,6 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
                 <div className="space-y-4 border-t border-zinc-200 dark:border-zinc-800 pt-6">
                   <h3 className="font-bold">Certificate Details</h3>
                   <div className="space-y-3 text-sm bg-zinc-50 dark:bg-zinc-900/50 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800/50">
-                    <div className="flex justify-between">
-                      <span className="text-zinc-500">Provider</span>
-                      <span className="font-medium">{sslInfo.provider}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-zinc-500">Issuer</span>
-                      <span className="font-medium truncate max-w-[200px]" title={sslInfo.certificate.issuer}>{sslInfo.certificate.issuer || 'Unknown'}</span>
-                    </div>
                     <div className="flex justify-between">
                       <span className="text-zinc-500">Expires</span>
                       <span className={`font-medium ${(sslInfo.certificate.daysRemaining || 0) < 15 ? 'text-amber-500' : 'text-emerald-500'}`}>
@@ -422,128 +410,7 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
                 </div>
               )}
 
-              {sslInfo?.diagnostics && (
-                <div className="space-y-3 border-t border-zinc-200 dark:border-zinc-800 pt-6">
-                  <button
-                    onClick={() => setShowDiagnostics(!showDiagnostics)}
-                    className="flex items-center justify-between w-full text-xs font-semibold uppercase tracking-wider text-zinc-550 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 transition-colors"
-                  >
-                    <span>Advanced SSL Diagnostics</span>
-                    <span>{showDiagnostics ? "Hide ▴" : "Show ▾"}</span>
-                  </button>
 
-                  {showDiagnostics && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs font-mono bg-zinc-50 dark:bg-zinc-950 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800">
-                      <div className="flex justify-between items-center py-1 border-b border-zinc-100 dark:border-zinc-850">
-                        <span className="text-zinc-500">DNS Resolution:</span>
-                        <span className={sslInfo.diagnostics.dnsResolution === 'PASS' ? 'text-emerald-500 font-bold' : sslInfo.diagnostics.dnsResolution === 'N/A' ? 'text-zinc-500' : 'text-red-500 font-bold'}>
-                          {sslInfo.diagnostics.dnsResolution} ({sslInfo.diagnostics.resolvedIp})
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center py-1 border-b border-zinc-100 dark:border-zinc-850">
-                        <span className="text-zinc-500">Expected Server IP:</span>
-                        <span className="text-zinc-700 dark:text-zinc-300">{sslInfo.diagnostics.expectedServerIp}</span>
-                      </div>
-                      <div className="flex justify-between items-center py-1 border-b border-zinc-100 dark:border-zinc-850">
-                        <span className="text-zinc-500">HTTP Virtual Host:</span>
-                        <span className={sslInfo.diagnostics.httpVirtualHost === 'PASS' ? 'text-emerald-500 font-bold' : 'text-red-500 font-bold'}>
-                          {sslInfo.diagnostics.httpVirtualHost}
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center py-1 border-b border-zinc-100 dark:border-zinc-850">
-                        <span className="text-zinc-500">HTTPS Virtual Host:</span>
-                        <span className={sslInfo.diagnostics.httpsVirtualHost === 'PASS' ? 'text-emerald-500 font-bold' : 'text-red-500 font-bold'}>
-                          {sslInfo.diagnostics.httpsVirtualHost}
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center py-1 border-b border-zinc-100 dark:border-zinc-850">
-                        <span className="text-zinc-500">server_name:</span>
-                        <span className={sslInfo.diagnostics.serverName === 'PASS' ? 'text-emerald-500 font-bold' : 'text-red-500 font-bold'}>
-                          {sslInfo.diagnostics.serverName}
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center py-1 border-b border-zinc-100 dark:border-zinc-850">
-                        <span className="text-zinc-500">TCP Port 80:</span>
-                        <span className={sslInfo.diagnostics.tcp80 === 'PASS' ? 'text-emerald-500 font-bold' : 'text-red-500 font-bold'}>
-                          {sslInfo.diagnostics.tcp80}
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center py-1 border-b border-zinc-100 dark:border-zinc-850">
-                        <span className="text-zinc-500">TCP Port 443:</span>
-                        <span className={sslInfo.diagnostics.tcp443 === 'PASS' ? 'text-emerald-500 font-bold' : 'text-red-500 font-bold'}>
-                          {sslInfo.diagnostics.tcp443}
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center py-1 border-b border-zinc-100 dark:border-zinc-850">
-                        <span className="text-zinc-500">Certificate Exists:</span>
-                        <span className={sslInfo.diagnostics.certificateExists === 'PASS' ? 'text-emerald-500 font-bold' : 'text-red-500 font-bold'}>
-                          {sslInfo.diagnostics.certificateExists}
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center py-1 border-b border-zinc-100 dark:border-zinc-850">
-                        <span className="text-zinc-500">Certificate Valid:</span>
-                        <span className={sslInfo.diagnostics.certificateValid === 'PASS' ? 'text-emerald-500 font-bold' : 'text-red-500 font-bold'}>
-                          {sslInfo.diagnostics.certificateValid}
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center py-1 border-b border-zinc-100 dark:border-zinc-850">
-                        <span className="text-zinc-500">Certificate Loaded:</span>
-                        <span className={sslInfo.diagnostics.certificateLoaded === 'PASS' ? 'text-emerald-500 font-bold' : 'text-red-500 font-bold'}>
-                          {sslInfo.diagnostics.certificateLoaded}
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center py-1 border-b border-zinc-100 dark:border-zinc-850">
-                        <span className="text-zinc-500">Nginx Config Check:</span>
-                        <span className={sslInfo.diagnostics.nginxConfig === 'PASS' ? 'text-emerald-500 font-bold' : 'text-red-500 font-bold'}>
-                          {sslInfo.diagnostics.nginxConfig}
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center py-1 border-b border-zinc-100 dark:border-zinc-850">
-                        <span className="text-zinc-500">Nginx Listening 443:</span>
-                        <span className={sslInfo.diagnostics.nginxListening443 === 'PASS' ? 'text-emerald-500 font-bold' : 'text-red-500 font-bold'}>
-                          {sslInfo.diagnostics.nginxListening443}
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center py-1 border-b border-zinc-100 dark:border-zinc-850">
-                        <span className="text-zinc-500">TLS Handshake:</span>
-                        <span className={sslInfo.diagnostics.tlsHandshake === 'PASS' ? 'text-emerald-500 font-bold' : 'text-red-500 font-bold'}>
-                          {sslInfo.diagnostics.tlsHandshake}
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center py-1 border-b border-zinc-100 dark:border-zinc-850">
-                        <span className="text-zinc-500">HTTP Health:</span>
-                        <span className={sslInfo.diagnostics.httpHealth === 'PASS' ? 'text-emerald-500 font-bold' : 'text-red-500 font-bold'}>
-                          {sslInfo.diagnostics.httpHealth}
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center py-1 border-b border-zinc-100 dark:border-zinc-850">
-                        <span className="text-zinc-500">HTTPS Health:</span>
-                        <span className={sslInfo.diagnostics.httpsHealth === 'PASS' ? 'text-emerald-500 font-bold' : 'text-red-500 font-bold'}>
-                          {sslInfo.diagnostics.httpsHealth}
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center py-1 border-b border-zinc-100 dark:border-zinc-850">
-                        <span className="text-zinc-500">Backend API:</span>
-                        <span className={sslInfo.diagnostics.backend === 'PASS' ? 'text-emerald-500 font-bold' : 'text-red-500 font-bold'}>
-                          {sslInfo.diagnostics.backend}
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center py-1 border-b border-zinc-100 dark:border-zinc-850">
-                        <span className="text-zinc-500">Frontend SPA:</span>
-                        <span className={sslInfo.diagnostics.frontend === 'PASS' ? 'text-emerald-500 font-bold' : 'text-red-500 font-bold'}>
-                          {sslInfo.diagnostics.frontend}
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center py-1 border-b border-zinc-100 dark:border-zinc-850 col-span-1 sm:col-span-2">
-                        <span className="text-zinc-500">HTTP to HTTPS Redirect:</span>
-                        <span className={sslInfo.diagnostics.redirect === 'PASS' ? 'text-emerald-500 font-bold' : sslInfo.diagnostics.redirect === 'N/A' ? 'text-zinc-500' : 'text-red-500 font-bold'}>
-                          {sslInfo.diagnostics.redirect}
-                        </span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
           )}
         </div>

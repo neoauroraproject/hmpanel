@@ -7,6 +7,7 @@ import { QRCodeCanvas } from "qrcode.react";
 import { formatBytes, formatDate } from "@/lib/format";
 import { useQuery } from "@tanstack/react-query";
 import { API_BASE } from "@/lib/api";
+import { copyToClipboard } from "@/lib/clipboard";
 
 export default function SunsetTheme({ id, data }: { id: string; data: any }) {
   const [copiedText, setCopiedText] = useState<string | null>(null);
@@ -44,7 +45,7 @@ export default function SunsetTheme({ id, data }: { id: string; data: any }) {
 
   const copyText = async (text: string, cid: string) => {
     try {
-      await navigator.clipboard.writeText(text);
+      await copyToClipboard(text);
       setCopiedText(cid);
       setTimeout(() => setCopiedText(null), 2000);
     } catch {}

@@ -261,40 +261,15 @@ install_docker_compose() {
 # ─────────────────────────────────────────────────────────────────
 collect_user_input() {
   echo ""
-  echo -e "  ${BOLD}How would you like to access HMPanel?${NC}"
-  echo -e "  ${BOLD}1${NC}) Domain"
-  echo -e "  ${BOLD}2${NC}) Server IP"
-  read -rp "  Select option [1]: " ACCESS_MODE || true
-  [[ -z "$ACCESS_MODE" ]] && ACCESS_MODE=1
-
-  if [[ "$ACCESS_MODE" == 2 ]]; then
-    DETECTED_IP=$(curl -s https://api.ipify.org 2>/dev/null || curl -s https://icanhazip.com 2>/dev/null || echo "")
-    if [[ -z "$DETECTED_IP" ]]; then
-      read -rp "  Could not detect public IP automatically. Please enter your Server IP: " DETECTED_IP
-    else
-      echo -e "  Detected IP: ${CYAN}${DETECTED_IP}${NC}"
-    fi
-    DOMAIN="$DETECTED_IP"
-    
-    echo -e "  ${YELLOW}ℹ IP installations skip SSL setup (HTTP only).${NC}"
+  read -rp "  Enter Domain or Server IP: " DOMAIN || true
+  [[ -z "$DOMAIN" ]] && DOMAIN="localhost"
+  
+  if [[ "$DOMAIN" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ || "$DOMAIN" == "localhost" ]]; then
+    echo -e "  ${YELLOW}ℹ IP address or localhost detected. Installations will skip SSL setup (HTTP only).${NC}"
     SSL_CHOICE=3 # Disabled
   else
-    echo ""
-    read -rp "  Enter domain name (e.g. panel.example.com): " DOMAIN || true
-    [[ -z "$DOMAIN" ]] && DOMAIN="localhost"
-    
-    echo ""
-    echo -e "  ${BOLD}Enable SSL?${NC}"
-    echo -e "  ${BOLD}1${NC}) Yes (Let's Encrypt/ZeroSSL)"
-    echo -e "  ${BOLD}2${NC}) No"
-    read -rp "  Select option [1]: " SSL_CHOICE_INPUT || true
-    [[ -z "$SSL_CHOICE_INPUT" ]] && SSL_CHOICE_INPUT=1
-    
-    if [[ "$SSL_CHOICE_INPUT" == 1 ]]; then
-      SSL_CHOICE=1 # ACME Domain Cert
-    else
-      SSL_CHOICE=3 # Disabled
-    fi
+    echo -e "  ${GREEN}ℹ Domain detected. Installer will attempt automatic SSL issuance.${NC}"
+    SSL_CHOICE=1 # ACME Domain Cert
   fi
 
   echo ""
@@ -902,30 +877,21 @@ step_8_ssl() {
   if [[ "$SSL_CHOICE" == 1 ]]; then
     if [[ "$DOMAIN" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || [[ "$DOMAIN" == "localhost" ]]; then
       warn "IP address or localhost detected ($DOMAIN). Skipping SSL workflow entirely."
-      hm ssl disable
       return 0
     fi
 
     info "Delegating SSL issuance to HMCTL..."
-    hm ssl issue "$DOMAIN" "$ADMIN_EMAIL"
+    hm ssl issue "$DOMAIN" "$ADMIN_EMAIL" || {
+      warn "SSL issuance failed. Falling back to HTTP."
+    }
     
-    # Read the updated .env to get the SSL status
-    source "${INSTALL_DIR}/.env"
-    if [[ "$SSL_ENABLED" == "true" ]]; then
-      SSL_STATUS="${SSL_PROVIDER}"
+    if [[ -f "${SSL_DIR}/fullchain.pem" ]] && [[ -f "${SSL_DIR}/privkey.pem" ]]; then
+      SSL_STATUS="active"
     else
       SSL_STATUS="disabled"
     fi
   fi
 
-  # ── Self-signed ────────────────────────────────────────────────
-  if [[ "$SSL_CHOICE" == 2 ]]; then
-    log "Using self-signed certificate"
-    hm ssl selfsigned "$DOMAIN"
-    SSL_STATUS="self-signed"
-  fi
-
-  # ── HTTP-only (chosen or fallen back to) ──────────────────────
   if [[ "$SSL_CHOICE" == 3 ]]; then
     log "SSL disabled (HTTP only). Skipping SSL commands."
     SSL_STATUS="disabled"

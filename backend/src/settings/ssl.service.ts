@@ -130,21 +130,8 @@ export class SslService {
 
   async getStatus() {
     const liveEnv = this.getLiveEnv();
-    const sslEnabled = liveEnv.SSL_ENABLED === 'true';
-    const protocol = liveEnv.PANEL_PROTOCOL || 'http';
     const providerEnv = liveEnv.SSL_PROVIDER || 'none';
     const domain = this.domain;
-
-    let nginxConfOut = '';
-    try {
-      const templatePath = '/app/nginx_host/nginx.conf.template';
-      if (fs.existsSync(templatePath)) {
-        nginxConfOut = fs.readFileSync(templatePath, 'utf8');
-      }
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      this.logger.warn('Failed to read Nginx template: ' + msg);
-    }
 
     const checkPortNginxContainer = (port: number): Promise<boolean> => {
       return new Promise((resolve) => {
@@ -166,14 +153,18 @@ export class SslService {
       });
     };
 
-    const isHttpsInNginx =
-      nginxConfOut.includes('listen 443 ssl') ||
-      nginxConfOut.includes('ssl_certificate');
-
     const localCertPath = '/etc/nginx/ssl/fullchain.pem';
     const localKeyPath = '/etc/nginx/ssl/privkey.pem';
-    const certExists =
+    let certExists =
       fs.existsSync(localCertPath) && fs.existsSync(localKeyPath);
+
+    if (certExists) {
+      try {
+        await execAsync(`openssl x509 -checkend 0 -noout -in ${localCertPath}`);
+      } catch {
+        certExists = false;
+      }
+    }
 
     // Parallel checks
     const dnsPromise = (async () => {
@@ -250,7 +241,7 @@ export class SslService {
     })();
 
     const redirectPromise = (async () => {
-      if (sslEnabled) {
+      if (certExists) {
         try {
           const res = await axios.get<unknown>('http://hmpanel-nginx', {
             maxRedirects: 0,
@@ -293,10 +284,12 @@ export class SslService {
     const tcp80 = tcp80Bool ? 'PASS' : 'FAIL';
     const tcp443 = tcp443Bool ? 'PASS' : 'FAIL';
     const isNginxRunning = tcp80Bool || tcp443Bool;
+    const isHttpsInNginx = tcp443Bool;
     const nginxListening443 = tcp443;
     const nginxConfigTest = isNginxRunning ? 'PASS' : 'FAIL';
 
     // Cert validation
+    const serverName = 'N/A';
     let certificateValid = 'FAIL';
     let expiration: string | null = null;
     let daysRemaining: number | null = null;
@@ -335,7 +328,7 @@ export class SslService {
     // Peer Cert loaded
     let certificateLoaded = 'FAIL';
     let tlsHandshake = 'FAIL';
-    if (isNginxRunning && isHttpsInNginx && tcp443Bool) {
+    if (isNginxRunning && isHttpsInNginx) {
       try {
         await this.getPeerCertificate('hmpanel-nginx');
         certificateLoaded = 'PASS';
@@ -345,32 +338,9 @@ export class SslService {
       }
     }
 
-    // server_name check
-    let serverName = 'FAIL';
-    const serverNameLine = nginxConfOut
-      .split('\n')
-      .find((line) => line.includes('server_name'));
-    if (serverNameLine) {
-      if (serverNameLine.includes(domain) || serverNameLine.includes('_')) {
-        serverName = 'PASS';
-      }
-    }
-
-    // Consistency check
-    let isCorrupted = false;
+    // Consistency check (does Nginx TLS config match certificate existence)
+    const isCorrupted = certExists !== isHttpsInNginx;
     const isIpOrLocalhost = /^[0-9.]+$/.test(domain) || domain === 'localhost';
-
-    if (sslEnabled) {
-      if (isIpOrLocalhost) isCorrupted = true;
-      if (protocol !== 'https') isCorrupted = true;
-      if (providerEnv === 'none' || !providerEnv) isCorrupted = true;
-      if (!certExists) isCorrupted = true;
-      if (!isHttpsInNginx) isCorrupted = true;
-    } else {
-      if (protocol === 'https') isCorrupted = true;
-      if (providerEnv !== 'none' && providerEnv !== '') isCorrupted = true;
-      if (isHttpsInNginx) isCorrupted = true;
-    }
 
     const diagnostics = {
       lastCheckTime: new Date().toISOString(),
@@ -382,8 +352,7 @@ export class SslService {
       dnsResolution: dnsStatus,
       resolvedIp,
       expectedServerIp,
-      httpVirtualHost:
-        isNginxRunning && nginxConfOut.includes('listen 80') ? 'PASS' : 'FAIL',
+      httpVirtualHost: tcp80Bool ? 'PASS' : 'FAIL',
       httpsVirtualHost: isHttpsInNginx ? 'PASS' : 'FAIL',
       serverName,
       tcp80,

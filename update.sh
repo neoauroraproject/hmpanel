@@ -55,7 +55,8 @@ main() {
 
   info "Downloading latest nginx templates..."
   mkdir -p nginx
-  curl -fsSL "${REPO_URL}/nginx/nginx.conf.template" -o nginx/nginx.conf.template || warn "Failed to download nginx.conf.template"
+  curl -fsSL "${REPO_URL}/nginx/nginx.conf.http.template" -o nginx/nginx.conf.http.template || warn "Failed to download nginx.conf.http.template"
+  curl -fsSL "${REPO_URL}/nginx/nginx.conf.ssl.template" -o nginx/nginx.conf.ssl.template || warn "Failed to download nginx.conf.ssl.template"
 
   log "Host infrastructure synced with main branch."
 
@@ -118,25 +119,8 @@ main() {
     chmod 600 "${INSTALL_DIR}/.env"
   fi
 
-  info "Ensuring SSL certificates exist so Nginx doesn't crash..."
   SSL_DIR="${INSTALL_DIR}/nginx/ssl"
   mkdir -p "${SSL_DIR}"
-  if [[ ! -f "${SSL_DIR}/fullchain.pem" ]]; then
-    info "Generating temporary self-signed certificate for Nginx startup..."
-    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-      -keyout "${SSL_DIR}/privkey.pem" \
-      -out "${SSL_DIR}/fullchain.pem" \
-      -subj "/CN=localhost/O=HMPanel/C=US" >/dev/null 2>&1 || true
-  fi
-
-  if [[ ! -f "${SSL_DIR}/fullchain.pem" ]]; then
-    info "Local openssl failed or missing. Generating certificate using Docker..."
-    docker run --rm -v "${SSL_DIR}:/ssl" alpine sh -c "apk add --no-cache openssl && openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout /ssl/privkey.pem -out /ssl/fullchain.pem -subj '/CN=localhost/O=HMPanel/C=US'" >/dev/null 2>&1 || true
-  fi
-
-  if [[ -f "${SSL_DIR}/privkey.pem" ]]; then
-    chmod 600 "${SSL_DIR}/privkey.pem" 2>/dev/null || true
-  fi
 
   step "[6/8] Executing Database Migrations"
   info "Starting database to apply migrations..."

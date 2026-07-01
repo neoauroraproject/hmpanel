@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { clsx } from "clsx";
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { copyToClipboard } from "@/lib/clipboard";
 import type { Client, Paginated, Admin } from "@/lib/types";
 import { formatBytes, formatExpiry, isExpired, formatDate } from "@/lib/format";
 import { Card, PageHeader, Badge, Spinner, ErrorBox } from "@/components/ui";
@@ -43,7 +44,7 @@ function CopyBtn({ text }: { text: string }) {
   const toast = useToast((s) => s.push);
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(text);
+      await copyToClipboard(text);
       setCopied(true);
       toast("Copied to clipboard", "success");
       setTimeout(() => setCopied(false), 2000);

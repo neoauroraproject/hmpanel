@@ -5,6 +5,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useParams, useRouter } from "next/navigation";
 import { formatBytes } from "@/lib/format";
+import { copyToClipboard } from "@/lib/clipboard";
 import { ShieldCheck, Server, AlertCircle, RefreshCw, Upload, FileImage, CreditCard, Copy, Check, Globe } from "lucide-react";
 
 const translations = {
@@ -102,10 +103,12 @@ export default function ShopPage() {
   });
 
   const [copied, setCopied] = useState(false);
-  const handleCopy = (text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopy = async (text: string) => {
+    try {
+      await copyToClipboard(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {}
   };
 
   if (isLoading) {

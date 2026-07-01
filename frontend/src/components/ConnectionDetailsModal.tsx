@@ -6,6 +6,7 @@ import { useState } from "react";
 import { formatBytes } from "@/lib/format";
 import { useToast } from "@/components/toast";
 import { API_BASE } from "@/lib/api";
+import { copyToClipboard } from "@/lib/clipboard";
 import { motion } from "framer-motion";
 
 interface ConnectionDetailsModalProps {
@@ -18,7 +19,7 @@ function CopyBtn({ text, label }: { text: string; label?: string }) {
   const [copied, setCopied] = useState(false);
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(text);
+      await copyToClipboard(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {}
@@ -180,7 +181,7 @@ export function ConnectionDetailsModal({ client, portalSettings, onClose }: Conn
               <>
                 <button 
                   onClick={() => {
-                    navigator.clipboard.writeText(platformUrl);
+                    copyToClipboard(platformUrl);
                     toast("Copied platform subscription URL", "success");
                   }}
                   className="flex items-center justify-center gap-2 w-full py-3 rounded-xl bg-blue-600 text-white font-bold hover:bg-blue-500 transition-colors shadow-md"
@@ -214,7 +215,7 @@ export function ConnectionDetailsModal({ client, portalSettings, onClose }: Conn
               <>
                 <button 
                   onClick={() => {
-                    navigator.clipboard.writeText(nativeUrl);
+                    copyToClipboard(nativeUrl);
                     toast("Copied native node link", "success");
                   }}
                   className="flex items-center justify-center gap-2 w-full py-3 rounded-xl bg-emerald-600 text-white font-bold hover:bg-emerald-500 transition-colors shadow-md"

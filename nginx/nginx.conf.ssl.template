@@ -53,12 +53,16 @@ http {
         keepalive 32;
     }
 
-    # ─────────────────────────────────────────────────────────────
     # HTTP → HTTPS redirect + Let's Encrypt ACME challenge
-    # ─────────────────────────────────────────────────────────────
     server {
         listen 80;
         server_name ${PANEL_DOMAIN} localhost 127.0.0.1;
+
+        # Let's Encrypt ACME challenge
+        location /.well-known/acme-challenge/ {
+            root /var/www/acme;
+            try_files $uri =404;
+        }
 
         # Redirect all other HTTP traffic to HTTPS
         location / {
@@ -66,15 +70,13 @@ http {
         }
     }
 
-    # ─────────────────────────────────────────────────────────────
     # HTTPS — Main application server
-    # ─────────────────────────────────────────────────────────────
     server {
         listen 443 ssl;
         http2 on;
         server_name ${PANEL_DOMAIN};
 
-        # SSL certificates (auto-updated by certbot or manual)
+        # SSL certificates
         ssl_certificate     /etc/nginx/ssl/fullchain.pem;
         ssl_certificate_key /etc/nginx/ssl/privkey.pem;
 

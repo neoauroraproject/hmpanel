@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { AlertCircle, RefreshCw, CheckCircle2, Clock, XCircle, Package, Copy, Check, QrCode } from "lucide-react";
 import { useState, useEffect } from "react";
 import QRCode from "react-qr-code";
+import { copyToClipboard } from "@/lib/clipboard";
 
 export default function TrackOrderPage() {
   const params = useParams();
@@ -20,10 +21,12 @@ export default function TrackOrderPage() {
   const [copied, setCopied] = useState(false);
   const [showQR, setShowQR] = useState(false);
 
-  const handleCopy = (text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopy = async (text: string) => {
+    try {
+      await copyToClipboard(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {}
   };
 
   if (isLoading && !data) {

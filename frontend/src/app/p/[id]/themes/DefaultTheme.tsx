@@ -7,6 +7,7 @@ import { Copy, Download, QrCode, MonitorSmartphone, Check, MessageCircle, Phone,
 import { QRCodeCanvas } from "qrcode.react";
 import { formatBytes, formatDate } from "@/lib/format";
 import { API_BASE } from "@/lib/api";
+import { copyToClipboard } from "@/lib/clipboard";
 
 export default function DefaultTheme({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -130,7 +131,7 @@ export default function DefaultTheme({ params }: { params: Promise<{ id: string 
 
   const copyText = async (text: string, id: string) => {
     try {
-      await navigator.clipboard.writeText(text);
+      await copyToClipboard(text);
       setCopiedText(id);
       setTimeout(() => setCopiedText(null), 2000);
     } catch {}

@@ -129,256 +129,6 @@ verify_port_80() {
   return 0
 }
 
-write_http_nginx_template() {
-  local target_file="$1"
-  local srv_name="${2:-${PANEL_DOMAIN:-${DOMAIN:-_}}}"
-  cat > "$target_file" <<'EOF'
-user nginx;
-worker_processes auto;
-error_log /var/log/nginx/error.log warn;
-pid /var/run/nginx.pid;
-
-events {
-    worker_connections 1024;
-    use epoll;
-    multi_accept on;
-}
-
-http {
-    include       /etc/nginx/mime.types;
-    default_type  application/octet-stream;
-
-    log_format main '$remote_addr - $remote_user [$time_local] "$request" '
-                    '$status $body_bytes_sent "$http_referer" '
-                    '"$http_user_agent" "$http_x_forwarded_for"';
-
-    access_log /var/log/nginx/access.log main;
-
-    sendfile        on;
-    tcp_nopush      on;
-    tcp_nodelay     on;
-    keepalive_timeout 65;
-    types_hash_max_size 2048;
-    client_max_body_size 50M;
-
-    # Security headers
-    add_header X-Frame-Options "SAMEORIGIN" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header X-XSS-Protection "1; mode=block" always;
-    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-
-    # Gzip compression
-    gzip on;
-    gzip_vary on;
-    gzip_proxied any;
-    gzip_comp_level 6;
-    gzip_types text/plain text/css text/xml application/json application/javascript application/xml+rss image/svg+xml;
-
-    # Rate limiting
-    limit_req_zone $binary_remote_addr zone=api_limit:10m rate=30r/s;
-    limit_req_zone $binary_remote_addr zone=login_limit:10m rate=5r/m;
-
-    upstream backend {
-        server panel-app:${BACKEND_PORT};
-        keepalive 32;
-    }
-
-    upstream frontend {
-        server panel-app:${APP_PORT};
-        keepalive 32;
-    }
-
-    server {
-        listen 80;
-        server_name SERVER_NAME_PLACEHOLDER;
-
-        # ── Backend API ──────────────────────────────────────────
-        location /api/ {
-            limit_req zone=api_limit burst=50 nodelay;
-            proxy_pass http://backend/;
-            proxy_http_version 1.1;
-            proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection 'upgrade';
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
-            
-            proxy_buffering off;
-            proxy_read_timeout 600s;
-        }
-
-        # ── Frontend Next.js SPA ──────────────────────────────────
-        location / {
-            proxy_pass http://frontend;
-            proxy_http_version 1.1;
-            proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection 'upgrade';
-            proxy_set_header Host $host;
-            proxy_cache_bypass $http_upgrade;
-        }
-    }
-}
-EOF
-  sed -i "s/SERVER_NAME_PLACEHOLDER/$srv_name/g" "$target_file"
-}
-
-write_ssl_nginx_template() {
-  local target_file="$1"
-  local srv_name="${2:-${PANEL_DOMAIN:-${DOMAIN:-_}}}"
-  cat > "$target_file" <<'EOF'
-user nginx;
-worker_processes auto;
-error_log /var/log/nginx/error.log warn;
-pid /var/run/nginx.pid;
-
-events {
-    worker_connections 1024;
-    use epoll;
-    multi_accept on;
-}
-
-http {
-    include       /etc/nginx/mime.types;
-    default_type  application/octet-stream;
-
-    log_format main '$remote_addr - $remote_user [$time_local] "$request" '
-                    '$status $body_bytes_sent "$http_referer" '
-                    '"$http_user_agent" "$http_x_forwarded_for"';
-
-    access_log /var/log/nginx/access.log main;
-
-    sendfile        on;
-    tcp_nopush      on;
-    tcp_nodelay     on;
-    keepalive_timeout 65;
-    types_hash_max_size 2048;
-    client_max_body_size 50M;
-
-    # Security headers
-    add_header X-Frame-Options "SAMEORIGIN" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header X-XSS-Protection "1; mode=block" always;
-    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-
-    # Gzip compression
-    gzip on;
-    gzip_vary on;
-    gzip_proxied any;
-    gzip_comp_level 6;
-    gzip_types text/plain text/css text/xml application/json application/javascript application/xml+rss image/svg+xml;
-
-    # Rate limiting
-    limit_req_zone $binary_remote_addr zone=api_limit:10m rate=30r/s;
-    limit_req_zone $binary_remote_addr zone=login_limit:10m rate=5r/m;
-
-    upstream backend {
-        server panel-app:${BACKEND_PORT};
-        keepalive 32;
-    }
-
-    upstream frontend {
-        server panel-app:${APP_PORT};
-        keepalive 32;
-    }
-
-    # HTTP → HTTPS redirect
-    server {
-        listen 80;
-        server_name SERVER_NAME_PLACEHOLDER localhost 127.0.0.1;
-
-        # Redirect all other HTTP traffic to HTTPS
-        location / {
-            return 301 https://$host$request_uri;
-        }
-    }
-
-    # HTTPS — Main application server
-    server {
-        listen 443 ssl;
-        http2 on;
-        server_name SERVER_NAME_PLACEHOLDER;
-
-        # SSL certificates (auto-updated by certbot or manual)
-        ssl_certificate     /etc/nginx/ssl/fullchain.pem;
-        ssl_certificate_key /etc/nginx/ssl/privkey.pem;
-
-        # Modern SSL configuration
-        ssl_protocols TLSv1.2 TLSv1.3;
-        ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
-        ssl_prefer_server_ciphers off;
-        ssl_session_cache shared:SSL:10m;
-        ssl_session_timeout 1d;
-        ssl_session_tickets off;
-
-        # HSTS
-        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-
-        # ── Backend API ──────────────────────────────────────────
-        location /api/ {
-            limit_req zone=api_limit burst=50 nodelay;
-            proxy_pass http://backend/;
-            proxy_http_version 1.1;
-            proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection 'upgrade';
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
-            proxy_cache_bypass $http_upgrade;
-            proxy_read_timeout 300s;
-            proxy_connect_timeout 75s;
-        }
-
-        # ── WebSockets ───────────────────────────────────────────
-        location /socket.io/ {
-            proxy_pass http://backend/socket.io/;
-            proxy_http_version 1.1;
-            proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection 'upgrade';
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
-            proxy_cache_bypass $http_upgrade;
-            proxy_read_timeout 300s;
-            proxy_connect_timeout 75s;
-        }
-
-        # Rate-limit login endpoint
-        location = /api/auth/login {
-            limit_req zone=login_limit burst=5 nodelay;
-            proxy_pass http://backend/auth/login;
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
-        }
-
-        # 🛡️ Subscription proxy (public) 🚀
-        location /s/ {
-            proxy_pass http://backend/s/;
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
-        }
-
-        # 🛡️ Subscription assets proxy (3x-ui static files) 🚀
-        location /sub/ {
-            proxy_pass http://backend/sub/;
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
-        }
-
-        # ── Frontend ─────────────────────────────────────────────
-        location / {
-            proxy_pass http://frontend/;
-            proxy_http_version 1.1;
-            proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection 'upgrade';
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -425,7 +175,13 @@ reload_nginx() {
     -e APP_PORT="${APP_PORT:-3000}" \
     -e BACKEND_PORT="${BACKEND_PORT:-4000}" \
     -e PANEL_DOMAIN="$domain" \
-    hmpanel-nginx sh -c "envsubst '\$APP_PORT \$BACKEND_PORT \$PANEL_DOMAIN' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && nginx -s reload" >/dev/null 2>&1 || docker restart hmpanel-nginx >/dev/null 2>&1
+    hmpanel-nginx sh -c "
+      if [ -f /etc/nginx/ssl/fullchain.pem ] && [ -f /etc/nginx/ssl/privkey.pem ] && openssl x509 -checkend 0 -noout -in /etc/nginx/ssl/fullchain.pem >/dev/null 2>&1; then
+        envsubst '\$APP_PORT \$BACKEND_PORT \$PANEL_DOMAIN' < /etc/nginx/nginx.conf.ssl.template > /etc/nginx/nginx.conf;
+      else
+        envsubst '\$APP_PORT \$BACKEND_PORT \$PANEL_DOMAIN' < /etc/nginx/nginx.conf.http.template > /etc/nginx/nginx.conf;
+      fi && nginx -t && nginx -s reload
+    " >/dev/null 2>&1 || docker restart hmpanel-nginx >/dev/null 2>&1
 }
 
 reload_nginx_deferred() {
@@ -831,24 +587,6 @@ verify_nginx_status() {
 ssl_fallback_to_http() {
   local reason="${1:-Unknown SSL failure}"
   echo -e "${RED}✘ SSL failed: ${reason}${NC}" >&2
-  echo -e "${YELLOW}⚠ Falling back to HTTP — panel will be accessible via HTTP${NC}" >&2
-
-  update_env "PANEL_PROTOCOL" "http"
-  update_env "SSL_ENABLED" "false"
-  update_env "SSL_PROVIDER" "none"
-  source "${INSTALL_DIR}/.env"
-  update_env "NEXT_PUBLIC_API_URL" "http://${PANEL_DOMAIN}/api"
-
-  if [[ -f "${INSTALL_DIR}/nginx/nginx.conf.template" ]] && ! [[ -f "${INSTALL_DIR}/nginx/nginx.conf.template.ssl" ]]; then
-    cp "${INSTALL_DIR}/nginx/nginx.conf.template" "${INSTALL_DIR}/nginx/nginx.conf.template.ssl"
-  fi
-  write_http_nginx_template "${INSTALL_DIR}/nginx/nginx.conf.template"
-
-  if docker ps --format '{{.Names}}' | grep -q "^hmpanel-nginx$"; then
-    reload_nginx_deferred
-  else
-    (sleep 2 && docker start hmpanel-nginx) >/dev/null 2>&1 &
-  fi
 }
 
 ssl_issue() {
@@ -876,10 +614,7 @@ ssl_issue() {
       exit 40
     else
       echo -e "${RED}✗ Error: Missing required system dependencies: ${missing_deps[*]}${NC}" >&2
-      echo -e "Please run the installer again or install them manually." >&2
-      ssl_fallback_to_http "Missing dependencies: ${missing_deps[*]}"
-      pause
-      return 1
+      exit 1
     fi
   fi
 
@@ -891,9 +626,7 @@ ssl_issue() {
       exit 30
     else
       echo -e "${YELLOW}⚠ IP address or localhost detected (${PANEL_DOMAIN:-None}). Skipping SSL workflow entirely.${NC}"
-      ssl_fallback_to_http "SSL cannot be installed for raw IP addresses or localhost."
-      pause
-      return
+      exit 1
     fi
   fi
 
@@ -903,9 +636,8 @@ ssl_issue() {
       output_json false "DNS_ERROR"
       exit 10
     else
-      ssl_fallback_to_http "DNS verification failed"
-      pause
-      return
+      echo -e "${RED}✘ DNS verification failed for $PANEL_DOMAIN${NC}" >&2
+      exit 1
     fi
   fi
   
@@ -915,14 +647,12 @@ ssl_issue() {
       output_json false "PORT_BUSY"
       exit 11
     else
-      ssl_fallback_to_http "Port 80 is occupied"
-      pause
-      return
+      echo -e "${RED}✘ Port 80 is occupied${NC}" >&2
+      exit 1
     fi
   fi
 
   stream_progress "Preparing environment..."
-  # Stop nginx
   docker stop hmpanel-nginx >/dev/null 2>&1 || true
 
   local cert_obtained=false
@@ -933,7 +663,6 @@ ssl_issue() {
   if command -v git &>/dev/null && command -v curl &>/dev/null && command -v socat &>/dev/null; then
     if [[ ! -d "${INSTALL_DIR}/acme.sh" ]]; then
       stream_progress "Installing acme.sh..."
-      if [[ "$JSON_OUTPUT" != "true" ]]; then echo "Installing acme.sh..."; fi
       if git clone https://github.com/acmesh-official/acme.sh.git /tmp/acme.sh >/dev/null 2>&1; then
         (
           cd /tmp/acme.sh
@@ -990,20 +719,16 @@ ssl_issue() {
     fi
   fi
 
+  docker start hmpanel-nginx >/dev/null 2>&1 || true
+
   if [[ "$cert_obtained" == true ]]; then
-    update_env "PANEL_PROTOCOL" "https"
-    update_env "SSL_ENABLED" "true"
     update_env "SSL_PROVIDER" "$provider"
-    update_env "NEXT_PUBLIC_API_URL" "https://${PANEL_DOMAIN}/api"
-
-    write_ssl_nginx_template "${INSTALL_DIR}/nginx/nginx.conf.template" "$PANEL_DOMAIN"
-
-    stream_progress "Restarting Nginx..."
-    docker start hmpanel-nginx >/dev/null 2>&1 || true
+    
+    stream_progress "Reloading Nginx..."
+    reload_nginx
     sleep 2
     
     stream_progress "Verifying..."
-    # We won't call verify_nginx_status interactively if in JSON mode
     if [[ "$JSON_OUTPUT" == "true" ]]; then
       stream_progress "Completed."
       output_json true "SSL_ISSUED" "\"provider\":\"$provider\",\"domain\":\"$PANEL_DOMAIN\""
@@ -1016,7 +741,8 @@ ssl_issue() {
       output_json false "ACME_FAILED"
       exit 12
     else
-      ssl_fallback_to_http "All providers failed"
+      echo -e "${RED}✘ Certificate issuance failed.${NC}"
+      exit 1
     fi
   fi
   pause
@@ -1041,14 +767,10 @@ ssl_selfsigned() {
     docker run --rm -v "${SSL_DIR}:/ssl" alpine sh -c "apk add --no-cache openssl && openssl req -x509 -nodes -days 3650 -newkey rsa:2048 -keyout /ssl/privkey.pem -out /ssl/fullchain.pem -subj '/C=US/ST=State/L=City/O=Organization/CN=${domain}'" >/dev/null 2>&1 || true
   fi
 
-  update_env "PANEL_PROTOCOL" "https"
-  update_env "SSL_ENABLED" "true"
-  update_env "SSL_PROVIDER" "self-signed"
-  update_env "NEXT_PUBLIC_API_URL" "https://${domain}/api"
-
-  write_ssl_nginx_template "${INSTALL_DIR}/nginx/nginx.conf.template" "$domain"
-
   docker start hmpanel-nginx >/dev/null 2>&1 || true
+
+  update_env "SSL_PROVIDER" "self-signed"
+  reload_nginx
   sleep 2
 
   if [[ "$JSON_OUTPUT" == "true" ]]; then
@@ -1063,72 +785,27 @@ ssl_selfsigned() {
 ssl_transactional() {
   acquire_ssl_lock
   local action="$1"
-  stream_progress "Initiating Transactional SSL workflow..."
-  local SSL_DIR="${INSTALL_DIR}/nginx/ssl"
-  local BACKUP_DIR="${INSTALL_DIR}/backups/ssl_rollback_$(date +%s)"
+  stream_progress "Initiating SSL workflow..."
   
-  mkdir -p "$BACKUP_DIR"
-  cp "${INSTALL_DIR}/.env" "$BACKUP_DIR/.env.backup" 2>/dev/null || true
-  cp "${INSTALL_DIR}/nginx/nginx.conf.template" "$BACKUP_DIR/nginx.conf.template.backup" 2>/dev/null || true
-  cp -r "$SSL_DIR" "$BACKUP_DIR/ssl_backup" 2>/dev/null || true
-
-  local env_hash_before
-  env_hash_before=$(md5sum "${INSTALL_DIR}/.env" 2>/dev/null | awk '{print $1}')
-
-  stream_progress "Attempting to issue certificate..."
-  
-  local issue_out
   local issue_code=0
-  issue_out=$( ( eval "$action" ) ) || issue_code=$?
-
-  local containers_restarted=false
+  eval "$action" || issue_code=$?
 
   if [[ $issue_code -eq 0 ]]; then
     stream_progress "Certificate issued successfully."
-    
-    local env_hash_after
-    env_hash_after=$(md5sum "${INSTALL_DIR}/.env" 2>/dev/null | awk '{print $1}')
-    
-    stream_progress "Reloading Nginx gracefully..."
+    stream_progress "Reloading Nginx..."
     reload_nginx
     
     if verify_nginx_status "true"; then
-      if [[ "$env_hash_before" != "$env_hash_after" ]]; then
-        stream_progress "Configuration changed. Restarting application containers in background..."
-        (sleep 2 && docker restart hmpanel-panel hmpanel-app) >/dev/null 2>&1 &
-      else
-        stream_progress "Configuration unchanged. Skipping application restarts."
-      fi
-      # Run diagnostic verification, but do not block/rollback on loopback-routing errors
-      verify_e2e_health "$PANEL_DOMAIN" >/dev/null 2>&1 || true
-      echo "$issue_out"
-      rm -rf "$BACKUP_DIR"
+      stream_progress "Completed."
       exit 0
+    else
+      stream_progress "Nginx verification failed."
+      exit 1
     fi
-    # If verify fails, fall through to rollback
-    issue_out="{\"success\": false, \"code\": \"NGINX_RELOAD_FAILED\", \"message\": \"Nginx failed to reload or verify configuration.\"}"
+  else
+    stream_progress "SSL workflow action failed."
+    exit 1
   fi
-
-  stream_progress "Workflow failed. Rolling back to previous state..."
-  
-  # Restore backups
-  cp "$BACKUP_DIR/.env.backup" "${INSTALL_DIR}/.env" 2>/dev/null || true
-  cp "$BACKUP_DIR/nginx.conf.template.backup" "${INSTALL_DIR}/nginx/nginx.conf.template" 2>/dev/null || true
-  rm -rf "$SSL_DIR"
-  cp -r "$BACKUP_DIR/ssl_backup" "$SSL_DIR" 2>/dev/null || true
-  
-  stream_progress "Reloading Nginx to apply rollback..."
-  reload_nginx
-  
-  if ! verify_nginx_status "true"; then
-    stream_progress "Rollback failed to start Nginx. Falling back to HTTP..."
-    ssl_fallback_to_http "Rollback failed to start Nginx"
-  fi
-  
-  rm -rf "$BACKUP_DIR"
-  
-  echo "$issue_out"
-  exit 1
 }
 
 # ─────────────────────────────────────────────────────────────────
@@ -1462,33 +1139,10 @@ ssl_enable() {
     fi
   fi
 
-  local end_date
-  end_date=$(openssl x509 -enddate -noout -in "$cert_file" 2>/dev/null | cut -d= -f2)
-  local expiration_epoch
-  expiration_epoch=$(date -d "$end_date" +%s 2>/dev/null || date -j -f "%b %d %T %Y %Z" "$end_date" +%s 2>/dev/null)
-  local current_epoch=$(date +%s)
-  
-  if [[ -n "$expiration_epoch" && $expiration_epoch -lt $current_epoch ]]; then
-    if [[ "$JSON_OUTPUT" == "true" ]]; then
-      output_json false "CERTIFICATE_EXPIRED" "{\"reason\":\"Certificate expired on $end_date.\"}"
-      exit 1
-    else
-      echo -e "${YELLOW}⚠ Certificate expired. Automatically renewing...${NC}"
-      ssl_renew
-      return
-    fi
-  fi
-
   if [[ "$JSON_OUTPUT" != "true" ]]; then echo "Enabling HTTPS..."; fi
-  update_env "PANEL_PROTOCOL" "https"
-  update_env "SSL_ENABLED" "true"
-  source "${INSTALL_DIR}/.env"
-  update_env "NEXT_PUBLIC_API_URL" "https://${PANEL_DOMAIN}/api"
-
-  write_ssl_nginx_template "${INSTALL_DIR}/nginx/nginx.conf.template" "$PANEL_DOMAIN"
-
-  reload_nginx_deferred
-
+  
+  reload_nginx
+  
   if [[ "$JSON_OUTPUT" == "true" ]]; then
     output_json true "HTTPS_ENABLED"
     exit 0
@@ -1502,22 +1156,29 @@ ssl_disable() {
   acquire_ssl_lock
   if [[ "$JSON_OUTPUT" != "true" ]]; then
     echo -e "${BOLD}--- Disable HTTPS ---${NC}\n"
-    echo -e "${YELLOW}⚠ Warning: This will switch the panel to HTTP mode.${NC}"
+    echo -e "${YELLOW}⚠ Warning: This will force Nginx back to HTTP mode.${NC}"
     read -rp "Are you sure? [y/N]: " confirm
   else
     confirm="y"
   fi
   
   if [[ "${confirm,,}" == "y" ]]; then
-    source "${INSTALL_DIR}/.env"
-    ssl_fallback_to_http "User explicitly disabled HTTPS"
-    if [[ "$JSON_OUTPUT" != "true" ]]; then verify_nginx_status "true"; fi
+    update_env "SSL_PROVIDER" "none"
+    local domain="${PANEL_DOMAIN:-${DOMAIN:-localhost}}"
+    docker exec \
+      -e APP_PORT="${APP_PORT:-3000}" \
+      -e BACKEND_PORT="${BACKEND_PORT:-4000}" \
+      -e PANEL_DOMAIN="$domain" \
+      hmpanel-nginx sh -c "
+        envsubst '\$APP_PORT \$BACKEND_PORT \$PANEL_DOMAIN' < /etc/nginx/nginx.conf.http.template > /etc/nginx/nginx.conf && nginx -s reload
+      " >/dev/null 2>&1 || docker restart hmpanel-nginx >/dev/null 2>&1
     
     if [[ "$JSON_OUTPUT" == "true" ]]; then
       output_json true "HTTPS_DISABLED"
       exit 0
     else
-      echo -e "${GREEN}✔ HTTPS Disabled.${NC}"
+      echo -e "${GREEN}✔ HTTPS Disabled (HTTP configuration applied).${NC}"
+      verify_nginx_status "true"
     fi
   else
     echo "Cancelled."
@@ -1657,29 +1318,13 @@ ssl_repair() {
       provider="uploaded"
     fi
   fi
+  update_env "SSL_PROVIDER" "$provider"
 
-  # 3. Rebuild SSL state & Nginx config
-  if [[ "$cert_exists" == "true" ]]; then
-    update_env "PANEL_PROTOCOL" "https"
-    update_env "SSL_ENABLED" "true"
-    update_env "SSL_PROVIDER" "$provider"
-    update_env "NEXT_PUBLIC_API_URL" "https://${domain}/api"
-    write_ssl_nginx_template "${INSTALL_DIR}/nginx/nginx.conf.template" "$domain"
-  else
-    update_env "PANEL_PROTOCOL" "http"
-    update_env "SSL_ENABLED" "false"
-    update_env "SSL_PROVIDER" "none"
-    update_env "NEXT_PUBLIC_API_URL" "http://${domain}/api"
-    write_http_nginx_template "${INSTALL_DIR}/nginx/nginx.conf.template" "$domain"
-  fi
-
-  # 4. Reload Nginx
+  # 3. Reload Nginx (which dynamically generates HTTP or HTTPS)
   reload_nginx
 
-  # 5. Verify Nginx status
+  # 4. Verify Nginx status
   if verify_nginx_status "true"; then
-    # Run E2E health check for logging, but don't fail on it
-    verify_e2e_health "$domain" >/dev/null 2>&1 || true
     if [[ "$JSON_OUTPUT" == "true" ]]; then
       output_json true "REPAIR_SUCCESS" "{\"details\":\"Nginx is running and configuration is valid.\"}"
       exit 0
@@ -1717,20 +1362,8 @@ ssl_status() {
   nginx_server_name=$(docker exec hmpanel-nginx cat /etc/nginx/nginx.conf 2>/dev/null | grep "server_name" | grep -v "_" | awk '{print $2}' | tr -d ';' | head -n1)
   
   local is_corrupted=false
-  # Consistency validation
-  if [[ "${SSL_ENABLED:-}" == "true" && "${PANEL_PROTOCOL:-}" != "https" ]] || [[ "${SSL_ENABLED:-}" != "true" && "${PANEL_PROTOCOL:-}" == "https" ]]; then
-    is_corrupted=true
-  fi
-  if [[ "${SSL_ENABLED:-}" == "true" && ("${SSL_PROVIDER:-none}" == "none" || -z "${SSL_PROVIDER:-}") ]]; then
-    is_corrupted=true
-  fi
-  if [[ "${SSL_ENABLED:-}" == "true" && "$cert_exists" == false ]]; then
-    is_corrupted=true
-  fi
-  if [[ "${SSL_ENABLED:-}" == "true" && "$nginx_ssl" == false ]] || [[ "${SSL_ENABLED:-}" != "true" && "$nginx_ssl" == true ]]; then
-    is_corrupted=true
-  fi
-  if [[ "${SSL_ENABLED:-}" == "true" && -n "${PANEL_DOMAIN:-}" && "$nginx_server_name" != "$PANEL_DOMAIN" && "$nginx_server_name" != "_" ]]; then
+  # Consistency validation (does Nginx TLS config match certificate existence)
+  if [[ "$cert_exists" == "true" && "$nginx_ssl" == false ]] || [[ "$cert_exists" == "false" && "$nginx_ssl" == true ]]; then
     is_corrupted=true
   fi
 
