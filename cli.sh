@@ -129,24 +129,6 @@ verify_port_80() {
   return 0
 }
 
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
-            proxy_cache_bypass $http_upgrade;
-        }
-
-        # ── Static assets (cache aggressively) ───────────────────
-        location /_next/static/ {
-            proxy_pass http://frontend/_next/static/;
-            proxy_cache_valid 200 1y;
-            add_header Cache-Control "public, max-age=31536000, immutable";
-        }
-    }
-}
-EOF
-  sed -i "s/SERVER_NAME_PLACEHOLDER/$srv_name/g" "$target_file"
-}
 
 LOCKFILE="/tmp/hmpanel_ssl.lock"
 
@@ -176,11 +158,7 @@ reload_nginx() {
     -e BACKEND_PORT="${BACKEND_PORT:-4000}" \
     -e PANEL_DOMAIN="$domain" \
     hmpanel-nginx sh -c "
-      if [ -f /etc/nginx/ssl/fullchain.pem ] && [ -f /etc/nginx/ssl/privkey.pem ] && openssl x509 -checkend 0 -noout -in /etc/nginx/ssl/fullchain.pem >/dev/null 2>&1; then
-        envsubst '\$APP_PORT \$BACKEND_PORT \$PANEL_DOMAIN' < /etc/nginx/nginx.conf.ssl.template > /etc/nginx/nginx.conf;
-      else
-        envsubst '\$APP_PORT \$BACKEND_PORT \$PANEL_DOMAIN' < /etc/nginx/nginx.conf.http.template > /etc/nginx/nginx.conf;
-      fi && nginx -t && nginx -s reload
+      sh /etc/nginx/generate_config.sh && nginx -t && nginx -s reload
     " >/dev/null 2>&1 || docker restart hmpanel-nginx >/dev/null 2>&1
 }
 
@@ -587,6 +565,17 @@ verify_nginx_status() {
 ssl_fallback_to_http() {
   local reason="${1:-Unknown SSL failure}"
   echo -e "${RED}✘ SSL failed: ${reason}${NC}" >&2
+  
+  # On failure during issuance, we do not touch certificates.
+  # We merely ensure Nginx runs in HTTP mode or falls back to the previous config.
+  local domain="${PANEL_DOMAIN:-${DOMAIN:-localhost}}"
+  docker exec \
+    -e APP_PORT="${APP_PORT:-3000}" \
+    -e BACKEND_PORT="${BACKEND_PORT:-4000}" \
+    -e PANEL_DOMAIN="$domain" \
+    hmpanel-nginx sh -c "
+      envsubst '\$APP_PORT \$BACKEND_PORT \$PANEL_DOMAIN' < /etc/nginx/nginx.conf.http.template > /etc/nginx/nginx.conf && nginx -s reload
+    " >/dev/null 2>&1 || true
 }
 
 ssl_issue() {
@@ -618,7 +607,11 @@ ssl_issue() {
     fi
   fi
 
+  local override_domain="${PANEL_DOMAIN:-}"
+  local override_email="${ADMIN_EMAIL:-}"
   source "${INSTALL_DIR}/.env"
+  if [[ -n "$override_domain" ]]; then PANEL_DOMAIN="$override_domain"; fi
+  if [[ -n "$override_email" ]]; then ADMIN_EMAIL="$override_email"; fi
 
   if [[ -z "${PANEL_DOMAIN:-}" || "$PANEL_DOMAIN" == "localhost" || "$PANEL_DOMAIN" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     if [[ "$JSON_OUTPUT" == "true" ]]; then
@@ -723,6 +716,8 @@ ssl_issue() {
 
   if [[ "$cert_obtained" == true ]]; then
     update_env "SSL_PROVIDER" "$provider"
+    update_env "DOMAIN" "$PANEL_DOMAIN"
+    update_env "PANEL_DOMAIN" "$PANEL_DOMAIN"
     
     stream_progress "Reloading Nginx..."
     reload_nginx
@@ -1126,6 +1121,7 @@ ssl_enable() {
   if [[ "$JSON_OUTPUT" != "true" ]]; then
     echo -e "${BOLD}--- Enable HTTPS ---${NC}\n"
   fi
+  
   local cert_file="${INSTALL_DIR}/nginx/ssl/fullchain.pem"
   
   if [[ ! -f "$cert_file" ]]; then
@@ -1164,6 +1160,7 @@ ssl_disable() {
   
   if [[ "${confirm,,}" == "y" ]]; then
     update_env "SSL_PROVIDER" "none"
+    
     local domain="${PANEL_DOMAIN:-${DOMAIN:-localhost}}"
     docker exec \
       -e APP_PORT="${APP_PORT:-3000}" \
@@ -1362,8 +1359,9 @@ ssl_status() {
   nginx_server_name=$(docker exec hmpanel-nginx cat /etc/nginx/nginx.conf 2>/dev/null | grep "server_name" | grep -v "_" | awk '{print $2}' | tr -d ';' | head -n1)
   
   local is_corrupted=false
-  # Consistency validation (does Nginx TLS config match certificate existence)
-  if [[ "$cert_exists" == "true" && "$nginx_ssl" == false ]] || [[ "$cert_exists" == "false" && "$nginx_ssl" == true ]]; then
+  # Consistency validation
+  # (Having certificates exist but running HTTP is a valid disabled state, so only check the reverse)
+  if [[ "$cert_exists" == "false" && "$nginx_ssl" == true ]]; then
     is_corrupted=true
   fi
 

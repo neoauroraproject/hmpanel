@@ -315,100 +315,6 @@ ssl_label() {
   esac
 }
 
-write_http_nginx_template() {
-  local target_file="$1"
-  local srv_name="${2:-${PANEL_DOMAIN:-${DOMAIN:-_}}}"
-  cat > "$target_file" <<'EOF'
-user nginx;
-worker_processes auto;
-error_log /var/log/nginx/error.log warn;
-pid /var/run/nginx.pid;
-
-events {
-    worker_connections 1024;
-    use epoll;
-    multi_accept on;
-}
-
-http {
-    include       /etc/nginx/mime.types;
-    default_type  application/octet-stream;
-
-    log_format main '$remote_addr - $remote_user [$time_local] "$request" '
-                    '$status $body_bytes_sent "$http_referer" '
-                    '"$http_user_agent" "$http_x_forwarded_for"';
-
-    access_log /var/log/nginx/access.log main;
-
-    sendfile        on;
-    tcp_nopush      on;
-    tcp_nodelay     on;
-    keepalive_timeout 65;
-    types_hash_max_size 2048;
-    client_max_body_size 50M;
-
-    # Security headers
-    add_header X-Frame-Options "SAMEORIGIN" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header X-XSS-Protection "1; mode=block" always;
-    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-
-    # Gzip compression
-    gzip on;
-    gzip_vary on;
-    gzip_proxied any;
-    gzip_comp_level 6;
-    gzip_types text/plain text/css text/xml application/json application/javascript application/xml+rss image/svg+xml;
-
-    # Rate limiting
-    limit_req_zone $binary_remote_addr zone=api_limit:10m rate=30r/s;
-    limit_req_zone $binary_remote_addr zone=login_limit:10m rate=5r/m;
-
-    upstream backend {
-        server panel-app:${BACKEND_PORT};
-        keepalive 32;
-    }
-
-    upstream frontend {
-        server panel-app:${APP_PORT};
-        keepalive 32;
-    }
-
-    server {
-        listen 80;
-        server_name SERVER_NAME_PLACEHOLDER;
-
-        # ── Backend API ──────────────────────────────────────────
-        location /api/ {
-            limit_req zone=api_limit burst=50 nodelay;
-            proxy_pass http://backend/;
-            proxy_http_version 1.1;
-            proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection 'upgrade';
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
-            
-            proxy_buffering off;
-            proxy_read_timeout 600s;
-        }
-
-        # ── Frontend Next.js SPA ──────────────────────────────────
-        location / {
-            proxy_pass http://frontend;
-            proxy_http_version 1.1;
-            proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection 'upgrade';
-            proxy_set_header Host $host;
-            proxy_cache_bypass $http_upgrade;
-        }
-    }
-}
-EOF
-  sed -i "s/SERVER_NAME_PLACEHOLDER/$srv_name/g" "$target_file"
-}
-
 verify_dns() {
   local domain="$1"
   if [[ "$domain" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || [[ "$domain" == "localhost" ]]; then
@@ -520,14 +426,6 @@ ssl_fallback_to_http() {
   SSL_CHOICE=3
   SSL_STATUS="disabled"
 
-  # Back up the original template if it has SSL configuration
-  if [[ -f "${INSTALL_DIR}/nginx/nginx.conf.template" ]] && ! [[ -f "${INSTALL_DIR}/nginx/nginx.conf.template.ssl" ]]; then
-    cp "${INSTALL_DIR}/nginx/nginx.conf.template" "${INSTALL_DIR}/nginx/nginx.conf.template.ssl"
-  fi
-
-  # Replace the template with the dedicated HTTP template
-  write_http_nginx_template "${INSTALL_DIR}/nginx/nginx.conf.template"
-
   # Remove all SSL cert files to prevent stale/broken certs from causing future issues
   rm -f "${INSTALL_DIR}/nginx/ssl/fullchain.pem" "${INSTALL_DIR}/nginx/ssl/privkey.pem" 2>/dev/null || true
 
@@ -543,8 +441,6 @@ ssl_fallback_to_http() {
 
   log "HTTP-only mode active. You can add SSL later via: hmpanel -> SSL Management"
 }
-
-
 
 install_dependencies() {
   step "Installing System Dependencies"
@@ -598,11 +494,8 @@ step_1_configuration() {
 
   # Configure nginx for HTTP-only AFTER files are in place
   if [[ "$SSL_CHOICE" == 3 ]]; then
-    if [[ -f "${INSTALL_DIR}/nginx/nginx.conf.template" ]] && ! [[ -f "${INSTALL_DIR}/nginx/nginx.conf.template.ssl" ]]; then
-      cp "${INSTALL_DIR}/nginx/nginx.conf.template" "${INSTALL_DIR}/nginx/nginx.conf.template.ssl"
-    fi
-    write_http_nginx_template "${INSTALL_DIR}/nginx/nginx.conf.template"
-    info "Nginx configured for HTTP-only mode"
+    # We do not edit template files. We simply remove certificates so generate_config.sh falls back.
+    rm -f "${INSTALL_DIR}/nginx/ssl/fullchain.pem" "${INSTALL_DIR}/nginx/ssl/privkey.pem" 2>/dev/null || true
   fi
 
   # Install CLI Manager immediately so it can be used for SSL setup
@@ -1025,9 +918,16 @@ print_success() {
   
   # Reality-check: verify SSL_STATUS matches the actual nginx configuration
   if [[ "${SSL_STATUS:-disabled}" != "disabled" ]]; then
-    if ! grep -q "listen 443 ssl" "${INSTALL_DIR}/nginx/nginx.conf.template" 2>/dev/null; then
+    if [[ ! -f "${INSTALL_DIR}/nginx/ssl/fullchain.pem" || ! -f "${INSTALL_DIR}/nginx/ssl/privkey.pem" ]]; then
       SSL_STATUS="disabled"
     fi
+  fi
+
+  local display_domain="$DOMAIN"
+  if [[ "$display_domain" == "localhost" || "$display_domain" == "" ]]; then
+    local server_ip
+    server_ip=$(curl -s --max-time 2 https://api.ipify.org 2>/dev/null || curl -s --max-time 2 ifconfig.me 2>/dev/null || hostname -I | awk '{print $1}')
+    display_domain="${server_ip:-localhost}"
   fi
 
   if [[ "$SSL_STATUS" == acme* || "$SSL_STATUS" == "self-signed" || "$SSL_STATUS" == "certbot" ]]; then
@@ -1042,7 +942,7 @@ print_success() {
     if [[ "$HTTP_PORT" != "80" ]]; then
       http_suffix=":${HTTP_PORT}"
     fi
-    echo -e "  URL:          ${CYAN}http://${DOMAIN}${http_suffix}${NC}"
+    echo -e "  URL:          ${CYAN}http://${display_domain}${http_suffix}${NC}"
     echo -e "  SSL:          ${YELLOW}✓ HTTP mode (SSL not configured)${NC}"
   fi
 

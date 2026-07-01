@@ -338,8 +338,9 @@ export class SslService {
       }
     }
 
-    // Consistency check (does Nginx TLS config match certificate existence)
-    const isCorrupted = certExists !== isHttpsInNginx;
+    // Consistency check: Only corrupted if Nginx is serving HTTPS but no cert exists.
+    // Having a cert exist but running in HTTP mode is a valid disabled/fallback state.
+    const isCorrupted = !certExists && isHttpsInNginx;
     const isIpOrLocalhost = /^[0-9.]+$/.test(domain) || domain === 'localhost';
 
     const diagnostics = {
