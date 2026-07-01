@@ -291,7 +291,7 @@ do_backup() {
   
   if [[ "$backup_type" == "database" || "$backup_type" == "full" ]]; then
     if [[ "$silent" != "true" ]]; then echo " -> Exporting database..."; fi
-    if docker exec -t hmpanel-postgres pg_dumpall -c -U panel_user | gzip > "${temp_dir}/database.sql.gz"; then
+    if docker exec hmpanel-postgres pg_dumpall -c -U panel_user | gzip > "${temp_dir}/database.sql.gz"; then
       local db_sum=$(sha256sum "${temp_dir}/database.sql.gz" | awk '{print $1}')
       checksums+="\"database.sql.gz\": \"$db_sum\""
     else

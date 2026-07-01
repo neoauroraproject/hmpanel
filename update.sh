@@ -199,7 +199,7 @@ END \$\$;
     warn "Health check timeout. Check logs: docker compose logs panel-app"
   else
     echo ""
-    log "HMPanel Panel successfully updated to version 1.4.5!"
+    log "HMPanel Panel successfully updated to version 1.4.6!"
   fi
 
   info "Cleaning up old images..."
