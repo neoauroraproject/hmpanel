@@ -140,13 +140,13 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
   const isIp = sslInfo?.domain && (/^[0-9\.]+$/.test(sslInfo.domain) || sslInfo.domain === "localhost");
   const isManual = sslInfo?.certificate?.exists && !sslInfo?.isHttpsEnabled && (sslInfo?.provider === "none" || !sslInfo?.provider);
 
-  const containerVariants = {
+  const containerVariants: any = {
     hidden: { opacity: 0, scale: 0.95, y: 20 },
     visible: { opacity: 1, scale: 1, y: 0, transition: { type: "spring", damping: 25, stiffness: 300 } },
     exit: { opacity: 0, scale: 0.95, y: -20 }
   };
 
-  const slideVariants = {
+  const slideVariants: any = {
     enter: { x: 20, opacity: 0 },
     center: { x: 0, opacity: 1 },
     exit: { x: -20, opacity: 0 }
