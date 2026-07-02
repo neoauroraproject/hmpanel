@@ -206,6 +206,11 @@ interface RestoreAnalysis {
   sizeBytes: number;
   uploadDate: string;
   isLegacy: boolean;
+  counts?: {
+    admin: number;
+    panel: number;
+    inbound: number;
+  };
   warnings: string[];
 }
 
@@ -359,6 +364,14 @@ function BackupRestoreCard() {
                     <span className="font-semibold text-zinc-800 dark:text-zinc-200">{restoreAnalysis.domain}</span>
                   </div>
                 </>
+              )}
+              {restoreAnalysis.counts && (
+                <div className="flex justify-between items-center pb-2 border-b border-zinc-200 dark:border-zinc-800/50">
+                  <span className="text-zinc-500">Contents</span>
+                  <span className="font-semibold text-zinc-800 dark:text-zinc-200 text-xs">
+                    {restoreAnalysis.counts.admin} Admins, {restoreAnalysis.counts.panel} Panels, {restoreAnalysis.counts.inbound} Inbounds
+                  </span>
+                </div>
               )}
               <div className="flex justify-between items-center">
                 <span className="text-zinc-500">Size</span>

@@ -60,28 +60,16 @@ export class BackupsService {
 
       if (type === 'full' || type === 'database') {
         const dbFile = path.join(tempDir, 'database.sql.gz');
-        await new Promise((resolve, reject) => {
-          this.logger.log('Exporting database...');
-          const pgDump = spawn(
-            'pg_dump',
-            [cleanDatabaseUrl, '-c', '-O', '--if-exists'],
-            { shell: false },
-          );
-          const gzip = zlib.createGzip();
-          const outStream = fs.createWriteStream(dbFile);
+        this.logger.log('Exporting database via docker exec...');
+        const dbUser = process.env.POSTGRES_USER || 'panel_user';
+        
+        // Ensure the directory exists
+        fs.mkdirSync(tempDir, { recursive: true });
 
-          pgDump.stdout
-            .pipe(gzip)
-            .pipe(outStream)
-            .on('finish', () => resolve(true))
-            .on('error', (err) => reject(err));
-
-          pgDump.on('error', (err) => reject(err));
-          pgDump.on('close', (code) => {
-            if (code !== 0)
-              reject(new Error(`pg_dump exited with code ${code}`));
-          });
-        });
+        await execPromise(
+          `docker exec hmpanel-postgres pg_dumpall -c -U ${dbUser} | gzip > "${dbFile}"`
+        );
+        
         checksums['database.sql.gz'] = await this.calculateChecksum(dbFile);
       }
 
@@ -192,8 +180,42 @@ export class BackupsService {
     this.logger.log(`Analyzing backup: ${tempFilePath}`);
 
     try {
+      let counts = { admin: 0, panel: 0, inbound: 0 };
+
+      const extractCounts = async (sqlFile: string) => {
+        const catCmd = sqlFile.endsWith('.gz') ? 'zcat' : 'cat';
+        const awkScript = `
+          /^COPY public\\."Admin" / { in_admin=1; next }
+          /^COPY public\\."Panel" / { in_panel=1; next }
+          /^COPY public\\."Inbound" / { in_inbound=1; next }
+          /^\\\\\\./ { in_admin=0; in_panel=0; in_inbound=0; next }
+          in_admin { admin_count++ }
+          in_panel { panel_count++ }
+          in_inbound { inbound_count++ }
+          /^INSERT INTO "Admin"/ { admin_count++ }
+          /^INSERT INTO "Panel"/ { panel_count++ }
+          /^INSERT INTO "Inbound"/ { inbound_count++ }
+          /^INSERT INTO \\\`Admin\\\`/ { admin_count++ }
+          /^INSERT INTO \\\`Panel\\\`/ { panel_count++ }
+          /^INSERT INTO \\\`Inbound\\\`/ { inbound_count++ }
+          END { print "admin:" admin_count+0 ",panel:" panel_count+0 ",inbound:" inbound_count+0 }
+        `;
+        try {
+          const { stdout } = await execPromise(`${catCmd} "${sqlFile}" | awk '${awkScript.replace(/\n/g, ' ')}'`);
+          const matches = stdout.match(/admin:(\d+),panel:(\d+),inbound:(\d+)/);
+          if (matches) {
+            counts.admin = parseInt(matches[1], 10);
+            counts.panel = parseInt(matches[2], 10);
+            counts.inbound = parseInt(matches[3], 10);
+          }
+        } catch (e) {
+          this.logger.warn('Failed to extract counts: ' + e.message);
+        }
+      };
+
       if (safeName.endsWith('.sql') || safeName.endsWith('.sql.gz')) {
         // Legacy Support
+        await extractCounts(tempFilePath);
         return {
           id: `temp-restore-${tempId}-${safeName}`,
           fileName: safeName,
@@ -201,6 +223,7 @@ export class BackupsService {
           sizeBytes: file.size,
           uploadDate: new Date(),
           isLegacy: true,
+          counts,
           warnings: [
             'This is a legacy SQL backup format. Full rollback functionality may be limited.',
           ],
@@ -230,6 +253,14 @@ export class BackupsService {
       );
       const manifest = JSON.parse(manifestStr);
 
+      const dbGz = path.join(tempExtractDir, 'database.sql.gz');
+      const dbSql = path.join(tempExtractDir, 'database.sql');
+      if (fs.existsSync(dbGz)) {
+        await extractCounts(dbGz);
+      } else if (fs.existsSync(dbSql)) {
+        await extractCounts(dbSql);
+      }
+
       await execPromise(`rm -rf "${tempExtractDir}"`);
 
       return {
@@ -242,6 +273,7 @@ export class BackupsService {
         sizeBytes: file.size,
         uploadDate: new Date(manifest.timestamp || Date.now()),
         isLegacy: false,
+        counts,
         warnings: [],
       };
     } catch (error) {

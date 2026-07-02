@@ -33,8 +33,11 @@ export class BackupsController {
 
   @Post()
   @ApiOperation({ summary: 'Generate a new PostgreSQL backup' })
-  async generateBackup() {
-    return this.backupsService.generateBackup();
+  @ApiBody({
+    schema: { type: 'object', properties: { type: { type: 'string', enum: ['full', 'database', 'config'] } } },
+  })
+  async generateBackup(@Body('type') type?: 'full' | 'database' | 'config') {
+    return this.backupsService.generateBackup(type || 'full');
   }
 
   @Get(':id/download')
