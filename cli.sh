@@ -533,12 +533,17 @@ verify_nginx_status() {
     return $?
   fi
 
-  stream_progress "Verifying Nginx endpoints..."
+  stream_progress "Verifying Nginx configuration and endpoints..."
+  local config_valid=false
+  if docker exec "$container_name" nginx -t >/dev/null 2>&1; then
+    config_valid=true
+  fi
+
   local curl_success=false
   for i in {1..15}; do
     local code_https code_http
-    code_https=$(curl -s -o /dev/null -w "%{http_code}" -k "https://127.0.0.1/api/health" || echo "000")
-    code_http=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1/api/health" || echo "000")
+    code_https=$(curl -s -o /dev/null -w "%{http_code}" -k --resolve "${PANEL_DOMAIN}:443:127.0.0.1" "https://${PANEL_DOMAIN}/api/health" || echo "000")
+    code_http=$(curl -s -o /dev/null -w "%{http_code}" --resolve "${PANEL_DOMAIN}:80:127.0.0.1" "http://${PANEL_DOMAIN}/api/health" || echo "000")
     
     if [[ "$code_https" == "200" || "$code_http" == "200" ]]; then
       curl_success=true
@@ -547,8 +552,17 @@ verify_nginx_status() {
     sleep 2
   done
 
-  if [[ "$curl_success" == false ]]; then
-    stream_progress "Nginx is running but API health endpoint is unreachable."
+  if [[ "$config_valid" == true ]]; then
+    if [[ "$curl_success" == false ]]; then
+      stream_progress "Nginx is running with valid config, but API health is unreachable (Code: HTTPS $code_https / HTTP $code_http). Preserving SSL."
+    else
+      stream_progress "Nginx is running and endpoints are healthy"
+    fi
+    return 0
+  fi
+
+  if [[ "$curl_success" == false && "$config_valid" == false ]]; then
+    stream_progress "Nginx config test failed and API is unreachable."
     if [[ "$is_recheck" == "true" ]]; then
       stream_progress "Endpoints unreachable even in HTTP-only mode. Manual intervention required."
       return 1
@@ -568,6 +582,9 @@ ssl_fallback_to_http() {
   local reason="${1:-Unknown SSL failure}"
   echo -e "${RED}✘ SSL failed: ${reason}${NC}" >&2
   
+  # Critical fix: Remove certificates to prevent nginx from picking them up on next restart/repair
+  rm -f "${INSTALL_DIR}/nginx/ssl/fullchain.pem" "${INSTALL_DIR}/nginx/ssl/privkey.pem" 2>/dev/null || true
+
   # On failure during issuance, we do not touch certificates.
   # We merely ensure Nginx runs in HTTP mode or falls back to the previous config.
   local domain="${PANEL_DOMAIN:-${DOMAIN:-localhost}}"
