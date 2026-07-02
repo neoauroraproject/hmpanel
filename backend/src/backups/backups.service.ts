@@ -251,14 +251,20 @@ export class BackupsService {
         manifest = JSON.parse(manifestStr);
       }
 
-      const files = fs.readdirSync(tempExtractDir);
-      const dbGz = files.find((f) => f.endsWith('.sql.gz'));
-      const dbSql = files.find((f) => f.endsWith('.sql') && !f.endsWith('.sql.gz'));
+      let dbPath: string | null = null;
+      try {
+        const { stdout } = await execPromise(
+          `find "${tempExtractDir}" -type f \\( -name "*.sql.gz" -o -name "*.sql" \\) | head -n 1`,
+        );
+        if (stdout.trim()) {
+          dbPath = stdout.trim();
+        }
+      } catch (e) {
+        this.logger.warn('Failed to search for sql files: ' + e.message);
+      }
 
-      if (dbGz) {
-        await extractCounts(path.join(tempExtractDir, dbGz));
-      } else if (dbSql) {
-        await extractCounts(path.join(tempExtractDir, dbSql));
+      if (dbPath) {
+        await extractCounts(dbPath);
       } else if (!manifest) {
         throw new BadRequestException(
           'Invalid backup archive: missing manifest.json and no SQL dump found',
