@@ -238,7 +238,7 @@ export class BackupsService {
       fs.mkdirSync(tempExtractDir, { recursive: true });
 
       await execPromise(
-        `tar -xzf "${tempFilePath}" -C "${tempExtractDir}" manifest.json`,
+        `tar -xzf "${tempFilePath}" -C "${tempExtractDir}"`,
       );
 
       if (!fs.existsSync(path.join(tempExtractDir, 'manifest.json'))) {
