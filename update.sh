@@ -38,7 +38,7 @@ main() {
   
   cd "$INSTALL_DIR" || die "Failed to enter installation directory $INSTALL_DIR"
   
-  REPO_URL="https://raw.githubusercontent.com/neoauroraproject/hmpanel/main/server/Panel"
+  REPO_URL="https://raw.githubusercontent.com/neoauroraproject/hmpanel/main"
 
   step "[1/8] Fetching Latest Infrastructure Files"
   info "Downloading latest docker-compose.yml..."
