@@ -87,21 +87,21 @@ ensure_env_variables
 verify_dns() {
   local domain="$1"
   if [[ "$domain" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || [[ "$domain" == "localhost" ]]; then
-    echo "Skipping DNS verification for IP/localhost: $domain"
+    stream_progress "Skipping DNS verification for IP/localhost: $domain"
     return 0
   fi
 
-  echo "Verifying DNS resolution for $domain..."
+  stream_progress "Verifying DNS resolution for $domain..."
   if ! host "$domain" >/dev/null 2>&1 && ! dig +short "$domain" >/dev/null 2>&1 && ! getent hosts "$domain" >/dev/null 2>&1; then
-    echo -e "${YELLOW}⚠ DNS check failed: $domain does not resolve.${NC}"
+    stream_progress "DNS check failed: $domain does not resolve."
     return 1
   fi
-  echo -e "${GREEN}✔ DNS verification passed${NC}"
+  stream_progress "DNS verification passed"
   return 0
 }
 
 verify_port_80() {
-  echo "Checking if port 80 is available..."
+  stream_progress "Checking if port 80 is available..."
   local port_in_use=false
   if command -v ss &>/dev/null; then
     if ss -tuln | grep -q ":80 "; then port_in_use=true; fi
@@ -113,19 +113,19 @@ verify_port_80() {
     local holding_process
     holding_process=$(lsof -i :80 -t 2>/dev/null | xargs ps -o comm= -p 2>/dev/null | head -n 1 || echo "")
     if [[ "$holding_process" == "docker" || "$holding_process" == "docker-proxy" ]]; then
-      echo -e "${CYAN}ℹ Detected process: ${holding_process}${NC}"
-      echo -e "${GREEN}✔ Decision: Expected Docker process. Continuing...${NC}"
+      stream_progress "Detected process: ${holding_process}"
+      stream_progress "Decision: Expected Docker process. Continuing..."
       return 0
     elif [[ "$holding_process" != "" ]]; then
-      echo -e "${YELLOW}⚠ Detected process: ${holding_process}${NC}"
-      echo -e "${RED}✘ Decision: External process detected. Cannot continue with SSL on port 80.${NC}"
+      stream_progress "Detected process: ${holding_process}"
+      stream_progress "Decision: External process detected. Cannot continue with SSL on port 80."
       return 1
     else
-      echo -e "${YELLOW}⚠ Port 80 is occupied by an unknown process. Cannot continue with SSL on port 80.${NC}"
+      stream_progress "Port 80 is occupied by an unknown process. Cannot continue with SSL on port 80."
       return 1
     fi
   fi
-  echo -e "${GREEN}✔ Port 80 is available${NC}"
+  stream_progress "Port 80 is available"
   return 0
 }
 
@@ -521,19 +521,19 @@ verify_nginx_status() {
   status=$(docker inspect -f '{{.State.Status}}' "$container_name" 2>/dev/null || echo "missing")
 
   if [[ "$status" == "restarting" || "$status" != "running" ]]; then
-    echo -e "${RED}✘ Nginx container failed to start (Status: $status).${NC}"
+    stream_progress "Nginx container failed to start (Status: $status)."
     if [[ "$is_recheck" == "true" ]]; then
-      echo -e "${RED}✘ Nginx failed to start even in HTTP-only mode. Manual intervention required.${NC}"
+      stream_progress "Nginx failed to start even in HTTP-only mode. Manual intervention required."
       return 1
     fi
-    echo -e "${YELLOW}⚠ Automatically falling back to HTTP...${NC}"
+    stream_progress "Automatically falling back to HTTP..."
     ssl_fallback_to_http "Nginx container startup failure"
     sleep 3
     verify_nginx_status "true"
     return $?
   fi
 
-  echo "Verifying Nginx endpoints..."
+  stream_progress "Verifying Nginx endpoints..."
   local curl_success=false
   for i in {1..15}; do
     local code_https code_http
@@ -548,19 +548,19 @@ verify_nginx_status() {
   done
 
   if [[ "$curl_success" == false ]]; then
-    echo -e "${RED}✘ Nginx is running but API health endpoint is unreachable.${NC}"
+    stream_progress "Nginx is running but API health endpoint is unreachable."
     if [[ "$is_recheck" == "true" ]]; then
-      echo -e "${RED}✘ Endpoints unreachable even in HTTP-only mode. Manual intervention required.${NC}"
+      stream_progress "Endpoints unreachable even in HTTP-only mode. Manual intervention required."
       return 1
     fi
-    echo -e "${YELLOW}⚠ Automatically falling back to HTTP...${NC}"
+    stream_progress "Automatically falling back to HTTP..."
     ssl_fallback_to_http "Nginx endpoints unreachable with SSL configuration"
     sleep 3
     verify_nginx_status "true"
     return $?
   fi
 
-  echo -e "${GREEN}✔ Nginx is running and endpoints are healthy${NC}"
+  stream_progress "Nginx is running and endpoints are healthy"
   return 0
 }
 
