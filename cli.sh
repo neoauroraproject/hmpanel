@@ -656,7 +656,7 @@ ssl_issue() {
 
   # ACME (Let's Encrypt / ZeroSSL)
   if command -v git &>/dev/null && command -v curl &>/dev/null && command -v socat &>/dev/null; then
-    if [[ ! -d "${INSTALL_DIR}/acme.sh" ]]; then
+    if [[ ! -f "${INSTALL_DIR}/acme.sh/acme.sh" ]]; then
       stream_progress "Installing acme.sh..."
       rm -rf /tmp/acme.sh
       local clone_success=false
