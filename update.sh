@@ -59,7 +59,9 @@ main() {
   curl -fsSL "${REPO_URL}/nginx/nginx.conf.ssl.template" -o nginx/nginx.conf.ssl.template || warn "Failed to download nginx.conf.ssl.template"
   
   if [ -d "nginx/generate_config.sh" ]; then
-    rm -rf nginx/generate_config.sh
+    docker stop hmpanel-nginx >/dev/null 2>&1 || true
+    docker rm -f hmpanel-nginx >/dev/null 2>&1 || true
+    rm -rf "nginx/generate_config.sh"
   fi
   curl -fsSL "${REPO_URL}/nginx/generate_config.sh" -o nginx/generate_config.sh || warn "Failed to download generate_config.sh"
   chmod +x nginx/generate_config.sh 2>/dev/null || true
