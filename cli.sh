@@ -654,18 +654,33 @@ ssl_issue() {
   local provider="none"
   local SSL_DIR="${INSTALL_DIR}/nginx/ssl"
 
+  local acme_bin=""
+  if [[ -f "${INSTALL_DIR}/acme.sh/acme.sh" ]]; then
+    acme_bin="${INSTALL_DIR}/acme.sh/acme.sh"
+  elif [[ -f "/root/.acme.sh/acme.sh" ]]; then
+    acme_bin="/root/.acme.sh/acme.sh"
+  elif [[ -f "$HOME/.acme.sh/acme.sh" ]]; then
+    acme_bin="$HOME/.acme.sh/acme.sh"
+  elif command -v acme.sh &>/dev/null; then
+    acme_bin=$(command -v acme.sh)
+  fi
+
   # ACME (Let's Encrypt / ZeroSSL)
   if command -v git &>/dev/null && command -v curl &>/dev/null && command -v socat &>/dev/null; then
-    if [[ ! -f "${INSTALL_DIR}/acme.sh/acme.sh" ]]; then
+    if [[ -z "$acme_bin" ]]; then
       stream_progress "Installing acme.sh..."
       rm -rf /tmp/acme.sh
       local clone_success=false
       if command -v timeout &>/dev/null; then
         if timeout 45 git clone --depth 1 https://github.com/acmesh-official/acme.sh.git /tmp/acme.sh >/dev/null 2>&1; then
           clone_success=true
+        elif timeout 45 git clone --depth 1 https://gitee.com/neilpang/acme.sh.git /tmp/acme.sh >/dev/null 2>&1; then
+          clone_success=true
         fi
       else
         if git clone --depth 1 https://github.com/acmesh-official/acme.sh.git /tmp/acme.sh >/dev/null 2>&1; then
+          clone_success=true
+        elif git clone --depth 1 https://gitee.com/neilpang/acme.sh.git /tmp/acme.sh >/dev/null 2>&1; then
           clone_success=true
         fi
       fi
@@ -679,31 +694,34 @@ ssl_issue() {
             --accountemail "${ADMIN_EMAIL:-admin@$PANEL_DOMAIN}" >/dev/null 2>&1
         ) || true
         rm -rf /tmp/acme.sh
+        if [[ -f "${INSTALL_DIR}/acme.sh/acme.sh" ]]; then
+          acme_bin="${INSTALL_DIR}/acme.sh/acme.sh"
+        fi
       else
         stream_progress "acme.sh download failed, proceeding to fallback..."
       fi
     fi
   fi
 
-  if [[ -f "${INSTALL_DIR}/acme.sh/acme.sh" ]]; then
+  if [[ -n "$acme_bin" ]]; then
     for ca in "letsencrypt" "zerossl"; do
       if [[ "$cert_obtained" == false ]]; then
         stream_progress "Trying acme.sh ($ca)..."
-        "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" --set-default-ca --server "$ca" >/dev/null 2>&1
+        "$acme_bin" --home "${INSTALL_DIR}/acme.sh" --set-default-ca --server "$ca" >/dev/null 2>&1
         
         local issue_success=false
         if command -v timeout &>/dev/null; then
-          if timeout 90 "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" --issue -d "$PANEL_DOMAIN" --standalone >/dev/null 2>&1; then
+          if timeout 90 "$acme_bin" --home "${INSTALL_DIR}/acme.sh" --issue -d "$PANEL_DOMAIN" --standalone >/dev/null 2>&1; then
             issue_success=true
           fi
         else
-          if "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" --issue -d "$PANEL_DOMAIN" --standalone >/dev/null 2>&1; then
+          if "$acme_bin" --home "${INSTALL_DIR}/acme.sh" --issue -d "$PANEL_DOMAIN" --standalone >/dev/null 2>&1; then
             issue_success=true
           fi
         fi
 
         if [[ "$issue_success" == true ]]; then
-          "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" --install-cert -d "$PANEL_DOMAIN" \
+          "$acme_bin" --home "${INSTALL_DIR}/acme.sh" --install-cert -d "$PANEL_DOMAIN" \
             --fullchain-file "${SSL_DIR}/fullchain.pem" \
             --key-file "${SSL_DIR}/privkey.pem" >/dev/null 2>&1
           cert_obtained=true
