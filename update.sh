@@ -121,6 +121,13 @@ main() {
 
   SSL_DIR="${INSTALL_DIR}/nginx/ssl"
   mkdir -p "${SSL_DIR}"
+  if [[ ! -f "${SSL_DIR}/fullchain.pem" || ! -f "${SSL_DIR}/privkey.pem" ]]; then
+    info "Generating self-signed SSL certificates to prevent Nginx crash..."
+    openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+      -keyout "${SSL_DIR}/privkey.pem" -out "${SSL_DIR}/fullchain.pem" \
+      -subj "/C=US/ST=State/L=City/O=Organization/CN=localhost" 2>/dev/null || true
+    log "Self-signed SSL certificates generated."
+  fi
 
   step "[6/8] Executing Database Migrations"
   info "Starting database to apply migrations..."
