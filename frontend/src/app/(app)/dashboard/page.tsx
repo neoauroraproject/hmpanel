@@ -460,14 +460,6 @@ function ResellerDashboard() {
     queryFn: async () => (await api.get<any[]>("/inbounds")).data,
   });
 
-  const onlinesQuery = useQuery({
-    queryKey: ["live-onlines"],
-    queryFn: async () => (await api.get<{ onlines: string[] }>("/stats/onlines")).data,
-    refetchInterval: 10000,
-    refetchOnWindowFocus: true
-  });
-  const onlineClients = onlinesQuery.data?.onlines ?? [];
-
   const overview = useQuery({
     queryKey: ["reseller-overview"],
     queryFn: async () => (await api.get<any>("/stats/reseller-overview")).data,
@@ -487,10 +479,6 @@ function ResellerDashboard() {
       default: return 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300';
     }
   };
-
-  const resellerOnlineClients = overview.data.clientEmails 
-    ? onlineClients.filter(email => email && overview.data.clientEmails.includes(email))
-    : [];
 
   const cleanupCandidates = attention.cleanupCandidates || 0;
   const totalAttentionCount = attention.trafficLow + attention.expiringSoon + attention.disabled + attention.depleted + cleanupCandidates;
@@ -519,17 +507,7 @@ function ResellerDashboard() {
       )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="w-full">
-          <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all duration-300 group border-b-4 border-b-emerald-500">
-            <div className="absolute -right-6 -top-6 w-32 h-32 bg-emerald-500/10 rounded-full blur-3xl group-hover:bg-emerald-500/20 transition-all"></div>
-            <Activity size={80} className="absolute -bottom-4 -right-4 text-emerald-500/5 group-hover:text-emerald-500/10 transition-all transform group-hover:scale-110" />
-            <div className="flex items-center gap-3 text-sm font-semibold text-emerald-600 dark:text-emerald-400 mb-4 relative z-10">
-              <div className="p-2.5 bg-emerald-500/10 rounded-xl shadow-inner"><Activity size={20} className="animate-pulse" /></div> Online Now
-            </div>
-            <div className="text-4xl font-extrabold text-zinc-900 dark:text-white relative z-10">{resellerOnlineClients.length}</div>
-            <div className="mt-3 text-sm text-zinc-500 dark:text-zinc-400 font-medium relative z-10">Live Active Connections</div>
-          </div>
-        </motion.div>
+
 
         <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="w-full">
           <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all duration-300 group border-b-4 border-b-blue-500">
