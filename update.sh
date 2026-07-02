@@ -235,6 +235,36 @@ END \$\$;
     warn "Health check timeout. Check logs: docker compose logs panel-app"
   else
     echo ""
+    
+    # -------------------------------------------------------------
+    # Post-Update Seamless SSL Auto-Repair & Renewal
+    # -------------------------------------------------------------
+    if [[ -f "${INSTALL_DIR}/.env" ]]; then
+      source "${INSTALL_DIR}/.env"
+      if [[ -n "${PANEL_DOMAIN:-}" && "${PANEL_DOMAIN}" != "localhost" && ! "${PANEL_DOMAIN}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        info "Running post-update SSL maintenance for domain ${PANEL_DOMAIN}..."
+        
+        local needs_renewal=false
+        local cert_file="${INSTALL_DIR}/nginx/ssl/fullchain.pem"
+        
+        if [[ ! -f "$cert_file" ]]; then
+          needs_renewal=true
+        elif ! openssl x509 -checkend 86400 -noout -in "$cert_file" >/dev/null 2>&1; then
+          # Certificate is expired or expires in < 1 day
+          needs_renewal=true
+        fi
+        
+        if [[ "$needs_renewal" == "true" ]]; then
+          info "SSL certificate is missing or expiring. Attempting automatic issuance..."
+          HEADLESS=true hm ssl issue "${PANEL_DOMAIN}" "admin@${PANEL_DOMAIN}" >/dev/null 2>&1 || warn "Auto SSL issue failed. You can run 'hm ssl issue' later."
+        else
+          info "Valid SSL certificate detected. Re-applying Nginx configuration..."
+          HEADLESS=true hm ssl repair >/dev/null 2>&1 || true
+        fi
+        log "SSL configuration successfully synchronized."
+      fi
+    fi
+
     log "HMPanel Panel successfully updated to version 1.5.0!"
   fi
 
