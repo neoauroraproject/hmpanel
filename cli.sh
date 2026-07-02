@@ -138,7 +138,7 @@ acquire_ssl_lock() {
     pid=$(cat "$LOCKFILE" 2>/dev/null || echo "")
     if [[ -n "$pid" && "$pid" != "$$" ]] && kill -0 "$pid" 2>/dev/null; then
       if [[ "${JSON_OUTPUT:-}" == "true" ]]; then
-        output_json false "SSL_OPERATION_IN_PROGRESS" "{\"reason\":\"SSL operation already in progress (PID $pid).\"}"
+        output_json false "SSL_OPERATION_IN_PROGRESS" "\"reason\":\"SSL operation already in progress (PID $pid).\""
         exit 49
       else
         echo -e "${RED}✘ SSL operation already in progress (PID $pid).${NC}"
@@ -1203,7 +1203,7 @@ ssl_enable() {
   
   if [[ ! -f "$cert_file" ]]; then
     if [[ "$JSON_OUTPUT" == "true" ]]; then
-      output_json false "CERTIFICATE_MISSING" "{\"reason\":\"Certificate file fullchain.pem not found.\"}"
+      output_json false "CERTIFICATE_MISSING" "\"reason\":\"Certificate file fullchain.pem not found.\""
       exit 1
     else
       echo -e "${YELLOW}⚠ Certificate missing. Automatically running SSL Issue workflow...${NC}"
@@ -1400,14 +1400,14 @@ ssl_repair() {
   # 4. Verify Nginx status
   if verify_nginx_status "true"; then
     if [[ "$JSON_OUTPUT" == "true" ]]; then
-      output_json true "REPAIR_SUCCESS" "{\"details\":\"Nginx is running and configuration is valid.\"}"
+      output_json true "REPAIR_SUCCESS" "\"details\":\"Nginx is running and configuration is valid.\""
       exit 0
     else
       echo -e "${GREEN}✔ SSL repaired successfully!${NC}"
     fi
   else
     if [[ "$JSON_OUTPUT" == "true" ]]; then
-      output_json false "REPAIR_FAILED" "{\"details\":\"Nginx container is not running or configuration is invalid.\"}"
+      output_json false "REPAIR_FAILED" "\"details\":\"Nginx container is not running or configuration is invalid.\""
       exit 1
     else
       echo -e "${RED}✘ Repair failed. Nginx is not running or configuration is invalid.${NC}"
