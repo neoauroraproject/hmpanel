@@ -658,7 +658,19 @@ ssl_issue() {
   if command -v git &>/dev/null && command -v curl &>/dev/null && command -v socat &>/dev/null; then
     if [[ ! -d "${INSTALL_DIR}/acme.sh" ]]; then
       stream_progress "Installing acme.sh..."
-      if git clone https://github.com/acmesh-official/acme.sh.git /tmp/acme.sh >/dev/null 2>&1; then
+      rm -rf /tmp/acme.sh
+      local clone_success=false
+      if command -v timeout &>/dev/null; then
+        if timeout 45 git clone --depth 1 https://github.com/acmesh-official/acme.sh.git /tmp/acme.sh >/dev/null 2>&1; then
+          clone_success=true
+        fi
+      else
+        if git clone --depth 1 https://github.com/acmesh-official/acme.sh.git /tmp/acme.sh >/dev/null 2>&1; then
+          clone_success=true
+        fi
+      fi
+
+      if [[ "$clone_success" == true ]]; then
         (
           cd /tmp/acme.sh
           ./acme.sh --install \
@@ -667,6 +679,8 @@ ssl_issue() {
             --accountemail "${ADMIN_EMAIL:-admin@$PANEL_DOMAIN}" >/dev/null 2>&1
         ) || true
         rm -rf /tmp/acme.sh
+      else
+        stream_progress "acme.sh download failed, proceeding to fallback..."
       fi
     fi
   fi
@@ -676,13 +690,27 @@ ssl_issue() {
       if [[ "$cert_obtained" == false ]]; then
         stream_progress "Trying acme.sh ($ca)..."
         "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" --set-default-ca --server "$ca" >/dev/null 2>&1
-        if "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" --issue -d "$PANEL_DOMAIN" --standalone >/dev/null 2>&1; then
+        
+        local issue_success=false
+        if command -v timeout &>/dev/null; then
+          if timeout 90 "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" --issue -d "$PANEL_DOMAIN" --standalone >/dev/null 2>&1; then
+            issue_success=true
+          fi
+        else
+          if "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" --issue -d "$PANEL_DOMAIN" --standalone >/dev/null 2>&1; then
+            issue_success=true
+          fi
+        fi
+
+        if [[ "$issue_success" == true ]]; then
           "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" --install-cert -d "$PANEL_DOMAIN" \
             --fullchain-file "${SSL_DIR}/fullchain.pem" \
             --key-file "${SSL_DIR}/privkey.pem" >/dev/null 2>&1
           cert_obtained=true
           provider="$ca"
           stream_progress "Certificate issued successfully via $ca"
+        else
+          stream_progress "acme.sh ($ca) failed or timed out..."
         fi
       fi
     done
@@ -693,11 +721,21 @@ ssl_issue() {
     stream_progress "Trying Certbot..."
     local certbot_exit=1
     if command -v certbot &>/dev/null; then
-      certbot certonly --standalone --non-interactive --agree-tos -m "admin@$PANEL_DOMAIN" -d "$PANEL_DOMAIN" >/dev/null 2>&1
-      certbot_exit=$?
+      if command -v timeout &>/dev/null; then
+        timeout 120 certbot certonly --standalone --non-interactive --agree-tos -m "admin@$PANEL_DOMAIN" -d "$PANEL_DOMAIN" >/dev/null 2>&1
+        certbot_exit=$?
+      else
+        certbot certonly --standalone --non-interactive --agree-tos -m "admin@$PANEL_DOMAIN" -d "$PANEL_DOMAIN" >/dev/null 2>&1
+        certbot_exit=$?
+      fi
     else
-      docker run --rm -p 80:80 -v "${SSL_DIR}:/etc/letsencrypt" certbot/certbot certonly --standalone --non-interactive --agree-tos -m "admin@$PANEL_DOMAIN" -d "$PANEL_DOMAIN" >/dev/null 2>&1
-      certbot_exit=$?
+      if command -v timeout &>/dev/null; then
+        timeout 180 docker run --rm -p 80:80 -v "${SSL_DIR}:/etc/letsencrypt" certbot/certbot certonly --standalone --non-interactive --agree-tos -m "admin@$PANEL_DOMAIN" -d "$PANEL_DOMAIN" >/dev/null 2>&1
+        certbot_exit=$?
+      else
+        docker run --rm -p 80:80 -v "${SSL_DIR}:/etc/letsencrypt" certbot/certbot certonly --standalone --non-interactive --agree-tos -m "admin@$PANEL_DOMAIN" -d "$PANEL_DOMAIN" >/dev/null 2>&1
+        certbot_exit=$?
+      fi
     fi
 
     if [[ $certbot_exit -eq 0 ]]; then
@@ -711,6 +749,8 @@ ssl_issue() {
       cert_obtained=true
       provider="certbot"
       stream_progress "Certificate issued successfully via Certbot"
+    else
+      stream_progress "Certbot failed or timed out..."
     fi
   fi
 
