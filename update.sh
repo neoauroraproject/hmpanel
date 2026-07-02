@@ -202,6 +202,17 @@ END \$\$;
   
   log "Migrations completed successfully."
 
+  # Clean up legacy nginx files to avoid mount conflicts
+  if [ -e "${INSTALL_DIR}/nginx/nginx.conf.template" ]; then
+    rm -rf "${INSTALL_DIR}/nginx/nginx.conf.template"
+  fi
+
+  # Forcefully remove old nginx container to prevent mount cache issues during upgrade
+  if docker ps -a --format '{{.Names}}' | grep -Eq "^hmpanel-nginx$"; then
+    info "Removing old Nginx container to ensure clean mount configuration..."
+    docker rm -f hmpanel-nginx &>/dev/null || true
+  fi
+
   step "[7/8] Deploying Containers"
   info "Recreating containers with latest mounts and images..."
   docker compose up -d --remove-orphans
