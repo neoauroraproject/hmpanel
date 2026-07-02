@@ -242,27 +242,45 @@ export class BackupsService {
         `tar -xzf "${tempFilePath}" -C "${tempExtractDir}"`,
       );
 
-      if (!fs.existsSync(path.join(tempExtractDir, 'manifest.json'))) {
+      let manifest: any = null;
+      if (fs.existsSync(path.join(tempExtractDir, 'manifest.json'))) {
+        const manifestStr = fs.readFileSync(
+          path.join(tempExtractDir, 'manifest.json'),
+          'utf-8',
+        );
+        manifest = JSON.parse(manifestStr);
+      }
+
+      const files = fs.readdirSync(tempExtractDir);
+      const dbGz = files.find((f) => f.endsWith('.sql.gz'));
+      const dbSql = files.find((f) => f.endsWith('.sql') && !f.endsWith('.sql.gz'));
+
+      if (dbGz) {
+        await extractCounts(path.join(tempExtractDir, dbGz));
+      } else if (dbSql) {
+        await extractCounts(path.join(tempExtractDir, dbSql));
+      } else if (!manifest) {
         throw new BadRequestException(
-          'Invalid backup archive: missing manifest.json',
+          'Invalid backup archive: missing manifest.json and no SQL dump found',
         );
       }
 
-      const manifestStr = fs.readFileSync(
-        path.join(tempExtractDir, 'manifest.json'),
-        'utf-8',
-      );
-      const manifest = JSON.parse(manifestStr);
-
-      const dbGz = path.join(tempExtractDir, 'database.sql.gz');
-      const dbSql = path.join(tempExtractDir, 'database.sql');
-      if (fs.existsSync(dbGz)) {
-        await extractCounts(dbGz);
-      } else if (fs.existsSync(dbSql)) {
-        await extractCounts(dbSql);
-      }
-
       await execPromise(`rm -rf "${tempExtractDir}"`);
+
+      if (!manifest) {
+        return {
+          id: `temp-restore-${tempId}-${safeName}`,
+          fileName: safeName,
+          type: 'full',
+          sizeBytes: file.size,
+          uploadDate: new Date(),
+          isLegacy: true,
+          counts,
+          warnings: [
+            'This backup was created with an older version (Legacy tar.gz). Metadata is not available.',
+          ],
+        };
+      }
 
       return {
         id: `temp-restore-${tempId}-${safeName}`,
