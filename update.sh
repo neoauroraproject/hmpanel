@@ -36,9 +36,9 @@ main() {
     die "HMPanel is not installed at ${INSTALL_DIR}. Is the panel installed?"
   fi
   
-  cd "$INSTALL_DIR"
+  cd "$INSTALL_DIR" || die "Failed to enter installation directory $INSTALL_DIR"
   
-  REPO_URL="https://raw.githubusercontent.com/neoauroraproject/hmpanel/main"
+  REPO_URL="https://raw.githubusercontent.com/neoauroraproject/hmpanel/main/server/Panel"
 
   step "[1/8] Fetching Latest Infrastructure Files"
   info "Downloading latest docker-compose.yml..."
@@ -57,6 +57,8 @@ main() {
   mkdir -p nginx
   curl -fsSL "${REPO_URL}/nginx/nginx.conf.http.template" -o nginx/nginx.conf.http.template || warn "Failed to download nginx.conf.http.template"
   curl -fsSL "${REPO_URL}/nginx/nginx.conf.ssl.template" -o nginx/nginx.conf.ssl.template || warn "Failed to download nginx.conf.ssl.template"
+  curl -fsSL "${REPO_URL}/nginx/generate_config.sh" -o nginx/generate_config.sh || warn "Failed to download generate_config.sh"
+  chmod +x nginx/generate_config.sh 2>/dev/null || true
 
   log "Host infrastructure synced with main branch."
 
