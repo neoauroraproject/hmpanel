@@ -10,14 +10,7 @@ import { useToast } from "@/components/toast";
 import { motion } from "framer-motion";
 import { SslManagerModal } from "./SslManagerModal";
 
-interface RestoreAnalysis {
-  counts: {
-    admins: number;
-    panels: number;
-    clients: number;
-    inbounds: number;
-  };
-}
+
 
 export default function GlobalSettingsPage() {
   const qc = useQueryClient();

@@ -111,7 +111,16 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
       
       let message = "Failed to execute action.";
       if (err instanceof Error) {
-        if (err.message === "Network Error") return; // Nginx restart drops connection
+        if (err.message === "Network Error") {
+          // Nginx restart drops connection
+          if (form.domain && (actionFn.toString().includes("change-domain") || actionFn.toString().includes("issue"))) {
+            setLogs(prev => [...prev, "Connection lost due to Nginx applying changes.", `Redirecting to new domain (${form.domain}) in 10 seconds...`]);
+            setTimeout(() => {
+              window.location.href = `https://${form.domain}${window.location.pathname}`;
+            }, 10000);
+          }
+          return;
+        }
         message = err.message;
       }
       
