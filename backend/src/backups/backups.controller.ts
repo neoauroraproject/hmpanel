@@ -71,15 +71,18 @@ export class BackupsController {
     return this.backupsService.analyzeBackup(file);
   }
 
-  @Post('restore-apply/:id')
+  @Post('restore-apply')
   @ApiOperation({ summary: 'Apply a previously analyzed backup' })
   @ApiBody({
-    schema: { type: 'object', properties: { fileName: { type: 'string' } } },
+    schema: { type: 'object', properties: { id: { type: 'string' }, fileName: { type: 'string' } } },
   })
   async applyBackup(
-    @Param('id') id: string,
+    @Body('id') id: string,
     @Body('fileName') fileName: string,
   ) {
+    if (!id) {
+      throw new BadRequestException('id is required');
+    }
     if (!fileName) {
       throw new BadRequestException('fileName is required');
     }

@@ -264,7 +264,7 @@ function BackupRestoreCard() {
     try {
       // @ts-ignore
       const analysis = restoreAnalysis as { id: string, fileName: string };
-      await api.post(`/backups/restore-apply/${analysis.id}`, { fileName: analysis.fileName });
+      await api.post(`/backups/restore-apply`, { id: analysis.id, fileName: analysis.fileName });
       toast("System restored successfully. Reloading...");
       setTimeout(() => window.location.reload(), 2000);
     } catch (err) {

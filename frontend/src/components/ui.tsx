@@ -1,4 +1,5 @@
 import { clsx } from "clsx";
+import { Loader2 } from "lucide-react";
 
 export function Card({
   children,
@@ -86,12 +87,14 @@ export function PageHeader({
 }
 
 export function Spinner({ size = 24, className = "" }: { size?: number, className?: string }) {
+  // If className is provided (like w-4 h-4), it's meant to be inline without padding wrappers
+  if (className) {
+    return <Loader2 size={size} className={clsx("animate-spin", className)} />;
+  }
+  // Otherwise, it's a standalone spinner
   return (
-    <div className={clsx("flex items-center justify-center py-4 text-zinc-500", className)}>
-      <div 
-        className="animate-spin rounded-full border-2 border-zinc-300 dark:border-zinc-700 border-t-zinc-300" 
-        style={{ width: size, height: size }}
-      />
+    <div className="flex items-center justify-center py-8 text-zinc-500">
+      <Loader2 size={size} className="animate-spin" />
     </div>
   );
 }
