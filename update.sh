@@ -121,6 +121,24 @@ main() {
 
   SSL_DIR="${INSTALL_DIR}/nginx/ssl"
   mkdir -p "${SSL_DIR}"
+
+  # Migrate legacy certbot certificates if the volume exists and we don't have certs yet
+  if [[ ! -f "${SSL_DIR}/fullchain.pem" ]]; then
+    CERTBOT_VOLUME="hmpanel_certbot_certs"
+    if docker volume inspect "$CERTBOT_VOLUME" &>/dev/null; then
+      info "Found legacy certbot certificates. Migrating to new SSL directory..."
+      docker run --rm -v "${CERTBOT_VOLUME}:/certs" -v "${SSL_DIR}:/dest" alpine sh -c '
+        DOMAIN_DIR=$(find /certs/live -mindepth 1 -maxdepth 1 -type d | head -n 1)
+        if [ -n "$DOMAIN_DIR" ]; then
+          if [ -f "$DOMAIN_DIR/fullchain.pem" ] && [ -f "$DOMAIN_DIR/privkey.pem" ]; then
+            cp -L "$DOMAIN_DIR/fullchain.pem" /dest/fullchain.pem
+            cp -L "$DOMAIN_DIR/privkey.pem" /dest/privkey.pem
+            echo "Successfully migrated certificates from legacy certbot volume."
+          fi
+        fi
+      ' || warn "Failed to migrate legacy certificates."
+    fi
+  fi
   if [[ ! -f "${SSL_DIR}/fullchain.pem" || ! -f "${SSL_DIR}/privkey.pem" ]]; then
     info "Generating self-signed SSL certificates to prevent Nginx crash..."
     openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
