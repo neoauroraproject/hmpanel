@@ -11,6 +11,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import * as zlib from 'zlib';
 import { promisify } from 'util';
+import { HmctlClient } from '../settings/hmctl.client';
 const execPromise = promisify(exec);
 
 @Injectable()
@@ -19,7 +20,7 @@ export class BackupsService {
   private readonly backupsDir =
     process.env.BACKUP_PATH || path.join(process.cwd(), 'backups');
 
-  constructor() {
+  constructor(private readonly hmctl: HmctlClient) {
     if (!fs.existsSync(this.backupsDir)) {
       fs.mkdirSync(this.backupsDir, { recursive: true });
     }
@@ -291,8 +292,18 @@ export class BackupsService {
   }
 
   async applyBackup(id: string, fileName: string) {
-    throw new BadRequestException(
-      'To perform a full transactional restore, please run "hm restore" on the host server CLI.',
-    );
+    const backupFilePath = await this.getBackupFilePath(fileName);
+    
+    // We execute the restore asynchronously because it will stop this very container
+    setTimeout(() => {
+      this.hmctl.execute('restore', backupFilePath).catch(err => {
+        this.logger.error('Failed to execute restore: ' + err.message);
+      });
+    }, 1000);
+
+    return {
+      success: true,
+      message: 'Restore initiated. The panel will restart shortly.',
+    };
   }
 }
