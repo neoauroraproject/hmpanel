@@ -23,8 +23,8 @@ bash <(curl -fsSL https://raw.githubusercontent.com/neoauroraproject/hmpanel/mai
 ```
 *(Requires: Direct public IP for Let's Encrypt SSL, 1GB RAM, 5GB Disk)*
 
-<details>
-<summary><b>📸 Screenshots (Click to expand)</b></summary>
+
+<summary><b>📸 Screenshots</b></summary>
 
 ### Super Admin Dashboard
 ![Dashboard](docs/images/dashboard-1.png)
@@ -35,7 +35,6 @@ bash <(curl -fsSL https://raw.githubusercontent.com/neoauroraproject/hmpanel/mai
 ### Client Management
 ![Clients](docs/images/clients.png)
 
-</details>
 
 ### ⚡ Key Features
 - **Multi-Panel & Reseller Management:** Control multiple 3x-ui nodes, manage resellers with multi-tier permissions, and set traffic/client limits.
