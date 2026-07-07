@@ -148,7 +148,7 @@ export default function AdminsPage() {
           <button
             onClick={() => setActiveTab('active')}
             className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
-              activeTab === 'active' ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100' : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:text-zinc-200'
+              activeTab === 'active' ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100' : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200'
             }`}
           >
             Active Admins
@@ -156,7 +156,7 @@ export default function AdminsPage() {
           <button
             onClick={() => setActiveTab('disabled')}
             className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
-              activeTab === 'disabled' ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100' : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:text-zinc-200'
+              activeTab === 'disabled' ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100' : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200'
             }`}
           >
             Disabled Admins
@@ -200,7 +200,7 @@ export default function AdminsPage() {
                 initial={{ opacity: 0, y: 5 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.2, delay: i * 0.03 }}
-                className={`block md:table-row group border border-zinc-200 dark:border-zinc-800 md:border-none rounded-xl md:rounded-none bg-zinc-50 dark:bg-zinc-950 md:bg-transparent last:border-0 hover:bg-white dark:bg-zinc-900/30 transition-colors cursor-pointer ${
+                className={`block md:table-row group border border-zinc-200 dark:border-zinc-800 md:border-none rounded-xl md:rounded-none bg-zinc-50 dark:bg-zinc-950 md:bg-transparent last:border-0 hover:bg-zinc-50 dark:hover:bg-zinc-900/30 transition-colors cursor-pointer ${
                   isExpanded ? "bg-white dark:bg-zinc-900/20" : ""
                 }`}
                 onClick={() => setExpandedAdminId(isExpanded ? null : a.id)}
@@ -285,7 +285,7 @@ export default function AdminsPage() {
                         whileHover={{ scale: 1.05 }} 
                         whileTap={{ scale: 0.95 }} 
                         onClick={() => toggleStatus(a)} 
-                        className={`p-2 rounded-lg transition-colors ${a.status === 'active' ? 'text-emerald-400 hover:bg-emerald-400/10' : 'text-zinc-500 hover:bg-zinc-100 dark:bg-zinc-800'}`}
+                        className={`p-2 rounded-lg transition-colors ${a.status === 'active' ? 'text-emerald-400 hover:bg-emerald-400/10' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}
                         title={a.status === 'active' ? "Disable Admin" : "Enable Admin"}
                       >
                         <Power size={16} />
@@ -440,7 +440,7 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
           <h2 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50 flex items-center gap-2">
             <Shield size={20} className="text-blue-500" /> Add Admin (Reseller)
           </h2>
-          <button onClick={onClose} className="text-zinc-500 hover:text-zinc-600 dark:text-zinc-300 transition-colors"><X size={20} /></button>
+          <button onClick={onClose} className="text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"><X size={20} /></button>
         </div>
         <div className="overflow-y-auto flex-1">
 
@@ -449,7 +449,7 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
             
             {/* Section A: Basic Info */}
             <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 overflow-hidden">
-              <button type="button" onClick={() => setOpenSection(openSection === 'basic' ? '' : 'basic')} className="w-full flex items-center justify-between p-4 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:bg-zinc-800/80 transition-colors">
+              <button type="button" onClick={() => setOpenSection(openSection === 'basic' ? '' : 'basic')} className="w-full flex items-center justify-between p-4 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800/80 transition-colors">
                 <div className="flex items-center gap-2 font-medium text-zinc-800 dark:text-zinc-100"><Shield size={16} className="text-blue-400"/> Basic Information</div>
                 <ChevronDown size={18} className={`text-zinc-500 transition-transform ${openSection === 'basic' ? 'rotate-180' : ''}`} />
               </button>
@@ -464,7 +464,7 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
                       <div className="relative">
                         <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">Password</label>
                         <input type={showPassword ? "text" : "password"} required value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 pl-3 pr-10 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
-                        <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-[28px] text-zinc-500 hover:text-zinc-600 dark:text-zinc-300">
+                        <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-[28px] text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300">
                           {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                         </button>
                       </div>
@@ -487,7 +487,7 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
 
             {/* Section B: Permissions */}
             <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 overflow-hidden">
-              <button type="button" onClick={() => setOpenSection(openSection === 'permissions' ? '' : 'permissions')} className="w-full flex items-center justify-between p-4 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:bg-zinc-800/80 transition-colors">
+              <button type="button" onClick={() => setOpenSection(openSection === 'permissions' ? '' : 'permissions')} className="w-full flex items-center justify-between p-4 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800/80 transition-colors">
                 <div className="flex items-center gap-2 font-medium text-zinc-800 dark:text-zinc-100"><Server size={16} className="text-purple-400"/> Permissions</div>
                 <ChevronDown size={18} className={`text-zinc-500 transition-transform ${openSection === 'permissions' ? 'rotate-180' : ''}`} />
               </button>
@@ -542,7 +542,7 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
 
             {/* Section C: Limits */}
             <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 overflow-hidden">
-              <button type="button" onClick={() => setOpenSection(openSection === 'limits' ? '' : 'limits')} className="w-full flex items-center justify-between p-4 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:bg-zinc-800/80 transition-colors">
+              <button type="button" onClick={() => setOpenSection(openSection === 'limits' ? '' : 'limits')} className="w-full flex items-center justify-between p-4 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800/80 transition-colors">
                 <div className="flex items-center gap-2 font-medium text-zinc-800 dark:text-zinc-100"><Database size={16} className="text-emerald-400"/> Limits</div>
                 <ChevronDown size={18} className={`text-zinc-500 transition-transform ${openSection === 'limits' ? 'rotate-180' : ''}`} />
               </button>
@@ -592,7 +592,7 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
 
             {/* Section D: Status */}
             <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 overflow-hidden">
-              <button type="button" onClick={() => setOpenSection(openSection === 'status' ? '' : 'status')} className="w-full flex items-center justify-between p-4 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:bg-zinc-800/80 transition-colors">
+              <button type="button" onClick={() => setOpenSection(openSection === 'status' ? '' : 'status')} className="w-full flex items-center justify-between p-4 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800/80 transition-colors">
                 <div className="flex items-center gap-2 font-medium text-zinc-800 dark:text-zinc-100"><Activity size={16} className="text-rose-400"/> Status</div>
                 <ChevronDown size={18} className={`text-zinc-500 transition-transform ${openSection === 'status' ? 'rotate-180' : ''}`} />
               </button>
@@ -636,7 +636,7 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
           </motion.div>
 
           <div className="flex justify-end gap-3 pt-6 mt-6 border-t border-zinc-200 dark:border-zinc-800">
-            <button type="button" onClick={onClose} className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:bg-zinc-800 transition-colors">Cancel</button>
+            <button type="button" onClick={onClose} className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">Cancel</button>
             <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} type="submit" disabled={create.isPending || !form.selectedPanel} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50 transition-colors shadow-lg shadow-blue-900/20">
               {create.isPending ? "Creating…" : "Create Admin"}
             </motion.button>
@@ -803,13 +803,13 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
             <h3 className="text-lg font-semibold text-zinc-800 dark:text-zinc-100 flex items-center gap-2">
               <Settings2 size={18} className="text-zinc-500 dark:text-zinc-400" /> Edit Admin
             </h3>
-            <button onClick={onClose} className="text-zinc-500 hover:text-zinc-600 dark:text-zinc-300 transition-colors"><X size={20} /></button>
+            <button onClick={onClose} className="text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"><X size={20} /></button>
           </div>
 
           <div className="space-y-4">
               {/* Section A: Limits & Status */}
               <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 overflow-hidden">
-                <button type="button" onClick={() => setOpenSection(openSection === 'limits' ? '' : 'limits')} className="w-full flex items-center justify-between p-4 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:bg-zinc-800/80 transition-colors">
+                <button type="button" onClick={() => setOpenSection(openSection === 'limits' ? '' : 'limits')} className="w-full flex items-center justify-between p-4 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800/80 transition-colors">
                   <div className="flex items-center gap-2 font-medium text-zinc-800 dark:text-zinc-100"><Database size={16} className="text-emerald-400"/> Limits & Status</div>
                   <ChevronDown size={18} className={`text-zinc-500 transition-transform ${openSection === 'limits' ? 'rotate-180' : ''}`} />
                 </button>
@@ -930,7 +930,7 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
 
               {/* Section B: Basic Info */}
               <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 overflow-hidden">
-                <button type="button" onClick={() => setOpenSection(openSection === 'basic' ? '' : 'basic')} className="w-full flex items-center justify-between p-4 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:bg-zinc-800/80 transition-colors">
+                <button type="button" onClick={() => setOpenSection(openSection === 'basic' ? '' : 'basic')} className="w-full flex items-center justify-between p-4 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800/80 transition-colors">
                   <div className="flex items-center gap-2 font-medium text-zinc-800 dark:text-zinc-100"><Shield size={16} className="text-blue-400"/> Basic Information</div>
                   <ChevronDown size={18} className={`text-zinc-500 transition-transform ${openSection === 'basic' ? 'rotate-180' : ''}`} />
                 </button>
@@ -945,7 +945,7 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
                         <div className="relative">
                           <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">Password</label>
                           <input type={showPassword ? "text" : "password"} placeholder="Leave blank to keep unchanged" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 pl-3 pr-10 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
-                          <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-[28px] text-zinc-500 hover:text-zinc-600 dark:text-zinc-300">
+                          <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-[28px] text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300">
                             {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                           </button>
                         </div>
@@ -973,7 +973,7 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
 
               {/* Section B: Permissions */}
               <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 overflow-hidden">
-                <button type="button" onClick={() => setOpenSection(openSection === 'permissions' ? '' : 'permissions')} className="w-full flex items-center justify-between p-4 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:bg-zinc-800/80 transition-colors">
+                <button type="button" onClick={() => setOpenSection(openSection === 'permissions' ? '' : 'permissions')} className="w-full flex items-center justify-between p-4 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800/80 transition-colors">
                   <div className="flex items-center gap-2 font-medium text-zinc-800 dark:text-zinc-100"><Server size={16} className="text-purple-400"/> Permissions</div>
                   <ChevronDown size={18} className={`text-zinc-500 transition-transform ${openSection === 'permissions' ? 'rotate-180' : ''}`} />
                 </button>

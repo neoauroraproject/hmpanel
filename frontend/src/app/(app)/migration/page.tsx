@@ -284,7 +284,7 @@ export default function MigrationPage() {
                 <a
                   href={`data:text/json;charset=utf-8,${encodeURIComponent(JSON.stringify(syncReport, null, 2))}`}
                   download="migration-report.json"
-                  className="bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-700 text-zinc-800 dark:text-zinc-100 px-6 py-2 rounded-lg font-medium text-sm transition-colors"
+                  className="bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-600 text-zinc-800 dark:text-zinc-100 px-6 py-2 rounded-lg font-medium text-sm transition-colors"
                 >
                   Download JSON Report
                 </a>

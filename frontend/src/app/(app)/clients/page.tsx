@@ -56,7 +56,7 @@ function CopyBtn({ text }: { text: string }) {
         e.stopPropagation();
         handleCopy();
       }}
-      className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 text-zinc-500 hover:bg-zinc-100 dark:bg-zinc-800 hover:text-zinc-600 dark:text-zinc-300 transition-colors"
+      className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"
       title="Copy to clipboard"
     >
       {copied ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
@@ -675,7 +675,7 @@ export default function ClientsPage() {
                 <th className="w-12 px-4 py-3 text-center">
                   <button
                     onClick={handleSelectAll}
-                    className="text-zinc-500 hover:text-zinc-600 dark:text-zinc-300 transition-colors inline-block"
+                    className="text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors inline-block"
                   >
                     {allCurrentPageSelected ? (
                       <CheckSquare size={16} className="text-blue-500" />
@@ -711,7 +711,7 @@ export default function ClientsPage() {
                             setExpandedId(isExpanded ? null : c.id);
                           }
                         }}
-                        className={`block md:table-row bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 md:border-b md:border-x-0 md:border-t-0 md:border-zinc-200 dark:border-zinc-800/60 rounded-xl md:rounded-none last:border-b-0 hover:bg-white dark:hover:bg-zinc-900/30 transition-colors cursor-pointer ${
+                        className={`block md:table-row bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 md:border-b md:border-x-0 md:border-t-0 md:border-zinc-200 dark:border-zinc-800/60 rounded-xl md:rounded-none last:border-b-0 hover:bg-zinc-50 dark:hover:bg-zinc-900/30 transition-colors cursor-pointer ${
                           isExpanded ? "bg-white dark:bg-zinc-900/20" : ""
                         }`}
                       >
@@ -720,7 +720,7 @@ export default function ClientsPage() {
                         onClick={(e) => { e.stopPropagation(); handleSelectOne(c); }}
                       >
                         <button
-                          className="text-zinc-500 hover:text-zinc-600 dark:text-zinc-300 transition-colors"
+                          className="text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"
                         >
                           {isSelected ? (
                             <CheckSquare size={16} className="text-blue-500" />
@@ -843,7 +843,7 @@ export default function ClientsPage() {
                               e.stopPropagation();
                               toggle.mutate(c);
                             }}
-                            className={`p-2 rounded-lg transition-colors ${c.enable ? "text-emerald-400 hover:bg-emerald-400/10" : "text-zinc-500 hover:bg-zinc-100 dark:bg-zinc-800"}`}
+                            className={`p-2 rounded-lg transition-colors ${c.enable ? "text-emerald-400 hover:bg-emerald-400/10" : "text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"}`}
                             title={c.enable ? "Disable Client" : "Enable Client"}
                           >
                             <Power size={16} />
@@ -867,7 +867,7 @@ export default function ClientsPage() {
                               e.stopPropagation();
                               setEditing(c);
                             }}
-                            className="p-2 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:bg-zinc-800 rounded-lg transition-colors"
+                            className="p-2 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors"
                             title="Edit Client"
                           >
                             <Edit2 size={16} />
@@ -1095,7 +1095,7 @@ export default function ClientsPage() {
               <button
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={page === 1}
-                className="rounded-lg border border-zinc-200 dark:border-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:bg-zinc-800 disabled:opacity-40"
+                className="rounded-lg border border-zinc-200 dark:border-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40"
               >
                 Previous
               </button>
@@ -1105,7 +1105,7 @@ export default function ClientsPage() {
               <button
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={page >= totalPages}
-                className="rounded-lg border border-zinc-200 dark:border-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:bg-zinc-800 disabled:opacity-40"
+                className="rounded-lg border border-zinc-200 dark:border-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40"
               >
                 Next
               </button>
@@ -1144,49 +1144,49 @@ export default function ClientsPage() {
               <div className="hidden md:flex items-center gap-1.5 sm:gap-2 overflow-x-auto scrollbar-none py-1">
                 <button
                   onClick={() => handleBulkAction("addTraffic")}
-                  className="rounded-full border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:bg-zinc-800 whitespace-nowrap"
+                  className="rounded-full border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 whitespace-nowrap"
                 >
                   Add Traffic
                 </button>
                 <button
                   onClick={() => handleBulkAction("resetTraffic")}
-                  className="rounded-full border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:bg-zinc-800 whitespace-nowrap"
+                  className="rounded-full border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 whitespace-nowrap"
                 >
                   Reset Traffic
                 </button>
                 <button
                   onClick={() => handleBulkAction("addDays")}
-                  className="rounded-full border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:bg-zinc-800 whitespace-nowrap"
+                  className="rounded-full border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 whitespace-nowrap"
                 >
                   Add Days
                 </button>
                 <button
                   onClick={() => handleBulkAction("enable")}
-                  className="rounded-full border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:bg-zinc-800 whitespace-nowrap"
+                  className="rounded-full border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 whitespace-nowrap"
                 >
                   Enable
                 </button>
                 <button
                   onClick={() => handleBulkAction("disable")}
-                  className="rounded-full border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:bg-zinc-800 whitespace-nowrap"
+                  className="rounded-full border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 whitespace-nowrap"
                 >
                   Disable
                 </button>
                 <button
                   onClick={() => handleBulkAction("assignInbounds")}
-                  className="rounded-full border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:bg-zinc-800 whitespace-nowrap"
+                  className="rounded-full border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 whitespace-nowrap"
                 >
                   Inbounds
                 </button>
                 <button
                   onClick={() => handleBulkAction("assignGroup")}
-                  className="rounded-full border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:bg-zinc-800 whitespace-nowrap"
+                  className="rounded-full border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 whitespace-nowrap"
                 >
                   Group
                 </button>
                 <button
                   onClick={() => handleBulkAction("exportSubs")}
-                  className="rounded-full border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:bg-zinc-800 whitespace-nowrap"
+                  className="rounded-full border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 whitespace-nowrap"
                 >
                   Export Subs
                 </button>
@@ -1198,7 +1198,7 @@ export default function ClientsPage() {
                 </button>
                 <button
                   onClick={() => setSelectedClients({})}
-                  className="text-zinc-500 hover:text-zinc-600 dark:text-zinc-300 p-1 ml-2 shrink-0"
+                  className="text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 p-1 ml-2 shrink-0"
                   title="Cancel Selection"
                 >
                   <X size={15} />
@@ -1355,7 +1355,7 @@ export default function ClientsPage() {
             <div className="flex gap-2">
               <button
                 onClick={() => setPendingBulkAction(null)}
-                className="flex-1 rounded-xl bg-zinc-100 dark:bg-zinc-800 py-3 font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+                className="flex-1 rounded-xl bg-zinc-100 dark:bg-zinc-800 py-3 font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors"
               >
                 Cancel
               </button>
@@ -1430,7 +1430,7 @@ export default function ClientsPage() {
                   setAssignInboundsModalOpen(false);
                   setAssignInboundIds([]);
                 }}
-                className="flex-1 rounded-xl bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 py-2.5 font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors"
+                className="flex-1 rounded-xl bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 py-2.5 font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors"
               >
                 Cancel
               </button>
@@ -1534,7 +1534,7 @@ export default function ClientsPage() {
             <div className="flex gap-2">
               <button
                 onClick={() => setDeleteConfirmOpen(false)}
-                className="flex-1 rounded-xl bg-zinc-100 dark:bg-zinc-800 py-3 font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+                className="flex-1 rounded-xl bg-zinc-100 dark:bg-zinc-800 py-3 font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors"
               >
                 Cancel
               </button>
@@ -1563,7 +1563,7 @@ export default function ClientsPage() {
             <div className="flex gap-2">
               <button
                 onClick={() => setResetConfirmOpen(false)}
-                className="flex-1 rounded-xl bg-zinc-100 dark:bg-zinc-800 py-3 font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+                className="flex-1 rounded-xl bg-zinc-100 dark:bg-zinc-800 py-3 font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors"
               >
                 Cancel
               </button>
@@ -1594,7 +1594,7 @@ export default function ClientsPage() {
               <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">{bulkValueModal.title}</h3>
               <button
                 onClick={() => setBulkValueModal(null)}
-                className="text-zinc-500 hover:text-zinc-600 dark:text-zinc-300"
+                className="text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300"
               >
                 <X size={16} />
               </button>
@@ -1618,7 +1618,7 @@ export default function ClientsPage() {
                       <button
                         key={days}
                         onClick={() => setBulkInputValue(days.toString())}
-                        className="flex-1 rounded-md bg-zinc-100 dark:bg-zinc-800 py-1 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+                        className="flex-1 rounded-md bg-zinc-100 dark:bg-zinc-800 py-1 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors"
                       >
                         +{days}
                       </button>
@@ -1657,7 +1657,7 @@ export default function ClientsPage() {
               <div className="flex justify-end gap-2 border-t border-zinc-200 dark:border-zinc-800 pt-4">
                 <button
                   onClick={() => setBulkValueModal(null)}
-                  className="rounded-lg px-4 py-2 text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:text-zinc-200"
+                  className="rounded-lg px-4 py-2 text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
                 >
                   Cancel
                 </button>
@@ -1845,7 +1845,7 @@ function AddClientModal({
             </button>
             <button
               onClick={() => onSaved()}
-              className="rounded-xl bg-zinc-100 dark:bg-zinc-800 px-4 py-3 font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-700 transition-colors"
+              className="rounded-xl bg-zinc-100 dark:bg-zinc-800 px-4 py-3 font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors"
             >
               Close
             </button>
@@ -1872,7 +1872,7 @@ function AddClientModal({
       >
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Add Client</h2>
-          <button onClick={onClose} className="text-zinc-500 hover:text-zinc-600 dark:text-zinc-300">
+          <button onClick={onClose} className="text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300">
             <X size={18} />
           </button>
         </div>
@@ -2014,7 +2014,7 @@ function AddClientModal({
               <button
                 type="button"
                 onClick={() => setShowAdvanced(!showAdvanced)}
-                className="flex w-full items-center justify-between p-4 text-sm font-medium text-zinc-600 dark:text-zinc-300 hover:bg-white dark:hover:bg-zinc-900/50"
+                className="flex w-full items-center justify-between p-4 text-sm font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-900/50"
               >
                 <span>Advanced Settings</span>
                 {showAdvanced ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
@@ -2041,7 +2041,7 @@ function AddClientModal({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg px-4 py-2 text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:text-zinc-200"
+              className="rounded-lg px-4 py-2 text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
             >
               Cancel
             </button>
@@ -2207,7 +2207,7 @@ export function EditClientModal({
       >
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Edit Client: {client.email}</h2>
-          <button onClick={onClose} className="text-zinc-500 hover:text-zinc-600 dark:text-zinc-300">
+          <button onClick={onClose} className="text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300">
             <X size={18} />
           </button>
         </div>
@@ -2249,9 +2249,9 @@ export function EditClientModal({
 
             <div className="space-y-3 pt-3 border-t border-zinc-200 dark:border-zinc-800/50">
               <div className="flex gap-2 p-1 bg-white dark:bg-zinc-900 rounded-lg border border-zinc-200 dark:border-zinc-800">
-                <button type="button" onClick={() => { setTrafficMode("set"); setTrafficInput(""); }} className={`flex-1 text-xs py-1.5 rounded-md transition-colors ${trafficMode === "set" ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100" : "text-zinc-500 hover:text-zinc-600 dark:text-zinc-300"}`}>Set Total</button>
-                <button type="button" onClick={() => { setTrafficMode("add"); setTrafficInput(""); }} className={`flex-1 text-xs py-1.5 rounded-md transition-colors ${trafficMode === "add" ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100" : "text-zinc-500 hover:text-zinc-600 dark:text-zinc-300"}`}>Add (+)</button>
-                <button type="button" onClick={() => { setTrafficMode("remove"); setTrafficInput(""); }} className={`flex-1 text-xs py-1.5 rounded-md transition-colors ${trafficMode === "remove" ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100" : "text-zinc-500 hover:text-zinc-600 dark:text-zinc-300"}`}>Remove (-)</button>
+                <button type="button" onClick={() => { setTrafficMode("set"); setTrafficInput(""); }} className={`flex-1 text-xs py-1.5 rounded-md transition-colors ${trafficMode === "set" ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100" : "text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300"}`}>Set Total</button>
+                <button type="button" onClick={() => { setTrafficMode("add"); setTrafficInput(""); }} className={`flex-1 text-xs py-1.5 rounded-md transition-colors ${trafficMode === "add" ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100" : "text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300"}`}>Add (+)</button>
+                <button type="button" onClick={() => { setTrafficMode("remove"); setTrafficInput(""); }} className={`flex-1 text-xs py-1.5 rounded-md transition-colors ${trafficMode === "remove" ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100" : "text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300"}`}>Remove (-)</button>
               </div>
               
               <div>
@@ -2316,8 +2316,8 @@ export function EditClientModal({
 
             <div className="space-y-3 pt-3 border-t border-zinc-200 dark:border-zinc-800/50">
               <div className="flex gap-2 p-1 bg-white dark:bg-zinc-900 rounded-lg border border-zinc-200 dark:border-zinc-800">
-                <button type="button" onClick={() => { setExpiryMode("add"); setForm({ ...form, expiryDays: "" }); }} className={`flex-1 text-xs py-1.5 rounded-md transition-colors ${expiryMode === "add" ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100" : "text-zinc-500 hover:text-zinc-600 dark:text-zinc-300"}`}>Add Days (+)</button>
-                <button type="button" onClick={() => { setExpiryMode("remove"); setForm({ ...form, expiryDays: "" }); }} className={`flex-1 text-xs py-1.5 rounded-md transition-colors ${expiryMode === "remove" ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100" : "text-zinc-500 hover:text-zinc-600 dark:text-zinc-300"}`}>Remove Days (-)</button>
+                <button type="button" onClick={() => { setExpiryMode("add"); setForm({ ...form, expiryDays: "" }); }} className={`flex-1 text-xs py-1.5 rounded-md transition-colors ${expiryMode === "add" ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100" : "text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300"}`}>Add Days (+)</button>
+                <button type="button" onClick={() => { setExpiryMode("remove"); setForm({ ...form, expiryDays: "" }); }} className={`flex-1 text-xs py-1.5 rounded-md transition-colors ${expiryMode === "remove" ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100" : "text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300"}`}>Remove Days (-)</button>
               </div>
 
               <div className="flex gap-2">
@@ -2326,7 +2326,7 @@ export function EditClientModal({
                     key={days}
                     type="button"
                     onClick={() => setForm({ ...form, expiryDays: days.toString() })}
-                    className="flex-1 py-1.5 rounded-md bg-zinc-100 dark:bg-zinc-800 text-xs text-zinc-600 dark:text-zinc-300 hover:bg-zinc-700 hover:text-white transition-colors"
+                    className="flex-1 py-1.5 rounded-md bg-zinc-100 dark:bg-zinc-800 text-xs text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-600 hover:text-white transition-colors"
                   >
                     {expiryMode === "add" ? "+" : "-"}{days}
                   </button>
@@ -2355,7 +2355,7 @@ export function EditClientModal({
               <button
                 type="button"
                 onClick={() => setShowAdvanced(!showAdvanced)}
-                className="flex w-full items-center justify-between p-4 text-sm font-medium text-zinc-600 dark:text-zinc-300 hover:bg-white dark:hover:bg-zinc-900/50"
+                className="flex w-full items-center justify-between p-4 text-sm font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-900/50"
               >
                 <span>Advanced Settings</span>
                 {showAdvanced ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
@@ -2385,7 +2385,7 @@ export function EditClientModal({
             <button
               type="button"
               onClick={() => setShowInbounds(!showInbounds)}
-              className="flex w-full items-center justify-between p-4 text-sm font-medium text-zinc-700 dark:text-zinc-200 hover:bg-white dark:hover:bg-zinc-900/50"
+              className="flex w-full items-center justify-between p-4 text-sm font-medium text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-900/50"
             >
               <span>Assigned Inbounds ({form.inboundIds.length} Selected)</span>
               {showInbounds ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
@@ -2394,7 +2394,7 @@ export function EditClientModal({
               <div className="p-4 pt-0 border-t border-zinc-200 dark:border-zinc-800/50 mt-1">
                 <div className="space-y-1 max-h-48 overflow-y-auto">
                   {availableInbounds.map((i) => (
-                    <label key={i.id} className="flex items-center justify-between gap-2 text-xs text-zinc-600 dark:text-zinc-300 hover:text-zinc-800 dark:text-zinc-100 cursor-pointer p-2 rounded hover:bg-zinc-100 dark:bg-zinc-800/80 transition-colors">
+                    <label key={i.id} className="flex items-center justify-between gap-2 text-xs text-zinc-600 dark:text-zinc-300 hover:text-zinc-800 dark:hover:text-zinc-100 cursor-pointer p-2 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800/80 transition-colors">
                       <div className="flex items-center gap-3">
                         <input type="checkbox" checked={form.inboundIds.includes(i.id)} onChange={(e) => {
                           const inb = e.target.checked ? [...form.inboundIds, i.id] : form.inboundIds.filter((x: string) => x !== i.id);
@@ -2417,7 +2417,7 @@ export function EditClientModal({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg px-4 py-2 text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:text-zinc-200"
+              className="rounded-lg px-4 py-2 text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
             >
               Cancel
             </button>
@@ -2469,7 +2469,7 @@ function BulkResultModal({
         )}
         <button
           onClick={onClose}
-          className="w-full rounded-xl bg-zinc-100 dark:bg-zinc-800 py-3 font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+          className="w-full rounded-xl bg-zinc-100 dark:bg-zinc-800 py-3 font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors"
         >
           Close
         </button>

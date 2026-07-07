@@ -248,7 +248,7 @@ function SuperDashboard() {
           <div className="flex gap-1 rounded-lg border border-zinc-200 dark:border-zinc-800 p-0.5">
             {(["24h", "7d", "30d"] as const).map((r) => (
               <button key={r} onClick={() => setRange(r)}
-                className={`rounded-md px-3 py-1 text-xs ${range === r ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100" : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:text-zinc-200"}`}>
+                className={`rounded-md px-3 py-1 text-xs ${range === r ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100" : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"}`}>
                 {r === "24h" ? "Last 24h" : r === "7d" ? "Last 7 days" : "Last 30 days"}
               </button>
             ))}
@@ -307,7 +307,7 @@ function SuperDashboard() {
             <div className="flex gap-1 rounded-lg border border-zinc-200 dark:border-zinc-800 p-0.5">
               {(["allTime", "24h"] as const).map((r) => (
                 <button key={r} onClick={() => setPieRange(r)}
-                  className={`rounded-md px-2 py-0.5 text-[10px] ${pieRange === r ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100" : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-300"}`}>
+                  className={`rounded-md px-2 py-0.5 text-[10px] ${pieRange === r ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100" : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"}`}>
                   {r === "allTime" ? "All Time" : "24h"}
                 </button>
               ))}
@@ -391,7 +391,7 @@ function SuperDashboard() {
           </div>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {livePanels.map((p) => (
-              <div key={p.panelId} className="rounded-xl border border-zinc-200 dark:border-zinc-800 p-5 bg-white dark:bg-zinc-900/40 hover:bg-white dark:bg-zinc-900/60 transition-colors shadow-lg shadow-black/20">
+              <div key={p.panelId} className="rounded-xl border border-zinc-200 dark:border-zinc-800 p-5 bg-white dark:bg-zinc-900/40 hover:bg-zinc-50 dark:hover:bg-zinc-900/60 transition-colors shadow-lg shadow-black/20">
                 <div className="mb-4 flex items-center justify-between">
                   <div className="flex items-center gap-2">
                      <Server size={16} className={p.online ? "text-emerald-400" : "text-red-400"} />
@@ -615,7 +615,7 @@ function ResellerDashboard() {
             </div>
             <div className="divide-y divide-zinc-800">
               {priorityClients.map((c: any) => (
-                <div key={c.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-zinc-100 dark:bg-zinc-800/50 transition-colors">
+                <div key={c.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-zinc-100 dark:hover:bg-zinc-800/50 transition-colors">
                   <div>
                     <div className="font-semibold text-zinc-900 dark:text-white">{c.remark || c.email}</div>
                     <div className="flex gap-2 mt-1 flex-wrap">

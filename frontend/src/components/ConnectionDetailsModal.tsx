@@ -27,7 +27,7 @@ function CopyBtn({ text, label }: { text: string; label?: string }) {
   return (
     <button
       onClick={handleCopy}
-      className="flex items-center gap-2 rounded bg-zinc-100 dark:bg-zinc-800 px-3 py-1.5 text-sm font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-700 transition-colors"
+      className="flex items-center gap-2 rounded bg-zinc-100 dark:bg-zinc-800 px-3 py-1.5 text-sm font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors"
     >
       {copied ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
       {label || "Copy URL"}
@@ -117,7 +117,7 @@ export function ConnectionDetailsModal({ client, portalSettings, onClose }: Conn
       >
         <div className="flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800 p-4 bg-white dark:bg-zinc-900/50">
           <h2 className="text-lg font-bold text-zinc-800 dark:text-zinc-100">Connection Details</h2>
-          <button onClick={onClose} className="rounded p-1 text-zinc-500 hover:bg-zinc-100 dark:bg-zinc-800 hover:text-zinc-600 dark:text-zinc-300 transition-colors">
+          <button onClick={onClose} className="rounded p-1 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors">
             <X size={18} />
           </button>
         </div>
@@ -158,7 +158,7 @@ export function ConnectionDetailsModal({ client, portalSettings, onClose }: Conn
             <div className="flex border-b border-zinc-200 dark:border-zinc-800">
               {showPlatform && (
                 <button
-                  className={`flex-1 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "platform" ? "border-blue-500 text-blue-400 bg-blue-500/5" : "border-transparent text-zinc-500 hover:text-zinc-600 dark:text-zinc-300"}`}
+                  className={`flex-1 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "platform" ? "border-blue-500 text-blue-400 bg-blue-500/5" : "border-transparent text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300"}`}
                   onClick={() => setActiveTab("platform")}
                 >
                   Platform QR
@@ -166,7 +166,7 @@ export function ConnectionDetailsModal({ client, portalSettings, onClose }: Conn
               )}
               {showNative && (
                 <button
-                  className={`flex-1 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "native" ? "border-emerald-500 text-emerald-400 bg-emerald-500/5" : "border-transparent text-zinc-500 hover:text-zinc-600 dark:text-zinc-300"}`}
+                  className={`flex-1 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "native" ? "border-emerald-500 text-emerald-400 bg-emerald-500/5" : "border-transparent text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300"}`}
                   onClick={() => setActiveTab("native")}
                 >
                   Native 3x-ui QR
@@ -202,7 +202,7 @@ export function ConnectionDetailsModal({ client, portalSettings, onClose }: Conn
                   <div className="flex w-full gap-2 mt-4">
                     <button 
                       onClick={() => downloadQR("qr-platform", `PlatformQR_${client.email}`, "png")}
-                      className="flex w-full items-center justify-center gap-2 rounded-lg bg-zinc-100 dark:bg-zinc-800 px-4 py-2 text-sm font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-700 hover:text-white transition-colors"
+                      className="flex w-full items-center justify-center gap-2 rounded-lg bg-zinc-100 dark:bg-zinc-800 px-4 py-2 text-sm font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-600 hover:text-white transition-colors"
                     >
                       <Download size={16} /> Download Image
                     </button>
@@ -236,7 +236,7 @@ export function ConnectionDetailsModal({ client, portalSettings, onClose }: Conn
                   <div className="flex w-full gap-2 mt-4">
                     <button 
                       onClick={() => downloadQR("qr-native", `NativeQR_${client.email}`, "png")}
-                      className="flex w-full items-center justify-center gap-2 rounded-lg bg-zinc-100 dark:bg-zinc-800 px-4 py-2 text-sm font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-700 hover:text-white transition-colors"
+                      className="flex w-full items-center justify-center gap-2 rounded-lg bg-zinc-100 dark:bg-zinc-800 px-4 py-2 text-sm font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-600 hover:text-white transition-colors"
                     >
                       <Download size={16} /> Download Image
                     </button>

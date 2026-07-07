@@ -78,7 +78,7 @@ export function Sidebar() {
                   "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
                   active
                     ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-50"
-                    : "text-zinc-500 dark:text-zinc-400 hover:bg-white dark:hover:bg-zinc-900/50 hover:text-zinc-700 dark:hover:text-zinc-200",
+                    : "text-zinc-500 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-900/50 hover:text-zinc-700 dark:hover:text-zinc-200",
                 )}
               >
                 <Icon size={18} />
@@ -122,7 +122,7 @@ export function Sidebar() {
             logout();
             router.replace("/login");
           }}
-          className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-zinc-500 dark:text-zinc-400 transition-colors hover:bg-white dark:hover:bg-zinc-900/50 hover:text-red-400"
+          className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-zinc-500 dark:text-zinc-400 transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-900/50 hover:text-red-400"
         >
           <LogOut size={18} />
           Sign out

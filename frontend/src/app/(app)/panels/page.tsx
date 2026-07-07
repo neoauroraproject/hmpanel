@@ -187,7 +187,7 @@ export default function PanelsPage() {
                       title="Run Sync" 
                       onClick={() => !syncStatus[p.id] && sync.mutate(p.id)}
                       disabled={!!syncStatus[p.id]}
-                      className={`rounded-md border border-zinc-300 dark:border-zinc-700 px-2 py-1.5 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center min-w-[32px] min-h-[32px] transition-colors ${syncStatus[p.id] ? 'bg-zinc-100 dark:bg-zinc-800/50' : ''}`}
+                      className={`rounded-md border border-zinc-300 dark:border-zinc-700 px-2 py-1.5 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center justify-center min-w-[32px] min-h-[32px] transition-colors ${syncStatus[p.id] ? 'bg-zinc-100 dark:bg-zinc-800/50' : ''}`}
                     >
                       {syncStatus[p.id] === 'Started' ? <span className="text-[10px] uppercase font-bold text-blue-400 tracking-wider">Started</span> : 
                        syncStatus[p.id] === 'Running' ? <span className="text-[10px] uppercase font-bold text-amber-400 tracking-wider flex items-center gap-1"><Spinner /> Run</span> : 
@@ -229,7 +229,7 @@ function IconBtn({ children, title, onClick, danger }: { children: React.ReactNo
       whileTap={{ scale: 0.9 }}
       title={title} 
       onClick={onClick}
-      className={`rounded-md border border-zinc-300 dark:border-zinc-700 p-1.5 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:bg-zinc-800 ${danger ? "hover:border-red-500/40 hover:text-red-400" : "hover:text-zinc-800 dark:text-zinc-100"}`}
+      className={`rounded-md border border-zinc-300 dark:border-zinc-700 p-1.5 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 ${danger ? "hover:border-red-500/40 hover:text-red-400" : "hover:text-zinc-800 dark:hover:text-zinc-100"}`}
     >
       {children}
     </motion.button>
@@ -242,7 +242,7 @@ function Modal({ title, onClose, children, hideClose }: { title: string; onClose
         <motion.div {...MOTION_CONFIG.modalContent} className="w-full max-w-md rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 shadow-2xl relative overflow-hidden flex flex-col max-h-[85dvh]">
         <div className="mb-4 flex items-center justify-between sticky top-0 bg-white dark:bg-zinc-900 z-10 pb-2 border-b border-zinc-200 dark:border-zinc-800/50">
           <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">{title}</h2>
-          {!hideClose && <button onClick={onClose} className="text-zinc-500 hover:text-zinc-600 dark:text-zinc-300 transition-colors"><X size={18} /></button>}
+          {!hideClose && <button onClick={onClose} className="text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"><X size={18} /></button>}
         </div>
         <div className="pt-2 overflow-y-auto flex-1">
           {children}
@@ -341,7 +341,7 @@ function PanelWizard({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
           )}
 
           <div className="pt-4">
-            <button onClick={onClose} className="w-full rounded-lg bg-zinc-100 dark:bg-zinc-800 px-4 py-2.5 text-sm font-medium text-zinc-700 dark:text-zinc-200 hover:bg-zinc-700 transition-colors">
+            <button onClick={onClose} className="w-full rounded-lg bg-zinc-100 dark:bg-zinc-800 px-4 py-2.5 text-sm font-medium text-zinc-700 dark:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors">
               Close Workflow
             </button>
           </div>
@@ -374,7 +374,7 @@ function PanelWizard({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
               whileTap={{ scale: testConn.isPending || !form.url || !form.apiToken ? 1 : 0.98 }}
               onClick={() => testConn.mutate()} 
               disabled={testConn.isPending || !form.url || !form.apiToken}
-              className="flex items-center gap-2 rounded-lg border border-zinc-300 dark:border-zinc-700 px-3 py-2 text-sm text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:bg-zinc-800 disabled:opacity-50 transition-colors"
+              className="flex items-center gap-2 rounded-lg border border-zinc-300 dark:border-zinc-700 px-3 py-2 text-sm text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-50 transition-colors"
             >
               <PlugZap size={15} /> {testConn.isPending ? "Validating API…" : "Test Connection"}
             </motion.button>
@@ -442,7 +442,7 @@ function PanelWizard({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
                     {/* Expandable Debug Trace */}
                     {test && (
                       <details className="group border border-zinc-200 dark:border-zinc-800/60 bg-zinc-50 dark:bg-zinc-950 rounded-xl overflow-hidden text-[10px]">
-                        <summary className="cursor-pointer px-3 py-2 text-zinc-500 dark:text-zinc-400 font-medium hover:bg-white dark:bg-zinc-900 transition-colors flex items-center justify-between outline-none">
+                        <summary className="cursor-pointer px-3 py-2 text-zinc-500 dark:text-zinc-400 font-medium hover:bg-zinc-50 dark:hover:bg-zinc-900 transition-colors flex items-center justify-between outline-none">
                           <span className="flex items-center gap-2"><PlugZap size={12} className="text-zinc-500" /> URL Parser Engine & Telemetry</span>
                           <span className="text-zinc-600 group-open:rotate-180 transition-transform">▼</span>
                         </summary>
@@ -481,7 +481,7 @@ function PanelWizard({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
         </div>
 
         <div className="flex justify-end gap-2 border-t border-zinc-200 dark:border-zinc-800 pt-4 mt-4">
-          <button onClick={onClose} className="rounded-lg px-4 py-2 text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:text-zinc-200 transition-colors">Cancel</button>
+          <button onClick={onClose} className="rounded-lg px-4 py-2 text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors">Cancel</button>
           <motion.button 
             whileHover={{ scale: create.isPending || !form.name || !form.url || !form.subUrl || !form.apiToken || !isStrictlyValid ? 1 : 1.05 }}
             whileTap={{ scale: create.isPending || !form.name || !form.url || !form.subUrl || !form.apiToken || !isStrictlyValid ? 1 : 0.95 }}
@@ -540,7 +540,7 @@ function EditPanel({ panel, onClose, onSaved }: { panel: any; onClose: () => voi
           </select>
         </div>
         <div className="flex justify-end gap-2 border-t border-zinc-200 dark:border-zinc-800 pt-4 mt-4">
-          <button onClick={onClose} className="rounded-lg px-4 py-2 text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:text-zinc-200">Cancel</button>
+          <button onClick={onClose} className="rounded-lg px-4 py-2 text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200">Cancel</button>
           <motion.button 
             whileHover={{ scale: update.isPending || !form.subUrl ? 1 : 1.05 }}
             whileTap={{ scale: update.isPending || !form.subUrl ? 1 : 0.95 }}
@@ -619,7 +619,7 @@ function InboundsModal({ panel, onClose }: { panel: any; onClose: () => void }) 
               </thead>
               <tbody className="divide-y divide-zinc-800">
                 {inbounds.map((ib) => (
-                  <tr key={ib.id} className="hover:bg-zinc-100 dark:bg-zinc-800/50">
+                  <tr key={ib.id} className="hover:bg-zinc-100 dark:hover:bg-zinc-800/50">
                     <td className="px-3 py-2 font-medium text-zinc-700 dark:text-zinc-200">{ib.tag}</td>
                     <td className="px-3 py-2 text-zinc-500 dark:text-zinc-400">{ib.protocol}</td>
                     <td className="px-3 py-2 text-zinc-500 dark:text-zinc-400">{ib.port}</td>
@@ -643,7 +643,7 @@ function InboundsModal({ panel, onClose }: { panel: any; onClose: () => void }) 
                     <td className="px-3 py-2 text-right">
                       {editingId === ib.id ? (
                         <div className="flex justify-end gap-2">
-                          <button onClick={() => setEditingId(null)} className="text-zinc-500 hover:text-zinc-600 dark:text-zinc-300"><X size={14} /></button>
+                          <button onClick={() => setEditingId(null)} className="text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300"><X size={14} /></button>
                           <button onClick={() => update.mutate({ id: ib.id, remark })} disabled={update.isPending} className="text-emerald-500 hover:text-emerald-400">
                             {update.isPending ? <Spinner size={14} /> : <CheckCircle2 size={14} />}
                           </button>
