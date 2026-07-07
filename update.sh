@@ -273,7 +273,7 @@ END \$\$;
       fi
     fi
 
-    log "HMPanel Panel successfully updated to version 1.5.0!"
+    log "HMPanel Panel successfully updated to version 1.5.1!"
   fi
 
   info "Cleaning up old images..."

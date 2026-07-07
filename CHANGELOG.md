@@ -8,6 +8,14 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.0.1`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [1.5.1] - 2026-07-07
+
+### Fixed
+- **3x-ui 3.4.2 Client Edit:** Fixed client update failures caused by `allowedIPs` type mismatch between GET (`ClientRecord`, string) and UPDATE (`Client`, array). Payload is now normalized before posting to the panel API. Backward compatible with 3.3.1 panels.
+- **Deletion Traffic Refund:** Manually disabled clients now correctly refund unused allocation to resellers on delete. System-enforced disables (`TRAFFIC_LIMIT`, `EXPIRED`, `BALANCE_EXHAUSTED`) no longer refund. Legacy clients without `balanceDeducted` are covered via debit transaction lookup.
+
+---
+
 ## [1.4.0] - 2026-06-30
 
 ### Added
