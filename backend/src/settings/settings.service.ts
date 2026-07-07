@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { getAppVersionTag } from '../common/utils/app-version';
 
 @Injectable()
 export class SettingsService {
@@ -48,13 +49,7 @@ export class SettingsService {
   }
 
   getCurrentVersion() {
-    try {
-      // Single source of truth: Read from backend package.json which is bundled during build
-      const pkg = require('../../package.json');
-      return `v${pkg.version}`;
-    } catch (e) {
-      return 'vUnknown';
-    }
+    return getAppVersionTag();
   }
 
   private cachedUpdateResult: any = null;

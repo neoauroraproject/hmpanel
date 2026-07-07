@@ -21,6 +21,31 @@ info()    { echo -e "${BLUE}ℹ${NC}  $*"; }
 step()    { echo -e "\n${CYAN}${BOLD}──── $* ────${NC}"; }
 die()     { error "$*"; exit 1; }
 
+read_app_version() {
+  local dir="${1:-.}"
+  if [[ -f "${dir}/VERSION" ]]; then
+    tr -d '\r\n' < "${dir}/VERSION"
+    return
+  fi
+  if [[ -f "${dir}/package.json" ]]; then
+    sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "${dir}/package.json" | head -n 1
+    return
+  fi
+  echo "unknown"
+}
+
+read_running_app_version() {
+  if docker exec hmpanel-panel sh -c 'test -f /app/VERSION' &>/dev/null; then
+    docker exec hmpanel-panel sh -c 'tr -d "\r\n" < /app/VERSION' 2>/dev/null && return
+  fi
+  if docker exec hmpanel-panel printenv APP_VERSION &>/dev/null; then
+    local v
+    v=$(docker exec hmpanel-panel printenv APP_VERSION 2>/dev/null | tr -d '\r')
+    if [[ -n "$v" ]]; then echo "$v"; return; fi
+  fi
+  read_app_version "."
+}
+
 check_root() {
   if [[ $EUID -ne 0 ]]; then
     die "This updater must be run as root."
@@ -49,6 +74,9 @@ main() {
 
   info "Downloading latest update.sh..."
   curl -fsSL "${REPO_URL}/update.sh" -o update.sh || warn "Failed to download update.sh"
+
+  info "Downloading VERSION manifest..."
+  curl -fsSL "${REPO_URL}/VERSION" -o VERSION || warn "Failed to download VERSION"
 
   info "Downloading latest uninstall.sh..."
   curl -fsSL "${REPO_URL}/uninstall.sh" -o uninstall.sh || warn "Failed to download uninstall.sh"
@@ -273,7 +301,7 @@ END \$\$;
       fi
     fi
 
-    log "HMPanel Panel successfully updated to version 1.5.2!"
+    log "HMPanel Panel successfully updated to version $(read_running_app_version)!"
   fi
 
   info "Cleaning up old images..."

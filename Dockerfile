@@ -10,6 +10,7 @@ RUN apk add --no-cache libc6-compat python3 make g++ openssl
 
 # Copy root package files and Prisma schema
 COPY package*.json ./
+COPY VERSION ./
 COPY prisma ./prisma/
 
 # Copy workspace package files
@@ -42,6 +43,7 @@ COPY --from=deps /app/frontend/node_modules ./frontend/node_modules
 # Copy prisma
 COPY prisma ./prisma/
 COPY package*.json ./
+COPY VERSION ./
 
 # Copy backend source
 COPY backend ./backend
@@ -67,6 +69,8 @@ RUN if grep -r "127.0.0.1:4000" frontend/.next/static/; then \
 # ─────────────────────────────────────────────────────────────────
 FROM node:20-alpine AS runner
 
+ARG APP_VERSION=unknown
+
 WORKDIR /app
 
 ENV NODE_ENV=production
@@ -81,8 +85,11 @@ RUN addgroup --system --gid 1001 nodejs && \
 
 # ── Root (Prisma client) ──────────────────────────────────────────
 COPY --from=builder /app/package.json ./
+COPY --from=builder /app/VERSION ./VERSION
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/prisma ./prisma
+
+LABEL org.opencontainers.image.version="${APP_VERSION}"
 
 # ── Backend artifacts ─────────────────────────────────────────────
 COPY --from=builder /app/backend/dist ./backend/dist
@@ -98,7 +105,7 @@ COPY --from=builder /app/frontend/public ./frontend/frontend/public
 RUN mkdir -p /app/uploads /app/backups /app/logs
 
 # ── Startup script ────────────────────────────────────────────────
-RUN printf '#!/bin/sh\nset -e\necho "[HMPanel] Cleaning up DB..."\nnode backend/dist/scripts/cleanup-dups.js || true\necho "[HMPanel] Running database migrations..."\nnpx prisma db push --schema=/app/prisma/schema.prisma --accept-data-loss\necho "[HMPanel] Starting backend API on port ${BACKEND_PORT:-4000}..."\nPORT=${BACKEND_PORT:-4000} node backend/dist/main.js &\necho "[HMPanel] Starting frontend on port ${APP_PORT:-3000}..."\nPORT=${APP_PORT:-3000} HOSTNAME=0.0.0.0 node frontend/frontend/server.js &\nwait\n' > /app/start.sh && chmod +x /app/start.sh
+RUN printf '#!/bin/sh\nset -e\nif [ -f /app/VERSION ]; then export APP_VERSION="$(tr -d \"\\r\\n\" < /app/VERSION)"; fi\necho "[HMPanel] Cleaning up DB..."\nnode backend/dist/scripts/cleanup-dups.js || true\necho "[HMPanel] Running database migrations..."\nnpx prisma db push --schema=/app/prisma/schema.prisma --accept-data-loss\necho "[HMPanel] Starting backend API on port ${BACKEND_PORT:-4000}..."\nPORT=${BACKEND_PORT:-4000} node backend/dist/main.js &\necho "[HMPanel] Starting frontend on port ${APP_PORT:-3000}..."\nPORT=${APP_PORT:-3000} HOSTNAME=0.0.0.0 node frontend/frontend/server.js &\nwait\n' > /app/start.sh && chmod +x /app/start.sh
 
 EXPOSE 3000 4000
 

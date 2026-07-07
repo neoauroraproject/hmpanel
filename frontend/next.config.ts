@@ -1,9 +1,20 @@
 import type { NextConfig } from "next";
-import packageJson from "./package.json" with { type: "json" };
+import fs from "fs";
+import path from "path";
+
+function readAppVersion(): string {
+  const versionFile = path.join(__dirname, "..", "VERSION");
+  if (fs.existsSync(versionFile)) {
+    return fs.readFileSync(versionFile, "utf8").trim().replace(/^v/i, "");
+  }
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const packageJson = require("./package.json") as { version: string };
+  return packageJson.version;
+}
 
 const nextConfig: NextConfig = {
   env: {
-    NEXT_PUBLIC_APP_VERSION: packageJson.version,
+    NEXT_PUBLIC_APP_VERSION: readAppVersion(),
   },
   output: "standalone", // Required for Docker production builds
   async rewrites() {

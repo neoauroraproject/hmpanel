@@ -4,9 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## Workflow for Future Versions
 1. After making significant changes, commit and push them to GitHub.
-2. Increment the version number according to Semantic Versioning (e.g., from `1.0.0` to `1.0.1` for bug fixes, or `1.1.0` for new features).
+2. Set the new version in the root `VERSION` file (single source of truth), then run `node scripts/sync-version.js` to sync all `package.json` files.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
-4. Create a GitHub Release with the new version tag (e.g., `v1.0.1`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
+4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
+
+## [1.5.3] - 2026-07-08
+
+### Fixed
+- **Version Display:** Settings and diagnostics now read the app version from a single `VERSION` file at runtime (`APP_VERSION` env / `/app/VERSION`) instead of fragile relative `package.json` paths. Fixes stale version showing after updates.
+
+### Changed
+- **Release Workflow:** `VERSION` is the single source of truth; `node scripts/sync-version.js` syncs all `package.json` files. `update.sh` success message and CLI status read the running container version dynamically.
+
+---
 
 ## [1.5.2] - 2026-07-08
 

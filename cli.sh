@@ -225,7 +225,11 @@ cmd_status() {
   fi
 
   local app_version="Unknown"
-  if docker exec hmpanel-panel node -p "require('./package.json').version" >/dev/null 2>&1; then
+  if docker exec hmpanel-panel sh -c 'test -f /app/VERSION' &>/dev/null; then
+    app_version=$(docker exec hmpanel-panel sh -c 'tr -d "\r\n" < /app/VERSION' 2>/dev/null | tr -d '\r')
+  elif docker exec hmpanel-panel printenv APP_VERSION &>/dev/null; then
+    app_version=$(docker exec hmpanel-panel printenv APP_VERSION 2>/dev/null | tr -d '\r')
+  elif docker exec hmpanel-panel node -p "require('./package.json').version" >/dev/null 2>&1; then
     app_version=$(docker exec hmpanel-panel node -p "require('./package.json').version" | tr -d '\r')
   elif docker inspect hmpanel-panel >/dev/null 2>&1; then
     # Fallback to checking image tag if container is down or node fails
@@ -275,7 +279,9 @@ do_backup() {
   local silent="${2:-false}"
   
   local app_ver="unknown"
-  if [[ -f "${INSTALL_DIR}/package.json" ]]; then
+  if [[ -f "${INSTALL_DIR}/VERSION" ]]; then
+    app_ver=$(tr -d '\r\n' < "${INSTALL_DIR}/VERSION")
+  elif [[ -f "${INSTALL_DIR}/package.json" ]]; then
     app_ver=$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "${INSTALL_DIR}/package.json" | head -n 1)
     app_ver="${app_ver:-unknown}"
   fi
@@ -1771,7 +1777,9 @@ cmd_version() {
   local app_ver="unknown"
   local schema_ver="unknown"
   
-  if [[ -f "${INSTALL_DIR}/package.json" ]]; then
+  if [[ -f "${INSTALL_DIR}/VERSION" ]]; then
+    app_ver=$(tr -d '\r\n' < "${INSTALL_DIR}/VERSION")
+  elif [[ -f "${INSTALL_DIR}/package.json" ]]; then
     app_ver=$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "${INSTALL_DIR}/package.json" | head -n 1)
     app_ver="${app_ver:-unknown}"
   fi

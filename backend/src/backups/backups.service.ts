@@ -12,6 +12,7 @@ import * as crypto from 'crypto';
 import * as zlib from 'zlib';
 import { promisify } from 'util';
 import { HmctlClient } from '../settings/hmctl.client';
+import { getAppVersion } from '../common/utils/app-version';
 const execPromise = promisify(exec);
 
 @Injectable()
@@ -103,16 +104,8 @@ export class BackupsService {
         checksums['config.tar.gz'] = await this.calculateChecksum(confFile);
       }
 
-      let appVer = '1.0.0';
-      try {
-        const pkg = JSON.parse(
-          fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf-8'),
-        );
-        appVer = pkg.version;
-      } catch (e) {}
-
       const manifest = {
-        version: appVer,
+        version: getAppVersion(),
         schemaVersion: '1',
         timestamp: new Date().toISOString(),
         type: type,

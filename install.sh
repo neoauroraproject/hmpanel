@@ -69,7 +69,9 @@ print_banner() {
   local version="Unknown"
   local script_dir
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  if [[ -f "$script_dir/package.json" ]]; then
+  if [[ -f "$script_dir/VERSION" ]]; then
+    version=$(tr -d '\r\n' < "$script_dir/VERSION")
+  elif [[ -f "$script_dir/package.json" ]]; then
     version=$(grep -m1 '"version":' "$script_dir/package.json" | cut -d'"' -f4 || echo "Unknown")
   fi
 
@@ -892,13 +894,19 @@ print_success() {
   local local_version="Unknown"
   local script_dir
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  if [[ -f "$script_dir/package.json" ]]; then
+  if [[ -f "$script_dir/VERSION" ]]; then
+    local_version=$(tr -d '\r\n' < "$script_dir/VERSION")
+  elif [[ -f "$script_dir/package.json" ]]; then
     local_version=$(grep -m1 '"version":' "$script_dir/package.json" | cut -d'"' -f4 || echo "Unknown")
   fi
 
   # Get running application version
   local app_version="Unknown"
-  if docker exec hmpanel-panel node -p "require('./package.json').version" >/dev/null 2>&1; then
+  if docker exec hmpanel-panel sh -c 'test -f /app/VERSION' &>/dev/null; then
+    app_version=$(docker exec hmpanel-panel sh -c 'tr -d "\r\n" < /app/VERSION' 2>/dev/null | tr -d '\r')
+  elif docker exec hmpanel-panel printenv APP_VERSION &>/dev/null; then
+    app_version=$(docker exec hmpanel-panel printenv APP_VERSION 2>/dev/null | tr -d '\r')
+  elif docker exec hmpanel-panel node -p "require('./package.json').version" >/dev/null 2>&1; then
     app_version=$(docker exec hmpanel-panel node -p "require('./package.json').version" | tr -d '\r')
   elif docker inspect hmpanel-panel >/dev/null 2>&1; then
     local image_name
