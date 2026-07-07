@@ -27,6 +27,9 @@ interface Admin {
   _count: { clients: number };
   adminInbounds?: { inbound: any }[];
   storeEnabled?: boolean;
+  unlimitedTraffic?: boolean;
+  refundOnDelete?: boolean;
+  refundOnEdit?: boolean;
 }
 
 interface InboundRow {
@@ -224,7 +227,12 @@ export default function AdminsPage() {
                 </td>
                 <td className="block md:table-cell px-4 py-2 md:py-3 border-t border-zinc-200 dark:border-zinc-800/50 md:border-0 mt-2 md:mt-0">
                   <div className="md:hidden text-[10px] uppercase text-zinc-500 font-semibold mb-1 tracking-wider">Traffic Status</div>
-                  {a.role === "SUPER_ADMIN" ? <span className="text-zinc-600">—</span> : (
+                  {a.role === "SUPER_ADMIN" ? <span className="text-zinc-600">—</span> : a.unlimitedTraffic ? (
+                    <div className="text-xs">
+                      <div className="font-medium text-emerald-400">Unlimited Traffic</div>
+                      <div className="text-zinc-500 mt-0.5">No traffic limits</div>
+                    </div>
+                  ) : (
                     <div className="text-xs">
                       {a.balance === 0 && a.trafficMode !== 'USAGE' ? (
                         <>
@@ -365,6 +373,7 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
     storePanelId: "",
     refundOnDelete: true,
     refundOnEdit: true,
+    unlimitedTraffic: false,
   });
 
   const { data: inbounds, isLoading: inboundsLoading } = useQuery<InboundRow[]>({
@@ -394,15 +403,16 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
         role: "RESELLER",
         status: form.status,
         trafficMode: form.trafficMode,
-        balance: form.balanceGb ? Math.round(Number(form.balanceGb) * 1024 * 1024 * 1024) : 0,
+        balance: form.unlimitedTraffic ? 0 : (form.balanceGb ? Math.round(Number(form.balanceGb) * 1024 * 1024 * 1024) : 0),
         expiryTime: form.expiryDays ? Date.now() + Number(form.expiryDays) * 24 * 60 * 60 * 1000 : 0,
         maxClients: form.maxClients ? Number(form.maxClients) : 0,
         inboundIds: form.selectedInbounds,
         permissions: [],
         storeEnabled: form.storeEnabled,
         storePanelId: form.storePanelId,
-        refundOnDelete: form.refundOnDelete,
-        refundOnEdit: form.refundOnEdit,
+        refundOnDelete: form.unlimitedTraffic ? false : form.refundOnDelete,
+        refundOnEdit: form.unlimitedTraffic ? false : form.refundOnEdit,
+        unlimitedTraffic: form.unlimitedTraffic,
       };
       return (await api.post("/admins", payload)).data;
     },
@@ -540,9 +550,29 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
                 {openSection === 'limits' && (
                   <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
                     <div className="p-4 grid grid-cols-2 gap-4 border-t border-zinc-200 dark:border-zinc-800">
+                      <div className="col-span-2">
+                        <label className="flex items-center gap-3 p-3 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={form.unlimitedTraffic}
+                            onChange={(e) => setForm({
+                              ...form,
+                              unlimitedTraffic: e.target.checked,
+                              balanceGb: e.target.checked ? "" : form.balanceGb,
+                              refundOnDelete: e.target.checked ? false : form.refundOnDelete,
+                              refundOnEdit: e.target.checked ? false : form.refundOnEdit,
+                            })}
+                            className="w-4 h-4 rounded text-blue-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-blue-500"
+                          />
+                          <div className="flex flex-col">
+                            <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Unlimited Traffic</span>
+                            <span className="text-xs text-zinc-500">No traffic limits, refunds disabled. Can only create unlimited clients.</span>
+                          </div>
+                        </label>
+                      </div>
                       <div>
                         <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">Traffic Limit (GB) <span className="text-zinc-500 text-xs">0 = None</span></label>
-                        <input type="number" min={0} placeholder="0" value={form.balanceGb} onChange={(e) => setForm({ ...form, balanceGb: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
+                        <input type="number" min={0} placeholder="0" disabled={form.unlimitedTraffic} value={form.balanceGb} onChange={(e) => setForm({ ...form, balanceGb: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" />
                       </div>
                       <div>
                         <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">Expiry Days <span className="text-zinc-500 text-xs">0 = Unlimited</span></label>
@@ -627,6 +657,7 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
     status: "active",
     trafficMode: "ALLOCATION",
     balanceGb: "",
+    trafficDeltaGb: "",
     maxClients: "",
     password: "",
     expiryDays: "",
@@ -639,6 +670,7 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
     storeEnabled: false,
     refundOnDelete: true,
     refundOnEdit: true,
+    unlimitedTraffic: false,
   });
 
   const { data: panels } = useQuery<PanelRow[]>({
@@ -658,7 +690,8 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
         ...prev,
         status: admin.status || "active",
         trafficMode: admin.trafficMode || "ALLOCATION",
-        balanceGb: admin.balance ? (admin.balance / (1024 * 1024 * 1024)).toFixed(2) : "",
+        balanceGb: "",
+        trafficDeltaGb: "",
         maxClients: admin.maxClients ? String(admin.maxClients) : "",
         selectedInbounds: admin.adminInbounds?.map((ai: any) => ai.inbound.id) || [],
         selectedPanel: admin.adminInbounds?.[0]?.inbound?.panel?.id || "",
@@ -666,6 +699,7 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
         storeEnabled: admin.storeEnabled || false,
         refundOnDelete: (admin as any).refundOnDelete ?? true,
         refundOnEdit: (admin as any).refundOnEdit ?? true,
+        unlimitedTraffic: (admin as any).unlimitedTraffic ?? false,
       }));
     }
   }, [admin]);
@@ -686,10 +720,18 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
         trafficMode: form.trafficMode,
         inboundIds: form.selectedInbounds,
         permissions: [],
-        refundOnDelete: form.refundOnDelete,
-        refundOnEdit: form.refundOnEdit,
+        refundOnDelete: form.unlimitedTraffic ? false : form.refundOnDelete,
+        refundOnEdit: form.unlimitedTraffic ? false : form.refundOnEdit,
+        unlimitedTraffic: form.unlimitedTraffic,
       };
-      if (form.balanceGb) payload.balance = Math.round(Number(form.balanceGb) * 1024 * 1024 * 1024);
+      if (!form.unlimitedTraffic) {
+        if (form.balanceGb) {
+          payload.balance = Math.round(Number(form.balanceGb) * 1024 * 1024 * 1024);
+        } else if (form.trafficDeltaGb) {
+          const delta = Math.round(Number(form.trafficDeltaGb) * 1024 * 1024 * 1024);
+          payload.balance = Math.max(0, admin.balance + delta);
+        }
+      }
       if (form.maxClients) payload.maxClients = Number(form.maxClients);
       if (form.password.trim()) payload.password = form.password;
       if (form.expiryDays) payload.expiryTime = Date.now() + Number(form.expiryDays) * 24 * 60 * 60 * 1000;
@@ -732,56 +774,24 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
 
   if (!admin) return null;
 
-  const remaining = admin.balance > 0
-    ? formatBytes(Math.max(0, admin.balance - (admin.usedTraffic || 0)))
-    : admin.trafficMode === 'USAGE' ? formatBytes(0) : "No Limit / Unlimited";
-  const expiryDate = admin.expiryTime === 0 ? "Unlimited" : formatDate(new Date(admin.expiryTime).toISOString());
+  const remaining = admin.unlimitedTraffic
+    ? "Unlimited"
+    : admin.balance > 0
+      ? formatBytes(admin.balance)
+      : admin.trafficMode === 'USAGE' ? formatBytes(0) : "Exhausted";
+  const expiryDaysLabel = admin.expiryTime === 0
+    ? "Unlimited"
+    : admin.expiryTime > Date.now()
+      ? `${Math.ceil((admin.expiryTime - Date.now()) / (1000 * 60 * 60 * 24))} days`
+      : `Expired ${Math.floor((Date.now() - admin.expiryTime) / (1000 * 60 * 60 * 24))} days ago`;
   // Detect migrated admins: have no adminInbounds set
   const isMigrated = !admin.adminInbounds || admin.adminInbounds.length === 0;
 
   return (
     <motion.div {...MOTION_CONFIG.modalOverlay} className="fixed inset-0 z-[100] flex items-start sm:items-center justify-center bg-black/60 pt-[10dvh] px-4 sm:pt-0 sm:p-4 backdrop-blur-sm">
-      <motion.div {...MOTION_CONFIG.modalContent} className="w-full max-w-5xl rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex flex-col-reverse md:flex-row overflow-y-auto md:overflow-hidden max-h-[90vh]">
-        {/* Admin Statistics (Sidebar) */}
-        <div className="w-full md:w-1/3 shrink-0 bg-zinc-50 dark:bg-zinc-950/50 p-6 border-t md:border-t-0 md:border-r border-zinc-200 dark:border-zinc-800/50 flex flex-col">
-          <div className="flex justify-between items-start mb-6">
-            <div>
-              <h2 className="text-xl font-bold text-zinc-800 dark:text-zinc-100">{admin.username}</h2>
-              <div className="text-sm text-zinc-500 mt-1">Status: {admin.status}</div>
-            </div>
-            <Badge tone={admin.status === "active" ? "green" : "red"}>{admin.status}</Badge>
-          </div>
-
-          <div className="space-y-4 flex-1">
-            <SummaryStat icon={<Users size={16} />} label="Current Clients" value={`${admin._count?.clients ?? 0}`} />
-            <SummaryStat icon={<Activity size={16} />} label="Used Traffic" value={formatBytes(admin.usedTraffic || 0)} />
-            <SummaryStat icon={<Database size={16} />} label="Remaining Traffic" value={remaining} highlight={admin.balance === 0 && admin.trafficMode !== 'USAGE'} />
-            <SummaryStat icon={<Shield size={16} />} label="Assigned Inbounds" value={admin.adminInbounds?.length?.toString() ?? "0"} />
-            <SummaryStat icon={<Clock size={16} />} label="Expiry Date" value={expiryDate} highlight={admin.expiryTime > 0 && admin.expiryTime < Date.now()} />
-            {isMigrated && (
-              <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 p-3 text-xs text-amber-400">
-                ⚠️ This admin was migrated. Please set a Panel Node and Inbound to complete configuration.
-              </div>
-            )}
-          </div>
-          
-          <div className="mt-6 pt-6 border-t border-zinc-200 dark:border-zinc-800/50 space-y-3">
-            <div className="text-xs text-zinc-500">Created At: {formatDate(admin.createdAt)}</div>
-            {isMigrated && (
-              <motion.button
-                whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-                onClick={() => fixMigration.mutate()}
-                disabled={fixMigration.isPending}
-                className="w-full rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 hover:bg-amber-500/20 px-3 py-2 text-xs font-medium transition-colors"
-              >
-                {fixMigration.isPending ? "Fixing..." : "🔧 Fix Migration (Sync Balance)"}
-              </motion.button>
-            )}
-          </div>
-        </div>
-
-        {/* Edit Actions */}
-        <div className="w-full md:w-2/3 p-6 overflow-y-visible md:overflow-y-auto space-y-8">
+      <motion.div {...MOTION_CONFIG.modalContent} className="w-full max-w-5xl rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex flex-col md:flex-row overflow-y-auto md:overflow-hidden max-h-[90vh]">
+        {/* Edit Actions — first on mobile */}
+        <div className="w-full md:w-2/3 p-6 overflow-y-visible md:overflow-y-auto space-y-8 order-1 md:order-2">
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-semibold text-zinc-800 dark:text-zinc-100 flex items-center gap-2">
               <Settings2 size={18} className="text-zinc-500 dark:text-zinc-400" /> Edit Admin
@@ -801,27 +811,58 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
                     <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
                       <div className="p-4 border-t border-zinc-200 dark:border-zinc-800">
                         <div className="space-y-4">
+                          <div className="col-span-2">
+                            <label className="flex items-center gap-3 p-3 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={form.unlimitedTraffic}
+                                onChange={(e) => setForm({
+                                  ...form,
+                                  unlimitedTraffic: e.target.checked,
+                                  balanceGb: e.target.checked ? "" : form.balanceGb,
+                                  trafficDeltaGb: e.target.checked ? "" : form.trafficDeltaGb,
+                                  refundOnDelete: e.target.checked ? false : form.refundOnDelete,
+                                  refundOnEdit: e.target.checked ? false : form.refundOnEdit,
+                                })}
+                                className="w-4 h-4 rounded text-blue-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-blue-500"
+                              />
+                              <div className="flex flex-col">
+                                <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Unlimited Traffic</span>
+                                <span className="text-xs text-zinc-500">Disables traffic limits and refunds. Can only create unlimited clients.</span>
+                              </div>
+                            </label>
+                          </div>
                           <div className="grid grid-cols-2 gap-4">
                             <div>
-                              <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">Add Traffic (GB)</label>
-                              <input type="number" placeholder="Leave empty for no change" value={form.balanceGb} onChange={(e) => setForm({ ...form, balanceGb: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors placeholder:text-zinc-600" />
+                              <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">Set Available Traffic (GB)</label>
+                              <input type="number" placeholder="Leave empty for no change" disabled={form.unlimitedTraffic} value={form.balanceGb} onChange={(e) => setForm({ ...form, balanceGb: e.target.value, trafficDeltaGb: "" })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors placeholder:text-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed" />
+                              <p className="text-[10px] text-zinc-500 mt-1">Sets absolute available traffic</p>
                             </div>
                             <div>
+                              <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">Adjust Traffic (+/- GB)</label>
+                              <input type="number" placeholder="e.g. 50 or -25" disabled={form.unlimitedTraffic} value={form.trafficDeltaGb} onChange={(e) => setForm({ ...form, trafficDeltaGb: e.target.value, balanceGb: "" })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors placeholder:text-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed" />
+                              <p className="text-[10px] text-zinc-500 mt-1">Adds or subtracts from current available</p>
+                            </div>
+                            <div className="col-span-2">
                               <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">Add Expiry (Days)</label>
                               <input type="number" placeholder="Leave empty for no change" value={form.expiryDays} onChange={(e) => setForm({ ...form, expiryDays: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors placeholder:text-zinc-600" />
                             </div>
                           </div>
                           
-                          {admin && (
+                          {admin && !admin.unlimitedTraffic && !form.unlimitedTraffic && (
                             <div className="bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 mt-2">
-                              <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-3">Current Traffic Allocation</h3>
-                              <div className="flex items-center justify-between">
+                              <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-3">Current Traffic</h3>
+                              <div className="grid grid-cols-3 gap-4">
                                 <div className="flex flex-col">
                                   <span className="text-[10px] text-zinc-500 mb-0.5">Total Allocated</span>
-                                  <span className="text-sm font-medium text-emerald-400">{admin.balance ? (admin.balance / (1024 * 1024 * 1024)).toFixed(2) : "0"} GB</span>
+                                  <span className="text-sm font-medium text-emerald-400">{(admin.totalAssigned || 0) / (1024 * 1024 * 1024) > 0 ? ((admin.totalAssigned || 0) / (1024 * 1024 * 1024)).toFixed(2) : "0"} GB</span>
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-[10px] text-zinc-500 mb-0.5">Available</span>
+                                  <span className="text-sm font-medium text-blue-400">{admin.balance ? (admin.balance / (1024 * 1024 * 1024)).toFixed(2) : "0"} GB</span>
                                 </div>
                                 <div className="flex flex-col text-right">
-                                  <span className="text-[10px] text-zinc-500 mb-0.5">Total Used</span>
+                                  <span className="text-[10px] text-zinc-500 mb-0.5">Used</span>
                                   <span className="text-sm font-medium text-amber-400">{admin.usedTraffic ? (admin.usedTraffic / (1024 * 1024 * 1024)).toFixed(2) : "0"} GB</span>
                                 </div>
                               </div>
@@ -843,15 +884,15 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
                             </select>
                             
                             <div className="mt-4 space-y-3 pt-4 border-t border-zinc-200 dark:border-zinc-800">
-                              <label className="flex items-center gap-3 p-2 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer">
-                                <input type="checkbox" checked={form.refundOnDelete} onChange={(e) => setForm({ ...form, refundOnDelete: e.target.checked })} className="w-4 h-4 rounded text-blue-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-blue-500" />
+                              <label className={`flex items-center gap-3 p-2 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer ${form.unlimitedTraffic ? 'opacity-50 pointer-events-none' : ''}`}>
+                                <input type="checkbox" checked={form.refundOnDelete} disabled={form.unlimitedTraffic} onChange={(e) => setForm({ ...form, refundOnDelete: e.target.checked })} className="w-4 h-4 rounded text-blue-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-blue-500" />
                                 <div className="flex flex-col">
                                   <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Refund on Delete</span>
                                   <span className="text-xs text-zinc-500">Refund traffic when client is deleted</span>
                                 </div>
                               </label>
-                              <label className="flex items-center gap-3 p-2 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer">
-                                <input type="checkbox" checked={form.refundOnEdit} onChange={(e) => setForm({ ...form, refundOnEdit: e.target.checked })} className="w-4 h-4 rounded text-blue-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-blue-500" />
+                              <label className={`flex items-center gap-3 p-2 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer ${form.unlimitedTraffic ? 'opacity-50 pointer-events-none' : ''}`}>
+                                <input type="checkbox" checked={form.refundOnEdit} disabled={form.unlimitedTraffic} onChange={(e) => setForm({ ...form, refundOnEdit: e.target.checked })} className="w-4 h-4 rounded text-blue-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-blue-500" />
                                 <div className="flex flex-col">
                                   <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Refund on Edit</span>
                                   <span className="text-xs text-zinc-500">Refund traffic difference when client limits are reduced</span>
@@ -969,8 +1010,53 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
                   {directEdit.isPending ? "Saving..." : "Save Changes"}
                 </motion.button>
               </div>
-            </div>
           </div>
+        </div>
+
+        {/* Admin Statistics (Sidebar) — below form on mobile */}
+        <div className="w-full md:w-1/3 shrink-0 bg-zinc-50 dark:bg-zinc-950/50 p-6 border-t md:border-t-0 md:border-r border-zinc-200 dark:border-zinc-800/50 flex flex-col order-2 md:order-1">
+          <div className="flex justify-between items-start mb-6">
+            <div>
+              <h2 className="text-xl font-bold text-zinc-800 dark:text-zinc-100">{admin.username}</h2>
+              <div className="text-sm text-zinc-500 mt-1">Status: {admin.status}</div>
+            </div>
+            <Badge tone={admin.status === "active" ? "green" : "red"}>{admin.status}</Badge>
+          </div>
+
+          <div className="space-y-4 flex-1">
+            <SummaryStat icon={<Users size={16} />} label="Current Clients" value={`${admin._count?.clients ?? 0}`} />
+            {!admin.unlimitedTraffic && (
+              <>
+                <SummaryStat icon={<Activity size={16} />} label="Used Traffic" value={formatBytes(admin.usedTraffic || 0)} />
+                <SummaryStat icon={<Database size={16} />} label="Available Traffic" value={remaining} highlight={admin.balance === 0 && admin.trafficMode !== 'USAGE'} />
+              </>
+            )}
+            {admin.unlimitedTraffic && (
+              <SummaryStat icon={<Database size={16} />} label="Traffic" value="Unlimited" />
+            )}
+            <SummaryStat icon={<Shield size={16} />} label="Assigned Inbounds" value={admin.adminInbounds?.length?.toString() ?? "0"} />
+            <SummaryStat icon={<Clock size={16} />} label="Days Remaining" value={expiryDaysLabel} highlight={admin.expiryTime > 0 && admin.expiryTime < Date.now()} />
+            {isMigrated && (
+              <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 p-3 text-xs text-amber-400">
+                ⚠️ This admin was migrated. Please set a Panel Node and Inbound to complete configuration.
+              </div>
+            )}
+          </div>
+          
+          <div className="mt-6 pt-6 border-t border-zinc-200 dark:border-zinc-800/50 space-y-3">
+            <div className="text-xs text-zinc-500">Created At: {formatDate(admin.createdAt)}</div>
+            {isMigrated && (
+              <motion.button
+                whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+                onClick={() => fixMigration.mutate()}
+                disabled={fixMigration.isPending}
+                className="w-full rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 hover:bg-amber-500/20 px-3 py-2 text-xs font-medium transition-colors"
+              >
+                {fixMigration.isPending ? "Fixing..." : "🔧 Fix Migration (Sync Balance)"}
+              </motion.button>
+            )}
+          </div>
+        </div>
 
       </motion.div>
     </motion.div>

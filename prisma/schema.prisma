@@ -135,6 +135,7 @@ model Admin {
   gracePeriodStart DateTime? // When balance hits zero in USAGE mode
   refundOnDelete   Boolean     @default(true)
   refundOnEdit     Boolean     @default(true)
+  unlimitedTraffic Boolean     @default(false)
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
 

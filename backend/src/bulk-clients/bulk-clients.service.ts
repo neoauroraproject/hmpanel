@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { PanelsService } from '../panels/panels.service';
 import { ClientsService } from '../clients/clients.service';
 import axios from 'axios';
+import { supportsBulkClientApi } from '../common/utils/panel-version.util';
 
 /**
  * BulkClientsService — Dedicated service for optimized bulk operations.
@@ -76,6 +77,7 @@ export class BulkClientsService {
                     subUrl: true,
                     apiBaseUrl: true,
                     apiToken: true,
+                    apiVersion: true,
                     capabilities: true,
                   },
                 },
@@ -97,6 +99,7 @@ export class BulkClientsService {
           subUrl: string | null;
           apiBaseUrl: string | null;
           apiToken: string | null;
+          apiVersion: string | null;
           capabilities: any;
         };
         emails: string[];
@@ -168,10 +171,14 @@ export class BulkClientsService {
     const results = { success: 0, failed: 0, errors: [] as string[] };
 
     for (const [panelId, { panel, emails }] of byPanel) {
-      if (panel.capabilities?.bulkEnable) {
-        // ── 3.4.2 optimized path: single bulk request ──
+      const useBulkApi = supportsBulkClientApi({
+        apiVersion: panel.apiVersion,
+        capabilities: panel.capabilities,
+      });
+      if (useBulkApi) {
+        // ── 3.4.2+ optimized path: single bulk request ──
         this.logger.log(
-          `[BULK_ENABLE] Using 3.4.2 bulkEnable for panel ${panel.name} (${emails.length} clients)`,
+          `[BULK_ENABLE] Using bulkEnable API (panel ${panel.apiVersion ?? 'unknown'}) for ${panel.name} (${emails.length} clients)`,
         );
 
         const result = await this.callBulkEndpoint(
@@ -245,8 +252,11 @@ export class BulkClientsService {
           success: results.success,
           failed: results.failed,
           errors: results.errors,
-          optimized: [...byPanel.values()].some(
-            (g) => g.panel.capabilities?.bulkEnable,
+          optimized: [...byPanel.values()].some((g) =>
+            supportsBulkClientApi({
+              apiVersion: g.panel.apiVersion,
+              capabilities: g.panel.capabilities,
+            }),
           ),
         },
       },
@@ -278,10 +288,14 @@ export class BulkClientsService {
     const results = { success: 0, failed: 0, errors: [] as string[] };
 
     for (const [panelId, { panel, emails }] of byPanel) {
-      if (panel.capabilities?.bulkDisable) {
-        // ── 3.4.2 optimized path ──
+      const useBulkApi = supportsBulkClientApi({
+        apiVersion: panel.apiVersion,
+        capabilities: panel.capabilities,
+      });
+      if (useBulkApi) {
+        // ── 3.4.2+ optimized path ──
         this.logger.log(
-          `[BULK_DISABLE] Using 3.4.2 bulkDisable for panel ${panel.name} (${emails.length} clients)`,
+          `[BULK_DISABLE] Using bulkDisable API (panel ${panel.apiVersion ?? 'unknown'}) for ${panel.name} (${emails.length} clients)`,
         );
 
         const result = await this.callBulkEndpoint(
@@ -354,8 +368,11 @@ export class BulkClientsService {
           success: results.success,
           failed: results.failed,
           errors: results.errors,
-          optimized: [...byPanel.values()].some(
-            (g) => g.panel.capabilities?.bulkDisable,
+          optimized: [...byPanel.values()].some((g) =>
+            supportsBulkClientApi({
+              apiVersion: g.panel.apiVersion,
+              capabilities: g.panel.capabilities,
+            }),
           ),
         },
       },

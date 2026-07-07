@@ -8,6 +8,22 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.0.1`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [1.5.2] - 2026-07-08
+
+### Added
+- **Unlimited Traffic Admins:** New `unlimitedTraffic` flag for resellers. When enabled, traffic limits and refunds are disabled, traffic UI is hidden, and only unlimited-traffic clients can be created.
+- **Admin Traffic Adjustment:** Edit Admin now supports both setting absolute available traffic and relative +/- GB adjustments.
+- **Panel API Version Routing:** Bulk client APIs (`bulkCreate`, `bulkAdjust`, `bulkEnable`, `bulkDisable`) are selected by detected panel version (`>= 3.4.2`) with legacy sequential fallback for older panels.
+
+### Fixed
+- **Edit Admin Mobile Layout:** Form fields appear before the stats sidebar on mobile — no more scrolling past stats to reach inputs.
+- **Admin Traffic Display:** Sidebar and info box now correctly show available traffic (`balance`), total allocated (`totalAssigned`), and days remaining instead of a misleading calendar date.
+
+### Changed
+- **Database Migration:** `update.sh` / `install.sh` apply the `Admin.unlimitedTraffic` schema via `prisma db push` and run the `v1.5.2-admin-unlimited-traffic` system migration on upgrade.
+
+---
+
 ## [1.5.1] - 2026-07-07
 
 ### Fixed

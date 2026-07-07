@@ -61,6 +61,7 @@ export class AdminsService implements OnModuleInit {
     permissions?: string[];
     refundOnDelete?: boolean;
     refundOnEdit?: boolean;
+    unlimitedTraffic?: boolean;
   }) {
     // Allow admin creation regardless of sync state since we enforce selection in the UI.
 
@@ -71,6 +72,7 @@ export class AdminsService implements OnModuleInit {
     if (exists) throw new ConflictException('Username or email already exists');
 
     const hash = await bcrypt.hash(data.password, 10);
+    const unlimited = data.unlimitedTraffic === true;
     const admin = await this.prisma.admin.create({
       data: {
         username: data.username,
@@ -78,12 +80,14 @@ export class AdminsService implements OnModuleInit {
         passwordHash: hash,
         role: (data.role as any) || 'RESELLER',
         trafficMode: (data.trafficMode as any) || 'ALLOCATION',
-        balance: data.balance || 0,
+        balance: unlimited ? 0 : data.balance || 0,
+        totalAssigned: unlimited ? 0 : data.balance || 0,
         expiryTime: data.expiryTime ? BigInt(data.expiryTime) : 0n,
         maxClients: data.maxClients || 0,
         permissions: data.permissions || [],
-        refundOnDelete: data.refundOnDelete ?? true,
-        refundOnEdit: data.refundOnEdit ?? true,
+        refundOnDelete: unlimited ? false : (data.refundOnDelete ?? true),
+        refundOnEdit: unlimited ? false : (data.refundOnEdit ?? true),
+        unlimitedTraffic: unlimited,
       },
       select: {
         id: true,
@@ -98,6 +102,7 @@ export class AdminsService implements OnModuleInit {
         permissions: true,
         refundOnDelete: true,
         refundOnEdit: true,
+        unlimitedTraffic: true,
         createdAt: true,
       },
     });
@@ -121,7 +126,7 @@ export class AdminsService implements OnModuleInit {
       },
     });
 
-    if (data.balance && data.balance > 0) {
+    if (data.balance && data.balance > 0 && !unlimited) {
       await this.prisma.trafficTransaction.create({
         data: {
           adminId: admin.id,
@@ -183,6 +188,7 @@ export class AdminsService implements OnModuleInit {
           portalSettings: true,
           refundOnDelete: true,
           refundOnEdit: true,
+          unlimitedTraffic: true,
           totalAssigned: true,
           _count: { select: { clients: true } },
         },
@@ -225,6 +231,7 @@ export class AdminsService implements OnModuleInit {
         portalSettings: true,
         refundOnDelete: true,
         refundOnEdit: true,
+        unlimitedTraffic: true,
         totalAssigned: true,
         _count: { select: { clients: true } },
         adminInbounds: {
@@ -271,6 +278,7 @@ export class AdminsService implements OnModuleInit {
       portalSettings?: any;
       refundOnDelete?: boolean;
       refundOnEdit?: boolean;
+      unlimitedTraffic?: boolean;
     },
   ) {
     const existing = await this.findOne(id);
@@ -285,6 +293,15 @@ export class AdminsService implements OnModuleInit {
       updateData.refundOnDelete = data.refundOnDelete;
     if (data.refundOnEdit !== undefined)
       updateData.refundOnEdit = data.refundOnEdit;
+    if (data.unlimitedTraffic !== undefined) {
+      updateData.unlimitedTraffic = data.unlimitedTraffic;
+      if (data.unlimitedTraffic) {
+        updateData.balance = 0;
+        updateData.totalAssigned = 0;
+        updateData.refundOnDelete = false;
+        updateData.refundOnEdit = false;
+      }
+    }
 
     if (data.password) {
       updateData.passwordHash = await bcrypt.hash(data.password, 10);
@@ -310,7 +327,7 @@ export class AdminsService implements OnModuleInit {
       }
     }
 
-    if (data.balance !== undefined && data.balance !== existing.balance) {
+    if (data.balance !== undefined && data.balance !== existing.balance && !existing.unlimitedTraffic) {
       const diff = data.balance - existing.balance;
       if (diff > 0) {
         updateData.totalAssigned = { increment: Math.round(diff) };
@@ -333,6 +350,7 @@ export class AdminsService implements OnModuleInit {
         permissions: true,
         refundOnDelete: true,
         refundOnEdit: true,
+        unlimitedTraffic: true,
       },
     });
 
@@ -345,7 +363,7 @@ export class AdminsService implements OnModuleInit {
       },
     });
 
-    if (data.balance !== undefined && data.balance !== existing.balance) {
+    if (data.balance !== undefined && data.balance !== existing.balance && !existing.unlimitedTraffic) {
       const diff = data.balance - existing.balance;
       await this.prisma.trafficTransaction.create({
         data: {

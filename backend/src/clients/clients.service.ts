@@ -27,6 +27,7 @@ export interface ClientFilters {
 
 import { MonitoringService } from '../stats/monitoring.service';
 import { RedisLockService } from '../common/utils/redis-lock.service';
+import { supportsBulkClientApi } from '../common/utils/panel-version.util';
 
 @Injectable()
 export class ClientsService {
@@ -38,6 +39,24 @@ export class ClientsService {
     private monitoringService: MonitoringService,
     private lockService: RedisLockService,
   ) {}
+
+  /** Only admins with unlimitedTraffic may own or create unlimited-traffic clients. */
+  private assertUnlimitedClientAllowed(
+    targetAdmin: { unlimitedTraffic?: boolean | null },
+    totalBytes: bigint,
+  ): void {
+    if (totalBytes === 0n && !targetAdmin.unlimitedTraffic) {
+      throw new BadRequestException(
+        'Only admins with unlimited traffic enabled can create unlimited-traffic clients.',
+      );
+    }
+  }
+
+  private skipTrafficAccounting(admin: {
+    unlimitedTraffic?: boolean | null;
+  }): boolean {
+    return admin.unlimitedTraffic === true;
+  }
 
   /**
    * Whether unused allocation should be refunded when this client is deleted.
@@ -214,21 +233,32 @@ export class ClientsService {
         targetAdmin = explicitTarget;
       }
 
+      this.assertUnlimitedClientAllowed(targetAdmin, totalBytes);
+
       if (caller.role !== 'SUPER_ADMIN') {
-        if (caller.balance > 0 && totalBytes === 0n) {
+        const callerSkipsTraffic = this.skipTrafficAccounting(caller);
+        if (!callerSkipsTraffic) {
+          if (caller.balance > 0 && totalBytes === 0n) {
+            throw new BadRequestException(
+              'Cannot create an unlimited client when your account has a traffic limit.',
+            );
+          }
+          if (caller.trafficMode === 'ALLOCATION') {
+            if (caller.balance < Number(totalBytes))
+              throw new BadRequestException('Insufficient traffic balance');
+          } else if (caller.trafficMode === 'USAGE') {
+            if (caller.balance <= 0)
+              throw new BadRequestException(
+                'Insufficient traffic balance. Cannot create clients when balance is zero or below.',
+              );
+          }
+        } else if (totalBytes > 0n) {
           throw new BadRequestException(
-            'Cannot create an unlimited client when your account has a traffic limit.',
+            'Your account has unlimited traffic. You can only create unlimited-traffic clients.',
           );
         }
-        if (caller.trafficMode === 'ALLOCATION') {
-          if (caller.balance < Number(totalBytes))
-            throw new BadRequestException('Insufficient traffic balance');
-        } else if (caller.trafficMode === 'USAGE') {
-          if (caller.balance <= 0)
-            throw new BadRequestException(
-              'Insufficient traffic balance. Cannot create clients when balance is zero or below.',
-            );
-        }
+      } else if (totalBytes === 0n) {
+        this.assertUnlimitedClientAllowed(targetAdmin, totalBytes);
       }
 
       if (
@@ -410,7 +440,10 @@ export class ClientsService {
           });
           if (!lockedCaller) throw new BadRequestException('Admin not found');
 
-          if (lockedCaller.role !== 'SUPER_ADMIN') {
+          if (
+            lockedCaller.role !== 'SUPER_ADMIN' &&
+            !this.skipTrafficAccounting(lockedCaller)
+          ) {
             if (lockedCaller.trafficMode === 'ALLOCATION') {
               if (lockedCaller.balance < Number(totalBytes)) {
                 throw new BadRequestException(
@@ -452,6 +485,7 @@ export class ClientsService {
                 balanceDeducted:
                   totalBytes > 0n &&
                   lockedCaller.role !== 'SUPER_ADMIN' &&
+                  !this.skipTrafficAccounting(lockedCaller) &&
                   lockedCaller.trafficMode === 'ALLOCATION',
                 inbounds: {
                   create: dbIds.map((inboundId) => ({ inboundId })),
@@ -486,6 +520,7 @@ export class ClientsService {
           if (
             totalBytes > 0n &&
             lockedCaller.role !== 'SUPER_ADMIN' &&
+            !this.skipTrafficAccounting(lockedCaller) &&
             lockedCaller.trafficMode === 'ALLOCATION'
           ) {
             await tx.trafficTransaction.create({
@@ -944,11 +979,18 @@ export class ClientsService {
       const caller = await this.prisma.admin.findUnique({
         where: { id: adminId },
       });
-      if (caller && caller.balance > 0) {
+      if (caller && !this.skipTrafficAccounting(caller) && caller.balance > 0) {
         throw new BadRequestException(
           'Cannot set an unlimited client when your account has a traffic limit.',
         );
       }
+    }
+
+    if (newTotal === 0n && existing.total !== 0n && existing.adminId) {
+      const owner = await this.prisma.admin.findUnique({
+        where: { id: existing.adminId },
+      });
+      this.assertUnlimitedClientAllowed(owner || {}, newTotal);
     }
 
     let autoEnable = false;
@@ -1100,7 +1142,7 @@ export class ClientsService {
             const admin = await tx.admin.findUnique({
               where: { id: existing.adminId },
             });
-            if (admin && admin.trafficMode === 'ALLOCATION') {
+            if (admin && !this.skipTrafficAccounting(admin) && admin.trafficMode === 'ALLOCATION') {
               if (diff > 0n) {
                 if (admin.balance < Number(diff))
                   throw new BadRequestException('Insufficient traffic balance');
@@ -1118,7 +1160,12 @@ export class ClientsService {
               }
             }
 
-            if (admin && admin.trafficMode === 'ALLOCATION' && diff !== 0n) {
+            if (
+              admin &&
+              !this.skipTrafficAccounting(admin) &&
+              admin.trafficMode === 'ALLOCATION' &&
+              diff !== 0n
+            ) {
               if (!(diff < 0n && !admin.refundOnEdit)) {
                 await tx.trafficTransaction.create({
                   data: {
@@ -1310,6 +1357,7 @@ export class ClientsService {
               });
               if (
                 admin &&
+                !admin.unlimitedTraffic &&
                 admin.trafficMode === 'ALLOCATION' &&
                 existing.createdWithTrafficMode === 'ALLOCATION' &&
                 admin.refundOnDelete
@@ -1435,7 +1483,7 @@ export class ClientsService {
           const admin = await tx.admin.findUnique({
             where: { id: existing.adminId },
           });
-          if (admin) {
+          if (admin && !this.skipTrafficAccounting(admin)) {
             if (admin.trafficMode === 'ALLOCATION') {
               if (admin.balance < Number(used)) {
                 throw new BadRequestException(
@@ -1601,23 +1649,34 @@ export class ClientsService {
     const totalBytesPerClient = BigInt(dto.total || 0);
     const totalBytesRequired = totalBytesPerClient * BigInt(count);
 
+    this.assertUnlimitedClientAllowed(targetAdmin, totalBytesPerClient);
+
     if (caller.role !== 'SUPER_ADMIN') {
-      if (caller.balance > 0 && totalBytesPerClient === 0n) {
-        throw new BadRequestException(
-          'Cannot create unlimited clients when your account has a traffic limit.',
-        );
-      }
-      if (caller.trafficMode === 'ALLOCATION') {
-        if (caller.balance < Number(totalBytesRequired)) {
-          throw new BadRequestException('Insufficient traffic balance');
-        }
-      } else if (caller.trafficMode === 'USAGE') {
-        if (caller.balance <= 0) {
+      const callerSkipsTraffic = this.skipTrafficAccounting(caller);
+      if (!callerSkipsTraffic) {
+        if (caller.balance > 0 && totalBytesPerClient === 0n) {
           throw new BadRequestException(
-            'Insufficient traffic balance. Cannot create clients when balance is zero or below.',
+            'Cannot create unlimited clients when your account has a traffic limit.',
           );
         }
+        if (caller.trafficMode === 'ALLOCATION') {
+          if (caller.balance < Number(totalBytesRequired)) {
+            throw new BadRequestException('Insufficient traffic balance');
+          }
+        } else if (caller.trafficMode === 'USAGE') {
+          if (caller.balance <= 0) {
+            throw new BadRequestException(
+              'Insufficient traffic balance. Cannot create clients when balance is zero or below.',
+            );
+          }
+        }
+      } else if (totalBytesPerClient > 0n) {
+        throw new BadRequestException(
+          'Your account has unlimited traffic. You can only create unlimited-traffic clients.',
+        );
       }
+    } else if (totalBytesPerClient === 0n) {
+      this.assertUnlimitedClientAllowed(targetAdmin, totalBytesPerClient);
     }
 
     // Flow is dynamically assigned per inbound later.
@@ -1711,10 +1770,10 @@ export class ClientsService {
         const panel = await this.prisma.panel.findUnique({
           where: { id: panelId },
         });
-        const caps =
-          panel?.capabilities && typeof panel.capabilities === 'object'
-            ? (panel.capabilities as Record<string, boolean>)
-            : {};
+        const useBulkApi = supportsBulkClientApi({
+          apiVersion: panel?.apiVersion,
+          capabilities: panel?.capabilities,
+        });
 
         const clientsForPanel = panelPayloads.get(panelId)!;
         const bulkItems = clientsForPanel.map((p) => ({
@@ -1734,9 +1793,9 @@ export class ClientsService {
           inboundIds: numericIds,
         }));
 
-        if (caps.bulkCreate) {
+        if (useBulkApi) {
           this.logger.log(
-            `[BULK_CREATE] Using bulkCreate API on panel ${panel?.name} (${bulkItems.length} clients)`,
+            `[BULK_CREATE] Using bulkCreate API (panel ${panel?.apiVersion ?? 'unknown'}) on ${panel?.name} (${bulkItems.length} clients)`,
           );
           const bulkResult =
             await this.panelsService.bulkCreateClientsOnPanel(
@@ -1923,7 +1982,12 @@ export class ClientsService {
     const byPanel = new Map<
       string,
       {
-        panel: { id: string; name: string; capabilities: unknown };
+        panel: {
+          id: string;
+          name: string;
+          apiVersion?: string | null;
+          capabilities: unknown;
+        };
         clients: typeof clientsWithPanels;
       }
     >();
@@ -1939,11 +2003,11 @@ export class ClientsService {
 
     if (!byPanel.size) return null;
 
-    const panelsWithBulkAdjust = [...byPanel.values()].filter(
-      (g) =>
-        g.panel.capabilities &&
-        typeof g.panel.capabilities === 'object' &&
-        (g.panel.capabilities as Record<string, boolean>).bulkAdjust,
+    const panelsWithBulkAdjust = [...byPanel.values()].filter((g) =>
+      supportsBulkClientApi({
+        apiVersion: g.panel.apiVersion,
+        capabilities: g.panel.capabilities,
+      }),
     );
 
     if (!panelsWithBulkAdjust.length) return null;
@@ -2001,10 +2065,16 @@ export class ClientsService {
       }
     }
 
-    // Panels without bulkAdjust — sequential fallback per client
+    // Panels without bulkAdjust API — sequential fallback per client
     for (const { panel, clients } of byPanel.values()) {
-      const caps = panel.capabilities as Record<string, boolean> | null;
-      if (caps?.bulkAdjust) continue;
+      if (
+        supportsBulkClientApi({
+          apiVersion: panel.apiVersion,
+          capabilities: panel.capabilities,
+        })
+      ) {
+        continue;
+      }
 
       for (const c of clients) {
         try {

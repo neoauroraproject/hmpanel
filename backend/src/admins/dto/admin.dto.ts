@@ -30,6 +30,7 @@ export class CreateAdminDto {
   permissions?: string[];
   @ApiPropertyOptional() @IsOptional() refundOnDelete?: boolean;
   @ApiPropertyOptional() @IsOptional() refundOnEdit?: boolean;
+  @ApiPropertyOptional() @IsOptional() unlimitedTraffic?: boolean;
 }
 
 export class UpdateAdminDto {
@@ -53,4 +54,5 @@ export class UpdateAdminDto {
   @ApiPropertyOptional() @IsOptional() portalSettings?: Record<string, any>;
   @ApiPropertyOptional() @IsOptional() refundOnDelete?: boolean;
   @ApiPropertyOptional() @IsOptional() refundOnEdit?: boolean;
+  @ApiPropertyOptional() @IsOptional() unlimitedTraffic?: boolean;
 }
