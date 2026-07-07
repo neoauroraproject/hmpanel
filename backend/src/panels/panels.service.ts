@@ -1760,6 +1760,57 @@ export class PanelsService implements OnModuleInit {
   }
 
   /**
+   * Normalize a merged client object for POST /panel/api/clients/update/{email}.
+   * Per docs/api342.json: GET returns ClientRecord (allowedIPs: string) but
+   * update binds to Client (allowedIPs: string[]). Merging without conversion
+   * causes Go json unmarshal errors on 3.4.2+ panels.
+   */
+  private normalizeClientUpdateBody(
+    body: Record<string, any>,
+  ): Record<string, any> {
+    const normalized = { ...body };
+
+    if (Object.prototype.hasOwnProperty.call(normalized, 'allowedIPs')) {
+      const raw = normalized.allowedIPs;
+      if (Array.isArray(raw)) {
+        normalized.allowedIPs = raw.map((ip) => String(ip));
+      } else if (typeof raw === 'string') {
+        const trimmed = raw.trim();
+        if (!trimmed) {
+          normalized.allowedIPs = [];
+        } else if (trimmed.startsWith('[')) {
+          try {
+            const parsed = JSON.parse(trimmed);
+            normalized.allowedIPs = Array.isArray(parsed)
+              ? parsed.map((ip) => String(ip))
+              : [trimmed];
+          } catch {
+            normalized.allowedIPs = [trimmed];
+          }
+        } else if (trimmed.includes(',')) {
+          normalized.allowedIPs = trimmed
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean);
+        } else {
+          normalized.allowedIPs = [trimmed];
+        }
+      } else if (raw == null) {
+        delete normalized.allowedIPs;
+      } else {
+        normalized.allowedIPs = [];
+      }
+    }
+
+    // ClientRecord-only fields (api342) — not part of Client update schema
+    delete normalized.uuid;
+    delete normalized.createdAt;
+    delete normalized.updatedAt;
+
+    return normalized;
+  }
+
+  /**
    * CREATE CLIENT on panel using native POST /panel/api/clients/add
    * Logs: method, full URL, payload, response, panel base URL, identifier used
    */
@@ -1931,11 +1982,11 @@ export class PanelsService implements OnModuleInit {
     const endpoint = `${base}/panel/api/clients/update/${encodeURIComponent(email)}`;
     // Build the update body: merge existing client fields with new payload.
     // Ensure we do NOT send inboundIds to this endpoint as per 3.3.1 API.
-    const body: Record<string, any> = {
+    const body = this.normalizeClientUpdateBody({
       ...existingClientObj,
       ...clientPayload,
       email,
-    };
+    });
     delete body.inboundIds;
 
     this.logger.log(

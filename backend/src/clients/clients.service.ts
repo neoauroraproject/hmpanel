@@ -39,6 +39,65 @@ export class ClientsService {
     private lockService: RedisLockService,
   ) {}
 
+  /**
+   * Whether unused allocation should be refunded when this client is deleted.
+   * System-enforced disables (traffic/time/balance) must not refund.
+   * Manual disables and active clients refund remaining bytes when eligible.
+   */
+  private shouldRefundDeletedClient(client: {
+    enable: boolean;
+    disableReason: string | null;
+    total: bigint;
+    up: bigint;
+    down: bigint;
+    expiryTime: bigint;
+  }): boolean {
+    const reason = client.disableReason;
+
+    if (
+      reason === 'TRAFFIC_LIMIT' ||
+      reason === 'EXPIRED' ||
+      reason === 'BALANCE_EXHAUSTED'
+    ) {
+      return false;
+    }
+
+    const used = client.up + client.down;
+
+    // Legacy rows: disabled with no reason — infer exhaustion from usage/expiry
+    if (!client.enable && !reason) {
+      if (client.total > 0n && used >= client.total) return false;
+      if (client.expiryTime > 0n && BigInt(Date.now()) >= client.expiryTime) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  /** True when traffic was deducted from the owning admin for this client. */
+  private async hadTrafficDeducted(
+    tx: Prisma.TransactionClient,
+    client: {
+      id: string;
+      uuid: string;
+      balanceDeducted: boolean;
+      adminId: string | null;
+    },
+  ): Promise<boolean> {
+    if (client.balanceDeducted) return true;
+    if (!client.adminId) return false;
+
+    const debit = await tx.trafficTransaction.findFirst({
+      where: {
+        adminId: client.adminId,
+        type: 'DEBIT',
+        OR: [{ targetClientUuid: client.uuid }, { clientId: client.id }],
+      },
+    });
+    return !!debit;
+  }
+
   private async executeAtomicOperation(
     adminId: string | null,
     entityId: string,
@@ -1224,9 +1283,28 @@ export class ClientsService {
 
             // NEVER refund for FAILED clients — they were never provisioned
             const isFailed = (existing as any).provisioningStatus === 'FAILED';
-            const wasDeducted = (existing as any).balanceDeducted === true;
+            const wasDeducted = await this.hadTrafficDeducted(tx, {
+              id: existing.id,
+              uuid: existing.uuid,
+              balanceDeducted: (existing as any).balanceDeducted === true,
+              adminId: existing.adminId,
+            });
+            const refundAllowed = this.shouldRefundDeletedClient({
+              enable: existing.enable,
+              disableReason: (existing as any).disableReason ?? null,
+              total: existing.total,
+              up: existing.up,
+              down: existing.down,
+              expiryTime: existing.expiryTime,
+            });
 
-            if (existing.adminId && !skipRefund && !isFailed && wasDeducted) {
+            if (
+              existing.adminId &&
+              !skipRefund &&
+              !isFailed &&
+              wasDeducted &&
+              refundAllowed
+            ) {
               const admin = await tx.admin.findUnique({
                 where: { id: existing.adminId },
               });
