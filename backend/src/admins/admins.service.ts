@@ -88,6 +88,7 @@ export class AdminsService implements OnModuleInit {
         refundOnDelete: unlimited ? false : (data.refundOnDelete ?? true),
         refundOnEdit: unlimited ? false : (data.refundOnEdit ?? true),
         unlimitedTraffic: unlimited,
+        gracePeriodStart: unlimited ? null : undefined,
       },
       select: {
         id: true,
@@ -300,6 +301,7 @@ export class AdminsService implements OnModuleInit {
         updateData.totalAssigned = 0;
         updateData.refundOnDelete = false;
         updateData.refundOnEdit = false;
+        updateData.gracePeriodStart = null;
       }
     }
 

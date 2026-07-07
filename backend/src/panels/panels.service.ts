@@ -2858,6 +2858,7 @@ export class PanelsService implements OnModuleInit {
     const newlyExhausted = await this.prisma.admin.findMany({
       where: {
         trafficMode: 'USAGE',
+        unlimitedTraffic: false,
         balance: { lte: 0 },
         gracePeriodStart: null,
         status: 'active',
@@ -2886,6 +2887,7 @@ export class PanelsService implements OnModuleInit {
     const restoredAdmins = await this.prisma.admin.findMany({
       where: {
         trafficMode: 'USAGE',
+        unlimitedTraffic: false,
         balance: { gt: 0 },
         gracePeriodStart: { not: null },
       },
@@ -2971,6 +2973,7 @@ export class PanelsService implements OnModuleInit {
     const suspendedAdmins = await this.prisma.admin.findMany({
       where: {
         trafficMode: 'USAGE',
+        unlimitedTraffic: false,
         balance: { lte: 0 },
         gracePeriodStart: { lte: new Date(gracePeriodEndMs) },
         status: 'active',

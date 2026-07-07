@@ -32,6 +32,18 @@ const MIGRATIONS: MigrationDefinition[] = [
     label: 'Admin unlimited traffic flag',
     run: runUnlimitedTrafficMigration,
   },
+  {
+    version: 'v1.5.5-unlimited-grace-cleanup',
+    label: 'Clear grace period for unlimited traffic admins',
+    run: async (client) => {
+      const updated = await client.$executeRaw`
+        UPDATE "Admin"
+        SET "gracePeriodStart" = NULL
+        WHERE "unlimitedTraffic" = true AND "gracePeriodStart" IS NOT NULL
+      `;
+      return { rowsUpdated: Number(updated) };
+    },
+  },
 ];
 
 async function runMigration(def: MigrationDefinition): Promise<void> {

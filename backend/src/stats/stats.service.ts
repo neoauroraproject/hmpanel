@@ -150,6 +150,7 @@ export class StatsService {
         expiryTime: true,
         totalAssigned: true,
         trafficMode: true,
+        unlimitedTraffic: true,
         gracePeriodStart: true,
       },
     });
@@ -295,15 +296,18 @@ export class StatsService {
       admin.balance,
     );
 
+    const unlimitedTraffic = admin.unlimitedTraffic === true;
+
     return {
       admin: {
-        availableTraffic: summary.availableTraffic,
-        allTimeTraffic: summary.totalAllocated,
+        unlimitedTraffic,
+        availableTraffic: unlimitedTraffic ? 0 : summary.availableTraffic,
+        allTimeTraffic: unlimitedTraffic ? 0 : summary.totalAllocated,
         clientCapacity: admin.maxClients,
         expiryTime: Number(admin.expiryTime),
         trafficMode: admin.trafficMode,
-        usedTraffic: summary.usedTraffic,
-        gracePeriodStart: admin.gracePeriodStart,
+        usedTraffic: unlimitedTraffic ? 0 : summary.usedTraffic,
+        gracePeriodStart: unlimitedTraffic ? null : admin.gracePeriodStart,
       },
       usage: {
         today: todayUsage.toString(),

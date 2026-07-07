@@ -27,6 +27,11 @@ export async function runUnlimitedTrafficMigration(
     SET "unlimitedTraffic" = false
     WHERE "unlimitedTraffic" IS NULL
   `;
+  await prisma.$executeRaw`
+    UPDATE "Admin"
+    SET "gracePeriodStart" = NULL
+    WHERE "unlimitedTraffic" = true AND "gracePeriodStart" IS NOT NULL
+  `;
 
   return { adminsChecked };
 }

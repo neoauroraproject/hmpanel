@@ -489,8 +489,16 @@ export default function ClientsPage() {
               <div className="p-3 bg-blue-500/10 text-blue-400 rounded-xl"><HardDrive size={20} /></div>
               <div>
                 <div className="text-xs text-zinc-500 font-medium">Available Traffic</div>
-                <div className="text-xl font-bold text-zinc-900 dark:text-white">{formatBytes(overviewData.admin.availableTraffic)}</div>
-                <div className="text-[10px] text-zinc-400 mt-1">out of {formatBytes(overviewData.admin.allTimeTraffic || 0)}</div>
+                <div className="text-xl font-bold text-zinc-900 dark:text-white">
+                  {overviewData.admin.unlimitedTraffic
+                    ? <span className="text-emerald-500">∞</span>
+                    : formatBytes(overviewData.admin.availableTraffic)}
+                </div>
+                <div className="text-[10px] text-zinc-400 mt-1">
+                  {overviewData.admin.unlimitedTraffic
+                    ? "Unlimited"
+                    : `out of ${formatBytes(overviewData.admin.allTimeTraffic || 0)}`}
+                </div>
               </div>
             </div>
             <div className="bg-white dark:bg-zinc-900/50 rounded-2xl p-4 border border-zinc-200 dark:border-zinc-800 flex items-center gap-4">
@@ -1401,11 +1409,13 @@ export default function ClientsPage() {
                     </div>
                     <div>
                       <div className="font-medium text-sm text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
-                        {inbound.remark}
+                        {inbound.remark || inbound.tag}
                         <span className="text-[10px] uppercase font-bold text-zinc-400 bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded">{inbound.protocol}</span>
                       </div>
-                      <div className="text-xs text-zinc-500 mt-0.5 flex gap-2">
+                      <div className="text-xs text-zinc-500 mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5">
                         <span>Panel: {inbound.panel?.name || 'Unknown'}</span>
+                        <span>•</span>
+                        <span>Tag: {inbound.tag}</span>
                         <span>•</span>
                         <span>Port: {inbound.port}</span>
                       </div>

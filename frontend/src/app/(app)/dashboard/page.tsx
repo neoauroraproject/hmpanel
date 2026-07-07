@@ -493,7 +493,7 @@ function ResellerDashboard() {
 
       </div>
 
-      {a?.gracePeriodStart && (
+      {a?.gracePeriodStart && !a?.unlimitedTraffic && (
         <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 p-4 rounded-xl flex items-start gap-3">
           <AlertTriangle className="shrink-0 mt-0.5" size={20} />
           <div>
@@ -516,8 +516,12 @@ function ResellerDashboard() {
             <div className="flex items-center gap-3 text-sm font-semibold text-blue-600 dark:text-blue-400 mb-4 relative z-10">
               <div className="p-2.5 bg-blue-500/10 rounded-xl shadow-inner"><HardDrive size={20} /></div> Available Traffic
             </div>
-            <div className="text-4xl font-extrabold text-zinc-900 dark:text-white relative z-10">{formatBytes(a.availableTraffic)}</div>
-            <div className="mt-3 text-sm text-zinc-500 dark:text-zinc-400 font-medium relative z-10">Out of {formatBytes(a.allTimeTraffic)}</div>
+            <div className="text-4xl font-extrabold text-zinc-900 dark:text-white relative z-10">
+              {a.unlimitedTraffic ? <span className="text-emerald-500">∞</span> : formatBytes(a.availableTraffic)}
+            </div>
+            <div className="mt-3 text-sm text-zinc-500 dark:text-zinc-400 font-medium relative z-10">
+              {a.unlimitedTraffic ? "Unlimited traffic" : `Out of ${formatBytes(a.allTimeTraffic)}`}
+            </div>
           </div>
         </motion.div>
 
@@ -528,8 +532,12 @@ function ResellerDashboard() {
             <div className="flex items-center gap-3 text-sm font-semibold text-amber-600 dark:text-amber-400 mb-4 relative z-10">
               <div className="p-2.5 bg-amber-500/10 rounded-xl shadow-inner"><Activity size={20} /></div> Used Traffic
             </div>
-            <div className="text-4xl font-extrabold text-zinc-900 dark:text-white relative z-10">{formatBytes(a.usedTraffic || 0)}</div>
-            <div className="mt-3 text-sm text-zinc-500 dark:text-zinc-400 font-medium relative z-10">Consumed from allocation</div>
+            <div className="text-4xl font-extrabold text-zinc-900 dark:text-white relative z-10">
+              {a.unlimitedTraffic ? <span className="text-emerald-500">—</span> : formatBytes(a.usedTraffic || 0)}
+            </div>
+            <div className="mt-3 text-sm text-zinc-500 dark:text-zinc-400 font-medium relative z-10">
+              {a.unlimitedTraffic ? "Not tracked" : "Consumed from allocation"}
+            </div>
           </div>
         </motion.div>
 

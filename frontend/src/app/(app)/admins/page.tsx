@@ -6,7 +6,7 @@ import { api } from "@/lib/api";
 import { formatBytes, formatDate } from "@/lib/format";
 import { Card, PageHeader, Badge, Spinner, ErrorBox } from "@/components/ui";
 import { useToast } from "@/components/toast";
-import { Plus, Power, Edit2, Shield, Activity, HardDrive, Cpu, CreditCard, ChevronDown, Check, X, ShieldCheck, Download, Upload, Trash2, Eye, EyeOff, Server, Database, Save, ArrowRight, Store, Users, Clock, Settings2, Zap, Lock, AlertCircle } from "lucide-react";
+import { Plus, Power, Edit2, Shield, Activity, HardDrive, Cpu, CreditCard, ChevronDown, Check, X, ShieldCheck, Download, Upload, Trash2, Eye, EyeOff, Server, Database, Save, ArrowRight, Store, Users, Clock, Settings2, Zap, Lock, AlertCircle, Infinity } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface Admin {
@@ -572,7 +572,13 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
                       </div>
                       <div>
                         <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">Traffic Limit (GB) <span className="text-zinc-500 text-xs">0 = None</span></label>
-                        <input type="number" min={0} placeholder="0" disabled={form.unlimitedTraffic} value={form.balanceGb} onChange={(e) => setForm({ ...form, balanceGb: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" />
+                        {form.unlimitedTraffic ? (
+                          <div className="w-full rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-500 font-semibold flex items-center gap-2">
+                            <Infinity size={18} /> Unlimited
+                          </div>
+                        ) : (
+                          <input type="number" min={0} placeholder="0" value={form.balanceGb} onChange={(e) => setForm({ ...form, balanceGb: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
+                        )}
                       </div>
                       <div>
                         <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">Expiry Days <span className="text-zinc-500 text-xs">0 = Unlimited</span></label>
@@ -836,13 +842,27 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
                           <div className="grid grid-cols-2 gap-4">
                             <div>
                               <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">Set Available Traffic (GB)</label>
-                              <input type="number" placeholder="Leave empty for no change" disabled={form.unlimitedTraffic} value={form.balanceGb} onChange={(e) => setForm({ ...form, balanceGb: e.target.value, trafficDeltaGb: "" })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors placeholder:text-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed" />
-                              <p className="text-[10px] text-zinc-500 mt-1">Sets absolute available traffic</p>
+                              {form.unlimitedTraffic ? (
+                                <div className="w-full rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-emerald-500 font-semibold flex items-center gap-2">
+                                  <Infinity size={18} /> Unlimited
+                                </div>
+                              ) : (
+                                <input type="number" placeholder="Leave empty for no change" value={form.balanceGb} onChange={(e) => setForm({ ...form, balanceGb: e.target.value, trafficDeltaGb: "" })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors placeholder:text-zinc-600" />
+                              )}
+                              {!form.unlimitedTraffic && <p className="text-[10px] text-zinc-500 mt-1">Sets absolute available traffic</p>}
                             </div>
                             <div>
                               <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">Adjust Traffic (+/- GB)</label>
-                              <input type="number" placeholder="e.g. 50 or -25" disabled={form.unlimitedTraffic} value={form.trafficDeltaGb} onChange={(e) => setForm({ ...form, trafficDeltaGb: e.target.value, balanceGb: "" })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors placeholder:text-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed" />
-                              <p className="text-[10px] text-zinc-500 mt-1">Adds or subtracts from current available</p>
+                              {form.unlimitedTraffic ? (
+                                <div className="w-full rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-emerald-500 font-semibold flex items-center gap-2">
+                                  <Infinity size={18} /> Unlimited
+                                </div>
+                              ) : (
+                                <>
+                                  <input type="number" placeholder="e.g. 50 or -25" value={form.trafficDeltaGb} onChange={(e) => setForm({ ...form, trafficDeltaGb: e.target.value, balanceGb: "" })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors placeholder:text-zinc-600" />
+                                  <p className="text-[10px] text-zinc-500 mt-1">Adds or subtracts from current available</p>
+                                </>
+                              )}
                             </div>
                             <div className="col-span-2">
                               <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">Add Expiry (Days)</label>
@@ -1033,7 +1053,7 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
               </>
             )}
             {admin.unlimitedTraffic && (
-              <SummaryStat icon={<Database size={16} />} label="Traffic" value="Unlimited" />
+              <SummaryStat icon={<Infinity size={16} />} label="Traffic" value="Unlimited" />
             )}
             <SummaryStat icon={<Shield size={16} />} label="Assigned Inbounds" value={admin.adminInbounds?.length?.toString() ?? "0"} />
             <SummaryStat icon={<Clock size={16} />} label="Days Remaining" value={expiryDaysLabel} highlight={admin.expiryTime > 0 && admin.expiryTime < Date.now()} />
