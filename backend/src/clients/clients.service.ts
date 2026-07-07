@@ -1696,40 +1696,104 @@ export class ClientsService {
       }
     }
 
-    const createdOnPanels: any[] = [];
+    const primaryInbound =
+      inbounds.find((i) => dto.inboundIds.includes(i.id)) || inbounds[0];
+    const isReality =
+      primaryInbound?.protocol === 'vless' &&
+      (primaryInbound.streamSettings as any)?.security === 'reality';
+    const clientFlow = isReality ? dto.flow || '' : '';
+
+    const createdPanelIds: string[] = [];
+    const groupName = dto.group || targetAdmin.username;
+
     try {
-      for (const inbound of inbounds) {
-        const isReality =
-          inbound.protocol === 'vless' &&
-          (inbound.streamSettings as any)?.security === 'reality';
-        const payloadsForInbound = panelPayloads
-          .get(inbound.panelId)!
-          .map((p) => ({
-            ...p,
-            flow: isReality ? dto.flow || '' : '',
-          }));
-
-        await this.panelsService.addClient(inbound.panelId, inbound.port, {
-          clients: payloadsForInbound,
+      for (const [panelId, { numericIds }] of byPanel) {
+        const panel = await this.prisma.panel.findUnique({
+          where: { id: panelId },
         });
+        const caps =
+          panel?.capabilities && typeof panel.capabilities === 'object'
+            ? (panel.capabilities as Record<string, boolean>)
+            : {};
 
-        // 2. Assign to reseller Group
-        const groupName = dto.group || targetAdmin.username;
+        const clientsForPanel = panelPayloads.get(panelId)!;
+        const bulkItems = clientsForPanel.map((p) => ({
+          client: {
+            id: p.id,
+            email: p.email,
+            subId: p.subId,
+            enable: p.enable,
+            totalGB: p.totalGB,
+            expiryTime: p.expiryTime,
+            limitIp: p.limitIp,
+            tgId: p.tgId,
+            comment: p.comment,
+            reset: p.reset,
+            flow: clientFlow,
+          },
+          inboundIds: numericIds,
+        }));
+
+        if (caps.bulkCreate) {
+          this.logger.log(
+            `[BULK_CREATE] Using bulkCreate API on panel ${panel?.name} (${bulkItems.length} clients)`,
+          );
+          const bulkResult =
+            await this.panelsService.bulkCreateClientsOnPanel(
+              panelId,
+              bulkItems,
+              callerId,
+            );
+          if (!bulkResult.success) {
+            throw new BadRequestException(
+              bulkResult.error?.message || 'Bulk create failed on panel',
+            );
+          }
+
+          const skipped: Array<{ email: string; reason: string }> =
+            bulkResult.data?.skipped ?? [];
+          if (skipped.length > 0) {
+            const detail = skipped
+              .slice(0, 5)
+              .map((s) => `${s.email}: ${s.reason}`)
+              .join('; ');
+            throw new BadRequestException(
+              `Bulk create partially failed on panel: ${detail}`,
+            );
+          }
+        } else {
+          this.logger.log(
+            `[BULK_CREATE] Panel ${panel?.name} has no bulkCreate — sequential fallback`,
+          );
+          for (const item of bulkItems) {
+            const createResult = await this.panelsService.createClientOnPanel(
+              panelId,
+              item.inboundIds,
+              item.client,
+              callerId,
+            );
+            if (!createResult.success) {
+              throw new BadRequestException(
+                `Failed to create ${item.client.email}: ${createResult.error?.message}`,
+              );
+            }
+          }
+        }
+
         await this.panelsService.assignClientToGroup(
-          inbound.panelId,
+          panelId,
           emails,
           groupName,
         );
-        createdOnPanels.push(inbound);
+        createdPanelIds.push(panelId);
       }
     } catch (e: any) {
-      for (const inbound of createdOnPanels) {
-        const payloads = panelPayloads.get(inbound.panelId) || [];
+      for (const panelId of createdPanelIds) {
         await Promise.all(
-          payloads.map((p) =>
+          emails.map((email) =>
             this.panelsService
-              .delClient(inbound.panelId, inbound.port, p.id, p.email)
-              .catch(console.error),
+              .deleteClientOnPanel(panelId, email, callerId, true)
+              .catch(() => {}),
           ),
         );
       }
@@ -1765,6 +1829,12 @@ export class ClientsService {
           const c = await tx.client.create({
             data: {
               ...clientData,
+              balanceDeducted:
+                totalBytesPerClient > 0n &&
+                caller.role !== 'SUPER_ADMIN' &&
+                caller.trafficMode === 'ALLOCATION',
+              provisioningStatus: 'ACTIVE',
+              provisionedAt: new Date(),
               inbounds: {
                 // Only create inbound links for this specific panel's inbounds
                 create: dto.inboundIds
@@ -1810,17 +1880,242 @@ export class ClientsService {
 
       return { success: true, count: emails.length };
     } catch (dbError) {
-      for (const inbound of createdOnPanels) {
-        const payloads = panelPayloads.get(inbound.panelId) || [];
+      for (const panelId of createdPanelIds) {
         await Promise.all(
-          payloads.map((p) =>
+          emails.map((email) =>
             this.panelsService
-              .delClient(inbound.panelId, inbound.port, p.id, p.email)
-              .catch(console.error),
+              .deleteClientOnPanel(panelId, email, callerId, true)
+              .catch(() => {}),
           ),
         );
       }
       throw dbError;
+    }
+  }
+
+  /**
+   * Use POST /panel/api/clients/bulkAdjust when the panel supports it.
+   * Returns null to fall back to per-client update() when no panel has bulkAdjust.
+   */
+  private async bulkAdjustOps(
+    adminId: string,
+    role: string,
+    targets: Array<{
+      id: string;
+      email: string;
+      total: bigint;
+      expiryTime: bigint;
+      adminId: string | null;
+    }>,
+    dto: BulkClientDto,
+  ): Promise<{ success: number; failed: number; errors: string[] } | null> {
+    if (dto.action !== 'addTraffic' && dto.action !== 'addDays') return null;
+
+    const clientsWithPanels = await this.prisma.client.findMany({
+      where: { id: { in: targets.map((t) => t.id) } },
+      include: {
+        inbounds: {
+          include: { inbound: { include: { panel: true } } },
+        },
+      },
+    });
+
+    const byPanel = new Map<
+      string,
+      {
+        panel: { id: string; name: string; capabilities: unknown };
+        clients: typeof clientsWithPanels;
+      }
+    >();
+
+    for (const c of clientsWithPanels) {
+      const panel = c.inbounds?.[0]?.inbound?.panel;
+      if (!panel) continue;
+      if (!byPanel.has(panel.id)) {
+        byPanel.set(panel.id, { panel, clients: [] });
+      }
+      byPanel.get(panel.id)!.clients.push(c);
+    }
+
+    if (!byPanel.size) return null;
+
+    const panelsWithBulkAdjust = [...byPanel.values()].filter(
+      (g) =>
+        g.panel.capabilities &&
+        typeof g.panel.capabilities === 'object' &&
+        (g.panel.capabilities as Record<string, boolean>).bulkAdjust,
+    );
+
+    if (!panelsWithBulkAdjust.length) return null;
+
+    const results = { success: 0, failed: 0, errors: [] as string[] };
+
+    for (const { panel, clients } of panelsWithBulkAdjust) {
+      const emails = clients.map((c) => c.email);
+      const body: {
+        emails: string[];
+        addDays?: number;
+        addBytes?: number;
+      } = { emails };
+
+      if (dto.action === 'addTraffic') {
+        body.addBytes = Math.round((dto.value ?? 0) * GB);
+        if (body.addBytes <= 0) continue;
+      } else {
+        body.addDays = dto.value ?? 0;
+        if (!body.addDays) continue;
+      }
+
+      const res = await this.panelsService.bulkAdjustClientsOnPanel(
+        panel.id,
+        body,
+        adminId,
+      );
+
+      if (!res.success) {
+        results.failed += clients.length;
+        results.errors.push(`${panel.name}: ${res.error?.message}`);
+        continue;
+      }
+
+      const skippedList: Array<{ email: string; reason: string }> =
+        res.data?.skipped ?? [];
+      const skippedEmails = new Set(skippedList.map((s) => s.email));
+
+      for (const c of clients) {
+        if (skippedEmails.has(c.email)) {
+          results.failed++;
+          const reason =
+            skippedList.find((s) => s.email === c.email)?.reason || 'skipped';
+          results.errors.push(`${c.email}: ${reason}`);
+          continue;
+        }
+
+        try {
+          await this.applyBulkAdjustLocalDb(adminId, role, c, dto);
+          results.success++;
+        } catch (err: any) {
+          results.failed++;
+          results.errors.push(`${c.email}: ${err.message}`);
+        }
+      }
+    }
+
+    // Panels without bulkAdjust — sequential fallback per client
+    for (const { panel, clients } of byPanel.values()) {
+      const caps = panel.capabilities as Record<string, boolean> | null;
+      if (caps?.bulkAdjust) continue;
+
+      for (const c of clients) {
+        try {
+          if (dto.action === 'addTraffic') {
+            const bytes = BigInt(Math.round((dto.value ?? 0) * GB));
+            if (bytes > 0n) {
+              await this.update(c.id, adminId, role, {
+                total: Number(c.total + bytes),
+              });
+            }
+          } else {
+            const ms = BigInt((dto.value ?? 0) * 24 * 60 * 60 * 1000);
+            const now = BigInt(Date.now());
+            const base = c.expiryTime > 0n ? c.expiryTime : now;
+            await this.update(c.id, adminId, role, {
+              expiryTime: Number(base + ms),
+            });
+          }
+          results.success++;
+        } catch (err: any) {
+          results.failed++;
+          results.errors.push(`${c.email}: ${err.message}`);
+        }
+      }
+    }
+
+    return results;
+  }
+
+  /** Sync local DB after panel bulkAdjust — does not call the panel again. */
+  private async applyBulkAdjustLocalDb(
+    adminId: string,
+    role: string,
+    client: {
+      id: string;
+      email: string;
+      total: bigint;
+      expiryTime: bigint;
+      adminId: string | null;
+      up: bigint;
+      down: bigint;
+    },
+    dto: BulkClientDto,
+  ) {
+    if (dto.action === 'addTraffic') {
+      const bytes = BigInt(Math.round((dto.value ?? 0) * GB));
+      if (bytes <= 0n) return;
+
+      await this.prisma.$transaction(async (tx) => {
+        if (client.adminId) {
+          const admin = await tx.admin.findUnique({
+            where: { id: client.adminId },
+          });
+          if (admin?.trafficMode === 'ALLOCATION') {
+            const caller = await tx.admin.findUnique({
+              where: { id: adminId },
+            });
+            if (caller && caller.role !== 'SUPER_ADMIN') {
+              if (caller.balance < Number(bytes)) {
+                throw new BadRequestException('Insufficient traffic balance');
+              }
+              await tx.admin.update({
+                where: { id: caller.id },
+                data: { balance: caller.balance - Number(bytes) },
+              });
+              await tx.trafficTransaction.create({
+                data: {
+                  adminId: caller.id,
+                  clientId: client.id,
+                  targetClientUuid: client.id,
+                  amount: bytes,
+                  type: 'DEBIT',
+                  action: `CLIENT_TRAFFIC_INCREASE_${Date.now()}`,
+                  description: 'Bulk Client Traffic Increase',
+                  balanceBefore: caller.balance,
+                  balanceAfter: caller.balance - Number(bytes),
+                },
+              });
+            }
+          }
+        }
+
+        const newTotal = client.total + bytes;
+        const used = client.up + client.down;
+        const shouldEnable =
+          newTotal === 0n || newTotal > used;
+
+        await tx.client.update({
+          where: { id: client.id },
+          data: {
+            total: newTotal,
+            ...(shouldEnable
+              ? { enable: true, disableReason: null }
+              : {}),
+          },
+        });
+      });
+    } else if (dto.action === 'addDays') {
+      const ms = BigInt((dto.value ?? 0) * 24 * 60 * 60 * 1000);
+      if (ms <= 0n) return;
+      const now = BigInt(Date.now());
+      const base = client.expiryTime > 0n ? client.expiryTime : now;
+
+      await this.prisma.client.update({
+        where: { id: client.id },
+        data: {
+          expiryTime: base + ms,
+          enable: true,
+          disableReason: null,
+        },
+      });
     }
   }
 
@@ -1854,6 +2149,40 @@ export class ClientsService {
             `Insufficient balance to add traffic. Required: ${Number(totalRequired) / GB} GB, Available: ${caller.balance / GB} GB`,
           );
         }
+      }
+    }
+
+    if (dto.action === 'addTraffic' || dto.action === 'addDays') {
+      const optimized = await this.bulkAdjustOps(
+        adminId,
+        role,
+        targets,
+        dto,
+      );
+      if (optimized) {
+        await this.prisma.auditLog.create({
+          data: {
+            action: `BULK_${dto.action.toUpperCase()}`,
+            entity: 'Client',
+            adminId,
+            details: {
+              count: targets.length,
+              success: optimized.success,
+              failed: optimized.failed,
+              errors: optimized.errors,
+              value: dto.value,
+              optimized: true,
+            },
+          },
+        });
+        if (optimized.failed > 0) {
+          return {
+            affected: optimized.success,
+            failed: optimized.failed,
+            errors: optimized.errors,
+          };
+        }
+        return { affected: optimized.success };
       }
     }
 

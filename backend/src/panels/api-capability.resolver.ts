@@ -7,6 +7,7 @@ export interface PanelCapabilities {
   bulkDisable?: boolean;
   bulkExport?: boolean;
   bulkCreate?: boolean;
+  bulkAdjust?: boolean;
   bulkDelete?: boolean;
   bulkResetTraffic?: boolean;
   clientsApi?: boolean;
@@ -138,6 +139,7 @@ export class ApiCapabilityResolver {
         bulkDisable: paths.includes('/panel/api/clients/bulkDisable'),
         bulkExport: paths.includes('/panel/api/clients/export'),
         bulkCreate: paths.includes('/panel/api/clients/bulkCreate'),
+        bulkAdjust: paths.includes('/panel/api/clients/bulkAdjust'),
         bulkDelete: paths.includes('/panel/api/clients/bulkDel'),
         bulkResetTraffic: paths.includes('/panel/api/clients/bulkResetTraffic'),
       };
@@ -172,6 +174,7 @@ export class ApiCapabilityResolver {
       bulkDisable: isNewApi,
       bulkExport: isNewApi,
       bulkCreate: isNewApi,
+      bulkAdjust: isNewApi,
       bulkDelete: isNewApi,
       bulkResetTraffic: isNewApi,
     };

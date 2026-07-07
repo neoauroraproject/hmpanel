@@ -1933,6 +1933,176 @@ export class PanelsService implements OnModuleInit {
   }
 
   /**
+   * BULK CREATE via POST /panel/api/clients/bulkCreate
+   * Body: JSON array of { client, inboundIds } — same shape as /clients/add.
+   * Per docs/api342.json and api331.json.
+   */
+  async bulkCreateClientsOnPanel(
+    panelId: string,
+    items: Array<{ client: Record<string, any>; inboundIds: number[] }>,
+    adminId?: string,
+  ): Promise<PanelApiResult> {
+    const { panel, base, headers, agent } =
+      await this.getPanelHttpContext(panelId);
+    const endpoint = `${base}/panel/api/clients/bulkCreate`;
+    const startMs = Date.now();
+
+    this.logger.log(
+      `[BULK_CREATE] PANEL_BASE=${base} METHOD=POST URL=${endpoint} COUNT=${items.length}`,
+    );
+
+    try {
+      const res = await this.retryRequest(
+        () =>
+          axios.post(endpoint, items, {
+            headers: { ...headers, 'Content-Type': 'application/json' },
+            httpsAgent: agent,
+            timeout: Math.max(
+              PANEL_REQUEST_TIMEOUT_MS,
+              PANEL_REQUEST_TIMEOUT_MS * Math.ceil(items.length / 25),
+            ),
+          }),
+        `BULK_CREATE count=${items.length}`,
+      );
+
+      const durationMs = Date.now() - startMs;
+      const ok = res.data?.success === true;
+
+      await this.logProvisioningEvent({
+        operation: 'CREATE_CLIENT',
+        adminId,
+        panelId,
+        panelName: panel.name,
+        email: `bulk:${items.length}`,
+        endpoint,
+        requestSizeBytes: JSON.stringify(items).length,
+        httpStatus: res.status,
+        durationMs,
+        success: ok,
+        errorCode: ok ? undefined : 'PANEL_ERROR',
+        errorMessage: ok ? undefined : res.data?.msg,
+      });
+
+      if (!ok) {
+        return {
+          success: false,
+          error: {
+            code: 'PANEL_ERROR',
+            message: res.data?.msg || 'Bulk create failed',
+            httpStatus: res.status,
+            panelMessage: res.data?.msg,
+            endpoint,
+            durationMs,
+          },
+        };
+      }
+
+      return { success: true, data: res.data?.obj ?? res.data };
+    } catch (err: any) {
+      const apiError = this.classifyError(err, endpoint, startMs);
+      return { success: false, error: apiError };
+    }
+  }
+
+  /**
+   * BULK ADJUST via POST /panel/api/clients/bulkAdjust
+   * Shifts expiry and/or traffic quota for many clients in one call.
+   */
+  async bulkAdjustClientsOnPanel(
+    panelId: string,
+    body: {
+      emails: string[];
+      addDays?: number;
+      addBytes?: number;
+      flow?: string;
+    },
+    adminId?: string,
+  ): Promise<PanelApiResult> {
+    const { panel, base, headers, agent } =
+      await this.getPanelHttpContext(panelId);
+    const endpoint = `${base}/panel/api/clients/bulkAdjust`;
+    const startMs = Date.now();
+
+    try {
+      const res = await this.retryRequest(
+        () =>
+          axios.post(endpoint, body, {
+            headers: { ...headers, 'Content-Type': 'application/json' },
+            httpsAgent: agent,
+            timeout: PANEL_REQUEST_TIMEOUT_MS,
+          }),
+        `BULK_ADJUST emails=${body.emails.length}`,
+      );
+
+      const durationMs = Date.now() - startMs;
+      const ok = res.data?.success === true;
+
+      if (!ok) {
+        return {
+          success: false,
+          error: {
+            code: 'PANEL_ERROR',
+            message: res.data?.msg || 'Bulk adjust failed',
+            httpStatus: res.status,
+            endpoint,
+            durationMs,
+          },
+        };
+      }
+
+      return { success: true, data: res.data?.obj ?? res.data };
+    } catch (err: any) {
+      return { success: false, error: this.classifyError(err, endpoint, startMs) };
+    }
+  }
+
+  /**
+   * BULK RESET TRAFFIC via POST /panel/api/clients/bulkResetTraffic
+   */
+  async bulkResetTrafficOnPanel(
+    panelId: string,
+    emails: string[],
+    adminId?: string,
+  ): Promise<PanelApiResult> {
+    const { panel, base, headers, agent } =
+      await this.getPanelHttpContext(panelId);
+    const endpoint = `${base}/panel/api/clients/bulkResetTraffic`;
+    const startMs = Date.now();
+
+    try {
+      const res = await this.retryRequest(
+        () =>
+          axios.post(endpoint, { emails }, {
+            headers: { ...headers, 'Content-Type': 'application/json' },
+            httpsAgent: agent,
+            timeout: PANEL_REQUEST_TIMEOUT_MS,
+          }),
+        `BULK_RESET_TRAFFIC emails=${emails.length}`,
+      );
+
+      const durationMs = Date.now() - startMs;
+      const ok = res.data?.success === true;
+
+      if (!ok) {
+        return {
+          success: false,
+          error: {
+            code: 'PANEL_ERROR',
+            message: res.data?.msg || 'Bulk reset traffic failed',
+            httpStatus: res.status,
+            endpoint,
+            durationMs,
+          },
+        };
+      }
+
+      return { success: true, data: res.data?.obj ?? res.data };
+    } catch (err: any) {
+      return { success: false, error: this.classifyError(err, endpoint, startMs) };
+    }
+  }
+
+  /**
    * UPDATE CLIENT on panel using native POST /panel/api/clients/update/{email}
    * Identifier: EMAIL (not UUID)
    * Content-Type: application/json (not form-encoded)
