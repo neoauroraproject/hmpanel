@@ -715,6 +715,7 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
 
   const directEdit = useMutation({
     mutationFn: async () => {
+      if (!admin) throw new Error('Admin not loaded');
       const payload: any = {
         status: form.status,
         trafficMode: form.trafficMode,
