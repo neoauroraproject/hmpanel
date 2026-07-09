@@ -180,11 +180,12 @@ export class LicenseActivationService {
     ) {
       bundleSkipped = true;
       onProgress?.({ stage: 'bundle', percent: 90, message: 'Premium bundle already installed.' });
-    } else if ((bundle?.downloadUrl || bundle?.githubDownloadUrl) && targetVersion) {
+    } else if (targetVersion) {
       onProgress?.({ stage: 'downloading', percent: 25, message: 'Downloading premium bundle...' });
+      const downloadUrl = await this.resolveBundleDownloadUrl(licenseKey, targetVersion, bundle);
       await this.bundleService.downloadAndInstall(
-        (bundle.downloadUrl as string) || (bundle.githubDownloadUrl as string),
-        bundle.sha256 ?? null,
+        downloadUrl,
+        bundle?.sha256 ?? null,
         targetVersion,
         (pct, stage) =>
           onProgress?.({ stage, percent: 25 + Math.round(pct * 0.65), message: stage }),
@@ -215,9 +216,63 @@ export class LicenseActivationService {
   async updateBundle(): Promise<ActivateResult> {
     const licenseKey = await this.settingsService.getSetting(LICENSE_KEY_KEY);
     if (!licenseKey) {
-      throw new Error('No active license');
+      throw new HttpException('No active license', HttpStatus.BAD_REQUEST);
     }
-    return this.activate(licenseKey);
+
+    const state = await this.licenseManager.getLicenseState();
+    const version = state.bundleVersion || '1.5.6';
+
+    const downloadUrl = await this.resolveBundleDownloadUrl(licenseKey, version);
+    await this.bundleService.downloadAndInstall(downloadUrl, null, version);
+    await this.bundleService.applyDatabaseOverlay();
+
+    const loaded = await this.pluginsService.reloadPremiumPlugins();
+
+    return {
+      ok: true,
+      state: await this.licenseManager.getLicenseState(),
+      bundleVersion: version,
+      needsReload: true,
+      needsRestart: !loaded,
+      message: loaded
+        ? 'Premium bundle updated. Refresh the page.'
+        : 'Bundle installed. Restart the panel service, then refresh.',
+    };
+  }
+
+  private async resolveBundleDownloadUrl(
+    licenseKey: string,
+    version: string,
+    bundle?: {
+      downloadUrl?: string;
+      githubDownloadUrl?: string;
+    },
+  ): Promise<string> {
+    if (bundle?.downloadUrl?.includes('/v1/panel/bundle/download')) {
+      return bundle.downloadUrl;
+    }
+
+    const instanceId = this.instanceFingerprint.getInstanceId();
+    try {
+      const { res, data } = await requestLicenseServer('/v1/panel/bundle-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ licenseKey, instanceId, version }),
+      });
+      if (res.ok && typeof data.downloadUrl === 'string' && data.downloadUrl) {
+        return data.downloadUrl;
+      }
+    } catch (err: any) {
+      this.logger.warn(`License server bundle-url unavailable: ${err?.message || err}`);
+    }
+
+    if (bundle?.downloadUrl) return bundle.downloadUrl;
+    if (bundle?.githubDownloadUrl) return bundle.githubDownloadUrl;
+
+    throw new HttpException(
+      'No bundle download URL from license server. Deploy license worker with GITHUB_TOKEN or set PREMIUM_BUNDLE_GITHUB_TOKEN on the panel.',
+      HttpStatus.BAD_GATEWAY,
+    );
   }
 
   async deactivate(): Promise<{ needsReload: boolean }> {

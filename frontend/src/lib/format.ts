@@ -25,6 +25,22 @@ export function formatDateTime(iso: string): string {
   });
 }
 
+/** License expiry ISO string with days remaining, e.g. "Aug 9, 2026 (31 days)". */
+export function formatLicenseExpiry(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const days = Math.ceil((d.getTime() - Date.now()) / 86_400_000);
+  const label = d.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+  if (days < 0) return `${label} (expired)`;
+  if (days === 0) return `${label} (today)`;
+  if (days === 1) return `${label} (1 day)`;
+  return `${label} (${days} days)`;
+}
+
 /** Render a unix-ms expiry (stored as a stringified bigint). 0 = never. */
 export function formatExpiry(value: string): string {
   const ms = Number(value);

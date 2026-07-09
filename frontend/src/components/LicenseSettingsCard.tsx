@@ -4,6 +4,7 @@ import { Key, RefreshCw, Power, PowerOff, ExternalLink, Sparkles } from "lucide-
 import { useState } from "react";
 import { Card } from "@/components/ui";
 import { useLicenseActivation } from "@/hooks/useLicenseActivation";
+import { formatLicenseExpiry } from "@/lib/format";
 
 const SUPPORT_URL = "https://t.me/hmraysupport";
 
@@ -23,11 +24,12 @@ export function LicenseSettingsCard() {
       ? "Grace period"
       : "Community Edition";
 
+  const expiryLabel = state?.expiresAt ? formatLicenseExpiry(state.expiresAt) : null;
+
   const expiryBanner =
-    isPremium && state?.expiresAt ? (
+    isPremium && expiryLabel ? (
       <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-sm p-3 mb-4">
-        License valid until{" "}
-        <strong>{new Date(state.expiresAt).toLocaleDateString()}</strong>
+        License valid until <strong>{expiryLabel}</strong>
       </div>
     ) : null;
 
@@ -81,9 +83,7 @@ export function LicenseSettingsCard() {
         </div>
         <div>
           <span className="text-zinc-500">Expires</span>
-          <p className="font-medium">
-            {state?.expiresAt ? new Date(state.expiresAt).toLocaleDateString() : "Never"}
-          </p>
+          <p className="font-medium">{expiryLabel || "Never"}</p>
         </div>
         <div>
           <span className="text-zinc-500">Bundle</span>
