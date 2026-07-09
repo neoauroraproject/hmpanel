@@ -43,3 +43,24 @@ Run `wrangler dev` in `hm-license-manager` repo.
 | Premium | `neoauroraproject/hmpanel-premium` (private) | Premium modules only — delivered as bundle |
 
 Community users update from `hmpanel` only. Premium code is downloaded after license activation, not cloned on the server.
+
+## Premium bundle download flow (secure)
+
+1. Panel calls `POST /v1/panel/activate` on the license server (license key + instance ID + server IP).
+2. License server validates license, binds/checks **allowed server IP**, creates activation.
+3. License server returns a **short-lived signed URL** on itself:  
+   `GET /v1/panel/bundle/download?token=...` (valid ~15 minutes).
+4. Panel downloads the bundle **only from the license server** — never from GitHub directly.
+5. License server fetches the private GitHub release using **GITHUB_TOKEN** (stored only on the worker).
+
+Download is rejected unless the request comes from the **licensed server IP** and the token is valid.
+
+### License worker secrets (required for bundle delivery)
+
+```bash
+npx wrangler secret put GITHUB_TOKEN
+npx wrangler secret put JWT_PRIVATE_KEY
+npx wrangler secret put JWT_PUBLIC_KEY
+```
+
+`GITHUB_REPO_OWNER=neoauroraproject` and `GITHUB_REPO_NAME=hmpanel-premium` are set in `wrangler.toml`.

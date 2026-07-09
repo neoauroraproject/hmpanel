@@ -51,7 +51,7 @@ export class PremiumBundleService {
     fs.mkdirSync(tmpDir, { recursive: true });
     onProgress?.(5, 'downloading');
 
-    const buf = await this.fetchBundleBuffer(downloadUrl, version);
+    const buf = await this.fetchBundleBuffer(downloadUrl);
     fs.writeFileSync(archivePath, buf);
     onProgress?.(40, 'verifying');
 
@@ -101,95 +101,27 @@ export class PremiumBundleService {
     }
   }
 
-  private async fetchBundleBuffer(downloadUrl: string, version: string): Promise<Buffer> {
+  private async fetchBundleBuffer(downloadUrl: string): Promise<Buffer> {
+    if (!downloadUrl.includes('/v1/panel/bundle/download')) {
+      throw new Error(
+        'Invalid bundle download URL. Premium bundles must be fetched through the license server.',
+      );
+    }
+
     const res = await fetch(downloadUrl, {
       redirect: 'follow',
       headers: { 'User-Agent': `HMPanel/${process.env.PANEL_VERSION || '1.5.6'}` },
       signal: AbortSignal.timeout(120_000),
     });
 
-    if (res.ok) {
-      return Buffer.from(await res.arrayBuffer());
-    }
-
-    const canRetryGithub =
-      (res.status === 404 || res.status === 403) &&
-      (this.isPublicGithubReleaseUrl(downloadUrl) || !downloadUrl.includes('/v1/panel/bundle/download'));
-
-    if (canRetryGithub && this.getGithubToken()) {
-      this.logger.warn(
-        `Bundle URL returned ${res.status} — retrying via GitHub API (private release).`,
+    if (!res.ok) {
+      throw new Error(
+        `Bundle download failed (${res.status} ${res.statusText}). ` +
+          'Ensure the license server has GITHUB_TOKEN configured and your server IP matches the license.',
       );
-      return this.downloadFromGithubRelease(version);
     }
 
-    throw new Error(
-      `Bundle download failed (${res.status} ${res.statusText}). ` +
-        'Deploy license server with GITHUB_TOKEN or set PREMIUM_BUNDLE_GITHUB_TOKEN on the panel.',
-    );
-  }
-
-  private getGithubToken(): string | null {
-    return (
-      process.env.PREMIUM_BUNDLE_GITHUB_TOKEN?.trim() ||
-      process.env.GITHUB_TOKEN?.trim() ||
-      null
-    );
-  }
-
-  private isPublicGithubReleaseUrl(url: string): boolean {
-    return /github\.com\/[^/]+\/[^/]+\/releases\/download\//i.test(url);
-  }
-
-  private async downloadFromGithubRelease(version: string): Promise<Buffer> {
-    const token = this.getGithubToken();
-    if (!token) {
-      throw new Error('PREMIUM_BUNDLE_GITHUB_TOKEN is not configured on the panel.');
-    }
-
-    const owner = process.env.PREMIUM_BUNDLE_REPO_OWNER?.trim() || 'neoauroraproject';
-    const repo = process.env.PREMIUM_BUNDLE_REPO_NAME?.trim() || 'hmpanel-premium';
-    const prefix = process.env.PREMIUM_BUNDLE_ASSET_PREFIX?.trim() || 'premium-bundle';
-    const assetName = `${prefix}-${version}.tar.gz`;
-
-    const headers = {
-      Authorization: `Bearer ${token}`,
-      Accept: 'application/vnd.github+json',
-      'User-Agent': 'HMPanel',
-    };
-
-    const releaseRes = await fetch(
-      `https://api.github.com/repos/${owner}/${repo}/releases/tags/v${version}`,
-      { headers, signal: AbortSignal.timeout(30_000) },
-    );
-
-    if (!releaseRes.ok) {
-      throw new Error(`GitHub release v${version} not found (${releaseRes.status}).`);
-    }
-
-    const release = (await releaseRes.json()) as { assets: { id: number; name: string }[] };
-    const asset = release.assets.find((a) => a.name === assetName || a.name.includes(version));
-    if (!asset) {
-      throw new Error(`Release asset ${assetName} not found on GitHub.`);
-    }
-
-    const assetRes = await fetch(
-      `https://api.github.com/repos/${owner}/${repo}/releases/assets/${asset.id}`,
-      {
-        headers: {
-          ...headers,
-          Accept: 'application/octet-stream',
-        },
-        redirect: 'follow',
-        signal: AbortSignal.timeout(120_000),
-      },
-    );
-
-    if (!assetRes.ok) {
-      throw new Error(`GitHub asset download failed (${assetRes.status}).`);
-    }
-
-    return Buffer.from(await assetRes.arrayBuffer());
+    return Buffer.from(await res.arrayBuffer());
   }
 
   /** Best-effort DB sync after premium overlay models are installed. */

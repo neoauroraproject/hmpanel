@@ -547,8 +547,6 @@ LICENSE_SERVER_URL=https://license.hmray.pro
 LICENSE_SERVER_URL_FALLBACK=https://license.hmrayserver.com
 LICENSE_PRODUCT_ID=hmpanel
 PREMIUM_PLUGIN_PATH=/opt/hmpanel/premium/backend/index.js
-# Optional: GitHub token to download private premium bundle if license server proxy is unavailable
-# PREMIUM_BUNDLE_GITHUB_TOKEN=
 
 # Database
 DATABASE_URL=postgresql://panel_user:${POSTGRES_PASSWORD}@postgres:5432/panel_db?schema=public&connection_limit=5&connect_timeout=30

@@ -149,7 +149,6 @@ export class LicenseActivationService {
     const bundle = data.bundle as {
       version?: string;
       downloadUrl?: string;
-      githubDownloadUrl?: string;
       sha256?: string | null;
     } | undefined;
 
@@ -245,7 +244,6 @@ export class LicenseActivationService {
     version: string,
     bundle?: {
       downloadUrl?: string;
-      githubDownloadUrl?: string;
     },
   ): Promise<string> {
     if (bundle?.downloadUrl?.includes('/v1/panel/bundle/download')) {
@@ -253,24 +251,26 @@ export class LicenseActivationService {
     }
 
     const instanceId = this.instanceFingerprint.getInstanceId();
-    try {
-      const { res, data } = await requestLicenseServer('/v1/panel/bundle-url', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ licenseKey, instanceId, version }),
-      });
-      if (res.ok && typeof data.downloadUrl === 'string' && data.downloadUrl) {
-        return data.downloadUrl;
-      }
-    } catch (err: any) {
-      this.logger.warn(`License server bundle-url unavailable: ${err?.message || err}`);
+    const clientIp = await this.getClientIp();
+    const { res, data } = await requestLicenseServer('/v1/panel/bundle-url', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ licenseKey, instanceId, version, clientIp }),
+    });
+
+    if (!res.ok) {
+      const message =
+        (typeof data.error === 'string' && data.error) ||
+        `License server refused bundle URL (${res.status})`;
+      throw new HttpException(message, HttpStatus.BAD_GATEWAY);
     }
 
-    if (bundle?.downloadUrl) return bundle.downloadUrl;
-    if (bundle?.githubDownloadUrl) return bundle.githubDownloadUrl;
+    if (typeof data.downloadUrl === 'string' && data.downloadUrl.includes('/v1/panel/bundle/download')) {
+      return data.downloadUrl;
+    }
 
     throw new HttpException(
-      'No bundle download URL from license server. Deploy license worker with GITHUB_TOKEN or set PREMIUM_BUNDLE_GITHUB_TOKEN on the panel.',
+      'License server did not return a secure bundle download URL. Deploy license worker with GITHUB_TOKEN.',
       HttpStatus.BAD_GATEWAY,
     );
   }
