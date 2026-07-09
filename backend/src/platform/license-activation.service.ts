@@ -148,6 +148,7 @@ export class LicenseActivationService {
     const license = data.license as { expiresAt?: string | null } | undefined;
     const bundle = data.bundle as {
       version?: string;
+      downloadUrl?: string;
       githubDownloadUrl?: string;
       sha256?: string | null;
     } | undefined;
