@@ -32,10 +32,14 @@ export class FeatureManagerService {
     const manifest = MODULE_MANIFESTS.find((m) => m.features.includes(featureId));
     if (!manifest) return licensed;
 
-    const state = await this.prisma.premiumModuleState.findUnique({
-      where: { moduleId: manifest.id },
-    });
-    return state?.enabled ?? manifest.defaultEnabled;
+    try {
+      const state = await this.prisma.premiumModuleState.findUnique({
+        where: { moduleId: manifest.id },
+      });
+      return state?.enabled ?? manifest.defaultEnabled;
+    } catch {
+      return false;
+    }
   }
 
   async getModuleAccess(moduleId: string): Promise<ModuleAccess> {
@@ -71,9 +75,7 @@ export class FeatureManagerService {
         license.licensedFeatures.length >= allFeatures.length ||
         manifest.features.every((f) => license.licensedFeatures.includes(f)));
 
-    const state = await this.prisma.premiumModuleState.findUnique({
-      where: { moduleId },
-    });
+    const state = await this.safeModuleState(moduleId);
     const moduleEnabled = state?.enabled ?? manifest.defaultEnabled;
 
     const enabled = featureLicensed && moduleEnabled && license.status !== 'invalid';
@@ -108,6 +110,16 @@ export class FeatureManagerService {
         throw new Error(`Module "${moduleId}" is in read-only mode`);
       }
       throw new Error(`Module "${moduleId}" is not enabled`);
+    }
+  }
+
+  private async safeModuleState(moduleId: string) {
+    try {
+      return await this.prisma.premiumModuleState.findUnique({
+        where: { moduleId },
+      });
+    } catch {
+      return null;
     }
   }
 }

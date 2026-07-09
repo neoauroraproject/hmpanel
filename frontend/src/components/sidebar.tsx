@@ -44,7 +44,6 @@ const CORE_NAV: {
   { href: "/migration", label: "Migration", icon: Import, roles: ["SUPER_ADMIN"] },
   { href: "/traffic", label: "Traffic", icon: Wallet },
   { href: "/settings", label: "Settings", icon: Settings, roles: ["SUPER_ADMIN"] },
-  { href: "/settings/premium", label: "Premium Settings", icon: Diamond, roles: ["SUPER_ADMIN"] },
 ];
 
 
@@ -54,7 +53,6 @@ export function Sidebar() {
   const router = useRouter();
   const admin = useAuth((s) => s.admin);
   const logout = useAuth((s) => s.logout);
-  const { data: premiumModules = [] } = usePremiumModules();
   const { licenseQuery } = useLicenseActivation();
   const dynamicMenus = usePluginRegistry((s) => s.menus);
 
@@ -63,12 +61,15 @@ export function Sidebar() {
     licenseQuery.data?.status !== "community" &&
     licenseQuery.data?.mode !== "disabled";
 
+  const { data: premiumModules = [] } = usePremiumModules({ enabled: isPremium });
+
   const coreItems = CORE_NAV.filter(
     (n) => !n.roles || (admin && n.roles.includes(admin.role))
   );
 
   const premiumMenus = isPremium
     ? [
+        { title: "Premium Settings", href: "/settings/premium", icon: Diamond },
         ...dynamicMenus,
         ...premiumModules
           .filter((m) => m.enabled && m.status !== "disabled" && m.status !== "future" && m.id !== "job-center")

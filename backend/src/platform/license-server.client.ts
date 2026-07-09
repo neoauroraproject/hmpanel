@@ -2,7 +2,10 @@ import { Logger } from '@nestjs/common';
 
 const logger = new Logger('LicenseServerClient');
 
-const DEFAULT_URLS = ['http://127.0.0.1:8787'];
+const DEFAULT_URLS = [
+  'https://license.hmray.pro',
+  'https://license.hmrayserver.com',
+];
 
 /** Primary + fallback license server URLs from env. */
 export function getLicenseServerUrls(): string[] {
@@ -88,5 +91,7 @@ export async function requestLicenseServer(
     }
   }
 
-  throw lastError || new Error('No license server URL configured');
+  throw new Error(
+    `License server unreachable. Tried: ${urls.join(', ')}. ${lastError?.message || ''}`.trim(),
+  );
 }

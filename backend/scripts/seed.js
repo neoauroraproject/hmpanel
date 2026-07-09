@@ -1,16 +1,13 @@
-// Demo seed data. Run with DATABASE_URL set (see backend/.env).
+// DEV-ONLY local bootstrap. Never run in production — wipes the database.
+if (process.env.NODE_ENV === 'production') {
+  console.error('Refusing to run seed in production.');
+  process.exit(1);
+}
+
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 
 const prisma = new PrismaClient();
-
-const GB = (n) => BigInt(Math.round(n)) * 1024n * 1024n * 1024n;
-const DAY = 24 * 60 * 60 * 1000;
-const now = Date.now();
-const daysFromNow = (d) => BigInt(now + d * DAY);
-const rand = (min, max) => Math.random() * (max - min) + min;
-const randInt = (min, max) => Math.floor(rand(min, max + 1));
-const pick = (arr) => arr[randInt(0, arr.length - 1)];
 
 async function main() {
   // Clean slate (child -> parent order)
@@ -27,17 +24,18 @@ async function main() {
   await prisma.server.deleteMany();
   await prisma.admin.deleteMany();
 
-  // --- Admins ---
-  const superAdmin = await prisma.admin.create({
+  await prisma.admin.create({
     data: {
-      username: 'superadmin', email: 'super@panel.dev',
+      username: 'superadmin',
+      email: 'super@panel.dev',
       passwordHash: await bcrypt.hash('admin123', 10),
-      role: 'SUPER_ADMIN', balance: 0, status: 'active',
+      role: 'SUPER_ADMIN',
+      balance: 0,
+      status: 'active',
     },
   });
 
-  // --- Infrastructure ---
-  const defaultServer = await prisma.server.create({
+  await prisma.server.create({
     data: {
       name: 'Default Server',
       ipAddress: '127.0.0.1',
@@ -45,7 +43,7 @@ async function main() {
     },
   });
 
-  console.log('Seed complete: cleaned database, seeded superadmin and default server');
+  console.log('Dev seed complete: superadmin + default server (local only).');
 }
 
 main().catch((e) => { console.error(e); process.exit(1); }).finally(() => prisma.$disconnect());

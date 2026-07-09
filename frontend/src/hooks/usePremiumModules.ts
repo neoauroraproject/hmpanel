@@ -20,8 +20,9 @@ export interface PremiumModule {
   canWrite?: boolean;
 }
 
-export function usePremiumModules() {
+export function usePremiumModules(options?: { enabled?: boolean }) {
   const token = useAuth((s) => s.token);
+  const enabled = (options?.enabled ?? true) && !!token;
 
   return useQuery({
     queryKey: ["premium-modules", token],
@@ -32,7 +33,7 @@ export function usePremiumModules() {
         return [];
       }
     },
-    enabled: !!token,
+    enabled,
     staleTime: 15_000,
     retry: false,
   });

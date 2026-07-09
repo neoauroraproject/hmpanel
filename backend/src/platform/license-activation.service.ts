@@ -1,4 +1,11 @@
-import { Injectable, Logger, forwardRef, Inject } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  forwardRef,
+  Inject,
+  HttpException,
+  HttpStatus,
+} from '@nestjs/common';
 import { SettingsService } from '../settings/settings.service';
 import { InstanceFingerprintService } from './instance-fingerprint.service';
 import { PremiumBundleService } from './premium-bundle.service';
@@ -74,6 +81,20 @@ export class LicenseActivationService {
     licenseKey: string,
     onProgress?: (p: ActivationProgress) => void,
   ): Promise<ActivateResult> {
+    try {
+      return await this.activateInternal(licenseKey, onProgress);
+    } catch (err: any) {
+      if (err instanceof HttpException) throw err;
+      const message = err?.message || 'License activation failed';
+      this.logger.error(`Activation failed: ${message}`, err?.stack);
+      throw new HttpException(message, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  private async activateInternal(
+    licenseKey: string,
+    onProgress?: (p: ActivationProgress) => void,
+  ): Promise<ActivateResult> {
     const instanceId = this.instanceFingerprint.getInstanceId();
     const clientIp = await this.getClientIp();
     const panelVersion = getPanelVersion();
@@ -93,7 +114,28 @@ export class LicenseActivationService {
     });
 
     if (!res.ok) {
-      throw new Error((data.error as string) || `Activation failed (${res.status})`);
+      const message =
+        (typeof data.error === 'string' && data.error) ||
+        (typeof data.message === 'string' && data.message) ||
+        `Activation failed (${res.status})`;
+      const status =
+        res.status === 401
+          ? HttpStatus.UNAUTHORIZED
+          : res.status === 403
+            ? HttpStatus.FORBIDDEN
+            : res.status === 400
+              ? HttpStatus.BAD_REQUEST
+              : res.status >= 500
+                ? HttpStatus.BAD_GATEWAY
+                : HttpStatus.BAD_REQUEST;
+      throw new HttpException(message, status);
+    }
+
+    if (!data.entitlementJwt || typeof data.entitlementJwt !== 'string') {
+      throw new HttpException(
+        'License server response missing entitlement token',
+        HttpStatus.BAD_GATEWAY,
+      );
     }
 
     await this.settingsService.setSetting(LICENSE_KEY_KEY, licenseKey.trim());
@@ -137,10 +179,10 @@ export class LicenseActivationService {
     ) {
       bundleSkipped = true;
       onProgress?.({ stage: 'bundle', percent: 90, message: 'Premium bundle already installed.' });
-    } else if (bundle?.githubDownloadUrl && targetVersion) {
+    } else if ((bundle?.downloadUrl || bundle?.githubDownloadUrl) && targetVersion) {
       onProgress?.({ stage: 'downloading', percent: 25, message: 'Downloading premium bundle...' });
       await this.bundleService.downloadAndInstall(
-        bundle.githubDownloadUrl,
+        (bundle.downloadUrl as string) || (bundle.githubDownloadUrl as string),
         bundle.sha256 ?? null,
         targetVersion,
         (pct, stage) =>

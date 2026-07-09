@@ -28,10 +28,6 @@ export class LicenseManagerService {
         ? 'COMMUNITY'
         : 'PREMIUM';
 
-    if (edition === 'COMMUNITY' && !this.bundleService.isBundleInstalled()) {
-      return this.communityDisabled();
-    }
-
     const storedState = await this.settingsService.getSetting(LICENSE_STATE_KEY);
     if (storedState) {
       try {
@@ -45,15 +41,12 @@ export class LicenseManagerService {
     const licenseKey = await this.settingsService.getSetting(LICENSE_KEY_KEY);
     const jwt = await this.settingsService.getSetting(LICENSE_ENTITLEMENT_KEY);
 
-    if (!licenseKey && edition === 'PREMIUM' && !this.bundleService.isBundleInstalled()) {
-      return {
-        status: 'active',
-        mode: 'full',
-        expiresAt: null,
-        graceEndsAt: null,
-        licensedFeatures: getAllFeatureIds(),
-        edition: 'PREMIUM',
-      };
+    if (licenseKey && jwt) {
+      return this.validateFromJwt(jwt, licenseKey);
+    }
+
+    if (edition === 'COMMUNITY' && !this.bundleService.isBundleInstalled()) {
+      return this.communityDisabled();
     }
 
     if (!licenseKey || !jwt) {

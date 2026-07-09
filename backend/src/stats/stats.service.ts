@@ -475,7 +475,7 @@ export class StatsService {
     };
   }
 
-  /** Live monitoring snapshot (host metrics are simulated for the demo). */
+  /** Live monitoring snapshot from stored system stats (no synthetic metrics). */
   async monitoring() {
     const servers = await this.prisma.server.findMany({
       select: { id: true, name: true },

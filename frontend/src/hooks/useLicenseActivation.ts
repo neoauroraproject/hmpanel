@@ -26,6 +26,8 @@ export function useLicenseActivation() {
   const licenseQuery = useQuery({
     queryKey: ["platform-license"],
     queryFn: async () => (await api.get<LicenseState>("/platform/license")).data,
+    retry: false,
+    staleTime: 60_000,
   });
 
   const invalidateAll = () => {

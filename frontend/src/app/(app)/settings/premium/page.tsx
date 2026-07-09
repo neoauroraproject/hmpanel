@@ -8,13 +8,14 @@ import { Diamond, ChevronRight } from "lucide-react";
 
 export default function PremiumSettingsPage() {
   const { licenseQuery } = useLicenseActivation();
-  const { data: modules, isLoading } = usePremiumModules();
   const state = licenseQuery.data;
 
   const isPremium =
     state?.edition === "PREMIUM" &&
     state?.status !== "community" &&
     state?.mode !== "disabled";
+
+  const { data: modules, isLoading } = usePremiumModules({ enabled: isPremium });
 
   if (licenseQuery.isLoading) return <Spinner />;
 

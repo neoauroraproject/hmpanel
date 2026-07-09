@@ -2,7 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
-import { spawn } from 'child_process';
 
 export interface BundleManifest {
   version: string;
@@ -52,9 +51,15 @@ export class PremiumBundleService {
     fs.mkdirSync(tmpDir, { recursive: true });
     onProgress?.(5, 'downloading');
 
-    const res = await fetch(downloadUrl);
+    const res = await fetch(downloadUrl, {
+      redirect: 'follow',
+      headers: { 'User-Agent': `HMPanel/${process.env.PANEL_VERSION || '1.5.6'}` },
+      signal: AbortSignal.timeout(120_000),
+    });
     if (!res.ok) {
-      throw new Error(`Bundle download failed: ${res.status} ${res.statusText}`);
+      throw new Error(
+        `Bundle download failed (${res.status} ${res.statusText}). Check license server GitHub token and premium release asset.`,
+      );
     }
 
     const buf = Buffer.from(await res.arrayBuffer());
@@ -118,17 +123,7 @@ export class PremiumBundleService {
   }
 
   private async extractTarGz(archivePath: string, destDir: string): Promise<void> {
-    await new Promise<void>((resolve, reject) => {
-      const tar = spawn('tar', ['-xzf', archivePath, '-C', destDir], { stdio: 'inherit' });
-      tar.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`tar exited ${code}`))));
-      tar.on('error', (err) => {
-        if (process.platform === 'win32') {
-          this.extractTarGzNode(archivePath, destDir).then(resolve).catch(reject);
-        } else {
-          reject(err);
-        }
-      });
-    });
+    await this.extractTarGzNode(archivePath, destDir);
   }
 
   private async extractTarGzNode(archivePath: string, destDir: string): Promise<void> {
