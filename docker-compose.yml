@@ -26,6 +26,7 @@ services:
       - LICENSE_SERVER_URL_FALLBACK=${LICENSE_SERVER_URL_FALLBACK:-https://license.hmrayserver.com}
       - LICENSE_PRODUCT_ID=${LICENSE_PRODUCT_ID:-hmpanel}
       - PREMIUM_PLUGIN_PATH=${PREMIUM_PLUGIN_PATH:-/opt/hmpanel/premium/backend/index.js}
+      - HMPANEL_DIST=/app/backend/dist
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-/api-proxy}
       - NEXT_PUBLIC_RELEASE_MODE=${RELEASE_MODE:-COMMUNITY}
       - INITIAL_ADMIN_USERNAME=${INITIAL_ADMIN_USERNAME}

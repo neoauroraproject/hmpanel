@@ -27,6 +27,27 @@ export class PluginsService implements OnApplicationBootstrap {
     return this.loadPremiumPlugins();
   }
 
+  /**
+   * Community backend dist path — premium bundle imports shared services from here.
+   * Must be set before loading the bundle (bundles may bake wrong compile-time paths).
+   */
+  resolveHmpanelDist(): string {
+    const candidates = [
+      process.env.HMPANEL_DIST,
+      path.join(process.cwd(), 'backend', 'dist'),
+      '/app/backend/dist',
+      path.join(process.cwd(), 'dist'),
+    ].filter((v): v is string => Boolean(v?.trim()));
+
+    for (const dir of candidates) {
+      if (fs.existsSync(path.join(dir, 'main.js'))) {
+        return dir;
+      }
+    }
+
+    return path.join(process.cwd(), 'backend', 'dist');
+  }
+
   async loadPremiumPlugins(): Promise<boolean> {
     const pluginPath =
       process.env.PREMIUM_PLUGIN_PATH ||
@@ -54,9 +75,9 @@ export class PluginsService implements OnApplicationBootstrap {
         return true;
       }
 
-      if (!process.env.HMPANEL_DIST) {
-        process.env.HMPANEL_DIST = path.join(process.cwd(), 'dist');
-      }
+      const distPath = this.resolveHmpanelDist();
+      process.env.HMPANEL_DIST = distPath;
+      this.logger.log(`HMPANEL_DIST=${distPath}`);
 
       this.logger.log(`Loading premium bundle from ${pluginPath}`);
       const premiumModuleImport = await import(pluginPath);
@@ -72,7 +93,7 @@ export class PluginsService implements OnApplicationBootstrap {
       this.logger.log('Premium bundle loaded.');
       return true;
     } catch (error: any) {
-      this.logger.error(`Failed to load premium bundle: ${error.message}`);
+      this.logger.error(`Failed to load premium bundle: ${error.message}`, error?.stack);
       this.loaded = false;
       return false;
     }

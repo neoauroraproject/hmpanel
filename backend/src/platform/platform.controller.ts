@@ -66,6 +66,13 @@ export class PlatformController {
     return { ok: true, ...result };
   }
 
+  @Post('license/reload-plugins')
+  @Roles('SUPER_ADMIN')
+  @ApiOperation({ summary: 'Reload premium backend modules without reinstalling bundle' })
+  async reloadPlugins() {
+    return this.licenseActivation.reloadPlugins();
+  }
+
   @Post('license/diagnose-bundle')
   @Roles('SUPER_ADMIN')
   @ApiOperation({ summary: 'Diagnose premium bundle download pipeline' })

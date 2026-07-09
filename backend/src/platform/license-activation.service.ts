@@ -236,7 +236,7 @@ export class LicenseActivationService {
         needsReload: true,
         needsRestart: !loaded,
         message: loaded
-          ? 'Premium bundle updated. Refresh the page.'
+          ? 'Premium bundle updated. Refreshing…'
           : 'Bundle installed. Restart the panel service, then refresh.',
       };
     } catch (err: any) {
@@ -315,12 +315,21 @@ export class LicenseActivationService {
   }
 
   async getBundleStatus() {
+    const distPath = this.pluginsService.resolveHmpanelDist();
     return {
       installed: this.bundleService.isBundleInstalled(),
       version: this.bundleService.getInstalledVersion(),
       path: this.bundleService.getPremiumRoot(),
       pluginsLoaded: this.pluginsService.isLoaded(),
+      hmpanelDist: distPath,
     };
+  }
+
+  async reloadPlugins(): Promise<{ loaded: boolean; hmpanelDist: string }> {
+    const hmpanelDist = this.pluginsService.resolveHmpanelDist();
+    process.env.HMPANEL_DIST = hmpanelDist;
+    const loaded = await this.pluginsService.reloadPremiumPlugins();
+    return { loaded, hmpanelDist };
   }
 
   /** Step-by-step diagnostics for bundle download issues (SUPER_ADMIN). */
@@ -349,6 +358,8 @@ export class LicenseActivationService {
       path: root,
       exists: fs.existsSync(root),
       writable: this.bundleService.isPathWritable(root),
+      pluginsLoaded: this.pluginsService.isLoaded(),
+      hmpanelDist: this.pluginsService.resolveHmpanelDist(),
     });
 
     const workDir = this.bundleService.getWorkDirForDiagnostics();
@@ -389,6 +400,11 @@ export class LicenseActivationService {
     } catch (e: any) {
       push('bundle_url_request', false, e.message);
     }
+
+    const reloaded = await this.pluginsService.reloadPremiumPlugins();
+    push('reload_plugins', reloaded, {
+      hmpanelDist: this.pluginsService.resolveHmpanelDist(),
+    });
 
     return { ok: steps.every((s) => s.ok !== false), steps };
   }
