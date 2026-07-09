@@ -11,7 +11,12 @@ export interface LicenseState {
   lastHeartbeatAt?: string | null;
   bundleVersion?: string | null;
   edition: string;
-  bundle?: { installed: boolean; version: string | null };
+  supportUrl?: string;
+  bundle?: {
+    installed: boolean;
+    version: string | null;
+    pluginsLoaded?: boolean;
+  };
 }
 
 export function useLicenseActivation() {
@@ -23,22 +28,36 @@ export function useLicenseActivation() {
     queryFn: async () => (await api.get<LicenseState>("/platform/license")).data,
   });
 
+  const invalidateAll = () => {
+    qc.invalidateQueries({ queryKey: ["platform-license"] });
+    qc.invalidateQueries({ queryKey: ["license"] });
+    qc.invalidateQueries({ queryKey: ["premium-modules"] });
+    qc.invalidateQueries({ queryKey: ["features"] });
+  };
+
+  const handleSuccess = (data: { message?: string; needsReload?: boolean; needsRestart?: boolean }) => {
+    invalidateAll();
+    if (data?.message) {
+      toast(data.message, data.needsRestart ? "error" : "success");
+    }
+    if (data?.needsReload) {
+      setTimeout(() => window.location.reload(), data.needsRestart ? 2500 : 800);
+    }
+  };
+
   const activate = useMutation({
     mutationFn: async (licenseKey: string) =>
       (await api.post("/platform/license/activate", { licenseKey })).data,
-    onSuccess: () => {
-      toast("License activated successfully");
-      qc.invalidateQueries({ queryKey: ["platform-license"] });
-      qc.invalidateQueries({ queryKey: ["features"] });
-    },
-    onError: (e: any) => toast(e?.response?.data?.message || "Activation failed", "error"),
+    onSuccess: (data) => handleSuccess(data),
+    onError: (e: any) =>
+      toast(e?.response?.data?.message || e?.response?.data?.error || "Activation failed", "error"),
   });
 
   const deactivate = useMutation({
     mutationFn: async () => (await api.post("/platform/license/deactivate")).data,
-    onSuccess: () => {
-      toast("License deactivated");
-      qc.invalidateQueries({ queryKey: ["platform-license"] });
+    onSuccess: (data) => {
+      toast("License deactivated — Community mode restored");
+      handleSuccess({ ...data, message: "Community mode restored. Refreshing…", needsReload: true });
     },
     onError: () => toast("Deactivate failed", "error"),
   });
@@ -47,9 +66,15 @@ export function useLicenseActivation() {
     mutationFn: async () => (await api.post("/platform/license/recheck")).data,
     onSuccess: () => {
       toast("License rechecked");
-      qc.invalidateQueries({ queryKey: ["platform-license"] });
+      invalidateAll();
     },
   });
 
-  return { licenseQuery, activate, deactivate, recheck };
+  const updateBundle = useMutation({
+    mutationFn: async () => (await api.post("/platform/license/update-bundle")).data,
+    onSuccess: (data) => handleSuccess(data),
+    onError: (e: any) => toast(e?.response?.data?.message || "Bundle update failed", "error"),
+  });
+
+  return { licenseQuery, activate, deactivate, recheck, updateBundle };
 }

@@ -107,6 +107,16 @@ export class PremiumBundleService {
     }
   }
 
+  /** Best-effort DB sync after premium overlay models are installed. */
+  async applyDatabaseOverlay(): Promise<void> {
+    const overlay = path.join(this.getPremiumRoot(), 'prisma', 'premium.overlay.prisma');
+    if (!fs.existsSync(overlay)) {
+      this.logger.log('No premium prisma overlay in bundle — skipping DB sync');
+      return;
+    }
+    this.logger.log('Premium bundle installed. Database will sync on next panel restart (prisma db push).');
+  }
+
   private async extractTarGz(archivePath: string, destDir: string): Promise<void> {
     await new Promise<void>((resolve, reject) => {
       const tar = spawn('tar', ['-xzf', archivePath, '-C', destDir], { stdio: 'inherit' });

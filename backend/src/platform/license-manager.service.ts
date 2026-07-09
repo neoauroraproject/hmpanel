@@ -262,12 +262,13 @@ export class LicenseManagerService {
     }
 
     const stored = await this.getStoredState();
+    const jwtFeatures = this.normalizeLicensedFeatures(payload.features as string[] | undefined);
     return this.applyExpiry({
       status: 'active',
       mode: 'full',
-      expiresAt: payload.exp ? new Date((payload.exp as number) * 1000).toISOString() : null,
+      expiresAt: payload.exp ? new Date((payload.exp as number) * 1000).toISOString() : stored?.expiresAt ?? null,
       graceEndsAt: null,
-      licensedFeatures: (payload.features as string[]) || getAllFeatureIds(),
+      licensedFeatures: jwtFeatures,
       edition: 'PREMIUM',
       activationId: (payload.activationId as string) || stored?.activationId,
       instanceId,
@@ -275,6 +276,22 @@ export class LicenseManagerService {
       lastHeartbeatAt: stored?.lastHeartbeatAt,
       lastServerCheckAt: stored?.lastServerCheckAt,
     });
+  }
+
+  private normalizeLicensedFeatures(features?: string[]): string[] {
+    if (!features?.length) return getAllFeatureIds();
+    const moduleSlugs = new Set([
+      'monitoring',
+      'monitoring-pro',
+      'backup-center',
+      'store',
+      'branding',
+      'client-templates',
+      'custom-domains',
+      'premium-modules',
+    ]);
+    if (features.some((f) => moduleSlugs.has(f))) return getAllFeatureIds();
+    return features;
   }
 
   private decodeJwtPayload(token: string): Record<string, unknown> | null {

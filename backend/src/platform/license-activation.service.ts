@@ -1,8 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, forwardRef, Inject } from '@nestjs/common';
 import { SettingsService } from '../settings/settings.service';
 import { InstanceFingerprintService } from './instance-fingerprint.service';
 import { PremiumBundleService } from './premium-bundle.service';
 import { LicenseManagerService } from './license-manager.service';
+import { PluginsService } from '../plugins/plugins.service';
 import type { LicenseState } from './types/module-manifest.types';
 import { getAllFeatureIds } from './manifests';
 import { getPanelVersion } from '../common/utils/panel-version.util';
@@ -27,7 +28,10 @@ export interface ActivateResult {
   state: LicenseState;
   bundleVersion?: string;
   needsReload?: boolean;
+  needsRestart?: boolean;
+  bundleSkipped?: boolean;
   licenseServerUrl?: string;
+  message?: string;
 }
 
 @Injectable()
@@ -39,6 +43,8 @@ export class LicenseActivationService {
     private instanceFingerprint: InstanceFingerprintService,
     private bundleService: PremiumBundleService,
     private licenseManager: LicenseManagerService,
+    @Inject(forwardRef(() => PluginsService))
+    private pluginsService: PluginsService,
   ) {}
 
   getLicenseServerUrl(): string {
@@ -51,7 +57,9 @@ export class LicenseActivationService {
 
   async getClientIp(): Promise<string> {
     try {
-      const res = await fetch('https://api.ipify.org?format=json', { signal: AbortSignal.timeout(5000) });
+      const res = await fetch('https://api.ipify.org?format=json', {
+        signal: AbortSignal.timeout(5000),
+      });
       if (res.ok) {
         const data = (await res.json()) as { ip: string };
         return data.ip;
@@ -96,7 +104,11 @@ export class LicenseActivationService {
 
     const now = new Date().toISOString();
     const license = data.license as { expiresAt?: string | null } | undefined;
-    const bundle = data.bundle as { version?: string; githubDownloadUrl?: string; sha256?: string | null } | undefined;
+    const bundle = data.bundle as {
+      version?: string;
+      githubDownloadUrl?: string;
+      sha256?: string | null;
+    } | undefined;
 
     const baseState: LicenseState = {
       status: 'active',
@@ -113,15 +125,32 @@ export class LicenseActivationService {
     };
     await this.licenseManager.setLicenseState(baseState);
 
-    if (bundle?.githubDownloadUrl) {
+    let bundleSkipped = false;
+    const targetVersion = bundle?.version;
+    const installedVersion = this.bundleService.getInstalledVersion();
+
+    if (
+      targetVersion &&
+      installedVersion &&
+      this.bundleService.isBundleInstalled() &&
+      installedVersion === targetVersion
+    ) {
+      bundleSkipped = true;
+      onProgress?.({ stage: 'bundle', percent: 90, message: 'Premium bundle already installed.' });
+    } else if (bundle?.githubDownloadUrl && targetVersion) {
       onProgress?.({ stage: 'downloading', percent: 25, message: 'Downloading premium bundle...' });
       await this.bundleService.downloadAndInstall(
         bundle.githubDownloadUrl,
         bundle.sha256 ?? null,
-        bundle.version!,
-        (pct, stage) => onProgress?.({ stage, percent: 25 + Math.round(pct * 0.65), message: stage }),
+        targetVersion,
+        (pct, stage) =>
+          onProgress?.({ stage, percent: 25 + Math.round(pct * 0.65), message: stage }),
       );
+      await this.bundleService.applyDatabaseOverlay();
     }
+
+    onProgress?.({ stage: 'loading', percent: 95, message: 'Loading premium modules...' });
+    const loaded = await this.pluginsService.reloadPremiumPlugins();
 
     onProgress?.({ stage: 'complete', percent: 100, message: 'Activation complete' });
     this.logger.log(`License activated via ${usedUrl}`);
@@ -130,12 +159,25 @@ export class LicenseActivationService {
       ok: true,
       state: await this.licenseManager.getLicenseState(),
       bundleVersion: bundle?.version,
+      bundleSkipped,
       needsReload: true,
+      needsRestart: !loaded,
       licenseServerUrl: usedUrl,
+      message: loaded
+        ? 'Premium activated. Refresh the page to see premium sections.'
+        : 'Premium files installed. Restart the panel service, then refresh the page.',
     };
   }
 
-  async deactivate(): Promise<void> {
+  async updateBundle(): Promise<ActivateResult> {
+    const licenseKey = await this.settingsService.getSetting(LICENSE_KEY_KEY);
+    if (!licenseKey) {
+      throw new Error('No active license');
+    }
+    return this.activate(licenseKey);
+  }
+
+  async deactivate(): Promise<{ needsReload: boolean }> {
     const licenseKey = await this.settingsService.getSetting(LICENSE_KEY_KEY);
     const instanceId = this.instanceFingerprint.getInstanceId();
 
@@ -162,6 +204,8 @@ export class LicenseActivationService {
       licensedFeatures: [],
       edition: 'COMMUNITY',
     });
+
+    return { needsReload: true };
   }
 
   async getBundleStatus() {
@@ -169,6 +213,7 @@ export class LicenseActivationService {
       installed: this.bundleService.isBundleInstalled(),
       version: this.bundleService.getInstalledVersion(),
       path: this.bundleService.getPremiumRoot(),
+      pluginsLoaded: this.pluginsService.isLoaded(),
     };
   }
 

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { LicenseManagerService } from '../platform/license-manager.service';
+import { FeatureManagerService } from '../platform/feature-manager.service';
 
 export const PREMIUM_FEATURES = [
   'CUSTOM_DOMAINS',
@@ -15,16 +15,17 @@ export type PremiumFeature = (typeof PREMIUM_FEATURES)[number];
 
 @Injectable()
 export class LicenseService {
-  constructor(private licenseManager: LicenseManagerService) {}
+  constructor(private featureManager: FeatureManagerService) {}
 
   async hasFeature(feature: PremiumFeature): Promise<boolean> {
-    return this.licenseManager.isFeatureLicensed(feature);
+    return this.featureManager.isFeatureEnabled(feature);
   }
 
   async getActiveFeatures(): Promise<Record<PremiumFeature, boolean>> {
+    const features = await this.featureManager.getActiveFeatures();
     const result = {} as Record<PremiumFeature, boolean>;
     for (const f of PREMIUM_FEATURES) {
-      result[f] = await this.licenseManager.isFeatureLicensed(f);
+      result[f] = !!features[f];
     }
     return result;
   }

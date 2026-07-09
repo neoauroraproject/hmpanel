@@ -1,9 +1,24 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  UseGuards,
+  Res,
+  NotFoundException,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { Roles, RolesGuard } from '../common/roles.guard';
 import { LicenseManagerService } from './license-manager.service';
 import { LicenseActivationService } from './license-activation.service';
+import { FeatureManagerService } from './feature-manager.service';
+import { PremiumBundleService } from './premium-bundle.service';
+import type { Response } from 'express';
+import * as fs from 'fs';
+import * as path from 'path';
+
+export const PREMIUM_SUPPORT_URL = 'https://t.me/hmraysupport';
 
 @ApiTags('Platform')
 @ApiBearerAuth()
@@ -13,6 +28,8 @@ export class PlatformController {
   constructor(
     private licenseManager: LicenseManagerService,
     private licenseActivation: LicenseActivationService,
+    private featureManager: FeatureManagerService,
+    private bundleService: PremiumBundleService,
   ) {}
 
   @Get('license')
@@ -23,6 +40,7 @@ export class PlatformController {
     return {
       ...state,
       bundle,
+      supportUrl: PREMIUM_SUPPORT_URL,
       licenseServer: {
         primary: this.licenseActivation.getLicenseServerUrl(),
         urls: this.licenseActivation.getLicenseServerUrls(),
@@ -42,10 +60,17 @@ export class PlatformController {
 
   @Post('license/deactivate')
   @Roles('SUPER_ADMIN')
-  @ApiOperation({ summary: 'Deactivate license and free installation slot' })
+  @ApiOperation({ summary: 'Deactivate license (keeps bundle on disk)' })
   async deactivateLicense() {
-    await this.licenseActivation.deactivate();
-    return { ok: true };
+    const result = await this.licenseActivation.deactivate();
+    return { ok: true, ...result };
+  }
+
+  @Post('license/update-bundle')
+  @Roles('SUPER_ADMIN')
+  @ApiOperation({ summary: 'Download latest premium bundle for active license' })
+  async updateBundle() {
+    return this.licenseActivation.updateBundle();
   }
 
   @Get('license/bundle-status')
@@ -59,5 +84,32 @@ export class PlatformController {
   async recheckLicense() {
     const state = await this.licenseActivation.recheckNow();
     return { ok: true, state };
+  }
+
+  @Get('features')
+  @ApiOperation({ summary: 'Premium feature flags' })
+  async getFeatures() {
+    return this.featureManager.getActiveFeatures();
+  }
+}
+
+/** Public static assets from installed premium bundle (frontend runtime). */
+@ApiTags('Platform')
+@Controller('platform/premium-assets')
+export class PremiumAssetsController {
+  constructor(private bundleService: PremiumBundleService) {}
+
+  @Get('frontend/premium-runtime.js')
+  serveRuntime(@Res() res: Response) {
+    const file = path.join(
+      this.bundleService.getPremiumRoot(),
+      'frontend',
+      'premium-runtime.js',
+    );
+    if (!fs.existsSync(file)) {
+      throw new NotFoundException('Premium runtime not installed');
+    }
+    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+    res.sendFile(file);
   }
 }

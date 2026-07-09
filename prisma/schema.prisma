@@ -152,6 +152,7 @@ model Admin {
   productTemplates ProductTemplate[]
   Brand            Brand[]
   operationQueues  OperationQueue[]
+  moduleAssignments AdminModuleAssignment[]
 }
 
 // Bridging table for Admin <-> Inbound access
@@ -521,6 +522,34 @@ enum IncidentSeverity {
 enum IncidentStatus {
   ACTIVE
   RESOLVED
+}
+
+enum PremiumModuleKind {
+  PLATFORM
+  BUSINESS
+}
+
+model PremiumModuleState {
+  moduleId  String            @id
+  kind      PremiumModuleKind
+  enabled   Boolean           @default(false)
+  settings  Json              @default("{}")
+  updatedAt DateTime          @updatedAt
+}
+
+model AdminModuleAssignment {
+  id        String   @id @default(uuid())
+  adminId   String
+  moduleId  String
+  enabled   Boolean  @default(true)
+  settings  Json     @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  admin Admin @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@unique([adminId, moduleId])
+  @@index([moduleId])
 }
 
 model Incident {

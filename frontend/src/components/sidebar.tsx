@@ -27,6 +27,9 @@ import {
 import { useAuth } from "@/store/auth";
 import type { Role } from "@/lib/types";
 import { ThemeToggle } from "./ThemeToggle";
+import { usePluginRegistry } from "@/store/pluginRegistry";
+import { usePremiumModules } from "@/hooks/usePremiumModules";
+import { useLicenseActivation } from "@/hooks/useLicenseActivation";
 
 const CORE_NAV: {
   href: string;
@@ -41,6 +44,7 @@ const CORE_NAV: {
   { href: "/migration", label: "Migration", icon: Import, roles: ["SUPER_ADMIN"] },
   { href: "/traffic", label: "Traffic", icon: Wallet },
   { href: "/settings", label: "Settings", icon: Settings, roles: ["SUPER_ADMIN"] },
+  { href: "/settings/premium", label: "Premium Settings", icon: Diamond, roles: ["SUPER_ADMIN"] },
 ];
 
 
@@ -50,10 +54,31 @@ export function Sidebar() {
   const router = useRouter();
   const admin = useAuth((s) => s.admin);
   const logout = useAuth((s) => s.logout);
+  const { data: premiumModules = [] } = usePremiumModules();
+  const { licenseQuery } = useLicenseActivation();
+  const dynamicMenus = usePluginRegistry((s) => s.menus);
+
+  const isPremium =
+    licenseQuery.data?.edition === "PREMIUM" &&
+    licenseQuery.data?.status !== "community" &&
+    licenseQuery.data?.mode !== "disabled";
 
   const coreItems = CORE_NAV.filter(
     (n) => !n.roles || (admin && n.roles.includes(admin.role))
   );
+
+  const premiumMenus = isPremium
+    ? [
+        ...dynamicMenus,
+        ...premiumModules
+          .filter((m) => m.enabled && m.status !== "disabled" && m.status !== "future" && m.id !== "job-center")
+          .map((m) => ({
+            title: m.name,
+            href: m.frontendPath,
+            icon: Diamond,
+          })),
+      ].filter((menu, i, arr) => arr.findIndex((x) => x.href === menu.href) === i)
+    : [];
 
 
 
@@ -88,6 +113,36 @@ export function Sidebar() {
           })}
         </nav>
 
+        {premiumMenus.length > 0 && (
+          <>
+            <div className="px-5 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-emerald-600/80 dark:text-emerald-400/80">
+              Premium
+            </div>
+            <nav className="space-y-1 px-3 pb-2">
+              {premiumMenus.map((menu) => {
+                const href = menu.href;
+                const title = menu.title;
+                const Icon = menu.icon || Diamond;
+                const active = pathname.startsWith(href);
+                return (
+                  <Link
+                    key={href}
+                    href={href}
+                    className={clsx(
+                      "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
+                      active
+                        ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                        : "text-zinc-500 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-900/50",
+                    )}
+                  >
+                    <Icon size={18} />
+                    {title}
+                  </Link>
+                );
+              })}
+            </nav>
+          </>
+        )}
 
       </div>
 

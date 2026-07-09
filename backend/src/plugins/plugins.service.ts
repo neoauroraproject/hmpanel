@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
+import { Injectable, Logger, OnApplicationBootstrap, Inject, forwardRef } from '@nestjs/common';
 import { LazyModuleLoader } from '@nestjs/core';
 import { LicenseManagerService } from '../platform/license-manager.service';
 import * as fs from 'fs';
@@ -7,6 +7,7 @@ import * as path from 'path';
 @Injectable()
 export class PluginsService implements OnApplicationBootstrap {
   private readonly logger = new Logger(PluginsService.name);
+  private loaded = false;
 
   constructor(
     private lazyModuleLoader: LazyModuleLoader,
@@ -17,14 +18,24 @@ export class PluginsService implements OnApplicationBootstrap {
     await this.loadPremiumPlugins();
   }
 
-  async loadPremiumPlugins() {
+  isLoaded(): boolean {
+    return this.loaded;
+  }
+
+  async reloadPremiumPlugins(): Promise<boolean> {
+    this.loaded = false;
+    return this.loadPremiumPlugins();
+  }
+
+  async loadPremiumPlugins(): Promise<boolean> {
     const pluginPath =
       process.env.PREMIUM_PLUGIN_PATH ||
       path.join('/opt/hmpanel/premium', 'backend', 'index.js');
 
     if (!fs.existsSync(pluginPath)) {
       this.logger.log('No premium bundle installed — Community mode.');
-      return;
+      this.loaded = false;
+      return false;
     }
 
     try {
@@ -34,8 +45,17 @@ export class PluginsService implements OnApplicationBootstrap {
         state.status === 'invalid' ||
         state.status === 'community'
       ) {
-        this.logger.warn('Premium bundle present but license inactive — skipping load.');
-        return;
+        this.logger.warn('Premium bundle on disk but license inactive — skipping load.');
+        this.loaded = false;
+        return false;
+      }
+
+      if (this.loaded) {
+        return true;
+      }
+
+      if (!process.env.HMPANEL_DIST) {
+        process.env.HMPANEL_DIST = path.join(process.cwd(), 'dist');
       }
 
       this.logger.log(`Loading premium bundle from ${pluginPath}`);
@@ -48,9 +68,13 @@ export class PluginsService implements OnApplicationBootstrap {
       }
 
       await this.lazyModuleLoader.load(() => PremiumBundleModule);
+      this.loaded = true;
       this.logger.log('Premium bundle loaded.');
+      return true;
     } catch (error: any) {
       this.logger.error(`Failed to load premium bundle: ${error.message}`);
+      this.loaded = false;
+      return false;
     }
   }
 }
