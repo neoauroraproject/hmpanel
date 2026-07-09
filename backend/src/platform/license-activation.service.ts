@@ -6,6 +6,7 @@ import {
   HttpException,
   HttpStatus,
 } from '@nestjs/common';
+import * as fs from 'fs';
 import { SettingsService } from '../settings/settings.service';
 import { InstanceFingerprintService } from './instance-fingerprint.service';
 import { PremiumBundleService } from './premium-bundle.service';
@@ -218,25 +219,32 @@ export class LicenseActivationService {
       throw new HttpException('No active license', HttpStatus.BAD_REQUEST);
     }
 
-    const state = await this.licenseManager.getLicenseState();
-    const version = state.bundleVersion || '1.5.6';
+    try {
+      const state = await this.licenseManager.getLicenseState();
+      const version = state.bundleVersion || '1.5.6';
 
-    const downloadUrl = await this.resolveBundleDownloadUrl(licenseKey, version);
-    await this.bundleService.downloadAndInstall(downloadUrl, null, version);
-    await this.bundleService.applyDatabaseOverlay();
+      const downloadUrl = await this.resolveBundleDownloadUrl(licenseKey, version);
+      await this.bundleService.downloadAndInstall(downloadUrl, null, version);
+      await this.bundleService.applyDatabaseOverlay();
 
-    const loaded = await this.pluginsService.reloadPremiumPlugins();
+      const loaded = await this.pluginsService.reloadPremiumPlugins();
 
-    return {
-      ok: true,
-      state: await this.licenseManager.getLicenseState(),
-      bundleVersion: version,
-      needsReload: true,
-      needsRestart: !loaded,
-      message: loaded
-        ? 'Premium bundle updated. Refresh the page.'
-        : 'Bundle installed. Restart the panel service, then refresh.',
-    };
+      return {
+        ok: true,
+        state: await this.licenseManager.getLicenseState(),
+        bundleVersion: version,
+        needsReload: true,
+        needsRestart: !loaded,
+        message: loaded
+          ? 'Premium bundle updated. Refresh the page.'
+          : 'Bundle installed. Restart the panel service, then refresh.',
+      };
+    } catch (err: any) {
+      if (err instanceof HttpException) throw err;
+      const message = err?.message || 'Premium bundle update failed';
+      this.logger.error(`Bundle update failed: ${message}`, err?.stack);
+      throw new HttpException(message, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
   }
 
   private async resolveBundleDownloadUrl(
@@ -313,6 +321,76 @@ export class LicenseActivationService {
       path: this.bundleService.getPremiumRoot(),
       pluginsLoaded: this.pluginsService.isLoaded(),
     };
+  }
+
+  /** Step-by-step diagnostics for bundle download issues (SUPER_ADMIN). */
+  async diagnoseBundle(): Promise<Record<string, unknown>> {
+    const steps: Record<string, unknown>[] = [];
+    const push = (step: string, ok: boolean, detail?: unknown) => {
+      steps.push({ step, ok, detail });
+    };
+
+    const licenseKey = await this.settingsService.getSetting(LICENSE_KEY_KEY);
+    push('license_key_stored', !!licenseKey, licenseKey ? 'present' : 'missing');
+
+    const instanceId = this.instanceFingerprint.getInstanceId();
+    push('instance_id', true, instanceId);
+
+    let clientIp = 'unknown';
+    try {
+      clientIp = await this.getClientIp();
+      push('public_ip', true, clientIp);
+    } catch (e: any) {
+      push('public_ip', false, e.message);
+    }
+
+    const root = this.bundleService.getPremiumRoot();
+    push('premium_root', true, {
+      path: root,
+      exists: fs.existsSync(root),
+      writable: this.bundleService.isPathWritable(root),
+    });
+
+    const workDir = this.bundleService.getWorkDirForDiagnostics();
+    push('work_dir', this.bundleService.isPathWritable(workDir), workDir);
+
+    if (!licenseKey) {
+      return { ok: false, steps };
+    }
+
+    const state = await this.licenseManager.getLicenseState();
+    const version = state.bundleVersion || '1.5.6';
+    push('target_version', true, version);
+
+    try {
+      const { res, data, usedUrl } = await requestLicenseServer('/v1/panel/bundle-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ licenseKey, instanceId, version, clientIp }),
+      });
+      push('bundle_url_request', res.ok, {
+        status: res.status,
+        usedUrl,
+        error: data.error,
+        hasDownloadUrl: typeof data.downloadUrl === 'string',
+      });
+
+      if (res.ok && typeof data.downloadUrl === 'string') {
+        const head = await fetch(data.downloadUrl, {
+          method: 'GET',
+          headers: { Range: 'bytes=0-0' },
+          signal: AbortSignal.timeout(30_000),
+        });
+        push('bundle_download_probe', head.ok || head.status === 206, {
+          status: head.status,
+          statusText: head.statusText,
+        });
+      }
+    } catch (e: any) {
+      push('bundle_url_request', false, e.message);
+    }
+
+    return { ok: steps.every((s) => s.ok !== false), steps };
   }
 
   async recheckNow(): Promise<LicenseState> {

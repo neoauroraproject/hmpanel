@@ -1,7 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+
+const execFileAsync = promisify(execFile);
 
 export interface BundleManifest {
   version: string;
@@ -45,59 +50,115 @@ export class PremiumBundleService {
     onProgress?: (pct: number, stage: string) => void,
   ): Promise<void> {
     const root = this.getPremiumRoot();
-    const tmpDir = path.join(root, '..', `premium-dl-${Date.now()}`);
+    const workBase = this.getWritableWorkDir();
+    const tmpDir = path.join(workBase, `premium-dl-${Date.now()}`);
     const archivePath = path.join(tmpDir, `premium-bundle-${version}.tar.gz`);
 
     fs.mkdirSync(tmpDir, { recursive: true });
     onProgress?.(5, 'downloading');
 
-    const buf = await this.fetchBundleBuffer(downloadUrl);
-    fs.writeFileSync(archivePath, buf);
-    onProgress?.(40, 'verifying');
-
-    const sha256 = crypto.createHash('sha256').update(buf).digest('hex');
-    if (expectedSha256 && expectedSha256 !== sha256) {
-      throw new Error(`SHA256 mismatch: expected ${expectedSha256}, got ${sha256}`);
-    }
-
-    onProgress?.(55, 'extracting');
-    const extractDir = path.join(tmpDir, 'extract');
-    fs.mkdirSync(extractDir, { recursive: true });
-    await this.extractTarGz(archivePath, extractDir);
-
-    const staging = path.join(tmpDir, 'staging');
-    if (fs.existsSync(path.join(extractDir, 'manifest.json'))) {
-      fs.cpSync(extractDir, staging, { recursive: true });
-    } else {
-      const inner = fs.readdirSync(extractDir).find((n) =>
-        fs.existsSync(path.join(extractDir, n, 'manifest.json')),
-      );
-      if (!inner) throw new Error('Invalid bundle: manifest.json not found');
-      fs.cpSync(path.join(extractDir, inner), staging, { recursive: true });
-    }
-
-    onProgress?.(85, 'installing');
-    const backup = `${root}.bak-${Date.now()}`;
-    if (fs.existsSync(root)) {
-      fs.renameSync(root, backup);
-    }
-    fs.mkdirSync(path.dirname(root), { recursive: true });
-    fs.cpSync(staging, root, { recursive: true });
-
-    const manifestPath = path.join(root, 'manifest.json');
-    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as BundleManifest;
-    manifest.sha256 = sha256;
-    manifest.version = version;
-    fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
-
-    onProgress?.(100, 'done');
-    this.logger.log(`Premium bundle ${version} installed to ${root}`);
-
     try {
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-      if (fs.existsSync(backup)) fs.rmSync(backup, { recursive: true, force: true });
+      const buf = await this.fetchBundleBuffer(downloadUrl);
+      fs.writeFileSync(archivePath, buf);
+      onProgress?.(40, 'verifying');
+
+      const sha256 = crypto.createHash('sha256').update(buf).digest('hex');
+      if (expectedSha256 && expectedSha256 !== sha256) {
+        throw new Error(`SHA256 mismatch: expected ${expectedSha256}, got ${sha256}`);
+      }
+
+      onProgress?.(55, 'extracting');
+      const extractDir = path.join(tmpDir, 'extract');
+      fs.mkdirSync(extractDir, { recursive: true });
+      await this.extractTarGz(archivePath, extractDir);
+
+      const staging = path.join(tmpDir, 'staging');
+      if (fs.existsSync(path.join(extractDir, 'manifest.json'))) {
+        fs.cpSync(extractDir, staging, { recursive: true });
+      } else {
+        const inner = fs.readdirSync(extractDir).find((n) =>
+          fs.existsSync(path.join(extractDir, n, 'manifest.json')),
+        );
+        if (!inner) throw new Error('Invalid bundle: manifest.json not found');
+        fs.cpSync(path.join(extractDir, inner), staging, { recursive: true });
+      }
+
+      onProgress?.(85, 'installing');
+      // Docker volume is mounted at `root` — never rename the mount point (EBUSY).
+      this.installIntoRoot(staging, root);
+
+      const manifestPath = path.join(root, 'manifest.json');
+      const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as BundleManifest;
+      manifest.sha256 = sha256;
+      manifest.version = version;
+      fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+
+      onProgress?.(100, 'done');
+      this.logger.log(`Premium bundle ${version} installed to ${root}`);
+    } finally {
+      try {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      } catch {
+        /* cleanup best-effort */
+      }
+    }
+  }
+
+  /** Writable scratch dir — must not be a sibling of a Docker volume mount point. */
+  private getWritableWorkDir(): string {
+    const candidates = [
+      process.env.PREMIUM_WORK_DIR,
+      '/app/backups',
+      path.join(process.cwd(), 'backups'),
+      os.tmpdir(),
+    ].filter((v): v is string => Boolean(v?.trim()));
+
+    for (const dir of candidates) {
+      try {
+        fs.mkdirSync(dir, { recursive: true });
+        fs.accessSync(dir, fs.constants.W_OK);
+        return dir;
+      } catch {
+        /* try next */
+      }
+    }
+    throw new Error('No writable directory for premium bundle download');
+  }
+
+  getWorkDirForDiagnostics(): string {
+    try {
+      return this.getWritableWorkDir();
     } catch {
-      /* cleanup best-effort */
+      return '/app/backups';
+    }
+  }
+
+  isPathWritable(dir: string): boolean {
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      const probe = path.join(dir, `.write-test-${process.pid}`);
+      fs.writeFileSync(probe, 'ok');
+      fs.rmSync(probe, { force: true });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Replace contents inside the install root without renaming the directory itself. */
+  private installIntoRoot(staging: string, root: string): void {
+    fs.mkdirSync(root, { recursive: true });
+    this.clearDirectoryContents(root);
+    for (const name of fs.readdirSync(staging)) {
+      const src = path.join(staging, name);
+      const dest = path.join(root, name);
+      fs.cpSync(src, dest, { recursive: true });
+    }
+  }
+
+  private clearDirectoryContents(dir: string): void {
+    for (const name of fs.readdirSync(dir)) {
+      fs.rmSync(path.join(dir, name), { recursive: true, force: true });
     }
   }
 
@@ -115,9 +176,11 @@ export class PremiumBundleService {
     });
 
     if (!res.ok) {
+      const detail = await res.text().catch(() => '');
       throw new Error(
-        `Bundle download failed (${res.status} ${res.statusText}). ` +
-          'Ensure the license server has GITHUB_TOKEN configured and your server IP matches the license.',
+        `Bundle download failed (${res.status} ${res.statusText})` +
+          (detail ? `: ${detail.slice(0, 200)}` : '') +
+          '. Ensure the license server has GITHUB_TOKEN configured and your server IP matches the license.',
       );
     }
 
@@ -135,11 +198,17 @@ export class PremiumBundleService {
   }
 
   private async extractTarGz(archivePath: string, destDir: string): Promise<void> {
-    await this.extractTarGzNode(archivePath, destDir);
-  }
+    try {
+      const tar = await import('tar');
+      await tar.x({ file: archivePath, cwd: destDir });
+      return;
+    } catch (npmErr: any) {
+      this.logger.warn(`npm tar extract failed (${npmErr.message}), trying system tar`);
+    }
 
-  private async extractTarGzNode(archivePath: string, destDir: string): Promise<void> {
-    const tar = await import('tar');
-    await tar.x({ file: archivePath, cwd: destDir });
+    await execFileAsync('tar', ['-xzf', archivePath, '-C', destDir], {
+      timeout: 120_000,
+      maxBuffer: 1024 * 1024,
+    });
   }
 }

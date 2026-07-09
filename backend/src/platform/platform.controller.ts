@@ -66,6 +66,13 @@ export class PlatformController {
     return { ok: true, ...result };
   }
 
+  @Post('license/diagnose-bundle')
+  @Roles('SUPER_ADMIN')
+  @ApiOperation({ summary: 'Diagnose premium bundle download pipeline' })
+  async diagnoseBundle() {
+    return this.licenseActivation.diagnoseBundle();
+  }
+
   @Post('license/update-bundle')
   @Roles('SUPER_ADMIN')
   @ApiOperation({ summary: 'Download latest premium bundle for active license' })
