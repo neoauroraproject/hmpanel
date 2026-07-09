@@ -258,13 +258,15 @@ export class LicenseActivationService {
       return bundle.downloadUrl;
     }
 
-    const instanceId = this.instanceFingerprint.getInstanceId();
-    const clientIp = await this.getClientIp();
-    const { res, data } = await requestLicenseServer('/v1/panel/bundle-url', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ licenseKey, instanceId, version, clientIp }),
-    });
+    let { res, data } = await this.requestBundleUrl(licenseKey, version);
+
+    if (!res.ok && this.isActivationMismatch(data, res.status)) {
+      this.logger.warn(
+        'License server has no activation for this panel instance — re-registering…',
+      );
+      await this.reregisterWithLicenseServer(licenseKey);
+      ({ res, data } = await this.requestBundleUrl(licenseKey, version));
+    }
 
     if (!res.ok) {
       const message =
@@ -281,6 +283,80 @@ export class LicenseActivationService {
       'License server did not return a secure bundle download URL. Deploy license worker with GITHUB_TOKEN.',
       HttpStatus.BAD_GATEWAY,
     );
+  }
+
+  private async requestBundleUrl(licenseKey: string, version: string) {
+    const instanceId = this.instanceFingerprint.getInstanceId();
+    const clientIp = await this.getClientIp();
+    return requestLicenseServer('/v1/panel/bundle-url', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ licenseKey, instanceId, version, clientIp }),
+    });
+  }
+
+  private isActivationMismatch(data: Record<string, unknown>, status: number): boolean {
+    if (status !== 403) return false;
+    const err = typeof data.error === 'string' ? data.error : '';
+    return (
+      err.includes('No active activation') ||
+      err.includes('Instance mismatch') ||
+      err.includes('No active activation for this instance')
+    );
+  }
+
+  /** Re-bind this panel instance on the license server (e.g. after container recreate). */
+  private async reregisterWithLicenseServer(licenseKey: string): Promise<void> {
+    const instanceId = this.instanceFingerprint.getInstanceId();
+    const clientIp = await this.getClientIp();
+    const panelVersion = getPanelVersion();
+
+    const { res, data } = await requestLicenseServer('/v1/panel/activate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        licenseKey,
+        instanceId,
+        clientIp,
+        panelVersion,
+        productSlug: process.env.LICENSE_PRODUCT_ID || 'hmpanel',
+      }),
+    });
+
+    if (!res.ok) {
+      const message =
+        (typeof data.error === 'string' && data.error) ||
+        `Could not re-register panel with license server (${res.status})`;
+      throw new HttpException(message, HttpStatus.BAD_GATEWAY);
+    }
+
+    if (typeof data.entitlementJwt === 'string') {
+      await this.settingsService.setSetting(LICENSE_ENTITLEMENT_KEY, data.entitlementJwt);
+    }
+    if (data.activationId) {
+      await this.settingsService.setSetting(LICENSE_ACTIVATION_ID_KEY, String(data.activationId));
+    }
+
+    const license = data.license as { expiresAt?: string | null } | undefined;
+    const bundle = data.bundle as { version?: string | null } | undefined;
+    const now = new Date().toISOString();
+    const stored = await this.licenseManager.getLicenseState();
+
+    await this.licenseManager.setLicenseState({
+      ...stored,
+      status: 'active',
+      mode: 'full',
+      edition: 'PREMIUM',
+      expiresAt: license?.expiresAt ?? stored.expiresAt,
+      bundleVersion: bundle?.version ?? stored.bundleVersion,
+      activationId: data.activationId ? String(data.activationId) : stored.activationId,
+      instanceId,
+      lastServerCheckAt: now,
+      lastHeartbeatAt: now,
+      licensedFeatures: getAllFeatureIds(),
+    });
+
+    this.logger.log(`Panel instance re-registered with license server (${instanceId})`);
   }
 
   async deactivate(): Promise<{ needsReload: boolean }> {
