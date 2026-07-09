@@ -9,8 +9,7 @@ import { ErrorBox, PageHeader, Spinner, Card } from "@/components/ui";
 import { useToast } from "@/components/toast";
 import { motion } from "framer-motion";
 import { SslManagerModal } from "./SslManagerModal";
-
-
+import { LicenseSettingsCard } from "@/components/LicenseSettingsCard";
 
 export default function GlobalSettingsPage() {
   const qc = useQueryClient();
@@ -99,6 +98,7 @@ export default function GlobalSettingsPage() {
             </div>
           </Card>
 
+          <LicenseSettingsCard />
           <BackupRestoreCard />
           <Card className="p-0 overflow-hidden hover:border-indigo-500 transition-colors cursor-pointer">
             <div className="p-6 flex items-center justify-between" onClick={() => setIsSslModalOpen(true)}>

@@ -4,16 +4,25 @@ import {
   ExecutionContext,
   ForbiddenException,
 } from '@nestjs/common';
+import { LicenseManagerService } from '../../platform/license-manager.service';
 
 @Injectable()
 export class PremiumGuard implements CanActivate {
-  canActivate(context: ExecutionContext): boolean {
-    const releaseMode = process.env.RELEASE_MODE || 'PREMIUM';
-    if (releaseMode === 'COMMUNITY') {
+  constructor(private licenseManager: LicenseManagerService) {}
+
+  async canActivate(_context: ExecutionContext): Promise<boolean> {
+    const state = await this.licenseManager.getLicenseState();
+    const active =
+      (state.status === 'active' || state.status === 'grace') &&
+      state.mode !== 'disabled' &&
+      state.edition === 'PREMIUM';
+
+    if (!active) {
       throw new ForbiddenException(
-        'This feature is not available in the Community Edition.',
+        'This feature requires an active Premium license.',
       );
     }
+
     return true;
   }
 }

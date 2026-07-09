@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { SettingsService } from './settings.service';
+import { LicenseManagerService } from '../platform/license-manager.service';
 
 export const PREMIUM_FEATURES = [
   'CUSTOM_DOMAINS',
@@ -15,29 +15,17 @@ export type PremiumFeature = (typeof PREMIUM_FEATURES)[number];
 
 @Injectable()
 export class LicenseService {
-  constructor(private settingsService: SettingsService) {}
+  constructor(private licenseManager: LicenseManagerService) {}
 
-  /**
-   * Checks if a specific feature is enabled by the current license.
-   * Currently, returns true for all features as per the user's requirement
-   * until the actual license enforcement system is built.
-   */
   async hasFeature(feature: PremiumFeature): Promise<boolean> {
-    // In the future, this will check the 'LICENSE_KEY' from settings
-    // const licenseKey = await this.settingsService.getSetting('LICENSE_KEY');
-    // return verifyLicense(licenseKey, feature);
-
-    return true; // All features are active for now
+    return this.licenseManager.isFeatureLicensed(feature);
   }
 
-  /**
-   * Returns a map of all premium features and their active status.
-   */
   async getActiveFeatures(): Promise<Record<PremiumFeature, boolean>> {
-    const features = {} as Record<PremiumFeature, boolean>;
+    const result = {} as Record<PremiumFeature, boolean>;
     for (const f of PREMIUM_FEATURES) {
-      features[f] = true; // All true for now
+      result[f] = await this.licenseManager.isFeatureLicensed(f);
     }
-    return features;
+    return result;
   }
 }

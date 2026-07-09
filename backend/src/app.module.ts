@@ -15,11 +15,13 @@ import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { InboundsModule } from './inbounds/inbounds.module';
 import { BackupsModule } from './backups/backups.module';
 import { BulkClientsModule } from './bulk-clients/bulk-clients.module';
+import { PlatformModule } from './platform/platform.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     ScheduleModule.forRoot(),
+    PlatformModule,
     PrismaModule,
     AuthModule,
     AdminsModule,

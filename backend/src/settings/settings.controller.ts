@@ -5,8 +5,6 @@ import { RolesGuard, Roles } from '../common/roles.guard';
 import { SettingsService } from './settings.service';
 import { LicenseService } from './license.service';
 import { DiagnosticService } from './diagnostic.service';
-import { PremiumGuard } from '../common/guards/premium.guard';
-
 @ApiTags('Settings')
 @ApiBearerAuth()
 @UseGuards(AuthGuard('jwt'), RolesGuard)
@@ -41,7 +39,6 @@ export class SettingsController {
   }
 
   @Get('license')
-  @UseGuards(PremiumGuard)
   // No @Roles guard here, we want all authenticated users (even resellers) to know what features they have
   @ApiOperation({ summary: 'Get active premium features for the platform' })
   async getLicenseFeatures() {

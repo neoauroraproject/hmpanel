@@ -41,3 +41,15 @@ export function supportsBulkClientApi(panel: {
     caps?.bulkDisable
   );
 }
+
+/** Installed panel version from env or package.json */
+export function getPanelVersion(): string {
+  if (process.env.PANEL_VERSION) return process.env.PANEL_VERSION;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const pkg = require('../../../package.json') as { version?: string };
+    return pkg.version || '0.0.0';
+  } catch {
+    return '0.0.0';
+  }
+}

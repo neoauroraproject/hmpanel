@@ -542,6 +542,12 @@ step_2_environment() {
 
 RELEASE_MODE=COMMUNITY
 
+# Premium license (activate via Settings after install)
+LICENSE_SERVER_URL=https://license.hmray.pro
+LICENSE_SERVER_URL_FALLBACK=https://license.hmrayserver.com
+LICENSE_PRODUCT_ID=hmpanel
+PREMIUM_PLUGIN_PATH=/opt/hmpanel/premium/backend/index.js
+
 # Database
 DATABASE_URL=postgresql://panel_user:${POSTGRES_PASSWORD}@postgres:5432/panel_db?schema=public&connection_limit=5&connect_timeout=30
 POSTGRES_USER=panel_user

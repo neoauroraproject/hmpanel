@@ -5,7 +5,6 @@ import { RolesGuard, Roles } from '../common/roles.guard';
 import { StatsService } from './stats.service';
 import { PanelsService } from '../panels/panels.service';
 import type { AuthRequest } from '../common/auth-request';
-import { PremiumGuard } from '../common/guards/premium.guard';
 
 @ApiTags('Stats')
 @ApiBearerAuth()

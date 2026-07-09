@@ -22,6 +22,10 @@ services:
       - PORT=${BACKEND_PORT:-4000}
       - APP_PORT=${APP_PORT:-3000}
       - RELEASE_MODE=${RELEASE_MODE:-COMMUNITY}
+      - LICENSE_SERVER_URL=${LICENSE_SERVER_URL:-https://license.hmray.pro}
+      - LICENSE_SERVER_URL_FALLBACK=${LICENSE_SERVER_URL_FALLBACK:-https://license.hmrayserver.com}
+      - LICENSE_PRODUCT_ID=${LICENSE_PRODUCT_ID:-hmpanel}
+      - PREMIUM_PLUGIN_PATH=${PREMIUM_PLUGIN_PATH:-/opt/hmpanel/premium/backend/index.js}
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-/api-proxy}
       - NEXT_PUBLIC_RELEASE_MODE=${RELEASE_MODE:-COMMUNITY}
       - INITIAL_ADMIN_USERNAME=${INITIAL_ADMIN_USERNAME}
@@ -36,6 +40,7 @@ services:
       - uploads:/app/uploads
       - backups:/app/backups
       - logs:/app/logs
+      - premium:/opt/hmpanel/premium
       - /var/run/docker.sock:/var/run/docker.sock
       - ./nginx/ssl:/etc/nginx/ssl
       - ./acme.sh:/app/acme.sh
@@ -158,6 +163,8 @@ volumes:
     name: hmpanel_backups
   logs:
     name: hmpanel_logs
+  premium:
+    name: hmpanel_premium
 
 # ─────────────────────────────────────────────────────────────────
 # Networks
