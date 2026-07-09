@@ -34,3 +34,12 @@ LICENSE_SERVER_URL=http://127.0.0.1:8787
 ```
 
 Run `wrangler dev` in `hm-license-manager` repo.
+
+## Repo split
+
+| Edition | GitHub repo | Contents |
+|---------|-------------|----------|
+| Community | `neoauroraproject/hmpanel` | Full free panel + license hooks |
+| Premium | `neoauroraproject/hmpanel-premium` (private) | Premium modules only — delivered as bundle |
+
+Community users update from `hmpanel` only. Premium code is downloaded after license activation, not cloned on the server.

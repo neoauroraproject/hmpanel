@@ -16,12 +16,14 @@ import { InboundsModule } from './inbounds/inbounds.module';
 import { BackupsModule } from './backups/backups.module';
 import { BulkClientsModule } from './bulk-clients/bulk-clients.module';
 import { PlatformModule } from './platform/platform.module';
+import { PluginsModule } from './plugins/plugins.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     ScheduleModule.forRoot(),
     PlatformModule,
+    PluginsModule,
     PrismaModule,
     AuthModule,
     AdminsModule,
