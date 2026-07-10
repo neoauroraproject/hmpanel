@@ -113,6 +113,14 @@ export class PlatformController {
     return this.catalogService.listForLicensedAdmin(req.user.id, req.user.role);
   }
 
+  @Get('premium-modules-all')
+  @UseGuards(RolesGuard)
+  @Roles('SUPER_ADMIN')
+  @ApiOperation({ summary: 'Full premium module catalog for Super Admin settings' })
+  async getPremiumModulesAll() {
+    return this.catalogService.listAllForSuperAdmin();
+  }
+
   @Get('features')
   @ApiOperation({ summary: 'Premium feature flags' })
   async getFeatures() {

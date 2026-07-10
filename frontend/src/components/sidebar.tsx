@@ -141,7 +141,7 @@ export function Sidebar() {
                       "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
                       active
                         ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-                        : "text-zinc-500 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-900/50",
+                        : "text-zinc-500 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-900/50 hover:text-zinc-700 dark:hover:text-zinc-200",
                     )}
                   >
                     <Icon size={18} />

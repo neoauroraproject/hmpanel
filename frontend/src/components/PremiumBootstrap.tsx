@@ -67,14 +67,17 @@ function patchPremiumModulesFetch() {
         : input instanceof URL
           ? input.href
           : input.url;
-    if (
-      url.includes("/premium-modules") &&
-      !url.match(/\/premium-modules\/[a-z]/i)
-    ) {
-      return origFetch("/api/platform/premium-module-catalog", {
-        ...init,
-        credentials: init?.credentials ?? "include",
-      });
+    // Only redirect the bare module list — never subpaths like /all, /assignments, /branding.
+    try {
+      const path = new URL(url, window.location.origin).pathname.replace(/\/+$/, "");
+      if (path === "/api/premium-modules") {
+        return origFetch("/api/platform/premium-module-catalog", {
+          ...init,
+          credentials: init?.credentials ?? "include",
+        });
+      }
+    } catch {
+      /* ignore malformed URLs */
     }
     return origFetch(input, init);
   }) as typeof fetch;
