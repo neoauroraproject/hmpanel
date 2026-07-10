@@ -7,5 +7,6 @@ import { SettingsModule } from '../settings/settings.module';
   imports: [SettingsModule],
   controllers: [BackupsController],
   providers: [BackupsService],
+  exports: [BackupsService],
 })
 export class BackupsModule {}
