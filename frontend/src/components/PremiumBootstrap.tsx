@@ -3,7 +3,11 @@
 import * as React from "react";
 import { useEffect, useState } from "react";
 import * as ReactDOM from "react-dom";
+import * as ReactDOMClient from "react-dom/client";
 import * as JsxRuntime from "react/jsx-runtime";
+import * as ReactQuery from "@tanstack/react-query";
+import * as NextNavigation from "next/navigation";
+import * as NextLink from "next/link";
 import { usePluginRegistry } from "@/store/pluginRegistry";
 import { useLicenseActivation } from "@/hooks/useLicenseActivation";
 import { usePremiumModules } from "@/hooks/usePremiumModules";
@@ -14,18 +18,32 @@ declare global {
     HMPANEL_PREMIUM_REGISTER?: (registry: typeof usePluginRegistry) => void;
     HMPANEL_PREMIUM_SYNC?: (modules: unknown[]) => void;
     __HMPANEL_FETCH_PATCHED?: boolean;
-    __HMPANEL_JSX_RUNTIME?: unknown;
+    __HMPANEL_SHARED?: Record<string, unknown>;
     React?: unknown;
     ReactDOM?: unknown;
   }
 }
 
-/** Premium runtime is a separate IIFE with React marked external — expose host React so it can resolve it. */
-function exposeReactGlobals() {
+/**
+ * Premium pages are plugins that render inside the panel's own React tree, so they must
+ * reuse the host's React, react-query client (shared data cache) and Next router instead
+ * of bundling their own. The premium runtime marks these external and resolves them from
+ * this map at load time.
+ */
+function exposeSharedModules() {
   if (typeof window === "undefined") return;
+  window.__HMPANEL_SHARED = {
+    react: React,
+    "react-dom": ReactDOM,
+    "react-dom/client": ReactDOMClient,
+    "react/jsx-runtime": JsxRuntime,
+    "react/jsx-dev-runtime": JsxRuntime,
+    "@tanstack/react-query": ReactQuery,
+    "next/navigation": NextNavigation,
+    "next/link": NextLink,
+  };
   window.React = React;
   window.ReactDOM = ReactDOM;
-  window.__HMPANEL_JSX_RUNTIME = JsxRuntime;
 }
 
 function patchPremiumModulesFetch() {
@@ -81,7 +99,7 @@ export function PremiumBootstrap() {
   useEffect(() => {
     if (!isPremium || loaded) return;
 
-    exposeReactGlobals();
+    exposeSharedModules();
     patchPremiumModulesFetch();
 
     const script = document.createElement("script");
