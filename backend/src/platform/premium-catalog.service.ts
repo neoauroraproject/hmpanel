@@ -13,7 +13,7 @@ export class PremiumCatalogService {
   ) {}
 
   async listForLicensedAdmin(
-    _adminId: string,
+    adminId: string,
     role: string,
   ): Promise<
     Array<{
@@ -49,8 +49,24 @@ export class PremiumCatalogService {
       /* tables may not exist yet */
     }
 
+    let assignedModuleIds: Set<string> | null = null;
+    if (role !== 'SUPER_ADMIN') {
+      try {
+        const assignments = await this.prisma.adminModuleAssignment.findMany({
+          where: { adminId, enabled: true },
+          select: { moduleId: true },
+        });
+        assignedModuleIds = new Set(assignments.map((a) => a.moduleId));
+      } catch {
+        assignedModuleIds = new Set();
+      }
+    }
+
     return MODULE_MANIFESTS.filter((m) => m.id !== 'job-center')
-      .filter((m) => role === 'SUPER_ADMIN' || m.kind === 'BUSINESS')
+      .filter((m) => {
+        if (role === 'SUPER_ADMIN') return true;
+        return m.kind === 'BUSINESS' && assignedModuleIds?.has(m.id);
+      })
       .map((m) => {
         const row = stateMap.get(m.id);
         const enabled = row?.enabled ?? (m.defaultEnabled || m.phase <= 3);

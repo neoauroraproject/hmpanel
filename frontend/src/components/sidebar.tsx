@@ -77,10 +77,19 @@ export function Sidebar() {
 
   const premiumMenus = isPremium
     ? [
-        { title: "Premium Settings", href: "/settings/premium", icon: Diamond },
-        ...dynamicMenus,
+        ...(admin?.role === "SUPER_ADMIN"
+          ? [{ title: "Premium Settings", href: "/settings/premium", icon: Diamond }]
+          : []),
+        ...(admin?.role === "SUPER_ADMIN" ? dynamicMenus : []),
         ...premiumModules
-          .filter((m) => m.enabled && m.status !== "disabled" && m.status !== "future" && m.id !== "job-center")
+          .filter((m) => {
+            if (m.status === "disabled" || m.status === "future" || m.id === "job-center") {
+              return false;
+            }
+            if (!m.enabled) return false;
+            if (admin?.role === "SUPER_ADMIN") return true;
+            return m.kind === "BUSINESS";
+          })
           .map((m) => ({
             title: m.name,
             href: m.frontendPath,
