@@ -8,6 +8,7 @@ import * as JsxRuntime from "react/jsx-runtime";
 import * as ReactQuery from "@tanstack/react-query";
 import * as NextNavigation from "next/navigation";
 import * as NextLink from "next/link";
+import { usePathname } from "next/navigation";
 import { usePluginRegistry } from "@/store/pluginRegistry";
 import { useLicenseActivation } from "@/hooks/useLicenseActivation";
 import { usePremiumModules } from "@/hooks/usePremiumModules";
@@ -46,15 +47,25 @@ function exposeSharedModules() {
   window.ReactDOM = ReactDOM;
 }
 
-/** Tailwind utilities used only by premium module files aren't in the panel CSS — load the bundle's own. */
+const PREMIUM_STYLE_ID = "hmpanel-premium-styles";
+
+function isPremiumRoute(pathname: string) {
+  return pathname.startsWith("/premium") || pathname.startsWith("/settings/premium");
+}
+
+/** Premium-only Tailwind utilities — must not load on free panel pages. */
 function injectPremiumStyles() {
   if (typeof document === "undefined") return;
-  if (document.getElementById("hmpanel-premium-styles")) return;
+  if (document.getElementById(PREMIUM_STYLE_ID)) return;
   const link = document.createElement("link");
-  link.id = "hmpanel-premium-styles";
+  link.id = PREMIUM_STYLE_ID;
   link.rel = "stylesheet";
   link.href = "/api/platform/premium-assets/frontend/premium-runtime.css";
   document.head.appendChild(link);
+}
+
+function removePremiumStyles() {
+  document.getElementById(PREMIUM_STYLE_ID)?.remove();
 }
 
 function patchPremiumModulesFetch() {
@@ -98,6 +109,7 @@ async function syncModulesFromCatalog() {
 
 /** Loads premium frontend runtime from installed bundle when license is active. */
 export function PremiumBootstrap() {
+  const pathname = usePathname();
   const { licenseQuery } = useLicenseActivation();
   const [loaded, setLoaded] = useState(false);
   const state = licenseQuery.data;
@@ -115,7 +127,6 @@ export function PremiumBootstrap() {
 
     exposeSharedModules();
     patchPremiumModulesFetch();
-    injectPremiumStyles();
 
     const script = document.createElement("script");
     script.src = `/api/platform/premium-assets/frontend/premium-runtime.js`;
@@ -138,6 +149,18 @@ export function PremiumBootstrap() {
   }, [isPremium, loaded]);
 
   useEffect(() => {
+    if (!isPremium) {
+      removePremiumStyles();
+      return;
+    }
+    if (isPremiumRoute(pathname)) {
+      injectPremiumStyles();
+    } else {
+      removePremiumStyles();
+    }
+  }, [isPremium, pathname]);
+
+  useEffect(() => {
     if (!isPremium || !premiumModules?.length) return;
     if (window.HMPANEL_PREMIUM_SYNC) {
       window.HMPANEL_PREMIUM_SYNC(premiumModules);
@@ -148,6 +171,7 @@ export function PremiumBootstrap() {
     if (!isPremium) {
       usePluginRegistry.getState().unregisterAll();
       setLoaded(false);
+      removePremiumStyles();
     }
   }, [isPremium]);
 
