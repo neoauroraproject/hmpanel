@@ -1,6 +1,9 @@
 "use client";
 
+import * as React from "react";
 import { useEffect, useState } from "react";
+import * as ReactDOM from "react-dom";
+import * as JsxRuntime from "react/jsx-runtime";
 import { usePluginRegistry } from "@/store/pluginRegistry";
 import { useLicenseActivation } from "@/hooks/useLicenseActivation";
 import { usePremiumModules } from "@/hooks/usePremiumModules";
@@ -11,7 +14,18 @@ declare global {
     HMPANEL_PREMIUM_REGISTER?: (registry: typeof usePluginRegistry) => void;
     HMPANEL_PREMIUM_SYNC?: (modules: unknown[]) => void;
     __HMPANEL_FETCH_PATCHED?: boolean;
+    __HMPANEL_JSX_RUNTIME?: unknown;
+    React?: unknown;
+    ReactDOM?: unknown;
   }
+}
+
+/** Premium runtime is a separate IIFE with React marked external — expose host React so it can resolve it. */
+function exposeReactGlobals() {
+  if (typeof window === "undefined") return;
+  window.React = React;
+  window.ReactDOM = ReactDOM;
+  window.__HMPANEL_JSX_RUNTIME = JsxRuntime;
 }
 
 function patchPremiumModulesFetch() {
@@ -67,6 +81,7 @@ export function PremiumBootstrap() {
   useEffect(() => {
     if (!isPremium || loaded) return;
 
+    exposeReactGlobals();
     patchPremiumModulesFetch();
 
     const script = document.createElement("script");
