@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnApplicationBootstrap, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { LazyModuleLoader } from '@nestjs/core';
 import { LicenseManagerService } from '../platform/license-manager.service';
 import { createRequire } from 'module';
@@ -10,7 +10,6 @@ export class PluginsService implements OnApplicationBootstrap {
   private readonly logger = new Logger(PluginsService.name);
   private loaded = false;
   private lastLoadError: string | null = null;
-  private readonly req = createRequire(__filename);
 
   constructor(
     private lazyModuleLoader: LazyModuleLoader,
@@ -51,14 +50,41 @@ export class PluginsService implements OnApplicationBootstrap {
     return path.join(process.cwd(), 'backend', 'dist');
   }
 
-  private importBundle(pluginPath: string): Record<string, unknown> {
+  /** Premium bundle lives on a Docker volume; its externals resolve via panel node_modules. */
+  private ensurePremiumModulePaths(distPath: string): void {
+    const extra = [
+      process.env.PREMIUM_NODE_PATH,
+      path.join(path.dirname(distPath), 'node_modules'),
+      path.join(process.cwd(), 'node_modules'),
+      path.join(process.cwd(), 'backend', 'node_modules'),
+      '/app/backend/node_modules',
+      '/app/node_modules',
+    ]
+      .filter((v): v is string => Boolean(v?.trim()))
+      .filter((p) => fs.existsSync(p));
+
+    const current = (process.env.NODE_PATH || '')
+      .split(path.delimiter)
+      .map((p) => p.trim())
+      .filter(Boolean);
+
+    const merged = [...new Set([...extra, ...current])];
+    process.env.NODE_PATH = merged.join(path.delimiter);
+    this.logger.log(`NODE_PATH=${process.env.NODE_PATH}`);
+  }
+
+  private importBundle(pluginPath: string, distPath: string): Record<string, unknown> {
+    const anchor = path.join(distPath, 'main.js');
+    const req = createRequire(anchor);
+
     try {
-      const resolved = this.req.resolve(pluginPath);
-      delete this.req.cache[resolved];
+      const resolved = req.resolve(pluginPath);
+      delete req.cache[resolved];
     } catch {
       /* first load */
     }
-    return this.req(pluginPath) as Record<string, unknown>;
+
+    return req(pluginPath) as Record<string, unknown>;
   }
 
   async loadPremiumPlugins(): Promise<boolean> {
@@ -88,13 +114,15 @@ export class PluginsService implements OnApplicationBootstrap {
         return true;
       }
 
-      process.env.HMPANEL_DIST = this.resolveHmpanelDist();
-      this.logger.log(`HMPANEL_DIST=${process.env.HMPANEL_DIST}`);
+      const distPath = this.resolveHmpanelDist();
+      process.env.HMPANEL_DIST = distPath;
+      this.ensurePremiumModulePaths(distPath);
+      this.logger.log(`HMPANEL_DIST=${distPath}`);
 
       this.lastLoadError = null;
       this.logger.log(`Loading premium bundle from ${pluginPath}`);
 
-      const bundle = this.importBundle(pluginPath);
+      const bundle = this.importBundle(pluginPath, distPath);
       const PremiumBundleModule = bundle.PremiumBundleModule || bundle.default;
       if (!PremiumBundleModule) {
         throw new Error('Bundle does not export PremiumBundleModule.');

@@ -27,6 +27,7 @@ services:
       - LICENSE_PRODUCT_ID=${LICENSE_PRODUCT_ID:-hmpanel}
       - PREMIUM_PLUGIN_PATH=${PREMIUM_PLUGIN_PATH:-/opt/hmpanel/premium/backend/index.js}
       - HMPANEL_DIST=/app/backend/dist
+      - NODE_PATH=/app/backend/node_modules:/app/node_modules
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-/api-proxy}
       - NEXT_PUBLIC_RELEASE_MODE=${RELEASE_MODE:-COMMUNITY}
       - INITIAL_ADMIN_USERNAME=${INITIAL_ADMIN_USERNAME}
