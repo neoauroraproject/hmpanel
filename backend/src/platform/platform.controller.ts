@@ -109,7 +109,7 @@ export class PlatformController {
   @Get('premium-module-catalog')
   @ApiOperation({ summary: 'Premium module list (community fallback)' })
   async getPremiumCatalog(@Req() req: AuthRequest) {
-    return this.catalogService.listForLicensedAdmin(req.user.role);
+    return this.catalogService.listForLicensedAdmin(req.user.id, req.user.role);
   }
 
   @Get('features')

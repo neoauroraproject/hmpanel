@@ -11,11 +11,12 @@ import { LicenseHeartbeatScheduler } from './license-heartbeat.scheduler';
 import { FeatureManagerService } from './feature-manager.service';
 import { PremiumGuard } from '../common/guards/premium.guard';
 import { PluginsModule } from '../plugins/plugins.module';
+import { PremiumModulesListController } from '../premium-modules/premium-modules-list.controller';
 
 @Global()
 @Module({
   imports: [PrismaModule, SettingsModule, forwardRef(() => PluginsModule)],
-  controllers: [PlatformController, PremiumAssetsController],
+  controllers: [PlatformController, PremiumAssetsController, PremiumModulesListController],
   providers: [
     LicenseManagerService,
     FeatureManagerService,

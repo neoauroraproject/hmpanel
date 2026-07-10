@@ -1,13 +1,20 @@
 import { Injectable } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
 import { LicenseManagerService } from './license-manager.service';
 import { MODULE_MANIFESTS } from './manifests';
 
-/** Community-side premium module list when bundle API is unavailable. */
+/** Community-side premium module list — works even before the premium bundle backend loads. */
 @Injectable()
 export class PremiumCatalogService {
-  constructor(private licenseManager: LicenseManagerService) {}
+  constructor(
+    private licenseManager: LicenseManagerService,
+    private prisma: PrismaService,
+  ) {}
 
-  async listForLicensedAdmin(role: string): Promise<
+  async listForLicensedAdmin(
+    _adminId: string,
+    role: string,
+  ): Promise<
     Array<{
       id: string;
       name: string;
@@ -31,21 +38,59 @@ export class PremiumCatalogService {
 
     if (!licensed) return [];
 
+    await this.ensureModuleRowsSeeded();
+
+    let stateMap = new Map<string, { enabled: boolean }>();
+    try {
+      const rows = await this.prisma.premiumModuleState.findMany();
+      stateMap = new Map(rows.map((r) => [r.moduleId, { enabled: r.enabled }]));
+    } catch {
+      /* tables may not exist yet */
+    }
+
     return MODULE_MANIFESTS.filter((m) => m.id !== 'job-center')
       .filter((m) => role === 'SUPER_ADMIN' || m.kind === 'BUSINESS')
-      .map((m) => ({
-        id: m.id,
-        name: m.name,
-        description: m.description,
-        kind: m.kind,
-        version: m.version,
-        phase: m.phase,
-        enabled: m.defaultEnabled || m.phase <= 3,
-        frontendPath: m.routes.frontend,
-        settingsSchema: {},
-        settings: {},
-        status: license.mode === 'read_only' ? ('read_only' as const) : ('healthy' as const),
-      }))
-      .filter((m) => m.enabled);
+      .map((m) => {
+        const row = stateMap.get(m.id);
+        const enabled = row?.enabled ?? (m.defaultEnabled || m.phase <= 3);
+        return {
+          id: m.id,
+          name: m.name,
+          description: m.description,
+          kind: m.kind,
+          version: m.version,
+          phase: m.phase,
+          enabled,
+          frontendPath: m.routes.frontend,
+          settingsSchema: {},
+          settings: {},
+          status:
+            !enabled
+              ? ('disabled' as const)
+              : license.mode === 'read_only'
+                ? ('read_only' as const)
+                : ('healthy' as const),
+        };
+      })
+      .filter((m) => m.enabled && m.status !== 'disabled');
+  }
+
+  private async ensureModuleRowsSeeded(): Promise<void> {
+    try {
+      const count = await this.prisma.premiumModuleState.count();
+      if (count > 0) return;
+      for (const m of MODULE_MANIFESTS) {
+        await this.prisma.premiumModuleState.create({
+          data: {
+            moduleId: m.id,
+            kind: m.kind as 'PLATFORM' | 'BUSINESS',
+            enabled: m.defaultEnabled || m.phase <= 3,
+            settings: {},
+          },
+        });
+      }
+    } catch {
+      /* ignore — db may not be migrated yet */
+    }
   }
 }

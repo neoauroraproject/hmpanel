@@ -9,21 +9,44 @@ declare global {
   interface Window {
     HMPANEL_PREMIUM_REGISTER?: (registry: typeof usePluginRegistry) => void;
     HMPANEL_PREMIUM_SYNC?: (modules: unknown[]) => void;
+    __HMPANEL_FETCH_PATCHED?: boolean;
   }
 }
 
-async function fetchPremiumModulesForRuntime(): Promise<unknown[]> {
-  try {
-    const res = await api.get("/premium-modules");
-    if (Array.isArray(res.data) && res.data.length > 0) return res.data;
-  } catch {
-    /* fall through */
-  }
+function patchPremiumModulesFetch() {
+  if (window.__HMPANEL_FETCH_PATCHED) return;
+  const origFetch = window.fetch.bind(window);
+  window.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url;
+    if (
+      url.includes("/premium-modules") &&
+      !url.match(/\/premium-modules\/[a-z]/i)
+    ) {
+      return origFetch("/api/platform/premium-module-catalog", {
+        ...init,
+        credentials: init?.credentials ?? "include",
+      });
+    }
+    return origFetch(input, init);
+  }) as typeof fetch;
+  window.__HMPANEL_FETCH_PATCHED = true;
+}
+
+async function syncModulesAfterRuntime() {
+  if (window.HMPANEL_PREMIUM_SYNC) return;
   try {
     const res = await api.get("/platform/premium-module-catalog");
-    return Array.isArray(res.data) ? res.data : [];
+    const modules = Array.isArray(res.data) ? res.data : [];
+    if (modules.length && window.HMPANEL_PREMIUM_REGISTER) {
+      window.HMPANEL_PREMIUM_REGISTER(usePluginRegistry);
+    }
   } catch {
-    return [];
+    /* runtime internal fetch handles registration when patched */
   }
 }
 
@@ -42,6 +65,8 @@ export function PremiumBootstrap() {
   useEffect(() => {
     if (!isPremium || loaded) return;
 
+    patchPremiumModulesFetch();
+
     const script = document.createElement("script");
     script.src = `/api/platform/premium-assets/frontend/premium-runtime.js`;
     script.async = true;
@@ -49,10 +74,7 @@ export function PremiumBootstrap() {
       if (window.HMPANEL_PREMIUM_REGISTER) {
         window.HMPANEL_PREMIUM_REGISTER(usePluginRegistry);
       }
-      const modules = await fetchPremiumModulesForRuntime();
-      if (modules.length && window.HMPANEL_PREMIUM_SYNC) {
-        window.HMPANEL_PREMIUM_SYNC(modules);
-      }
+      await syncModulesAfterRuntime();
       setLoaded(true);
     };
     script.onerror = () => {

@@ -1,0 +1,1066 @@
+
+######## api342.json ########
+
+SCHEMA Client:
+{
+  "description": "Client represents a client configuration for Xray inbounds with traffic limits and settings.",
+  "properties": {
+    "allowedIPs": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "auth": {
+      "description": "Auth password (Hysteria)",
+      "type": "string"
+    },
+    "comment": {
+      "description": "Client comment",
+      "type": "string"
+    },
+    "created_at": {
+      "description": "Creation timestamp",
+      "type": "integer"
+    },
+    "email": {
+      "description": "Client email identifier",
+      "type": "string"
+    },
+    "enable": {
+      "description": "Whether the client is enabled",
+      "type": "boolean"
+    },
+    "expiryTime": {
+      "description": "Expiration timestamp",
+      "type": "integer"
+    },
+    "flow": {
+      "description": "Flow control (XTLS)",
+      "type": "string"
+    },
+    "group": {
+      "description": "Logical grouping label",
+      "type": "string"
+    },
+    "id": {
+      "description": "Unique client identifier",
+      "type": "string"
+    },
+    "keepAlive": {
+      "type": "integer"
+    },
+    "limitIp": {
+      "description": "IP limit for this client",
+      "type": "integer"
+    },
+    "password": {
+      "description": "Client password",
+      "type": "string"
+    },
+    "preSharedKey": {
+      "type": "string"
+    },
+    "privateKey": {
+      "type": "string"
+    },
+    "publicKey": {
+      "type": "string"
+    },
+    "reset": {
+      "description": "Reset period in days",
+      "type": "integer"
+    },
+    "reverse": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/ClientReverse"
+        }
+      ],
+      "description": "VLESS simple reverse proxy settings",
+      "nullable": true
+    },
+    "security": {
+      "description": "Security method (e.g., \"auto\", \"aes-128-gcm\")",
+      "type": "string"
+    },
+    "subId": {
+      "description": "Subscription identifier",
+      "type": "string"
+    },
+    "tgId": {
+      "description": "Telegram user ID for notifications",
+      "type": "integer"
+    },
+    "totalGB": {
+      "description": "Total traffic limit in GB",
+      "type": "integer"
+    },
+    "updated_at": {
+      "description": "Last update timestamp",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "comment",
+    "email",
+    "enable",
+    "expiryTime",
+    "limitIp",
+    "reset",
+    "security",
+    "subId",
+    "tgId",
+    "totalGB"
+  ],
+  "type": "object"
+}
+
+SCHEMA ClientInbound:
+{
+  "properties": {
+    "clientId": {
+      "type": "integer"
+    },
+    "createdAt": {
+      "type": "integer"
+    },
+    "flowOverride": {
+      "type": "string"
+    },
+    "inboundId": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "clientId",
+    "createdAt",
+    "flowOverride",
+    "inboundId"
+  ],
+  "type": "object"
+}
+
+SCHEMA ClientRecord:
+{
+  "properties": {
+    "allowedIPs": {
+      "type": "string"
+    },
+    "auth": {
+      "type": "string"
+    },
+    "comment": {
+      "type": "string"
+    },
+    "createdAt": {
+      "type": "integer"
+    },
+    "email": {
+      "type": "string"
+    },
+    "enable": {
+      "type": "boolean"
+    },
+    "expiryTime": {
+      "type": "integer"
+    },
+    "flow": {
+      "type": "string"
+    },
+    "group": {
+      "type": "string"
+    },
+    "id": {
+      "type": "integer"
+    },
+    "keepAlive": {
+      "type": "integer"
+    },
+    "limitIp": {
+      "type": "integer"
+    },
+    "password": {
+      "type": "string"
+    },
+    "preSharedKey": {
+      "type": "string"
+    },
+    "privateKey": {
+      "type": "string"
+    },
+    "publicKey": {
+      "type": "string"
+    },
+    "reset": {
+      "type": "integer"
+    },
+    "reverse": {},
+    "security": {
+      "type": "string"
+    },
+    "subId": {
+      "type": "string"
+    },
+    "tgId": {
+      "type": "integer"
+    },
+    "totalGB": {
+      "type": "integer"
+    },
+    "updatedAt": {
+      "type": "integer"
+    },
+    "uuid": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "allowedIPs",
+    "auth",
+    "comment",
+    "createdAt",
+    "email",
+    "enable",
+    "expiryTime",
+    "flow",
+    "group",
+    "id",
+    "keepAlive",
+    "limitIp",
+    "password",
+    "preSharedKey",
+    "privateKey",
+    "publicKey",
+    "reset",
+    "reverse",
+    "security",
+    "subId",
+    "tgId",
+    "totalGB",
+    "updatedAt",
+    "uuid"
+  ],
+  "type": "object"
+}
+
+SCHEMA ClientReverse:
+{
+  "properties": {
+    "tag": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "tag"
+  ],
+  "type": "object"
+}
+
+SCHEMA ClientTraffic:
+{
+  "description": "ClientTraffic represents traffic statistics and limits for a specific client.\nIt tracks upload/download usage, expiry times, and online status for inbound clients.",
+  "properties": {
+    "down": {
+      "example": 2097152,
+      "type": "integer"
+    },
+    "email": {
+      "example": "user1",
+      "type": "string"
+    },
+    "enable": {
+      "example": true,
+      "type": "boolean"
+    },
+    "expiryTime": {
+      "example": 1735689600000,
+      "type": "integer"
+    },
+    "id": {
+      "example": 14825,
+      "type": "integer"
+    },
+    "inboundId": {
+      "example": 1,
+      "type": "integer"
+    },
+    "lastOnline": {
+      "example": 1735680000000,
+      "type": "integer"
+    },
+    "reset": {
+      "example": 0,
+      "type": "integer"
+    },
+    "subId": {
+      "example": "i7tvdpeffi0hvvf1",
+      "type": "string"
+    },
+    "total": {
+      "example": 10737418240,
+      "type": "integer"
+    },
+    "up": {
+      "example": 1048576,
+      "type": "integer"
+    },
+    "uuid": {
+      "example": "e18c9a96-71bf-48d4-933f-8b9a46d4290c",
+      "type": "string"
+    }
+  },
+  "required": [
+    "down",
+    "email",
+    "enable",
+    "expiryTime",
+    "id",
+    "inboundId",
+    "lastOnline",
+    "reset",
+    "subId",
+    "total",
+    "up",
+    "uuid"
+  ],
+  "type": "object"
+}
+
+PATH /panel/api/clients/get/{email}:
+{
+  "get": {
+    "tags": [
+      "Clients"
+    ],
+    "summary": "Fetch one client by email, including the inbound IDs and external config IDs it is attached to.",
+    "operationId": "get_panel_api_clients_get_email",
+    "parameters": [
+      {
+        "name": "email",
+        "in": "path",
+        "required": true,
+        "description": "Client email (unique identifier).",
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Successful response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "success": {
+                  "type": "boolean"
+                },
+                "msg": {
+                  "type": "string"
+                },
+                "obj": {}
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+PATH /panel/api/clients/add:
+{
+  "post": {
+    "tags": [
+      "Clients"
+    ],
+    "summary": "Create a new client and attach it to one or more inbounds in a single call. Body is JSON. Per-protocol secrets (UUID for VLESS/VMess, password for Trojan/Shadowsocks, auth for Hysteria) are generated server-side when omitted, so callers can send only the universal fields.",
+    "operationId": "post_panel_api_clients_add",
+    "requestBody": {
+      "required": true,
+      "content": {
+        "application/json": {
+          "schema": {
+            "type": "object"
+          },
+          "example": {
+            "client": {
+              "email": "alice@example.com",
+              "totalGB": 53687091200,
+              "expiryTime": 1735689600000,
+              "tgId": 0,
+              "limitIp": 0,
+              "enable": true
+            },
+            "inboundIds": [
+              3,
+              5
+            ]
+          }
+        }
+      }
+    },
+    "responses": {
+      "200": {
+        "description": "Successful response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "success": {
+                  "type": "boolean"
+                },
+                "msg": {
+                  "type": "string"
+                },
+                "obj": {}
+              }
+            },
+            "example": {
+              "success": true,
+              "msg": "Client added"
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+PATH /panel/api/clients/update/{email}:
+{
+  "post": {
+    "tags": [
+      "Clients"
+    ],
+    "summary": "Update an existing client by email. Changes propagate to every attached inbound. Body is the JSON client payload — supply the full set of fields you want to keep (the server replaces the row, it does not patch).",
+    "operationId": "post_panel_api_clients_update_email",
+    "parameters": [
+      {
+        "name": "email",
+        "in": "path",
+        "required": true,
+        "description": "Current client email (unique identifier).",
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "requestBody": {
+      "required": true,
+      "content": {
+        "application/json": {
+          "schema": {
+            "type": "object"
+          },
+          "example": {
+            "email": "alice@example.com",
+            "totalGB": 107374182400,
+            "expiryTime": 1767225600000,
+            "tgId": 123456789,
+            "enable": true
+          }
+        }
+      }
+    },
+    "responses": {
+      "200": {
+        "description": "Successful response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "success": {
+                  "type": "boolean"
+                },
+                "msg": {
+                  "type": "string"
+                },
+                "obj": {}
+              }
+            },
+            "example": {
+              "success": true,
+              "msg": "Client updated"
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+PATH /panel/api/clients/updateTraffic/{email}:
+{
+  "post": {
+    "tags": [
+      "Clients"
+    ],
+    "summary": "Manually adjust a client’s upload + download counters. Useful for migrations from external accounting systems.",
+    "operationId": "post_panel_api_clients_updateTraffic_email",
+    "parameters": [
+      {
+        "name": "email",
+        "in": "path",
+        "required": true,
+        "description": "Client email.",
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "requestBody": {
+      "required": true,
+      "content": {
+        "application/json": {
+          "schema": {
+            "type": "object"
+          },
+          "example": {
+            "upload": 1073741824,
+            "download": 5368709120
+          }
+        }
+      }
+    },
+    "responses": {
+      "200": {
+        "description": "Successful response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "success": {
+                  "type": "boolean"
+                },
+                "msg": {
+                  "type": "string"
+                },
+                "obj": {}
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+######## api331.json ########
+
+SCHEMA Client:
+{
+  "description": "Client represents a client configuration for Xray inbounds with traffic limits and settings.",
+  "properties": {
+    "auth": {
+      "description": "Auth password (Hysteria)",
+      "type": "string"
+    },
+    "comment": {
+      "description": "Client comment",
+      "type": "string"
+    },
+    "created_at": {
+      "description": "Creation timestamp",
+      "type": "integer"
+    },
+    "email": {
+      "description": "Client email identifier",
+      "type": "string"
+    },
+    "enable": {
+      "description": "Whether the client is enabled",
+      "type": "boolean"
+    },
+    "expiryTime": {
+      "description": "Expiration timestamp",
+      "type": "integer"
+    },
+    "flow": {
+      "description": "Flow control (XTLS)",
+      "type": "string"
+    },
+    "group": {
+      "description": "Logical grouping label",
+      "type": "string"
+    },
+    "id": {
+      "description": "Unique client identifier",
+      "type": "string"
+    },
+    "limitIp": {
+      "description": "IP limit for this client",
+      "type": "integer"
+    },
+    "password": {
+      "description": "Client password",
+      "type": "string"
+    },
+    "reset": {
+      "description": "Reset period in days",
+      "type": "integer"
+    },
+    "reverse": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/ClientReverse"
+        }
+      ],
+      "description": "VLESS simple reverse proxy settings",
+      "nullable": true
+    },
+    "security": {
+      "description": "Security method (e.g., \"auto\", \"aes-128-gcm\")",
+      "type": "string"
+    },
+    "subId": {
+      "description": "Subscription identifier",
+      "type": "string"
+    },
+    "tgId": {
+      "description": "Telegram user ID for notifications",
+      "type": "integer"
+    },
+    "totalGB": {
+      "description": "Total traffic limit in GB",
+      "type": "integer"
+    },
+    "updated_at": {
+      "description": "Last update timestamp",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "comment",
+    "email",
+    "enable",
+    "expiryTime",
+    "limitIp",
+    "reset",
+    "security",
+    "subId",
+    "tgId",
+    "totalGB"
+  ],
+  "type": "object"
+}
+
+SCHEMA ClientInbound:
+{
+  "properties": {
+    "clientId": {
+      "type": "integer"
+    },
+    "createdAt": {
+      "type": "integer"
+    },
+    "flowOverride": {
+      "type": "string"
+    },
+    "inboundId": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "clientId",
+    "createdAt",
+    "flowOverride",
+    "inboundId"
+  ],
+  "type": "object"
+}
+
+SCHEMA ClientRecord:
+{
+  "properties": {
+    "auth": {
+      "type": "string"
+    },
+    "comment": {
+      "type": "string"
+    },
+    "createdAt": {
+      "type": "integer"
+    },
+    "email": {
+      "type": "string"
+    },
+    "enable": {
+      "type": "boolean"
+    },
+    "expiryTime": {
+      "type": "integer"
+    },
+    "flow": {
+      "type": "string"
+    },
+    "group": {
+      "type": "string"
+    },
+    "id": {
+      "type": "integer"
+    },
+    "limitIp": {
+      "type": "integer"
+    },
+    "password": {
+      "type": "string"
+    },
+    "reset": {
+      "type": "integer"
+    },
+    "reverse": {},
+    "security": {
+      "type": "string"
+    },
+    "subId": {
+      "type": "string"
+    },
+    "tgId": {
+      "type": "integer"
+    },
+    "totalGB": {
+      "type": "integer"
+    },
+    "updatedAt": {
+      "type": "integer"
+    },
+    "uuid": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "auth",
+    "comment",
+    "createdAt",
+    "email",
+    "enable",
+    "expiryTime",
+    "flow",
+    "group",
+    "id",
+    "limitIp",
+    "password",
+    "reset",
+    "reverse",
+    "security",
+    "subId",
+    "tgId",
+    "totalGB",
+    "updatedAt",
+    "uuid"
+  ],
+  "type": "object"
+}
+
+SCHEMA ClientReverse:
+{
+  "properties": {
+    "tag": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "tag"
+  ],
+  "type": "object"
+}
+
+SCHEMA ClientTraffic:
+{
+  "description": "ClientTraffic represents traffic statistics and limits for a specific client.\nIt tracks upload/download usage, expiry times, and online status for inbound clients.",
+  "properties": {
+    "down": {
+      "example": 2097152,
+      "type": "integer"
+    },
+    "email": {
+      "example": "user1",
+      "type": "string"
+    },
+    "enable": {
+      "example": true,
+      "type": "boolean"
+    },
+    "expiryTime": {
+      "example": 1735689600000,
+      "type": "integer"
+    },
+    "id": {
+      "example": 14825,
+      "type": "integer"
+    },
+    "inboundId": {
+      "example": 1,
+      "type": "integer"
+    },
+    "lastOnline": {
+      "example": 1735680000000,
+      "type": "integer"
+    },
+    "reset": {
+      "example": 0,
+      "type": "integer"
+    },
+    "subId": {
+      "example": "i7tvdpeffi0hvvf1",
+      "type": "string"
+    },
+    "total": {
+      "example": 10737418240,
+      "type": "integer"
+    },
+    "up": {
+      "example": 1048576,
+      "type": "integer"
+    },
+    "uuid": {
+      "example": "e18c9a96-71bf-48d4-933f-8b9a46d4290c",
+      "type": "string"
+    }
+  },
+  "required": [
+    "down",
+    "email",
+    "enable",
+    "expiryTime",
+    "id",
+    "inboundId",
+    "lastOnline",
+    "reset",
+    "subId",
+    "total",
+    "up",
+    "uuid"
+  ],
+  "type": "object"
+}
+
+PATH /panel/api/clients/get/{email}:
+{
+  "get": {
+    "tags": [
+      "Clients"
+    ],
+    "summary": "Fetch one client by email, including the inbound IDs it is attached to.",
+    "operationId": "get_panel_api_clients_get_email",
+    "parameters": [
+      {
+        "name": "email",
+        "in": "path",
+        "required": true,
+        "description": "Client email (unique identifier).",
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Successful response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "success": {
+                  "type": "boolean"
+                },
+                "msg": {
+                  "type": "string"
+                },
+                "obj": {}
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+PATH /panel/api/clients/add:
+{
+  "post": {
+    "tags": [
+      "Clients"
+    ],
+    "summary": "Create a new client and attach it to one or more inbounds in a single call. Body is JSON. Per-protocol secrets (UUID for VLESS/VMess, password for Trojan/Shadowsocks, auth for Hysteria) are generated server-side when omitted, so callers can send only the universal fields.",
+    "operationId": "post_panel_api_clients_add",
+    "requestBody": {
+      "required": true,
+      "content": {
+        "application/json": {
+          "schema": {
+            "type": "object"
+          },
+          "example": {
+            "client": {
+              "email": "alice@example.com",
+              "totalGB": 53687091200,
+              "expiryTime": 1735689600000,
+              "tgId": 0,
+              "limitIp": 0,
+              "enable": true
+            },
+            "inboundIds": [
+              3,
+              5
+            ]
+          }
+        }
+      }
+    },
+    "responses": {
+      "200": {
+        "description": "Successful response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "success": {
+                  "type": "boolean"
+                },
+                "msg": {
+                  "type": "string"
+                },
+                "obj": {}
+              }
+            },
+            "example": {
+              "success": true,
+              "msg": "Client added"
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+PATH /panel/api/clients/update/{email}:
+{
+  "post": {
+    "tags": [
+      "Clients"
+    ],
+    "summary": "Update an existing client by email. Changes propagate to every attached inbound. Body is the JSON client payload — supply the full set of fields you want to keep (the server replaces the row, it does not patch).",
+    "operationId": "post_panel_api_clients_update_email",
+    "parameters": [
+      {
+        "name": "email",
+        "in": "path",
+        "required": true,
+        "description": "Current client email (unique identifier).",
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "requestBody": {
+      "required": true,
+      "content": {
+        "application/json": {
+          "schema": {
+            "type": "object"
+          },
+          "example": {
+            "email": "alice@example.com",
+            "totalGB": 107374182400,
+            "expiryTime": 1767225600000,
+            "tgId": 123456789,
+            "enable": true
+          }
+        }
+      }
+    },
+    "responses": {
+      "200": {
+        "description": "Successful response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "success": {
+                  "type": "boolean"
+                },
+                "msg": {
+                  "type": "string"
+                },
+                "obj": {}
+              }
+            },
+            "example": {
+              "success": true,
+              "msg": "Client updated"
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+PATH /panel/api/clients/updateTraffic/{email}:
+{
+  "post": {
+    "tags": [
+      "Clients"
+    ],
+    "summary": "Manually adjust a client’s upload + download counters. Useful for migrations from external accounting systems.",
+    "operationId": "post_panel_api_clients_updateTraffic_email",
+    "parameters": [
+      {
+        "name": "email",
+        "in": "path",
+        "required": true,
+        "description": "Client email.",
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "requestBody": {
+      "required": true,
+      "content": {
+        "application/json": {
+          "schema": {
+            "type": "object"
+          },
+          "example": {
+            "upload": 1073741824,
+            "download": 5368709120
+          }
+        }
+      }
+    },
+    "responses": {
+      "200": {
+        "description": "Successful response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "success": {
+                  "type": "boolean"
+                },
+                "msg": {
+                  "type": "string"
+                },
+                "obj": {}
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
