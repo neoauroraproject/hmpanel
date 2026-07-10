@@ -2,11 +2,13 @@
 
 import { useLicenseActivation } from "@/hooks/useLicenseActivation";
 import { usePremiumModules } from "@/hooks/usePremiumModules";
+import { usePluginRegistry } from "@/store/pluginRegistry";
 import { PageHeader, Card, Spinner } from "@/components/ui";
 import Link from "next/link";
 import { Diamond, ChevronRight } from "lucide-react";
 
 export default function PremiumSettingsPage() {
+  const premiumRoute = usePluginRegistry((s) => s.routes["/settings/premium"]);
   const { licenseQuery } = useLicenseActivation();
   const state = licenseQuery.data;
 
@@ -28,6 +30,11 @@ export default function PremiumSettingsPage() {
         </Card>
       </div>
     );
+  }
+
+  if (premiumRoute) {
+    const Component = premiumRoute.component;
+    return <Component />;
   }
 
   return (
