@@ -105,7 +105,7 @@ COPY --from=builder /app/frontend/public ./frontend/frontend/public
 RUN mkdir -p /app/uploads /app/backups /app/logs
 
 # ── Startup script ────────────────────────────────────────────────
-RUN printf '#!/bin/sh\nset -e\nif [ -f /app/VERSION ]; then export APP_VERSION="$(tr -d \"\\r\\n\" < /app/VERSION)"; fi\necho "[HMPanel] Cleaning up DB..."\nnode backend/dist/scripts/cleanup-dups.js || true\necho "[HMPanel] Running database migrations..."\nnpx prisma db push --schema=/app/prisma/schema.prisma --accept-data-loss\necho "[HMPanel] Starting backend API on port ${BACKEND_PORT:-4000}..."\nPORT=${BACKEND_PORT:-4000} node backend/dist/main.js &\necho "[HMPanel] Starting frontend on port ${APP_PORT:-3000}..."\nPORT=${APP_PORT:-3000} HOSTNAME=0.0.0.0 node frontend/frontend/server.js &\nwait\n' > /app/start.sh && chmod +x /app/start.sh
+RUN printf '#!/bin/sh\nset -e\nif [ -f /app/VERSION ]; then export APP_VERSION="$(tr -d \"\\r\\n\" < /app/VERSION)"; fi\necho "[HMPanel] Cleaning up DB..."\nnode backend/dist/scripts/cleanup-dups.js || true\necho "[HMPanel] Running database migrations (data-preserving)..."\nnpx prisma db push --schema=/app/prisma/schema.prisma\necho "[HMPanel] Starting backend API on port ${BACKEND_PORT:-4000}..."\nPORT=${BACKEND_PORT:-4000} node backend/dist/main.js &\necho "[HMPanel] Starting frontend on port ${APP_PORT:-3000}..."\nPORT=${APP_PORT:-3000} HOSTNAME=0.0.0.0 node frontend/frontend/server.js &\nwait\n' > /app/start.sh && chmod +x /app/start.sh
 
 EXPOSE 3000 4000
 

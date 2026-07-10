@@ -191,7 +191,10 @@ export class PremiumBundleService {
     return Buffer.from(await res.arrayBuffer());
   }
 
-  /** Sync premium DB tables after bundle install (community schema includes overlay models). */
+  /**
+   * Sync premium DB tables after bundle install (community schema includes overlay models).
+   * Never use --accept-data-loss: premium/business rows must survive license gaps and server moves.
+   */
   async applyDatabaseOverlay(): Promise<void> {
     const schemaPath =
       process.env.PRISMA_SCHEMA_PATH ||
@@ -204,19 +207,21 @@ export class PremiumBundleService {
       const { execFile } = await import('child_process');
       const { promisify } = await import('util');
       const exec = promisify(execFile);
-      this.logger.log('Running prisma db push for premium tables…');
+      this.logger.log('Running prisma db push for premium tables (data-preserving)…');
       await exec(
         process.platform === 'win32' ? 'npx.cmd' : 'npx',
-        ['prisma', 'db', 'push', `--schema=${schemaPath}`, '--accept-data-loss'],
+        ['prisma', 'db', 'push', `--schema=${schemaPath}`],
         {
           cwd: path.dirname(path.dirname(schemaPath)),
           timeout: 180_000,
           env: process.env as NodeJS.ProcessEnv,
         },
       );
-      this.logger.log('Premium database tables synced.');
+      this.logger.log('Premium database tables synced (existing rows preserved).');
     } catch (err: any) {
-      this.logger.warn(`Premium DB sync failed (will retry on restart): ${err?.message || err}`);
+      this.logger.warn(
+        `Premium DB sync skipped to preserve data (will retry on restart): ${err?.message || err}`,
+      );
     }
   }
 

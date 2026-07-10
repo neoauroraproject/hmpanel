@@ -63,7 +63,9 @@ export class PluginsService implements OnApplicationBootstrap {
 
     if (!active) {
       if (this.loaded) {
-        this.logger.warn('Premium license inactive — premium modules deactivated.');
+        this.logger.warn(
+          'Premium license inactive — premium modules deactivated (database records preserved).',
+        );
       }
       this.loaded = false;
       this.lastLoadError = null;

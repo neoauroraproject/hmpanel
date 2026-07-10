@@ -414,6 +414,10 @@ export class LicenseActivationService {
       edition: 'COMMUNITY',
     });
 
+    this.logger.log(
+      'License deactivated — premium modules hidden; database records and bundle on disk are preserved for reactivation.',
+    );
+
     return { needsReload: true };
   }
 

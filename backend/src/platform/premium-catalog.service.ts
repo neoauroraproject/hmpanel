@@ -161,16 +161,16 @@ export class PremiumCatalogService {
 
   private async ensureModuleRowsSeeded(): Promise<void> {
     try {
-      const count = await this.prisma.premiumModuleState.count();
-      if (count > 0) return;
       for (const m of MODULE_MANIFESTS) {
-        await this.prisma.premiumModuleState.create({
-          data: {
+        await this.prisma.premiumModuleState.upsert({
+          where: { moduleId: m.id },
+          create: {
             moduleId: m.id,
             kind: m.kind as 'PLATFORM' | 'BUSINESS',
             enabled: m.defaultEnabled || m.phase <= 3,
             settings: {},
           },
+          update: {},
         });
       }
     } catch {
