@@ -19,6 +19,7 @@ import {
 import { io } from "socket.io-client";
 import { ConnectionDetailsModal } from "@/components/ConnectionDetailsModal";
 import { BulkCreateModal } from "./BulkCreateModal";
+import { PluginSlot } from "@/components/PluginSlot";
 
 const GB = 1024 ** 3;
 
@@ -451,6 +452,7 @@ export default function ClientsPage() {
         subtitle={`${totalItems} client${totalItems === 1 ? "" : "s"} found`}
         action={
           <div className="flex gap-2">
+            <PluginSlot name="clients.actions" />
             <button
               onClick={() => setBulkCreateOpen(true)}
               className="flex items-center gap-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"

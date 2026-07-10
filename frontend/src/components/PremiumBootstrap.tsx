@@ -46,6 +46,17 @@ function exposeSharedModules() {
   window.ReactDOM = ReactDOM;
 }
 
+/** Tailwind utilities used only by premium module files aren't in the panel CSS — load the bundle's own. */
+function injectPremiumStyles() {
+  if (typeof document === "undefined") return;
+  if (document.getElementById("hmpanel-premium-styles")) return;
+  const link = document.createElement("link");
+  link.id = "hmpanel-premium-styles";
+  link.rel = "stylesheet";
+  link.href = "/api/platform/premium-assets/frontend/premium-runtime.css";
+  document.head.appendChild(link);
+}
+
 function patchPremiumModulesFetch() {
   if (window.__HMPANEL_FETCH_PATCHED) return;
   const origFetch = window.fetch.bind(window);
@@ -101,6 +112,7 @@ export function PremiumBootstrap() {
 
     exposeSharedModules();
     patchPremiumModulesFetch();
+    injectPremiumStyles();
 
     const script = document.createElement("script");
     script.src = `/api/platform/premium-assets/frontend/premium-runtime.js`;

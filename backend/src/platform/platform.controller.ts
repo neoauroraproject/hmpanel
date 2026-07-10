@@ -7,6 +7,7 @@ import {
   Res,
   NotFoundException,
   Req,
+  Param,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
@@ -137,5 +138,40 @@ export class PremiumAssetsController {
     }
     res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
     res.sendFile(file);
+  }
+
+  @Get('frontend/premium-runtime.css')
+  serveRuntimeCss(@Res() res: Response) {
+    const file = path.join(
+      this.bundleService.getPremiumRoot(),
+      'frontend',
+      'premium-runtime.css',
+    );
+    if (!fs.existsSync(file)) {
+      throw new NotFoundException('Premium runtime styles not installed');
+    }
+    res.setHeader('Content-Type', 'text/css; charset=utf-8');
+    res.sendFile(file);
+  }
+
+  /**
+   * Public branding assets (logo/favicon) uploaded by the premium Branding module.
+   * Served here (no auth) because nginx only routes /api to the backend and <img>
+   * tags / public storefront pages must be able to load them.
+   */
+  @Get('branding/:adminId/:file')
+  serveBrandingAsset(
+    @Param('adminId') adminId: string,
+    @Param('file') file: string,
+    @Res() res: Response,
+  ) {
+    if (!/^[A-Za-z0-9_-]+$/.test(adminId) || !/^[A-Za-z0-9._-]+$/.test(file)) {
+      throw new NotFoundException('Invalid asset path');
+    }
+    const filePath = path.join(process.cwd(), 'uploads', 'branding', adminId, file);
+    if (!fs.existsSync(filePath)) {
+      throw new NotFoundException('Branding asset not found');
+    }
+    res.sendFile(filePath);
   }
 }
