@@ -221,11 +221,33 @@ export class LicenseActivationService {
 
     try {
       const state = await this.licenseManager.getLicenseState();
-      const version = state.bundleVersion || '1.5.6';
+      const { res, data } = await this.requestBundleUrl(licenseKey);
+      if (!res.ok) {
+        const message =
+          (typeof data.error === 'string' && data.error) ||
+          `License server refused bundle URL (${res.status})`;
+        throw new HttpException(message, HttpStatus.BAD_GATEWAY);
+      }
 
-      const downloadUrl = await this.resolveBundleDownloadUrl(licenseKey, version);
-      await this.bundleService.downloadAndInstall(downloadUrl, null, version);
+      const bundleMeta = data.bundle as { version?: string; sha256?: string | null } | undefined;
+      const version =
+        bundleMeta?.version || state.bundleVersion || '1.5.6';
+      const downloadUrl =
+        typeof data.downloadUrl === 'string'
+          ? data.downloadUrl
+          : await this.resolveBundleDownloadUrl(licenseKey, version);
+
+      await this.bundleService.downloadAndInstall(
+        downloadUrl,
+        bundleMeta?.sha256 ?? null,
+        version,
+      );
       await this.bundleService.applyDatabaseOverlay();
+
+      await this.licenseManager.setLicenseState({
+        ...state,
+        bundleVersion: version,
+      });
 
       const loaded = await this.pluginsService.reloadPremiumPlugins();
 
@@ -285,13 +307,18 @@ export class LicenseActivationService {
     );
   }
 
-  private async requestBundleUrl(licenseKey: string, version: string) {
+  private async requestBundleUrl(licenseKey: string, version?: string) {
     const instanceId = this.instanceFingerprint.getInstanceId();
     const clientIp = await this.getClientIp();
     return requestLicenseServer('/v1/panel/bundle-url', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ licenseKey, instanceId, version, clientIp }),
+      body: JSON.stringify({
+        licenseKey,
+        instanceId,
+        clientIp,
+        ...(version ? { version } : {}),
+      }),
     });
   }
 
