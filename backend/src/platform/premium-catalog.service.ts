@@ -160,4 +160,69 @@ export class PremiumCatalogService {
       /* ignore — db may not be migrated yet */
     }
   }
+
+  async listAllAssignments() {
+    return this.prisma.adminModuleAssignment.findMany({
+      include: {
+        admin: { select: { id: true, username: true, email: true, role: true } },
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+  }
+
+  async setModuleEnabled(moduleId: string, enabled: boolean) {
+    const manifest = MODULE_MANIFESTS.find((m) => m.id === moduleId);
+    if (!manifest) {
+      throw new Error('Module not found');
+    }
+    await this.ensureModuleRowsSeeded();
+    return this.prisma.premiumModuleState.upsert({
+      where: { moduleId },
+      create: {
+        moduleId,
+        kind: manifest.kind as 'PLATFORM' | 'BUSINESS',
+        enabled,
+        settings: {},
+      },
+      update: { enabled },
+    });
+  }
+
+  async updateModuleSettings(moduleId: string, settings: Record<string, unknown>) {
+    const manifest = MODULE_MANIFESTS.find((m) => m.id === moduleId);
+    if (!manifest) {
+      throw new Error('Module not found');
+    }
+    await this.ensureModuleRowsSeeded();
+    return this.prisma.premiumModuleState.upsert({
+      where: { moduleId },
+      create: {
+        moduleId,
+        kind: manifest.kind as 'PLATFORM' | 'BUSINESS',
+        enabled: manifest.defaultEnabled || manifest.phase <= 3,
+        settings,
+      },
+      update: { settings },
+    });
+  }
+
+  async assignModule(
+    adminId: string,
+    moduleId: string,
+    enabled: boolean,
+    settings: Record<string, unknown> = {},
+  ) {
+    const manifest = MODULE_MANIFESTS.find((m) => m.id === moduleId);
+    if (!manifest) {
+      throw new Error('Module not found');
+    }
+    if (manifest.kind !== 'BUSINESS') {
+      throw new Error('Only business modules can be assigned to admins.');
+    }
+    return this.prisma.adminModuleAssignment.upsert({
+      where: { adminId_moduleId: { adminId, moduleId } },
+      create: { adminId, moduleId, enabled, settings },
+      update: { enabled, settings },
+    });
+  }
 }

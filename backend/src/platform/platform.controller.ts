@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Body,
   UseGuards,
   Res,
@@ -119,6 +120,55 @@ export class PlatformController {
   @ApiOperation({ summary: 'Full premium module catalog for Super Admin settings' })
   async getPremiumModulesAll() {
     return this.catalogService.listAllForSuperAdmin();
+  }
+
+  @Get('premium-assignments')
+  @Roles('SUPER_ADMIN')
+  @ApiOperation({ summary: 'Module assignments (community fallback when bundle backend is not loaded)' })
+  async getPremiumAssignments() {
+    return this.catalogService.listAllAssignments();
+  }
+
+  @Post('premium-assignments')
+  @Roles('SUPER_ADMIN')
+  @ApiOperation({ summary: 'Assign premium module to admin (community fallback)' })
+  async postPremiumAssignment(
+    @Body()
+    body: {
+      adminId: string;
+      moduleId: string;
+      enabled: boolean;
+      settings?: Record<string, unknown>;
+    },
+  ) {
+    return this.catalogService.assignModule(
+      body.adminId,
+      body.moduleId,
+      body.enabled,
+      body.settings ?? {},
+    );
+  }
+
+  @Patch('premium-modules/:moduleId/enabled')
+  @Roles('SUPER_ADMIN')
+  @ApiOperation({ summary: 'Enable/disable premium module (community fallback)' })
+  async patchPremiumModuleEnabled(
+    @Param('moduleId') moduleId: string,
+    @Body() body: { enabled: boolean },
+  ) {
+    await this.catalogService.setModuleEnabled(moduleId, body.enabled);
+    return { success: true };
+  }
+
+  @Patch('premium-modules/:moduleId/settings')
+  @Roles('SUPER_ADMIN')
+  @ApiOperation({ summary: 'Update premium module settings (community fallback)' })
+  async patchPremiumModuleSettings(
+    @Param('moduleId') moduleId: string,
+    @Body() body: { settings: Record<string, unknown> },
+  ) {
+    await this.catalogService.updateModuleSettings(moduleId, body.settings ?? {});
+    return { success: true };
   }
 
   @Get('features')

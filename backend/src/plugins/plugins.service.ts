@@ -152,7 +152,7 @@ export class PluginsService implements OnApplicationBootstrap {
         return false;
       }
 
-      if (this.loaded) {
+      if (this.loaded && !this.lastLoadError) {
         return true;
       }
 
@@ -165,15 +165,50 @@ export class PluginsService implements OnApplicationBootstrap {
       this.logger.log(`Loading premium bundle from ${pluginPath}`);
 
       const bundle = this.importBundle(pluginPath, distPath);
-      const PremiumBundleModule = bundle.PremiumBundleModule || bundle.default;
-      if (!PremiumBundleModule) {
-        throw new Error('Bundle does not export PremiumBundleModule.');
+
+      const segments: Array<{ name: string; mod: unknown }> = [
+        { name: 'core', mod: bundle.PremiumCoreBundleModule },
+        { name: 'backup', mod: bundle.PremiumBackupBundleModule },
+        { name: 'monitoring', mod: bundle.PremiumMonitoringBundleModule },
+      ].filter((entry) => entry.mod);
+
+      const errors: string[] = [];
+      let anyLoaded = false;
+
+      if (segments.length > 0) {
+        for (const { name, mod } of segments) {
+          try {
+            await this.lazyModuleLoader.load(() => mod as never);
+            anyLoaded = true;
+            this.logger.log(`Premium ${name} module loaded.`);
+          } catch (segmentError: any) {
+            const message = segmentError?.message || String(segmentError);
+            errors.push(`${name}: ${message}`);
+            this.logger.error(`Premium ${name} module failed: ${message}`, segmentError?.stack);
+          }
+        }
+      } else {
+        const PremiumBundleModule = bundle.PremiumBundleModule || bundle.default;
+        if (!PremiumBundleModule) {
+          throw new Error('Bundle does not export PremiumBundleModule.');
+        }
+        await this.lazyModuleLoader.load(() => PremiumBundleModule as never);
+        anyLoaded = true;
       }
 
-      await this.lazyModuleLoader.load(() => PremiumBundleModule as never);
+      if (!anyLoaded) {
+        this.lastLoadError = errors.join('; ') || 'No premium modules loaded';
+        this.loaded = false;
+        return false;
+      }
 
       this.loaded = true;
-      this.logger.log('Premium bundle loaded.');
+      this.lastLoadError = errors.length ? errors.join('; ') : null;
+      if (errors.length) {
+        this.logger.warn(`Premium bundle partially loaded: ${this.lastLoadError}`);
+      } else {
+        this.logger.log('Premium bundle loaded.');
+      }
       return true;
     } catch (error: any) {
       this.lastLoadError = error?.message || String(error);
