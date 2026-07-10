@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { LicenseManagerService } from './license-manager.service';
 import { MODULE_MANIFESTS } from './manifests';
@@ -194,15 +195,16 @@ export class PremiumCatalogService {
       throw new Error('Module not found');
     }
     await this.ensureModuleRowsSeeded();
+    const jsonSettings = settings as Prisma.InputJsonValue;
     return this.prisma.premiumModuleState.upsert({
       where: { moduleId },
       create: {
         moduleId,
         kind: manifest.kind as 'PLATFORM' | 'BUSINESS',
         enabled: manifest.defaultEnabled || manifest.phase <= 3,
-        settings,
+        settings: jsonSettings,
       },
-      update: { settings },
+      update: { settings: jsonSettings },
     });
   }
 
@@ -219,10 +221,11 @@ export class PremiumCatalogService {
     if (manifest.kind !== 'BUSINESS') {
       throw new Error('Only business modules can be assigned to admins.');
     }
+    const jsonSettings = settings as Prisma.InputJsonValue;
     return this.prisma.adminModuleAssignment.upsert({
       where: { adminId_moduleId: { adminId, moduleId } },
-      create: { adminId, moduleId, enabled, settings },
-      update: { enabled, settings },
+      create: { adminId, moduleId, enabled, settings: jsonSettings },
+      update: { enabled, settings: jsonSettings },
     });
   }
 }
