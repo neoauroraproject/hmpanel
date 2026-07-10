@@ -21,7 +21,7 @@ export default function PremiumPluginPage() {
   }, [route, fullPath]);
 
   if (!route) {
-    if (waitMs < 4000) {
+    if (waitMs < 12000) {
       return (
         <div className="space-y-6">
           <PageHeader title="Premium Module" subtitle="Loading premium UI…" />

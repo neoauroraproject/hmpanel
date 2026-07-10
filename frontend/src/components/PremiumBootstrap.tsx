@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { usePluginRegistry } from "@/store/pluginRegistry";
 import { useLicenseActivation } from "@/hooks/useLicenseActivation";
+import { usePremiumModules } from "@/hooks/usePremiumModules";
 import { api } from "@/lib/api";
 
 declare global {
@@ -37,16 +38,15 @@ function patchPremiumModulesFetch() {
   window.__HMPANEL_FETCH_PATCHED = true;
 }
 
-async function syncModulesAfterRuntime() {
-  if (window.HMPANEL_PREMIUM_SYNC) return;
+async function syncModulesFromCatalog() {
   try {
     const res = await api.get("/platform/premium-module-catalog");
     const modules = Array.isArray(res.data) ? res.data : [];
-    if (modules.length && window.HMPANEL_PREMIUM_REGISTER) {
-      window.HMPANEL_PREMIUM_REGISTER(usePluginRegistry);
+    if (modules.length && window.HMPANEL_PREMIUM_SYNC) {
+      window.HMPANEL_PREMIUM_SYNC(modules);
     }
   } catch {
-    /* runtime internal fetch handles registration when patched */
+    /* runtime registers default routes without API list */
   }
 }
 
@@ -62,6 +62,8 @@ export function PremiumBootstrap() {
     state?.mode !== "disabled" &&
     state?.bundle?.installed;
 
+  const { data: premiumModules } = usePremiumModules({ enabled: isPremium });
+
   useEffect(() => {
     if (!isPremium || loaded) return;
 
@@ -74,7 +76,7 @@ export function PremiumBootstrap() {
       if (window.HMPANEL_PREMIUM_REGISTER) {
         window.HMPANEL_PREMIUM_REGISTER(usePluginRegistry);
       }
-      await syncModulesAfterRuntime();
+      await syncModulesFromCatalog();
       setLoaded(true);
     };
     script.onerror = () => {
@@ -86,6 +88,13 @@ export function PremiumBootstrap() {
       script.remove();
     };
   }, [isPremium, loaded]);
+
+  useEffect(() => {
+    if (!isPremium || !premiumModules?.length) return;
+    if (window.HMPANEL_PREMIUM_SYNC) {
+      window.HMPANEL_PREMIUM_SYNC(premiumModules);
+    }
+  }, [isPremium, premiumModules]);
 
   useEffect(() => {
     if (!isPremium) {
