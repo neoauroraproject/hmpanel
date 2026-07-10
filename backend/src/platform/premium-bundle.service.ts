@@ -187,14 +187,33 @@ export class PremiumBundleService {
     return Buffer.from(await res.arrayBuffer());
   }
 
-  /** Best-effort DB sync after premium overlay models are installed. */
+  /** Sync premium DB tables after bundle install (community schema includes overlay models). */
   async applyDatabaseOverlay(): Promise<void> {
-    const overlay = path.join(this.getPremiumRoot(), 'prisma', 'premium.overlay.prisma');
-    if (!fs.existsSync(overlay)) {
-      this.logger.log('No premium prisma overlay in bundle — skipping DB sync');
+    const schemaPath =
+      process.env.PRISMA_SCHEMA_PATH ||
+      path.join(process.cwd(), 'prisma', 'schema.prisma');
+    if (!fs.existsSync(schemaPath)) {
+      this.logger.warn(`Prisma schema not found at ${schemaPath} — skip DB sync`);
       return;
     }
-    this.logger.log('Premium bundle installed. Database will sync on next panel restart (prisma db push).');
+    try {
+      const { execFile } = await import('child_process');
+      const { promisify } = await import('util');
+      const exec = promisify(execFile);
+      this.logger.log('Running prisma db push for premium tables…');
+      await exec(
+        process.platform === 'win32' ? 'npx.cmd' : 'npx',
+        ['prisma', 'db', 'push', `--schema=${schemaPath}`, '--accept-data-loss'],
+        {
+          cwd: path.dirname(path.dirname(schemaPath)),
+          timeout: 180_000,
+          env: process.env as NodeJS.ProcessEnv,
+        },
+      );
+      this.logger.log('Premium database tables synced.');
+    } catch (err: any) {
+      this.logger.warn(`Premium DB sync failed (will retry on restart): ${err?.message || err}`);
+    }
   }
 
   private async extractTarGz(archivePath: string, destDir: string): Promise<void> {

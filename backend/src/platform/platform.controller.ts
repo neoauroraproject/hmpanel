@@ -6,6 +6,7 @@ import {
   UseGuards,
   Res,
   NotFoundException,
+  Req,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
@@ -14,7 +15,10 @@ import { LicenseManagerService } from './license-manager.service';
 import { LicenseActivationService } from './license-activation.service';
 import { FeatureManagerService } from './feature-manager.service';
 import { PremiumBundleService } from './premium-bundle.service';
+import { PremiumCatalogService } from './premium-catalog.service';
+import { PluginsService } from '../plugins/plugins.service';
 import type { Response } from 'express';
+import type { AuthRequest } from '../common/auth-request';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -30,6 +34,8 @@ export class PlatformController {
     private licenseActivation: LicenseActivationService,
     private featureManager: FeatureManagerService,
     private bundleService: PremiumBundleService,
+    private catalogService: PremiumCatalogService,
+    private pluginsService: PluginsService,
   ) {}
 
   @Get('license')
@@ -98,6 +104,12 @@ export class PlatformController {
   async recheckLicense() {
     const state = await this.licenseActivation.recheckNow();
     return { ok: true, state };
+  }
+
+  @Get('premium-module-catalog')
+  @ApiOperation({ summary: 'Premium module list (community fallback)' })
+  async getPremiumCatalog(@Req() req: AuthRequest) {
+    return this.catalogService.listForLicensedAdmin(req.user.role);
   }
 
   @Get('features')

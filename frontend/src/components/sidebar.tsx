@@ -47,6 +47,14 @@ const CORE_NAV: {
 ];
 
 
+const PREMIUM_MENU_ICONS: Record<string, typeof Diamond> = {
+  branding: Diamond,
+  "custom-domains": Globe,
+  "client-templates": Diamond,
+  store: Store,
+  "monitoring-pro": Activity,
+  "backup-center": DatabaseBackup,
+};
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -76,7 +84,7 @@ export function Sidebar() {
           .map((m) => ({
             title: m.name,
             href: m.frontendPath,
-            icon: Diamond,
+            icon: PREMIUM_MENU_ICONS[m.id] || Diamond,
           })),
       ].filter((menu, i, arr) => arr.findIndex((x) => x.href === menu.href) === i)
     : [];

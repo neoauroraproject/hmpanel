@@ -8,6 +8,7 @@ import * as path from 'path';
 export class PluginsService implements OnApplicationBootstrap {
   private readonly logger = new Logger(PluginsService.name);
   private loaded = false;
+  private lastLoadError: string | null = null;
 
   constructor(
     private lazyModuleLoader: LazyModuleLoader,
@@ -20,6 +21,10 @@ export class PluginsService implements OnApplicationBootstrap {
 
   isLoaded(): boolean {
     return this.loaded;
+  }
+
+  getLastLoadError(): string | null {
+    return this.lastLoadError;
   }
 
   async reloadPremiumPlugins(): Promise<boolean> {
@@ -79,6 +84,7 @@ export class PluginsService implements OnApplicationBootstrap {
       process.env.HMPANEL_DIST = distPath;
       this.logger.log(`HMPANEL_DIST=${distPath}`);
 
+      this.lastLoadError = null;
       this.logger.log(`Loading premium bundle from ${pluginPath}`);
       const premiumModuleImport = await import(pluginPath);
       const PremiumBundleModule =
@@ -93,7 +99,8 @@ export class PluginsService implements OnApplicationBootstrap {
       this.logger.log('Premium bundle loaded.');
       return true;
     } catch (error: any) {
-      this.logger.error(`Failed to load premium bundle: ${error.message}`, error?.stack);
+      this.lastLoadError = error?.message || String(error);
+      this.logger.error(`Failed to load premium bundle: ${this.lastLoadError}`, error?.stack);
       this.loaded = false;
       return false;
     }

@@ -76,6 +76,9 @@ model Panel {
   incidents     Incident[]
   storeProfiles StoreProfile[]
   clients       Client[]
+  metrics       PanelMetric[]
+  actionLogs    ActionLog[]
+  outboundMetrics OutboundMetric[]
 }
 
 model Inbound {
@@ -153,6 +156,7 @@ model Admin {
   Brand            Brand[]
   operationQueues  OperationQueue[]
   moduleAssignments AdminModuleAssignment[]
+  actionLogs          ActionLog[]
 }
 
 // Bridging table for Admin <-> Inbound access
@@ -553,16 +557,88 @@ model AdminModuleAssignment {
 }
 
 model Incident {
-  id         String           @id @default(uuid())
-  panelId    String?
-  type       String
-  severity   IncidentSeverity
-  status     IncidentStatus   @default(ACTIVE)
-  details    Json?
-  detectedAt DateTime         @default(now())
-  resolvedAt DateTime?
+  id              String           @id @default(uuid())
+  panelId         String?
+  type            String
+  severity        IncidentSeverity
+  status          IncidentStatus   @default(ACTIVE)
+  details         Json?
+  duration        Int?
+  rootCauseGuess  String?
+  confidence      Int?
+  timezone        String?
+  recoveryTime    Int?
+  affectedUsers   Int?
+  metricsSnapshot Json?
+  detectedAt      DateTime         @default(now())
+  resolvedAt      DateTime?
 
   panel Panel? @relation(fields: [panelId], references: [id], onDelete: SetNull)
+}
+
+model PanelMetric {
+  id            String   @id @default(uuid())
+  panelId       String
+  cpu           Float
+  ram           Float
+  disk          Float
+  netUp         BigInt
+  netDown       BigInt
+  xrayUp        BigInt
+  xrayDown      BigInt
+  onlineUsers   Int
+  activeClients Int
+  load1         Float    @default(0)
+  load5         Float    @default(0)
+  load15        Float    @default(0)
+  uptimeSecs    Int      @default(0)
+  xrayState     Json?
+  recordedAt    DateTime @default(now())
+
+  panel Panel @relation(fields: [panelId], references: [id], onDelete: Cascade)
+
+  @@index([panelId, recordedAt])
+  @@index([recordedAt])
+}
+
+model ActionLog {
+  id         String   @id @default(uuid())
+  panelId    String?
+  adminId    String?
+  action     String
+  status     String
+  details    Json?
+  executedAt DateTime @default(now())
+
+  panel Panel? @relation(fields: [panelId], references: [id], onDelete: SetNull)
+  admin Admin? @relation(fields: [adminId], references: [id], onDelete: SetNull)
+}
+
+model AlertRule {
+  id              String    @id @default(uuid())
+  name            String
+  enabled         Boolean   @default(true)
+  conditionType   String
+  threshold       Json?
+  action          String    @default("NOTIFY_ONLY")
+  cooldownMinutes Int       @default(60)
+  lastTriggered   DateTime?
+  createdAt       DateTime  @default(now())
+}
+
+model OutboundMetric {
+  id          String   @id @default(uuid())
+  panelId     String
+  outboundTag String
+  status      String
+  latency     Int
+  packetLoss  Float?
+  recordedAt  DateTime @default(now())
+
+  panel Panel @relation(fields: [panelId], references: [id], onDelete: Cascade)
+
+  @@index([panelId, recordedAt])
+  @@index([outboundTag, recordedAt])
 }
 
 // ---------------------------------------------------------

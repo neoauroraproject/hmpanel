@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { BullModule } from '@nestjs/bull';
 import { AppController } from './app.controller';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
@@ -21,6 +22,14 @@ import { PluginsModule } from './plugins/plugins.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    BullModule.forRootAsync({
+      useFactory: () => ({
+        redis: {
+          host: process.env.REDIS_HOST || 'redis',
+          port: parseInt(process.env.REDIS_PORT || '6379', 10),
+        },
+      }),
+    }),
     ScheduleModule.forRoot(),
     PlatformModule,
     PluginsModule,

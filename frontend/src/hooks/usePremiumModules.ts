@@ -28,7 +28,14 @@ export function usePremiumModules(options?: { enabled?: boolean }) {
     queryKey: ["premium-modules", token],
     queryFn: async () => {
       try {
-        return (await api.get<PremiumModule[]>("/premium-modules")).data;
+        const res = await api.get<PremiumModule[]>("/premium-modules");
+        if (Array.isArray(res.data) && res.data.length > 0) return res.data;
+      } catch {
+        /* bundle API not loaded — fall through */
+      }
+      try {
+        const fallback = await api.get<PremiumModule[]>("/platform/premium-module-catalog");
+        return fallback.data ?? [];
       } catch {
         return [];
       }

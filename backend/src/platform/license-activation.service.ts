@@ -397,15 +397,20 @@ export class LicenseActivationService {
       version: this.bundleService.getInstalledVersion(),
       path: this.bundleService.getPremiumRoot(),
       pluginsLoaded: this.pluginsService.isLoaded(),
+      lastLoadError: this.pluginsService.getLastLoadError(),
       hmpanelDist: distPath,
     };
   }
 
-  async reloadPlugins(): Promise<{ loaded: boolean; hmpanelDist: string }> {
+  async reloadPlugins(): Promise<{ loaded: boolean; hmpanelDist: string; lastLoadError: string | null }> {
     const hmpanelDist = this.pluginsService.resolveHmpanelDist();
     process.env.HMPANEL_DIST = hmpanelDist;
     const loaded = await this.pluginsService.reloadPremiumPlugins();
-    return { loaded, hmpanelDist };
+    return {
+      loaded,
+      hmpanelDist,
+      lastLoadError: this.pluginsService.getLastLoadError(),
+    };
   }
 
   /** Step-by-step diagnostics for bundle download issues (SUPER_ADMIN). */

@@ -5,6 +5,7 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { SettingsModule } from '../settings/settings.module';
 import { InstanceFingerprintService } from './instance-fingerprint.service';
 import { PremiumBundleService } from './premium-bundle.service';
+import { PremiumCatalogService } from './premium-catalog.service';
 import { LicenseActivationService } from './license-activation.service';
 import { LicenseHeartbeatScheduler } from './license-heartbeat.scheduler';
 import { FeatureManagerService } from './feature-manager.service';
@@ -20,6 +21,7 @@ import { PluginsModule } from '../plugins/plugins.module';
     FeatureManagerService,
     InstanceFingerprintService,
     PremiumBundleService,
+    PremiumCatalogService,
     LicenseActivationService,
     LicenseHeartbeatScheduler,
     PremiumGuard,
@@ -29,6 +31,7 @@ import { PluginsModule } from '../plugins/plugins.module';
     FeatureManagerService,
     LicenseActivationService,
     PremiumBundleService,
+    PremiumCatalogService,
     InstanceFingerprintService,
     PremiumGuard,
   ],

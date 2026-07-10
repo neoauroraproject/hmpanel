@@ -1,7 +1,7 @@
 "use client";
 
 import { Key, RefreshCw, Power, PowerOff, ExternalLink, Sparkles } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card } from "@/components/ui";
 import { useLicenseActivation } from "@/hooks/useLicenseActivation";
 import { formatLicenseExpiry } from "@/lib/format";
@@ -10,8 +10,21 @@ const SUPPORT_URL = "https://t.me/hmraysupport";
 
 export function LicenseSettingsCard() {
   const [key, setKey] = useState("");
-  const { licenseQuery, activate, deactivate, recheck, updateBundle } = useLicenseActivation();
+  const { licenseQuery, activate, deactivate, recheck, updateBundle, reloadPlugins } = useLicenseActivation();
   const state = licenseQuery.data;
+  const autoReloadTried = useRef(false);
+
+  useEffect(() => {
+    if (autoReloadTried.current) return;
+    if (
+      state?.bundle?.installed &&
+      state?.edition === "PREMIUM" &&
+      state?.bundle?.pluginsLoaded === false
+    ) {
+      autoReloadTried.current = true;
+      reloadPlugins.mutate();
+    }
+  }, [state?.bundle?.installed, state?.bundle?.pluginsLoaded, state?.edition]);
 
   const isPremium =
     state?.edition === "PREMIUM" &&
@@ -92,6 +105,12 @@ export function LicenseSettingsCard() {
               ? state.bundle.version || "installed"
               : "Not installed"}
           </p>
+          {state?.bundle?.installed && state.bundle.pluginsLoaded === false && (
+            <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+              Modules not loaded
+              {state.bundle.lastLoadError ? `: ${state.bundle.lastLoadError}` : ""}
+            </p>
+          )}
         </div>
       </div>
 

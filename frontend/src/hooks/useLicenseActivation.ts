@@ -16,6 +16,7 @@ export interface LicenseState {
     installed: boolean;
     version: string | null;
     pluginsLoaded?: boolean;
+    lastLoadError?: string | null;
   };
 }
 
@@ -78,5 +79,19 @@ export function useLicenseActivation() {
     onError: (e: any) => toast(e?.response?.data?.message || "Bundle update failed", "error"),
   });
 
-  return { licenseQuery, activate, deactivate, recheck, updateBundle };
+  const reloadPlugins = useMutation({
+    mutationFn: async () => (await api.post("/platform/license/reload-plugins")).data,
+    onSuccess: (data: { loaded?: boolean; lastLoadError?: string }) => {
+      invalidateAll();
+      if (data?.loaded) {
+        toast("Premium modules loaded", "success");
+        setTimeout(() => window.location.reload(), 600);
+      } else {
+        toast("Premium modules failed to load — restart panel service", "error");
+      }
+    },
+    onError: (e: any) => toast(e?.response?.data?.message || "Reload failed", "error"),
+  });
+
+  return { licenseQuery, activate, deactivate, recheck, updateBundle, reloadPlugins };
 }
