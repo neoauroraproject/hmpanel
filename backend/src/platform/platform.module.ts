@@ -8,6 +8,7 @@ import { PremiumBundleService } from './premium-bundle.service';
 import { PremiumCatalogService } from './premium-catalog.service';
 import { LicenseActivationService } from './license-activation.service';
 import { LicenseHeartbeatScheduler } from './license-heartbeat.scheduler';
+import { PremiumPluginsScheduler } from './premium-plugins.scheduler';
 import { FeatureManagerService } from './feature-manager.service';
 import { PremiumGuard } from '../common/guards/premium.guard';
 import { PluginsModule } from '../plugins/plugins.module';
@@ -25,6 +26,7 @@ import { PremiumModulesListController } from '../premium-modules/premium-modules
     PremiumCatalogService,
     LicenseActivationService,
     LicenseHeartbeatScheduler,
+    PremiumPluginsScheduler,
     PremiumGuard,
   ],
   exports: [

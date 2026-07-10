@@ -17,7 +17,25 @@ export class PluginsService implements OnApplicationBootstrap {
   ) {}
 
   async onApplicationBootstrap() {
-    await this.loadPremiumPlugins();
+    const pluginPath =
+      process.env.PREMIUM_PLUGIN_PATH ||
+      path.join('/opt/hmpanel/premium', 'backend', 'index.js');
+
+    if (!fs.existsSync(pluginPath)) {
+      await this.loadPremiumPlugins();
+      return;
+    }
+
+    for (let attempt = 0; attempt < 5; attempt++) {
+      if (await this.loadPremiumPlugins()) return;
+      const err = this.lastLoadError;
+      if (err) {
+        this.logger.warn(
+          `Premium bundle load attempt ${attempt + 1}/5 failed: ${err}`,
+        );
+      }
+      await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
+    }
   }
 
   isLoaded(): boolean {
@@ -153,18 +171,6 @@ export class PluginsService implements OnApplicationBootstrap {
       }
 
       await this.lazyModuleLoader.load(() => PremiumBundleModule as never);
-
-      const MonitoringModule = bundle.PremiumMonitoringBundleModule;
-      if (MonitoringModule) {
-        try {
-          await this.lazyModuleLoader.load(() => MonitoringModule as never);
-          this.logger.log('Premium monitoring module loaded.');
-        } catch (monitorErr: any) {
-          this.logger.warn(
-            `Premium monitoring module skipped: ${monitorErr?.message || monitorErr}`,
-          );
-        }
-      }
 
       this.loaded = true;
       this.logger.log('Premium bundle loaded.');
