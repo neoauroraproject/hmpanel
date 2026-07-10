@@ -518,6 +518,8 @@ export class LicenseActivationService {
   }
 
   async recheckNow(): Promise<LicenseState> {
-    return this.licenseManager.refreshFromServer();
+    const state = await this.licenseManager.refreshFromServer();
+    await this.pluginsService.syncWithLicenseState();
+    return state;
   }
 }

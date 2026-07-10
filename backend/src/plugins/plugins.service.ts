@@ -33,6 +33,30 @@ export class PluginsService implements OnApplicationBootstrap {
     return this.loadPremiumPlugins();
   }
 
+  /** Keep plugin load flag aligned with license — bundle stays on disk, only activation/update downloads. */
+  async syncWithLicenseState(): Promise<void> {
+    const state = await this.licenseManager.getLicenseState();
+    const active =
+      state.edition === 'PREMIUM' &&
+      state.mode !== 'disabled' &&
+      state.status !== 'invalid' &&
+      state.status !== 'community' &&
+      state.status !== 'expired';
+
+    if (!active) {
+      if (this.loaded) {
+        this.logger.warn('Premium license inactive — premium modules deactivated.');
+      }
+      this.loaded = false;
+      this.lastLoadError = null;
+      return;
+    }
+
+    if (!this.loaded) {
+      await this.loadPremiumPlugins();
+    }
+  }
+
   resolveHmpanelDist(): string {
     const candidates = [
       process.env.HMPANEL_DIST,

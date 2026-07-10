@@ -15,6 +15,7 @@ export class PremiumGuard implements CanActivate {
     const active =
       (state.status === 'active' || state.status === 'grace') &&
       state.mode !== 'disabled' &&
+      state.status !== 'expired' &&
       state.edition === 'PREMIUM';
 
     if (!active) {

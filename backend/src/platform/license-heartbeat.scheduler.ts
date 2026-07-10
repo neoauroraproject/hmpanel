@@ -1,12 +1,16 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { LicenseManagerService } from './license-manager.service';
+import { PluginsService } from '../plugins/plugins.service';
 
 @Injectable()
 export class LicenseHeartbeatScheduler {
   private readonly logger = new Logger(LicenseHeartbeatScheduler.name);
 
-  constructor(private licenseManager: LicenseManagerService) {}
+  constructor(
+    private licenseManager: LicenseManagerService,
+    private pluginsService: PluginsService,
+  ) {}
 
   @Cron(CronExpression.EVERY_DAY_AT_1AM)
   async dailyHeartbeat(): Promise<void> {
@@ -18,6 +22,7 @@ export class LicenseHeartbeatScheduler {
     for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
       try {
         await this.licenseManager.refreshFromServer();
+        await this.pluginsService.syncWithLicenseState();
         return;
       } catch (err: any) {
         this.logger.warn(`Heartbeat attempt ${attempt + 1} failed: ${err.message}`);

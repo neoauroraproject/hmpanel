@@ -7,7 +7,6 @@ import { InstanceFingerprintService } from './instance-fingerprint.service';
 import { requestLicenseServer } from './license-server.client';
 
 const GRACE_DAYS = 7;
-const OFFLINE_GRACE_DAYS = 7;
 const LICENSE_STATE_KEY = 'LICENSE_STATE';
 const LICENSE_KEY_KEY = 'LICENSE_KEY';
 const LICENSE_ENTITLEMENT_KEY = 'LICENSE_ENTITLEMENT_JWT';
@@ -135,22 +134,10 @@ export class LicenseManagerService {
     const stored = await this.getStoredState();
     if (!stored) return;
     const now = new Date().toISOString();
-    const lastCheck = stored.lastServerCheckAt || stored.lastHeartbeatAt || now;
-    const offlineMs = Date.now() - new Date(lastCheck).getTime();
-    const offlineDays = offlineMs / 86_400_000;
-
-    let mode = stored.mode;
-    let status = stored.status;
-    if (offlineDays > OFFLINE_GRACE_DAYS) {
-      mode = 'read_only';
-      status = 'grace';
-    }
-
+    // Offline license server must not disable premium — bundle runs locally; only record last check.
     await this.setLicenseState({
       ...stored,
       lastServerCheckAt: now,
-      mode,
-      status,
     });
   }
 
@@ -195,13 +182,7 @@ export class LicenseManagerService {
       return { ...state, mode: 'disabled', licensedFeatures: [] };
     }
 
-    const lastCheck = state.lastServerCheckAt || state.lastHeartbeatAt;
-    if (lastCheck) {
-      const offlineMs = Date.now() - new Date(lastCheck).getTime();
-      if (offlineMs > OFFLINE_GRACE_DAYS * 86_400_000) {
-        return { ...state, status: 'grace', mode: 'read_only' };
-      }
-    }
+    // Local JWT + stored state drive premium while offline; server is only for validity checks.
 
     if (!state.expiresAt) {
       return { ...state, status: state.status === 'grace' ? 'grace' : 'active', mode: state.mode === 'read_only' ? 'read_only' : 'full' };
@@ -227,7 +208,8 @@ export class LicenseManagerService {
     return {
       ...state,
       status: 'expired',
-      mode: 'read_only',
+      mode: 'disabled',
+      licensedFeatures: [],
       graceEndsAt: new Date(graceEndsAt).toISOString(),
     };
   }
@@ -246,10 +228,10 @@ export class LicenseManagerService {
     if (exp && exp * 1000 < Date.now()) {
       return {
         status: 'expired',
-        mode: 'read_only',
+        mode: 'disabled',
         expiresAt: new Date(exp * 1000).toISOString(),
         graceEndsAt: null,
-        licensedFeatures: (payload.features as string[]) || getAllFeatureIds(),
+        licensedFeatures: [],
         edition: 'PREMIUM',
       };
     }

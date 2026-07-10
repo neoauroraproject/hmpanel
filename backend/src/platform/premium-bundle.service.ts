@@ -43,6 +43,10 @@ export class PremiumBundleService {
     }
   }
 
+  /**
+   * Download and install premium bundle tarball.
+   * Called only from license activation and manual "Update premium bundle" — never from heartbeat/runtime.
+   */
   async downloadAndInstall(
     downloadUrl: string,
     expectedSha256: string | null,
