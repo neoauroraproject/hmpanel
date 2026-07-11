@@ -12,6 +12,12 @@ import { useAuth } from "@/store/auth";
 const THEMES = [
   { id: "Dark", label: "Dark Mode" },
   { id: "Light", label: "Light Mode" },
+  { id: "Neo Default", label: "Neo Default" },
+  { id: "Neo Vibrant", label: "Neo Vibrant" },
+  { id: "Neo Eclipse", label: "Neo Eclipse" },
+  { id: "Neo Glass", label: "Neo Glass" },
+  { id: "Neo Minimal", label: "Neo Minimal" },
+  { id: "Neo Dashboard", label: "Neo Dashboard" },
   { id: "Cyberpunk", label: "Cyberpunk" },
   { id: "Sunset", label: "Sunset" },
   { id: "Minimalist", label: "Minimalist" },
