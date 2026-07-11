@@ -202,8 +202,8 @@ function PortalBody(props: {
   setCopiedToken: (v: boolean) => void;
   resetFlow: () => void;
   onReceiptFile: (file?: File | null) => void;
-  orderMutation: ReturnType<typeof useMutation>;
-  renewMutation: ReturnType<typeof useMutation>;
+  orderMutation: { isPending: boolean; error: unknown; mutate: () => void };
+  renewMutation: { isPending: boolean; error: unknown; mutate: () => void };
   logout: ReturnType<typeof useCustomerSession>["logout"];
   cancelOrder: ReturnType<typeof useCustomerSession>["cancelOrder"];
   markNotificationRead: ReturnType<typeof useCustomerSession>["markNotificationRead"];
