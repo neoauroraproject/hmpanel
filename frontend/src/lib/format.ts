@@ -8,7 +8,7 @@ export function formatBytes(value: string | number | bigint): string {
   return `${n.toFixed(n >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
-export function formatDate(iso: string): string {
+export function formatDate(iso: string | number | Date): string {
   return new Date(iso).toLocaleDateString(undefined, {
     year: "numeric",
     month: "short",
@@ -16,7 +16,7 @@ export function formatDate(iso: string): string {
   });
 }
 
-export function formatDateTime(iso: string): string {
+export function formatDateTime(iso: string | number | Date): string {
   return new Date(iso).toLocaleString(undefined, {
     month: "short",
     day: "numeric",
