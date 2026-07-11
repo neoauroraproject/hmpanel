@@ -1,11 +1,36 @@
 import axios from "axios";
 
 export const API_BASE = "/api";
+export const CUSTOMER_SESSION_STORAGE_KEY = "hm-storefront-session";
 
 export const api = axios.create({ baseURL: API_BASE });
+/** Unauthenticated / customer-session API client for public storefront. */
+export const publicApi = axios.create({ baseURL: API_BASE });
+
+export function getCustomerSessionToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem(CUSTOMER_SESSION_STORAGE_KEY);
+}
+
+export function setCustomerSessionToken(token: string | null) {
+  if (typeof window === "undefined") return;
+  if (!token) {
+    localStorage.removeItem(CUSTOMER_SESSION_STORAGE_KEY);
+    return;
+  }
+  localStorage.setItem(CUSTOMER_SESSION_STORAGE_KEY, token);
+}
+
+publicApi.interceptors.request.use((config) => {
+  const session = getCustomerSessionToken();
+  if (session && config.headers) {
+    config.headers["x-customer-session"] = session;
+  }
+  return config;
+});
 
 /** Read the persisted auth state directly from the zustand-persisted localStorage blob. */
-function getAuthState(): { token: string | null, refreshToken: string | null } {
+function getAuthState(): { token: string | null; refreshToken: string | null } {
   if (typeof window === "undefined") return { token: null, refreshToken: null };
   try {
     const raw = localStorage.getItem("panel-auth");
@@ -84,8 +109,7 @@ api.interceptors.response.use(
 
       try {
         const { data } = await axios.post(`${API_BASE}/auth/refresh`, { refreshToken });
-        
-        // Update local storage
+
         if (typeof window !== "undefined") {
           const raw = localStorage.getItem("panel-auth");
           if (raw) {
@@ -95,11 +119,11 @@ api.interceptors.response.use(
             localStorage.setItem("panel-auth", JSON.stringify(parsed));
           }
         }
-        
+
         api.defaults.headers.common["Authorization"] = "Bearer " + data.accessToken;
         originalRequest.headers["Authorization"] = "Bearer " + data.accessToken;
         processQueue(null, data.accessToken);
-        
+
         return api(originalRequest);
       } catch (err) {
         processQueue(err, null);

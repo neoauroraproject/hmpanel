@@ -1,338 +1,510 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { api } from "@/lib/api";
+import { useEffect, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
-import { formatBytes } from "@/lib/format";
-import { copyToClipboard } from "@/lib/clipboard";
-import { ShieldCheck, Server, AlertCircle, RefreshCw, Upload, FileImage, CreditCard, Copy, Check, Globe } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { AlertCircle, LoaderCircle, Upload } from "lucide-react";
+import { publicApi } from "@/lib/api";
+import type { CustomerProfile, StorefrontProduct, StorefrontStore } from "@/modules/storefront/types";
+import {
+  PendingOrderCard,
+  PrimaryButton,
+  ProductCard,
+  SecondaryButton,
+  Stepper,
+  StoreShell,
+  WelcomeHero,
+} from "@/modules/storefront/ui";
 
-const translations = {
-  en: {
-    storeNotFound: "Store Not Found",
-    storeNotFoundDesc: "The store you are looking for does not exist or is currently unavailable.",
-    availablePlans: "Available Plans",
-    orderNow: "Order Now",
-    traffic: "Traffic",
-    duration: "Duration",
-    days: "Days",
-    noPlans: "No plans available at the moment. Please check back later.",
-    backToProducts: "← Back to Products",
-    completePurchase: "Complete Your Purchase",
-    ordering: "You are ordering",
-    newAccount: "New Account",
-    renewExisting: "Renew Existing",
-    subUrlLabel: "Subscription URL (Link or Token)",
-    subUrlDesc: "Paste your current subscription link here so we can extend your existing account without changing your config.",
-    nameLabel: "Your Name",
-    telegramLabel: "Telegram (Optional)",
-    whatsappLabel: "WhatsApp (Optional)",
-    paymentInstructions: "Payment Instructions",
-    cardNumber: "Card Number",
-    receiptLabel: "Payment Receipt / Reference",
-    receiptPlaceholder: "Enter transaction ID, reference number, or paste a link to the receipt image.",
-    receiptHelp: "You can also use image hosting sites (like imgur) and paste the link here.",
-    submitOrder: "Submit Order",
-    submitting: "Submitting..."
-  },
-  fa: {
-    storeNotFound: "فروشگاه یافت نشد",
-    storeNotFoundDesc: "فروشگاهی که به دنبال آن هستید وجود ندارد یا در حال حاضر در دسترس نیست.",
-    availablePlans: "طرح‌های موجود",
-    orderNow: "سفارش",
-    traffic: "ترافیک",
-    duration: "مدت زمان",
-    days: "روز",
-    noPlans: "در حال حاضر هیچ طرحی موجود نیست.",
-    backToProducts: "بازگشت به محصولات →",
-    completePurchase: "تکمیل خرید",
-    ordering: "شما در حال سفارش هستید",
-    newAccount: "اکانت جدید",
-    renewExisting: "تمدید اکانت فعلی",
-    subUrlLabel: "لینک اشتراک (لینک یا توکن)",
-    subUrlDesc: "لینک اشتراک فعلی خود را اینجا وارد کنید تا اکانت شما بدون تغییر کانفیگ تمدید شود.",
-    nameLabel: "نام شما",
-    telegramLabel: "تلگرام (اختیاری)",
-    whatsappLabel: "واتساپ (اختیاری)",
-    paymentInstructions: "دستورالعمل پرداخت",
-    cardNumber: "شماره کارت",
-    receiptLabel: "رسید پرداخت / کد پیگیری",
-    receiptPlaceholder: "کد پیگیری تراکنش را وارد کنید یا لینک تصویر رسید را قرار دهید.",
-    receiptHelp: "می‌توانید از سایت‌های آپلود عکس استفاده کرده و لینک آن را اینجا قرار دهید.",
-    submitOrder: "ثبت سفارش",
-    submitting: "در حال ثبت..."
-  }
-};
+type Step = 0 | 1 | 2 | 3;
 
 export default function ShopPage() {
   const params = useParams();
   const router = useRouter();
   const slug = params.slug as string;
-
-  const [lang, setLang] = useState<'en' | 'fa'>('fa');
-  const t = translations[lang];
-
-  useEffect(() => {
-    document.documentElement.dir = lang === 'fa' ? 'rtl' : 'ltr';
-  }, [lang]);
-
-  const { data, isLoading, error } = useQuery({
-    queryKey: ["shop", slug],
-    queryFn: async () => (await api.get(`/store/public/${slug}`)).data,
-    retry: false,
-  });
-
-  const createOrder = useMutation({
-    mutationFn: async (payload: any) => (await api.post(`/store/public/${slug}/order`, payload)).data,
-    onSuccess: (res) => {
-      router.push(`/track/${res.trackingCode}`);
-    },
-  });
-
-  const [selectedProduct, setSelectedProduct] = useState<any>(null);
-  const [isRenewal, setIsRenewal] = useState(false);
+  const [step, setStep] = useState<Step>(0);
+  const [selectedProduct, setSelectedProduct] = useState<StorefrontProduct | null>(null);
+  const [haveToken, setHaveToken] = useState(false);
+  const [lookupError, setLookupError] = useState("");
+  const [receiptPreview, setReceiptPreview] = useState("");
+  const [result, setResult] = useState<any>(null);
+  const [trackCode, setTrackCode] = useState("");
+  const [showTrack, setShowTrack] = useState(false);
   const [form, setForm] = useState({
-    subUrl: "",
-    clientName: "",
-    telegramId: "",
+    customerToken: "",
+    configName: "",
+    name: "",
+    telegram: "",
     whatsapp: "",
-    notes: "",
+    email: "",
     receiptText: "",
     receiptImage: "",
   });
 
-  const [copied, setCopied] = useState(false);
-  const handleCopy = async (text: string) => {
-    try {
-      await copyToClipboard(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {}
-  };
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["storefront", slug],
+    queryFn: async () => (await publicApi.get(`/store/public/${slug}`)).data,
+    retry: false,
+  });
+
+  const store = data?.store as StorefrontStore | undefined;
+  const products = (data?.products || []) as StorefrontProduct[];
+
+  useEffect(() => {
+    document.title = store?.title || store?.branding?.name || "Store";
+    const icon =
+      store?.logoUrl ||
+      store?.logoDarkUrl ||
+      store?.branding?.logo ||
+      store?.branding?.logoDark;
+    if (!icon) return;
+    let link = document.querySelector("link[rel='icon']") as HTMLLinkElement | null;
+    if (!link) {
+      link = document.createElement("link");
+      link.rel = "icon";
+      document.head.appendChild(link);
+    }
+    link.href = icon;
+  }, [store]);
+
+  const lookupCustomer = useMutation({
+    mutationFn: async (token: string) =>
+      (await publicApi.post(`/store/public/${slug}/customer`, { token })).data as CustomerProfile,
+    onSuccess: (profile) => {
+      setLookupError("");
+      setForm((current) => ({
+        ...current,
+        customerToken: profile.token || current.customerToken,
+        name: profile.name || "",
+        telegram: profile.telegram || "",
+        whatsapp: profile.whatsapp || "",
+        email: profile.email || "",
+      }));
+    },
+    onError: () => setLookupError("Customer token was not found for this store."),
+  });
+
+  const createOrder = useMutation({
+    mutationFn: async () =>
+      (
+        await publicApi.post(`/store/public/${slug}/order`, {
+          productId: selectedProduct?.id,
+          configName: form.configName,
+          name: form.name,
+          telegram: form.telegram,
+          whatsapp: form.whatsapp,
+          email: form.email,
+          receiptText: form.receiptText || undefined,
+          receiptImage: form.receiptImage || undefined,
+          customerToken: haveToken ? form.customerToken : undefined,
+          haveToken,
+        })
+      ).data,
+    onSuccess: (response) => setResult(response),
+  });
 
   if (isLoading) {
-    return <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950">
-      <div className="animate-spin text-blue-500"><RefreshCw size={32} /></div>
-    </div>;
-  }
-
-  if (error || !data) {
-    return <div className="min-h-screen flex flex-col items-center justify-center bg-zinc-50 dark:bg-zinc-950 p-4">
-      <AlertCircle size={48} className="text-red-500 mb-4" />
-      <h1 className="text-2xl font-bold text-zinc-800 dark:text-zinc-100 mb-2">{t.storeNotFound}</h1>
-      <p className="text-zinc-500">{t.storeNotFoundDesc}</p>
-    </div>;
-  }
-
-  const { store, products } = data;
-
-  if (selectedProduct) {
     return (
-      <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 py-12 px-4 font-sans text-zinc-900 dark:text-zinc-100" dir={lang === 'fa' ? 'rtl' : 'ltr'}>
-        <div className="max-w-2xl mx-auto space-y-6">
-          <button 
-            onClick={() => setSelectedProduct(null)}
-            className="text-sm font-medium text-blue-500 hover:text-blue-600 mb-4 inline-block"
-          >
-            {t.backToProducts}
-          </button>
-          
-          <div className="bg-white dark:bg-zinc-900 rounded-2xl p-6 shadow-sm border border-zinc-200 dark:border-zinc-800">
-            <div className="flex justify-between items-start mb-6 pb-6 border-b border-zinc-100 dark:border-zinc-800">
-              <div>
-                <h2 className="text-xl font-bold mb-1">{t.completePurchase}</h2>
-                <p className="text-zinc-500 text-sm">{t.ordering} {selectedProduct.name}</p>
-              </div>
-              <div className={`text-${lang === 'fa' ? 'left' : 'right'}`}>
-                <div className="text-2xl font-black text-emerald-500">${selectedProduct.price}</div>
-                <div className="text-xs text-zinc-400" dir="ltr">{formatBytes(Number(selectedProduct.traffic))} / {selectedProduct.durationDays} {t.days}</div>
-              </div>
-            </div>
-
-            <div className="space-y-6">
-              {/* Renewal vs New */}
-              <div className="flex gap-4 p-1 bg-zinc-100 dark:bg-zinc-800/50 rounded-xl">
-                <button 
-                  onClick={() => setIsRenewal(false)}
-                  className={`flex-1 py-2 text-sm font-medium rounded-lg transition-colors ${!isRenewal ? 'bg-white dark:bg-zinc-700 shadow-sm' : 'text-zinc-500'}`}
-                >
-                  {t.newAccount}
-                </button>
-                <button 
-                  onClick={() => setIsRenewal(true)}
-                  className={`flex-1 py-2 text-sm font-medium rounded-lg transition-colors ${isRenewal ? 'bg-white dark:bg-zinc-700 shadow-sm' : 'text-zinc-500'}`}
-                >
-                  {t.renewExisting}
-                </button>
-              </div>
-
-              {isRenewal ? (
-                <div>
-                  <label className="block text-sm font-medium mb-1">{t.subUrlLabel}</label>
-                  <p className="text-xs text-zinc-500 mb-2">{t.subUrlDesc}</p>
-                  <input 
-                    value={form.subUrl} onChange={e => setForm({...form, subUrl: e.target.value})}
-                    placeholder="https://.../s/YOUR_TOKEN"
-                    dir="ltr"
-                    className="w-full rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-4 py-3 outline-none focus:border-blue-500 text-left" 
-                  />
-                </div>
-              ) : (
-                <div>
-                  <label className="block text-sm font-medium mb-1">{t.nameLabel}</label>
-                  <input 
-                    value={form.clientName} onChange={e => setForm({...form, clientName: e.target.value})}
-                    className="w-full rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-4 py-3 outline-none focus:border-blue-500" 
-                  />
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1">{t.telegramLabel}</label>
-                  <input 
-                    value={form.telegramId} onChange={e => setForm({...form, telegramId: e.target.value})}
-                    dir="ltr"
-                    placeholder="@username"
-                    className="w-full rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-4 py-3 outline-none focus:border-blue-500 text-left" 
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">{t.whatsappLabel}</label>
-                  <input 
-                    value={form.whatsapp} onChange={e => setForm({...form, whatsapp: e.target.value})}
-                    dir="ltr"
-                    placeholder="+123456789"
-                    className="w-full rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-4 py-3 outline-none focus:border-blue-500 text-left" 
-                  />
-                </div>
-              </div>
-
-              <div className="p-4 bg-blue-50 dark:bg-blue-500/10 rounded-xl border border-blue-100 dark:border-blue-500/20">
-                <h4 className="font-semibold text-blue-700 dark:text-blue-400 mb-2 flex items-center gap-2">
-                  <CreditCard size={18} /> {t.paymentInstructions}
-                </h4>
-                <p className="text-sm text-blue-600/80 dark:text-blue-300/80 mb-4 whitespace-pre-line">
-                  {store.paymentInstructions}
-                </p>
-                {store.bankCardNumber && (
-                  <div className="flex items-center justify-between bg-white dark:bg-zinc-900 p-3 rounded-lg border border-blue-100 dark:border-blue-500/30">
-                    <div dir="ltr" className="text-left">
-                      <div className="text-xs text-zinc-500">{t.cardNumber}</div>
-                      <div className="font-mono font-bold tracking-wider">{store.bankCardNumber}</div>
-                      {store.bankAccountInfo && <div className="text-xs text-zinc-500 mt-0.5">{store.bankAccountInfo}</div>}
-                    </div>
-                    <button onClick={() => handleCopy(store.bankCardNumber)} className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-md hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-300">
-                      {copied ? <Check size={16} className="text-emerald-500" /> : <Copy size={16} />}
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium mb-1">{t.receiptLabel}</label>
-                <textarea 
-                  value={form.receiptText} onChange={e => setForm({...form, receiptText: e.target.value})}
-                  placeholder={t.receiptPlaceholder}
-                  rows={2}
-                  className="w-full rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-4 py-3 outline-none focus:border-blue-500" 
-                />
-                <p className="text-xs text-zinc-500 mt-2 flex items-center gap-1">
-                  <FileImage size={12} /> {t.receiptHelp}
-                </p>
-              </div>
-
-              <button
-                onClick={() => {
-                  createOrder.mutate({
-                    productId: selectedProduct.id,
-                    ...form
-                  });
-                }}
-                disabled={createOrder.isPending || (isRenewal ? !form.subUrl : !form.clientName) || !form.receiptText}
-                className="w-full py-4 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl shadow-lg shadow-emerald-500/20 disabled:opacity-50 disabled:shadow-none transition-all flex items-center justify-center gap-2"
-              >
-                {createOrder.isPending ? <div className="animate-spin"><RefreshCw size={20} /></div> : t.submitOrder}
-              </button>
-            </div>
-          </div>
-        </div>
+      <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-zinc-950">
+        <LoaderCircle className="animate-spin text-zinc-500" />
       </div>
     );
   }
 
+  if (error || !data || !store) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-zinc-50 p-4 dark:bg-zinc-950">
+        <AlertCircle size={44} className="mb-4 text-red-500" />
+        <h1 className="text-2xl font-black">Store not found</h1>
+        <p className="mt-2 text-sm text-zinc-500">This storefront is unavailable right now.</p>
+      </div>
+    );
+  }
+
+  if (result) {
+    return (
+      <StoreShell store={store}>
+        <div className="px-4 py-10 sm:py-16">
+          <PendingOrderCard
+            trackingCode={result.trackingCode}
+            customerToken={result.customerToken}
+            orderStatus={result.status}
+            onTrack={() => router.push(`/track/${result.trackingCode}`)}
+          />
+        </div>
+      </StoreShell>
+    );
+  }
+
+  const canContinueProfile =
+    !!selectedProduct &&
+    !!form.configName.trim() &&
+    (haveToken ? !!form.customerToken.trim() : !!form.name.trim());
+
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 font-sans text-zinc-900 dark:text-zinc-100" dir={lang === 'fa' ? 'rtl' : 'ltr'}>
-      {/* Store Header */}
-      <div className="bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 py-12 px-4 text-center relative">
-        <div className="absolute top-4 right-4 flex gap-2">
-          <button onClick={() => setLang('fa')} className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${lang === 'fa' ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}>FA</button>
-          <button onClick={() => setLang('en')} className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${lang === 'en' ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}>EN</button>
-        </div>
-
-        <div className="max-w-3xl mx-auto flex flex-col items-center">
-          {store.logoUrl ? (
-            <img src={store.logoUrl} alt={store.title} className="h-20 w-20 rounded-2xl mb-4 object-cover shadow-sm" />
-          ) : (
-            <div className="h-20 w-20 rounded-2xl bg-gradient-to-tr from-blue-500 to-emerald-500 flex items-center justify-center text-white mb-4 shadow-lg shadow-blue-500/20">
-              <ShieldCheck size={40} />
-            </div>
-          )}
-          <h1 className="text-3xl font-black tracking-tight mb-3">{store.title}</h1>
-          {store.description && (
-            <p className="text-zinc-500 max-w-lg mx-auto">{store.description}</p>
-          )}
-        </div>
-      </div>
-
-      {/* Products */}
-      <div className="max-w-5xl mx-auto py-12 px-4">
-        <h2 className="text-xl font-bold mb-8 flex items-center gap-2">
-          <Server className="text-blue-500" /> {t.availablePlans}
-        </h2>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {products?.map((p: any) => (
-            <div 
-              key={p.id} 
-              className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 shadow-sm hover:shadow-xl hover:border-blue-500/50 transition-all cursor-pointer flex flex-col group relative overflow-hidden"
-            >
-              <div className={`absolute top-0 ${lang === 'fa' ? 'left-0' : 'right-0'} w-32 h-32 bg-gradient-to-bl from-blue-500/10 to-transparent -mx-16 -mt-16 rounded-full blur-2xl group-hover:bg-blue-500/20 transition-all`}></div>
-              
-              <h3 className="text-xl font-bold mb-2">{p.name}</h3>
-              <p className="text-sm text-zinc-500 mb-6 h-10">{p.description}</p>
-              
-              <div className="mb-6" dir="ltr" style={{ textAlign: lang === 'fa' ? 'right' : 'left' }}>
-                <span className="text-3xl font-black text-blue-600 dark:text-blue-400">${p.price}</span>
-              </div>
-
-              <div className="space-y-3 flex-1 mb-8">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-zinc-500">{t.traffic}</span>
-                  <span className="font-semibold" dir="ltr">{formatBytes(Number(p.traffic))}</span>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-zinc-500">{t.duration}</span>
-                  <span className="font-semibold">{p.durationDays} {t.days}</span>
-                </div>
-              </div>
-
-              <button 
-                onClick={() => setSelectedProduct(p)}
-                className="w-full py-3 bg-zinc-100 dark:bg-zinc-800 hover:bg-blue-600 hover:text-white dark:hover:bg-blue-500 rounded-xl font-bold transition-colors"
+    <StoreShell store={store}>
+      <AnimatePresence mode="wait">
+      {step === 0 ? (
+        <motion.div
+          key="welcome"
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -8 }}
+          transition={{ duration: 0.35, ease: "easeOut" }}
+        >
+          <WelcomeHero
+            store={store}
+            onBuy={() => setStep(1)}
+            onLogin={() => router.push("/portal")}
+            onTrack={() => setShowTrack(true)}
+          />
+          <AnimatePresence>
+            {showTrack ? (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+                onClick={() => setShowTrack(false)}
               >
-                {t.orderNow}
-              </button>
+                <motion.div
+                  initial={{ scale: 0.95, y: 12 }}
+                  animate={{ scale: 1, y: 0 }}
+                  exit={{ scale: 0.95, y: 12 }}
+                  className="w-full max-w-md rounded-3xl border border-zinc-200 bg-white p-6 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <h3 className="text-lg font-bold">Track order</h3>
+                  <p className="mt-1 text-sm text-zinc-500">Enter your tracking code</p>
+                  <input
+                    value={trackCode}
+                    onChange={(e) => setTrackCode(e.target.value.toUpperCase())}
+                    placeholder="TRACKING CODE"
+                    className="mt-4 w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 font-mono outline-none dark:border-zinc-800 dark:bg-zinc-950"
+                  />
+                  <div className="mt-4 grid grid-cols-2 gap-3">
+                    <SecondaryButton onClick={() => setShowTrack(false)}>Cancel</SecondaryButton>
+                    <PrimaryButton
+                      disabled={!trackCode.trim()}
+                      onClick={() => router.push(`/track/${encodeURIComponent(trackCode.trim())}`)}
+                    >
+                      Track
+                    </PrimaryButton>
+                  </div>
+                </motion.div>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
+        </motion.div>
+      ) : (
+        <motion.div
+          key={`checkout-${step}`}
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -8 }}
+          transition={{ duration: 0.3, ease: "easeOut" }}
+          className="mx-auto max-w-2xl px-4 py-10"
+        >
+          <Stepper step={step} />
+          <div className="rounded-[2rem] border border-zinc-200 bg-white/90 p-6 shadow-sm backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/90 sm:p-8">
+            {selectedProduct ? (
+              <motion.div
+                layout
+                className="mb-6 rounded-2xl bg-zinc-50 p-4 dark:bg-zinc-950"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="font-bold">{selectedProduct.name}</div>
+                  {selectedProduct.featured ? (
+                    <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-700 dark:text-amber-400">
+                      Featured
+                    </span>
+                  ) : null}
+                  {selectedProduct.badge ? (
+                    <span className="rounded-full bg-[color:var(--store-primary)]/10 px-2 py-0.5 text-[10px] font-semibold text-[color:var(--store-primary)]">
+                      {selectedProduct.badge}
+                    </span>
+                  ) : null}
+                </div>
+                <div className="mt-2 flex flex-wrap gap-3 text-sm text-zinc-500">
+                  <span>{selectedProduct.durationDays} days</span>
+                  {Number(selectedProduct.priceToman) > 0 ? (
+                    <span className="font-semibold text-[color:var(--store-primary)]">
+                      {Number(selectedProduct.priceToman).toLocaleString()} تومان
+                    </span>
+                  ) : null}
+                  {Number(selectedProduct.priceUsd) > 0 ? (
+                    <span className="font-semibold">${Number(selectedProduct.priceUsd)}</span>
+                  ) : null}
+                </div>
+              </motion.div>
+            ) : null}
+
+            {step === 1 ? (
+              <div className="space-y-5">
+                {!selectedProduct ? (
+                  <div className="space-y-3">
+                    <div className="text-lg font-bold">Choose Product</div>
+                    {!products.length ? (
+                      <p className="rounded-2xl border border-dashed border-zinc-300 px-4 py-8 text-center text-sm text-zinc-500 dark:border-zinc-700">
+                        No products are available right now.
+                      </p>
+                    ) : (
+                      <div className="grid gap-3">
+                        {products.map((product, index) => (
+                          <motion.div
+                            key={product.id}
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: index * 0.04, duration: 0.25 }}
+                          >
+                            <ProductCard
+                              product={product}
+                              onSelect={() => setSelectedProduct(product)}
+                            />
+                          </motion.div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <div className="text-lg font-bold">Customer Information</div>
+                      <p className="mt-1 text-sm text-zinc-500">
+                        New customers create a permanent profile. Returning customers can reuse their token.
+                      </p>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <button
+                        onClick={() => setHaveToken(true)}
+                        className={`rounded-2xl border px-4 py-3 text-left ${haveToken ? "border-[color:var(--store-primary)] bg-[color:var(--store-primary)]/5" : "border-zinc-200 dark:border-zinc-800"}`}
+                      >
+                        <div className="font-semibold">Have Token</div>
+                        <div className="mt-1 text-xs text-zinc-500">Load your customer profile</div>
+                      </button>
+                      <button
+                        onClick={() => setHaveToken(false)}
+                        className={`rounded-2xl border px-4 py-3 text-left ${!haveToken ? "border-[color:var(--store-primary)] bg-[color:var(--store-primary)]/5" : "border-zinc-200 dark:border-zinc-800"}`}
+                      >
+                        <div className="font-semibold">First Purchase</div>
+                        <div className="mt-1 text-xs text-zinc-500">Create a new customer profile</div>
+                      </button>
+                    </div>
+                    <label className="block text-sm font-medium">
+                      Config Name
+                      <input
+                        value={form.configName}
+                        onChange={(event) => setForm((current) => ({ ...current, configName: event.target.value }))}
+                        className="mt-2 w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 outline-none dark:border-zinc-800 dark:bg-zinc-950"
+                      />
+                    </label>
+                    {haveToken ? (
+                      <div className="space-y-3">
+                        <div className="flex gap-2">
+                          <input
+                            value={form.customerToken}
+                            onChange={(event) => setForm((current) => ({ ...current, customerToken: event.target.value.toUpperCase() }))}
+                            placeholder="HM-XXXX-XXXX-XXXX"
+                            className="flex-1 rounded-2xl border border-zinc-200 bg-white px-4 py-3 font-mono outline-none dark:border-zinc-800 dark:bg-zinc-950"
+                          />
+                          <PrimaryButton
+                            className="w-auto px-5"
+                            onClick={() => lookupCustomer.mutate(form.customerToken.trim())}
+                            disabled={!form.customerToken.trim() || lookupCustomer.isPending}
+                          >
+                            Load
+                          </PrimaryButton>
+                        </div>
+                        {lookupError ? <p className="text-sm text-red-500">{lookupError}</p> : null}
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <Input label="Display Name" value={form.name} disabled />
+                          <Input label="Telegram" value={form.telegram} disabled />
+                          <Input label="WhatsApp" value={form.whatsapp} disabled />
+                          <Input label="Email" value={form.email} disabled />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <Input label="Display Name" value={form.name} onChange={(value) => setForm((current) => ({ ...current, name: value }))} />
+                        <Input label="Telegram" value={form.telegram} onChange={(value) => setForm((current) => ({ ...current, telegram: value }))} />
+                        <Input label="WhatsApp" value={form.whatsapp} onChange={(value) => setForm((current) => ({ ...current, whatsapp: value }))} />
+                        <Input label="Email" value={form.email} onChange={(value) => setForm((current) => ({ ...current, email: value }))} />
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            ) : null}
+
+            {step === 2 ? (
+              <div className="space-y-4">
+                <div>
+                  <div className="text-lg font-bold">Payment</div>
+                  <p className="mt-1 text-sm text-zinc-500">
+                    Submit transaction ID, receipt image, or both.
+                  </p>
+                </div>
+                {(store.payment?.cards?.length
+                  ? store.payment.cards
+                  : store.payment?.cardNumber || store.payment?.bankName
+                    ? [
+                        {
+                          id: "legacy",
+                          bankName: store.payment.bankName || undefined,
+                          cardNumber: store.payment.cardNumber || undefined,
+                          cardHolder: store.payment.cardHolder || undefined,
+                          iban: store.payment.iban || undefined,
+                          instructions: store.payment.instructions || undefined,
+                        },
+                      ]
+                    : []
+                ).map((card) => (
+                  <div
+                    key={card.id}
+                    className="rounded-2xl bg-zinc-50 p-4 dark:bg-zinc-950"
+                  >
+                    <div className="text-sm font-semibold">
+                      {card.bankName || "Card to Card"}
+                    </div>
+                    {card.cardNumber ? (
+                      <div className="mt-2 font-mono text-lg tracking-wide">{card.cardNumber}</div>
+                    ) : null}
+                    {card.cardHolder ? (
+                      <div className="mt-1 text-sm text-zinc-500">{card.cardHolder}</div>
+                    ) : null}
+                    {card.iban ? (
+                      <div className="mt-1 font-mono text-xs text-zinc-500">{card.iban}</div>
+                    ) : null}
+                    {card.instructions ? (
+                      <p className="mt-3 whitespace-pre-line text-sm text-zinc-500">
+                        {card.instructions}
+                      </p>
+                    ) : null}
+                  </div>
+                ))}
+                {!store.payment?.cards?.length &&
+                !store.payment?.cardNumber &&
+                !store.payment?.bankName ? (
+                  <div className="rounded-2xl bg-zinc-50 p-4 text-sm text-zinc-500 dark:bg-zinc-950">
+                    Payment details are not configured yet.
+                  </div>
+                ) : null}
+                <textarea
+                  rows={3}
+                  value={form.receiptText}
+                  onChange={(event) => setForm((current) => ({ ...current, receiptText: event.target.value }))}
+                  placeholder="Transaction ID or payment note"
+                  className="w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 outline-none dark:border-zinc-800 dark:bg-zinc-950"
+                />
+                <label className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-zinc-300 px-4 py-6 text-sm text-zinc-600 dark:border-zinc-700 dark:text-zinc-400">
+                  <Upload size={16} />
+                  Upload receipt image
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = () => {
+                        const resultValue = String(reader.result || "");
+                        setForm((current) => ({ ...current, receiptImage: resultValue }));
+                        setReceiptPreview(resultValue);
+                      };
+                      reader.readAsDataURL(file);
+                    }}
+                  />
+                </label>
+                {receiptPreview ? (
+                  <img src={receiptPreview} alt="Receipt preview" className="max-h-48 rounded-2xl border border-zinc-200 object-cover dark:border-zinc-800" />
+                ) : null}
+              </div>
+            ) : null}
+
+            {step === 3 ? (
+              <div className="space-y-3 text-sm">
+                <SummaryRow label="Product" value={selectedProduct?.name || "-"} />
+                <SummaryRow label="Customer" value={form.name || "Existing profile"} />
+                <SummaryRow label="Config Name" value={form.configName} />
+                <SummaryRow label="Transaction ID" value={form.receiptText || "Uploaded receipt only"} />
+              </div>
+            ) : null}
+
+            <div className="mt-8 grid gap-3 sm:grid-cols-2">
+              <SecondaryButton
+                onClick={() => {
+                  if (step === 1) {
+                    setStep(0);
+                    setSelectedProduct(null);
+                    return;
+                  }
+                  setStep((current) => Math.max(0, current - 1) as Step);
+                }}
+              >
+                Back
+              </SecondaryButton>
+              {step < 3 ? (
+                <PrimaryButton
+                  onClick={() => setStep((current) => (current + 1) as Step)}
+                  disabled={
+                    (step === 1 && !canContinueProfile) ||
+                    (step === 2 && !form.receiptText.trim() && !form.receiptImage)
+                  }
+                >
+                  Continue
+                </PrimaryButton>
+              ) : (
+                <PrimaryButton onClick={() => createOrder.mutate()} disabled={createOrder.isPending}>
+                  {createOrder.isPending ? (
+                    <span className="inline-flex items-center justify-center gap-2">
+                      <LoaderCircle size={16} className="animate-spin" />
+                      Submitting...
+                    </span>
+                  ) : (
+                    "Submit Order"
+                  )}
+                </PrimaryButton>
+              )}
             </div>
-          ))}
-          {products?.length === 0 && (
-            <div className="col-span-full py-20 text-center text-zinc-500">
-              {t.noPlans}
-            </div>
-          )}
-        </div>
-      </div>
+          </div>
+        </motion.div>
+      )}
+      </AnimatePresence>
+    </StoreShell>
+  );
+}
+
+function Input({
+  label,
+  value,
+  onChange,
+  disabled,
+}: {
+  label: string;
+  value: string;
+  onChange?: (value: string) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <label className="block text-sm font-medium">
+      {label}
+      <input
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange?.(event.target.value)}
+        className="mt-2 w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 outline-none disabled:cursor-not-allowed disabled:opacity-70 dark:border-zinc-800 dark:bg-zinc-950"
+      />
+    </label>
+  );
+}
+
+function SummaryRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between rounded-2xl bg-zinc-50 px-4 py-3 dark:bg-zinc-950">
+      <span className="text-zinc-500">{label}</span>
+      <span className="font-medium">{value}</span>
     </div>
   );
 }

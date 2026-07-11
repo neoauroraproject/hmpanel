@@ -320,18 +320,44 @@ model AuditLog {
 }
 
 model Backup {
-  id        String   @id @default(uuid())
-  panelId   String? // Null denotes a global/PostgreSQL backup
-  type      String // 'postgres' | 'x-ui-db'
-  filePath  String
-  fileSize  BigInt
-  checksum  String? // SHA-256 hash for corruption detection
-  tier      String   @default("hourly") // hourly | daily | weekly | monthly
-  isManual  Boolean  @default(false)
-  status    String   @default("completed") // pending | completed | failed | corrupted
-  createdAt DateTime @default(now())
+  id                 String    @id @default(uuid())
+  panelId            String? // Null denotes a global/PostgreSQL backup
+  type               String // full | database | config | panel | postgres | x-ui-db
+  filePath           String
+  fileName           String?
+  fileSize           BigInt
+  checksum           String? // SHA-256 hash for corruption detection
+  tier               String    @default("hourly") // hourly | daily | weekly | monthly | manual
+  retentionKey       String? // latest_hour | latest_6h | latest_12h | latest_day | latest_3d | latest_week
+  isManual           Boolean   @default(false)
+  status             String    @default("completed") // pending | completed | failed | corrupted
+  verificationStatus String    @default("pending") // pending | healthy | corrupted | incomplete
+  verifiedAt         DateTime?
+  version            String?
+  createdAt          DateTime  @default(now())
 
   panel Panel? @relation(fields: [panelId], references: [id], onDelete: SetNull)
+
+  @@index([retentionKey, type])
+  @@index([createdAt])
+  @@index([status])
+}
+
+model BackupSchedule {
+  id               String    @id @default(uuid())
+  name             String    @default("Default Schedule")
+  enabled          Boolean   @default(false)
+  frequency        String    @default("daily") // hourly | 6h | 12h | daily | 3d | weekly
+  backupTypes      Json      @default("[\"full\"]")
+  telegramEnabled  Boolean   @default(false)
+  telegramBotToken String?
+  telegramChatId   String?
+  telegramTypes    Json?
+  captionTemplate  String?
+  lastRunAt        DateTime?
+  nextRunAt        DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 }
 
 model SystemStats {
@@ -412,8 +438,9 @@ model Brand {
   name           String
   description    String?
   domainId       String?  @unique
-  logo           String?
-  favicon        String?
+  logo           String? // light-mode logo
+  logoDark       String? // dark-mode logo
+  favicon        String? // deprecated — kept for legacy rows; prefer logo/logoDark
   theme          String?
   primaryColor   String?
   accentColor    String?
@@ -496,6 +523,7 @@ model StoreProfile {
   bankCardHolder      String?
   bankIban            String?
   bankAccountInfo     String?
+  paymentConfig       Json? // { methods: { manual_bank: true }, cards: BankCard[] }
   panelId             String?
   theme               String   @default("modern")
   supportLinks        Json?
