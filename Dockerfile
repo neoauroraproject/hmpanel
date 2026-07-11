@@ -105,7 +105,30 @@ COPY --from=builder /app/frontend/public ./frontend/frontend/public
 RUN mkdir -p /app/uploads /app/backups /app/logs
 
 # ── Startup script ────────────────────────────────────────────────
-RUN printf '#!/bin/sh\nset -e\nif [ -f /app/VERSION ]; then export APP_VERSION="$(tr -d \"\\r\\n\" < /app/VERSION)"; fi\necho "[HMPanel] Cleaning up DB..."\nnode backend/dist/scripts/cleanup-dups.js || true\necho "[HMPanel] Running database migrations (data-preserving)..."\nnpx prisma db push --schema=/app/prisma/schema.prisma\necho "[HMPanel] Starting backend API on port ${BACKEND_PORT:-4000}..."\nPORT=${BACKEND_PORT:-4000} node backend/dist/main.js &\necho "[HMPanel] Starting frontend on port ${APP_PORT:-3000}..."\nPORT=${APP_PORT:-3000} HOSTNAME=0.0.0.0 node frontend/frontend/server.js &\nwait\n' > /app/start.sh && chmod +x /app/start.sh
+# Backend runs in a restart loop so premium bundle updates can exit the Node
+# process and pick up new lazy-loaded modules (Nest cannot unload them in-place).
+RUN printf '%s\n' \
+  '#!/bin/sh' \
+  'set -e' \
+  'if [ -f /app/VERSION ]; then export APP_VERSION="$(tr -d \"\\r\\n\" < /app/VERSION)"; fi' \
+  'echo "[HMPanel] Cleaning up DB..."' \
+  'node backend/dist/scripts/cleanup-dups.js || true' \
+  'echo "[HMPanel] Running database migrations (data-preserving)..."' \
+  'npx prisma db push --schema=/app/prisma/schema.prisma' \
+  'set +e' \
+  '(' \
+  '  while true; do' \
+  '    echo "[HMPanel] Starting backend API on port ${BACKEND_PORT:-4000}..."' \
+  '    PORT=${BACKEND_PORT:-4000} node backend/dist/main.js' \
+  '    code=$?' \
+  '    echo "[HMPanel] Backend exited (code $code) — restarting in 2s to reload premium modules..."' \
+  '    sleep 2' \
+  '  done' \
+  ') &' \
+  'echo "[HMPanel] Starting frontend on port ${APP_PORT:-3000}..."' \
+  'PORT=${APP_PORT:-3000} HOSTNAME=0.0.0.0 node frontend/frontend/server.js &' \
+  'wait' \
+  > /app/start.sh && chmod +x /app/start.sh
 
 EXPOSE 3000 4000
 

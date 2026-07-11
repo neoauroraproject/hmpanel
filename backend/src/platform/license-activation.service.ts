@@ -37,6 +37,8 @@ export interface ActivateResult {
   bundleVersion?: string;
   needsReload?: boolean;
   needsRestart?: boolean;
+  /** Backend process will exit shortly; Docker start.sh restarts it automatically. */
+  autoRestart?: boolean;
   bundleSkipped?: boolean;
   licenseServerUrl?: string;
   message?: string;
@@ -196,6 +198,11 @@ export class LicenseActivationService {
     onProgress?.({ stage: 'loading', percent: 95, message: 'Loading premium modules...' });
     const loaded = await this.pluginsService.reloadPremiumPlugins();
 
+    // Nest cannot unload/replace lazy-loaded modules — restart so the new bundle is used.
+    if (!bundleSkipped) {
+      this.scheduleBackendRestart('premium bundle installed');
+    }
+
     onProgress?.({ stage: 'complete', percent: 100, message: 'Activation complete' });
     this.logger.log(`License activated via ${usedUrl}`);
 
@@ -205,11 +212,14 @@ export class LicenseActivationService {
       bundleVersion: bundle?.version,
       bundleSkipped,
       needsReload: true,
-      needsRestart: !loaded,
+      needsRestart: !bundleSkipped || !loaded,
+      autoRestart: !bundleSkipped,
       licenseServerUrl: usedUrl,
-      message: loaded
-        ? 'Premium activated. Refresh the page to see premium sections.'
-        : 'Premium files installed. Restart the panel service, then refresh the page.',
+      message: bundleSkipped
+        ? loaded
+          ? 'Premium activated. Refresh the page to see premium sections.'
+          : 'Premium files already installed. Restart the panel service, then refresh the page.'
+        : 'Premium bundle installed. Backend is restarting to load new modules…',
     };
   }
 
@@ -249,17 +259,18 @@ export class LicenseActivationService {
         bundleVersion: version,
       });
 
-      const loaded = await this.pluginsService.reloadPremiumPlugins();
+      // Nest LazyModuleLoader cannot replace already-loaded premium modules in memory.
+      // Exit so Docker start.sh restarts the backend and loads the new bundle cleanly.
+      this.scheduleBackendRestart(`premium bundle updated to ${version}`);
 
       return {
         ok: true,
         state: await this.licenseManager.getLicenseState(),
         bundleVersion: version,
         needsReload: true,
-        needsRestart: !loaded,
-        message: loaded
-          ? 'Premium bundle updated. Refreshing…'
-          : 'Bundle installed. Restart the panel service, then refresh.',
+        needsRestart: true,
+        autoRestart: true,
+        message: `Premium bundle ${version} installed. Backend is restarting to load new modules…`,
       };
     } catch (err: any) {
       if (err instanceof HttpException) throw err;
@@ -267,6 +278,21 @@ export class LicenseActivationService {
       this.logger.error(`Bundle update failed: ${message}`, err?.stack);
       throw new HttpException(message, HttpStatus.INTERNAL_SERVER_ERROR);
     }
+  }
+
+  /**
+   * Nest cannot unload lazy-loaded premium modules. After files on disk change,
+   * exit the Node process; Docker start.sh restarts backend automatically.
+   */
+  private scheduleBackendRestart(reason: string) {
+    const delayMs = Number(process.env.PREMIUM_RESTART_DELAY_MS || 1500);
+    this.logger.warn(
+      `Scheduling backend restart in ${delayMs}ms (${reason}). Nest cannot hot-reload premium modules.`,
+    );
+    setTimeout(() => {
+      this.logger.warn('Exiting process for premium module reload…');
+      process.exit(0);
+    }, delayMs);
   }
 
   private async resolveBundleDownloadUrl(
@@ -433,14 +459,39 @@ export class LicenseActivationService {
     };
   }
 
-  async reloadPlugins(): Promise<{ loaded: boolean; hmpanelDist: string; lastLoadError: string | null }> {
+  async reloadPlugins(): Promise<{
+    loaded: boolean;
+    hmpanelDist: string;
+    lastLoadError: string | null;
+    autoRestart?: boolean;
+    message?: string;
+  }> {
     const hmpanelDist = this.pluginsService.resolveHmpanelDist();
     process.env.HMPANEL_DIST = hmpanelDist;
     const loaded = await this.pluginsService.reloadPremiumPlugins();
+    const lastLoadError = this.pluginsService.getLastLoadError();
+
+    // Soft reload cannot replace modules already in memory — restart when anything failed
+    // or when caller needs a clean load after a bundle file change.
+    if (!loaded || lastLoadError) {
+      this.scheduleBackendRestart(
+        lastLoadError ? `reload failed: ${lastLoadError}` : 'reload incomplete',
+      );
+      return {
+        loaded,
+        hmpanelDist,
+        lastLoadError,
+        autoRestart: true,
+        message:
+          'Backend is restarting to load premium modules cleanly. The page will refresh when ready…',
+      };
+    }
+
     return {
       loaded,
       hmpanelDist,
-      lastLoadError: this.pluginsService.getLastLoadError(),
+      lastLoadError,
+      message: 'Premium modules loaded',
     };
   }
 

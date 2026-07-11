@@ -20,6 +20,22 @@ export interface LicenseState {
   };
 }
 
+async function waitForBackend(timeoutMs = 90_000) {
+  const started = Date.now();
+  // Give the process a moment to exit before we start polling.
+  await new Promise((r) => setTimeout(r, 2000));
+  while (Date.now() - started < timeoutMs) {
+    try {
+      const res = await fetch("/api/health", { cache: "no-store" });
+      if (res.ok) return true;
+    } catch {
+      /* backend still down */
+    }
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+  return false;
+}
+
 export function useLicenseActivation() {
   const qc = useQueryClient();
   const toast = useToast((s) => s.push);
@@ -38,11 +54,29 @@ export function useLicenseActivation() {
     qc.invalidateQueries({ queryKey: ["features"] });
   };
 
-  const handleSuccess = (data: { message?: string; needsReload?: boolean; needsRestart?: boolean }) => {
+  const handleSuccess = async (data: {
+    message?: string;
+    needsReload?: boolean;
+    needsRestart?: boolean;
+    autoRestart?: boolean;
+  }) => {
     invalidateAll();
     if (data?.message) {
-      toast(data.message, data.needsRestart ? "error" : "success");
+      toast(data.message, data.needsRestart && !data.autoRestart ? "error" : "success");
     }
+
+    if (data?.autoRestart) {
+      toast("Waiting for backend restart…", "success");
+      const up = await waitForBackend();
+      if (up) {
+        toast("Backend is back — refreshing…", "success");
+        window.location.reload();
+      } else {
+        toast("Backend did not come back in time. Restart the panel container manually.", "error");
+      }
+      return;
+    }
+
     if (data?.needsReload) {
       setTimeout(() => window.location.reload(), data.needsRestart ? 2500 : 800);
     }
@@ -51,7 +85,9 @@ export function useLicenseActivation() {
   const activate = useMutation({
     mutationFn: async (licenseKey: string) =>
       (await api.post("/platform/license/activate", { licenseKey })).data,
-    onSuccess: (data) => handleSuccess(data),
+    onSuccess: (data) => {
+      void handleSuccess(data);
+    },
     onError: (e: any) =>
       toast(e?.response?.data?.message || e?.response?.data?.error || "Activation failed", "error"),
   });
@@ -60,7 +96,7 @@ export function useLicenseActivation() {
     mutationFn: async () => (await api.post("/platform/license/deactivate")).data,
     onSuccess: (data) => {
       toast("License deactivated — Community mode restored");
-      handleSuccess({ ...data, message: "Community mode restored. Refreshing…", needsReload: true });
+      void handleSuccess({ ...data, message: "Community mode restored. Refreshing…", needsReload: true });
     },
     onError: () => toast("Deactivate failed", "error"),
   });
@@ -75,20 +111,26 @@ export function useLicenseActivation() {
 
   const updateBundle = useMutation({
     mutationFn: async () => (await api.post("/platform/license/update-bundle")).data,
-    onSuccess: (data) => handleSuccess(data),
+    onSuccess: (data) => {
+      void handleSuccess(data);
+    },
     onError: (e: any) => toast(e?.response?.data?.message || "Bundle update failed", "error"),
   });
 
   const reloadPlugins = useMutation({
     mutationFn: async () => (await api.post("/platform/license/reload-plugins")).data,
-    onSuccess: (data: { loaded?: boolean; lastLoadError?: string }) => {
-      invalidateAll();
-      if (data?.loaded) {
-        toast("Premium modules loaded", "success");
-        setTimeout(() => window.location.reload(), 600);
-      } else {
-        toast("Premium modules failed to load — restart panel service", "error");
-      }
+    onSuccess: (data: {
+      loaded?: boolean;
+      lastLoadError?: string;
+      autoRestart?: boolean;
+      message?: string;
+    }) => {
+      void handleSuccess({
+        message: data.message,
+        needsReload: true,
+        needsRestart: !data.loaded || !!data.lastLoadError,
+        autoRestart: data.autoRestart,
+      });
     },
     onError: (e: any) => toast(e?.response?.data?.message || "Reload failed", "error"),
   });
