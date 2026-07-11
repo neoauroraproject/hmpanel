@@ -195,13 +195,21 @@ export class LicenseActivationService {
       await this.bundleService.applyDatabaseOverlay();
     }
 
-    onProgress?.({ stage: 'loading', percent: 95, message: 'Loading premium modules...' });
-    const loaded = await this.pluginsService.reloadPremiumPlugins();
+    onProgress?.({ stage: 'loading', percent: 95, message: 'Preparing premium modules...' });
 
-    // Nest cannot unload/replace lazy-loaded modules — restart so the new bundle is used.
-    if (!bundleSkipped) {
-      this.scheduleBackendRestart('premium bundle installed');
+    // Nest cannot hot-register controller routes from a new bundle — restart so
+    // main.ts imports the installed index.js during bootstrap.
+    const needsProcessRestart =
+      !bundleSkipped || !this.pluginsService.isLoaded();
+    if (needsProcessRestart) {
+      this.scheduleBackendRestart(
+        bundleSkipped
+          ? 'premium bundle on disk but routes not bootstrapped'
+          : 'premium bundle installed',
+      );
     }
+
+    const loadedAfter = this.pluginsService.isLoaded() && !needsProcessRestart;
 
     onProgress?.({ stage: 'complete', percent: 100, message: 'Activation complete' });
     this.logger.log(`License activated via ${usedUrl}`);
@@ -212,14 +220,14 @@ export class LicenseActivationService {
       bundleVersion: bundle?.version,
       bundleSkipped,
       needsReload: true,
-      needsRestart: !bundleSkipped || !loaded,
-      autoRestart: !bundleSkipped,
+      needsRestart: needsProcessRestart,
+      autoRestart: needsProcessRestart,
       licenseServerUrl: usedUrl,
-      message: bundleSkipped
-        ? loaded
+      message: needsProcessRestart
+        ? 'Premium bundle ready. Backend is restarting to register premium API routes…'
+        : loadedAfter
           ? 'Premium activated. Refresh the page to see premium sections.'
-          : 'Premium files already installed. Restart the panel service, then refresh the page.'
-        : 'Premium bundle installed. Backend is restarting to load new modules…',
+          : 'Premium activated.',
     };
   }
 
@@ -455,6 +463,7 @@ export class LicenseActivationService {
       path: this.bundleService.getPremiumRoot(),
       pluginsLoaded: this.pluginsService.isLoaded(),
       lastLoadError: this.pluginsService.getLastLoadError(),
+      bootstrappedSegments: this.pluginsService.getBootstrappedSegments(),
       hmpanelDist: distPath,
     };
   }
@@ -468,14 +477,18 @@ export class LicenseActivationService {
   }> {
     const hmpanelDist = this.pluginsService.resolveHmpanelDist();
     process.env.HMPANEL_DIST = hmpanelDist;
-    const loaded = await this.pluginsService.reloadPremiumPlugins();
+    await this.pluginsService.syncWithLicenseState();
+    const loaded = this.pluginsService.isLoaded();
     const lastLoadError = this.pluginsService.getLastLoadError();
+    const bundleOnDisk = this.pluginsService.isBundleFilePresent();
 
-    // Soft reload cannot replace modules already in memory — restart when anything failed
-    // or when caller needs a clean load after a bundle file change.
-    if (!loaded || lastLoadError) {
+    // Controllers are only registered at process start. Any reload / recovery
+    // after installing or replacing the bundle requires a clean restart.
+    if (bundleOnDisk && (!loaded || lastLoadError)) {
       this.scheduleBackendRestart(
-        lastLoadError ? `reload failed: ${lastLoadError}` : 'reload incomplete',
+        lastLoadError
+          ? `premium bootstrap failed: ${lastLoadError}`
+          : 'premium routes missing — restart to import bundle',
       );
       return {
         loaded,
@@ -483,15 +496,28 @@ export class LicenseActivationService {
         lastLoadError,
         autoRestart: true,
         message:
-          'Backend is restarting to load premium modules cleanly. The page will refresh when ready…',
+          'Backend is restarting so premium HTTP routes register from the bundle. The page will refresh when ready…',
+      };
+    }
+
+    if (bundleOnDisk) {
+      // Already loaded — still restart so operators can force-pick up a replaced index.js
+      this.scheduleBackendRestart('manual premium plugin reload');
+      return {
+        loaded: true,
+        hmpanelDist,
+        lastLoadError: null,
+        autoRestart: true,
+        message:
+          'Backend is restarting to reload premium modules from disk…',
       };
     }
 
     return {
-      loaded,
+      loaded: false,
       hmpanelDist,
-      lastLoadError,
-      message: 'Premium modules loaded',
+      lastLoadError: lastLoadError || 'No premium bundle installed',
+      message: 'No premium bundle on disk',
     };
   }
 
@@ -564,9 +590,11 @@ export class LicenseActivationService {
       push('bundle_url_request', false, e.message);
     }
 
-    const reloaded = await this.pluginsService.reloadPremiumPlugins();
-    push('reload_plugins', reloaded, {
+    const bootLoaded = this.pluginsService.isLoaded();
+    push('premium_bootstrapped', bootLoaded, {
       hmpanelDist: this.pluginsService.resolveHmpanelDist(),
+      segments: this.pluginsService.getBootstrappedSegments(),
+      lastLoadError: this.pluginsService.getLastLoadError(),
     });
 
     return { ok: steps.every((s) => s.ok !== false), steps };

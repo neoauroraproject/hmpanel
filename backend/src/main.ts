@@ -3,6 +3,7 @@ import { ValidationPipe, Logger } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { PrismaService } from './prisma/prisma.service';
+import { loadPremiumModulesForBootstrap, markPremiumBootstrapFailed } from './plugins/premium-bootstrap';
 import axios from 'axios';
 import * as https from 'https';
 
@@ -20,7 +21,23 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // Import premium Nest modules BEFORE create() so controllers register routes.
+  // LazyModuleLoader cannot register HTTP controllers — that caused permanent 404s.
+  const premium = loadPremiumModulesForBootstrap();
+
+  let app;
+  try {
+    app = await NestFactory.create(AppModule.forRoot(premium.modules));
+  } catch (err: any) {
+    if (premium.modules.length === 0) throw err;
+    console.error(
+      '[PremiumBootstrap] Nest failed to init with premium modules — starting Community only:',
+      err?.message || err,
+    );
+    if (err?.stack) console.error(err.stack);
+    markPremiumBootstrapFailed(err?.message || 'Nest failed to initialize premium modules');
+    app = await NestFactory.create(AppModule.forRoot([]));
+  }
 
   app.enableCors({ exposedHeaders: ['Content-Disposition'] });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));

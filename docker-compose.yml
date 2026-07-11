@@ -18,6 +18,7 @@ services:
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_HOST=${REDIS_HOST:-redis}
       - REDIS_PORT=${REDIS_PORT:-6379}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-redis_secret}
       - JWT_SECRET=${JWT_SECRET}
       - PORT=${BACKEND_PORT:-4000}
       - APP_PORT=${APP_PORT:-3000}

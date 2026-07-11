@@ -6,7 +6,7 @@
   "dependencies": {
     "@prisma/client": "^5.22.0"
   },
-  "version": "1.5.17",
+  "version": "1.5.18",
   "scripts": {
     "version:sync": "node scripts/sync-version.js"
   }

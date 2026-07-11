@@ -5,14 +5,14 @@ import { PremiumBundleService } from './premium-bundle.service';
 import { PluginsService } from '../plugins/plugins.service';
 
 /**
- * Premium backend routes (client-templates, backup-center, monitoring, …) only exist
- * after the lazy-loaded bundle registers. If the first boot attempt fails (timing,
- * Redis, dist path), retry until the bundle is loaded — otherwise the UI works but
- * every API returns 404.
+ * If the premium bundle is on disk and licensed but this process did not
+ * import it at bootstrap (corrupt file, race on first boot), exit so
+ * Docker start.sh restarts and main.ts registers controller routes.
  */
 @Injectable()
 export class PremiumPluginsScheduler {
   private readonly logger = new Logger(PremiumPluginsScheduler.name);
+  private restartScheduled = false;
 
   constructor(
     private licenseManager: LicenseManagerService,
@@ -24,6 +24,7 @@ export class PremiumPluginsScheduler {
   async ensurePremiumPluginsLoaded(): Promise<void> {
     if (this.pluginsService.isLoaded()) return;
     if (!this.bundleService.isBundleInstalled()) return;
+    if (this.restartScheduled) return;
 
     const state = await this.licenseManager.getLicenseState();
     const active =
@@ -35,14 +36,15 @@ export class PremiumPluginsScheduler {
 
     if (!active) return;
 
-    const loaded = await this.pluginsService.reloadPremiumPlugins();
-    if (loaded) {
-      this.logger.log('Premium backend modules loaded (scheduled retry).');
-    } else {
-      const err = this.pluginsService.getLastLoadError();
-      if (err) {
-        this.logger.warn(`Premium module load retry failed: ${err}`);
-      }
-    }
+    const err = this.pluginsService.getLastLoadError();
+    this.logger.warn(
+      `Premium bundle installed but routes not bootstrapped${err ? `: ${err}` : ''}. Exiting for clean reload…`,
+    );
+    this.restartScheduled = true;
+    const delayMs = Number(process.env.PREMIUM_RESTART_DELAY_MS || 1500);
+    setTimeout(() => {
+      this.logger.warn('Exiting process for premium bootstrap reload…');
+      process.exit(0);
+    }, delayMs);
   }
 }
