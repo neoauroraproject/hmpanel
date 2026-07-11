@@ -7,7 +7,7 @@ import { QRCodeCanvas } from "qrcode.react";
 import { formatBytes, formatDate } from "@/lib/format";
 import { useQuery } from "@tanstack/react-query";
 import { API_BASE } from "@/lib/api";
-import { copyToClipboard } from "@/lib/clipboard";
+import { resolveThemeLogo } from "@/modules/shared/brand-logo";
 
 export default function SunsetTheme({ id, data }: { id: string; data: any }) {
   const [copiedText, setCopiedText] = useState<string | null>(null);
@@ -34,18 +34,44 @@ export default function SunsetTheme({ id, data }: { id: string; data: any }) {
   
   const clientName = remark || email || "Client";
   const brandName = portalSettings?.portalName || "Service";
+  const logoSrc = resolveThemeLogo({
+    logoLight: portalSettings?.logoUrl,
+    logoDark: portalSettings?.logoDarkUrl,
+    theme: "Sunset",
+  });
 
+  const systemUrl =
+    typeof window !== "undefined"
+      ? `${window.location.origin}/s/${encodeURIComponent(subId || email)}`
+      : `/s/${encodeURIComponent(subId || email)}`;
   const getNativeUrl = () => {
     const sub = encodeURIComponent(subId || email);
-    if (inbound?.panel?.subUrl) return `${inbound.panel.subUrl}${sub}`;
-    if (inbound?.panel?.url) return `${inbound.panel.url}/sub/${sub}`;
-    return `${typeof window !== 'undefined' ? window.location.origin : ''}/sub/${sub}`;
+    if (inbound?.panel?.subUrl) {
+      const base = inbound.panel.subUrl.endsWith("/")
+        ? inbound.panel.subUrl
+        : `${inbound.panel.subUrl}/`;
+      return `${base}${sub}`;
+    }
+    if (inbound?.panel?.url) {
+      try {
+        const parsed = new URL(inbound.panel.url);
+        return `${parsed.origin}/sub/${sub}`;
+      } catch {
+        const base = inbound.panel.url.endsWith("/")
+          ? inbound.panel.url
+          : `${inbound.panel.url}/`;
+        return `${base}sub/${sub}`;
+      }
+    }
+    return `${typeof window !== "undefined" ? window.location.origin : ""}/sub/${sub}`;
   };
   const nativeUrl = getNativeUrl();
+  // Same System Sub link as Clients page
+  const primarySubUrl = systemUrl;
 
   const copyText = async (text: string, cid: string) => {
     try {
-      await copyToClipboard(text);
+      await navigator.clipboard.writeText(text);
       setCopiedText(cid);
       setTimeout(() => setCopiedText(null), 2000);
     } catch {}
@@ -72,8 +98,8 @@ export default function SunsetTheme({ id, data }: { id: string; data: any }) {
 
         <div className="relative z-10 flex flex-col items-center text-center">
           
-          {portalSettings?.logoUrl ? (
-            <img src={portalSettings.logoUrl} alt={brandName} className="h-20 w-auto mb-4 rounded-xl shadow-lg shadow-rose-500/20" />
+          {logoSrc ? (
+            <img src={logoSrc} alt={brandName} className="mb-4 h-20 w-auto object-contain" />
           ) : (
             <div className="w-16 h-16 bg-gradient-to-tr from-rose-400 to-orange-400 rounded-full flex items-center justify-center text-white mb-6 shadow-lg shadow-rose-500/30">
               <ShieldCheck size={32} />
@@ -110,7 +136,7 @@ export default function SunsetTheme({ id, data }: { id: string; data: any }) {
           {/* Action Buttons */}
           <div className="w-full mt-10 space-y-3">
             <button 
-              onClick={() => copyText(nativeUrl, 'sub')}
+              onClick={() => copyText(primarySubUrl, 'sub')}
               className="w-full bg-stone-900 hover:bg-stone-800 text-white rounded-[2rem] py-4 px-6 flex items-center justify-center gap-3 font-medium transition-all shadow-xl shadow-stone-900/20 active:scale-95"
             >
               {copiedText === 'sub' ? <Wifi size={20} className="text-emerald-400" /> : <Wifi size={20} />}
@@ -119,7 +145,7 @@ export default function SunsetTheme({ id, data }: { id: string; data: any }) {
             <div className="flex gap-3">
               {portalSettings?.showNativeQR !== false && (
                 <button 
-                  onClick={() => openQR(nativeUrl)}
+                  onClick={() => openQR(primarySubUrl)}
                   className="flex-1 bg-white/50 hover:bg-white/80 border border-white/60 text-stone-700 rounded-[2rem] py-3 flex items-center justify-center gap-2 font-medium transition-all shadow-md active:scale-95"
                 >
                   <QrCode size={18} /> Show QR
@@ -198,10 +224,10 @@ export default function SunsetTheme({ id, data }: { id: string; data: any }) {
               <button onClick={() => setImportSheet(false)} className="absolute top-6 right-6 text-stone-400 hover:text-stone-600 bg-white/50 p-2 rounded-full"><X size={20} /></button>
               <h3 className="text-lg font-bold text-stone-800 text-center mb-6">Import to Application</h3>
               <div className="space-y-3">
-                <a href={`v2rayng://install-config?url=${encodeURIComponent(nativeUrl)}`} className="block w-full text-center bg-white/60 hover:bg-white border border-white/60 text-stone-800 font-semibold py-4 rounded-[1.5rem] transition-colors shadow-sm">
+                <a href={`v2rayng://install-config?url=${encodeURIComponent(primarySubUrl)}`} className="block w-full text-center bg-white/60 hover:bg-white border border-white/60 text-stone-800 font-semibold py-4 rounded-[1.5rem] transition-colors shadow-sm">
                   Import to V2rayNG
                 </a>
-                <a href={`shadowrocket://add/sub://${btoa(nativeUrl)}`} className="block w-full text-center bg-white/60 hover:bg-white border border-white/60 text-stone-800 font-semibold py-4 rounded-[1.5rem] transition-colors shadow-sm">
+                <a href={`shadowrocket://add/sub://${btoa(primarySubUrl)}`} className="block w-full text-center bg-white/60 hover:bg-white border border-white/60 text-stone-800 font-semibold py-4 rounded-[1.5rem] transition-colors shadow-sm">
                   Import to Shadowrocket
                 </a>
               </div>

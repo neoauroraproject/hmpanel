@@ -8,7 +8,17 @@ import CyberpunkTheme from "./themes/CyberpunkTheme";
 import SunsetTheme from "./themes/SunsetTheme";
 import MinimalistTheme from "./themes/MinimalistTheme";
 import HackerTheme from "./themes/HackerTheme";
+import NeoTheme, { type NeoVariant } from "./themes/NeoTheme";
 import { Layers } from "lucide-react";
+
+const NEO_THEMES = new Set<string>([
+  "Neo Default",
+  "Neo Vibrant",
+  "Neo Eclipse",
+  "Neo Glass",
+  "Neo Minimal",
+  "Neo Dashboard",
+]);
 
 export default function SubscriptionPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -42,12 +52,15 @@ export default function SubscriptionPage({ params }: { params: Promise<{ id: str
     );
   }
 
-  const currentTheme = data.portalSettings?.theme || 'Dark';
+  const currentTheme = data.portalSettings?.theme || "Dark";
 
-  if (currentTheme === 'Cyberpunk') return <CyberpunkTheme id={id} data={data} />;
-  if (currentTheme === 'Sunset') return <SunsetTheme id={id} data={data} />;
-  if (currentTheme === 'Minimalist') return <MinimalistTheme id={id} data={data} />;
-  if (currentTheme === 'Hacker') return <HackerTheme id={id} data={data} />;
+  if (NEO_THEMES.has(currentTheme)) {
+    return <NeoTheme id={id} data={data} variant={currentTheme as NeoVariant} />;
+  }
+  if (currentTheme === "Cyberpunk") return <CyberpunkTheme id={id} data={data} />;
+  if (currentTheme === "Sunset") return <SunsetTheme id={id} data={data} />;
+  if (currentTheme === "Minimalist") return <MinimalistTheme id={id} data={data} />;
+  if (currentTheme === "Hacker") return <HackerTheme id={id} data={data} />;
 
   return <DefaultTheme params={params} />;
 }

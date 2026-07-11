@@ -236,7 +236,13 @@ export default function TrackOrderPage() {
             </div>
             <div className="flex justify-between py-2 border-b border-zinc-100 dark:border-zinc-800">
               <span className="text-zinc-500">Amount</span>
-              <span>{data.currency === "USD" ? `$${data.amount}` : `${data.amount} ${data.currency}`}</span>
+              <span>
+                {["TOMAN", "IRT", "IRR", "TMN"].includes(String(data.currency || "").toUpperCase())
+                  ? `${Number(data.amount || 0).toLocaleString()} Toman`
+                  : data.currency === "USD"
+                    ? `$${data.amount}`
+                    : `${data.amount} ${data.currency}`}
+              </span>
             </div>
           </div>
 
@@ -267,34 +273,81 @@ export default function TrackOrderPage() {
             </div>
           ) : null}
 
-          {isComplete && (data.delivery?.subId || data.delivery?.email) ? (
-            <div className="mt-8 space-y-4">
-              <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={() =>
-                    handleCopy(buildSubscriptionLink(data.delivery.subId, data.delivery.email))
-                  }
-                  className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white"
-                >
-                  {copied ? "Copied" : "Copy Subscription"}
-                </button>
-                <button
-                  onClick={() => setShowQR((v) => !v)}
-                  className="inline-flex items-center gap-2 rounded-xl border border-zinc-300 px-4 py-2 text-sm font-semibold dark:border-zinc-700"
-                >
-                  <QrCode size={16} /> QR
-                </button>
-                <a
-                  href={buildSubscriptionLink(data.delivery.subId, data.delivery.email)}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="rounded-xl border border-zinc-300 px-4 py-2 text-sm font-semibold dark:border-zinc-700"
-                >
-                  Open Link
-                </a>
+          {isComplete ? (
+            <div className="mt-8 overflow-hidden rounded-3xl border-2 border-emerald-500/40 bg-gradient-to-b from-emerald-50 to-white shadow-lg shadow-emerald-500/10 dark:from-emerald-950/40 dark:to-zinc-900">
+              <div className="border-b border-emerald-500/20 px-5 py-4">
+                <div className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
+                  Your service
+                </div>
+                <div className="mt-1 text-lg font-black text-emerald-900 dark:text-emerald-100">
+                  {data.productName || "VPN Service"}
+                </div>
+                <p className="mt-1 text-sm text-emerald-800/80 dark:text-emerald-200/80">
+                  {data.isRenewal
+                    ? "Renewal is done — use the same subscription link."
+                    : "Order is ready. Use the buttons below to get your config."}
+                </p>
               </div>
-              {showQR ? (
-                <div className="flex justify-center rounded-2xl bg-white p-4">
+
+              <div className="space-y-3 px-5 py-4 text-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-zinc-500">Status</span>
+                  <span className="rounded-full bg-emerald-500/15 px-2.5 py-1 text-xs font-bold text-emerald-700 dark:text-emerald-300">
+                    {cfg.title}
+                  </span>
+                </div>
+                {data.delivery?.email ? (
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-zinc-500">Config</span>
+                    <span className="font-mono font-semibold">{data.delivery.email}</span>
+                  </div>
+                ) : null}
+                {data.delivery?.subId || data.delivery?.email ? (
+                  <div className="rounded-2xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950">
+                    <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                      Subscription link
+                    </div>
+                    <code className="block break-all text-xs text-zinc-700 dark:text-zinc-300">
+                      {buildSubscriptionLink(data.delivery.subId, data.delivery.email)}
+                    </code>
+                  </div>
+                ) : null}
+              </div>
+
+              {data.delivery?.subId || data.delivery?.email ? (
+                <div className="grid gap-2 border-t border-emerald-500/20 bg-emerald-500/5 p-4 sm:grid-cols-3">
+                  <button
+                    onClick={() =>
+                      handleCopy(buildSubscriptionLink(data.delivery.subId, data.delivery.email))
+                    }
+                    className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white shadow-sm hover:bg-emerald-500"
+                  >
+                    {copied ? <Check size={16} /> : <Copy size={16} />}
+                    {copied ? "Copied" : "Copy Subscription"}
+                  </button>
+                  <button
+                    onClick={() => setShowQR((v) => !v)}
+                    className="inline-flex items-center justify-center gap-2 rounded-2xl border border-zinc-300 bg-white px-4 py-3 text-sm font-bold dark:border-zinc-700 dark:bg-zinc-900"
+                  >
+                    <QrCode size={16} /> QR Code
+                  </button>
+                  <a
+                    href={buildSubscriptionLink(data.delivery.subId, data.delivery.email)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center justify-center gap-2 rounded-2xl border border-zinc-300 bg-white px-4 py-3 text-sm font-bold dark:border-zinc-700 dark:bg-zinc-900"
+                  >
+                    Open Link
+                  </a>
+                </div>
+              ) : (
+                <div className="border-t border-emerald-500/20 px-5 py-4 text-sm text-emerald-800 dark:text-emerald-200">
+                  Service is active. Open the customer portal to manage it.
+                </div>
+              )}
+
+              {showQR && (data.delivery?.subId || data.delivery?.email) ? (
+                <div className="flex justify-center border-t border-emerald-500/20 bg-white p-5 dark:bg-zinc-950">
                   <QRCode
                     value={buildSubscriptionLink(data.delivery.subId, data.delivery.email)}
                     size={180}
@@ -304,7 +357,7 @@ export default function TrackOrderPage() {
             </div>
           ) : null}
 
-          {isComplete && data.isRenewal ? (
+          {isComplete && data.isRenewal && !(data.delivery?.subId || data.delivery?.email) ? (
             <div className="mt-8 p-4 bg-emerald-50 dark:bg-emerald-500/10 rounded-xl text-sm text-emerald-700 dark:text-emerald-300">
               Your existing subscription has been extended. No config changes needed.
             </div>

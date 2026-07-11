@@ -7,7 +7,7 @@ import { QRCodeCanvas } from "qrcode.react";
 import { formatBytes, formatDate } from "@/lib/format";
 import { useQuery } from "@tanstack/react-query";
 import { API_BASE } from "@/lib/api";
-import { copyToClipboard } from "@/lib/clipboard";
+import { resolveThemeLogo } from "@/modules/shared/brand-logo";
 
 export default function MinimalistTheme({ id, data }: { id: string; data: any }) {
   const [copiedText, setCopiedText] = useState<string | null>(null);
@@ -34,18 +34,43 @@ export default function MinimalistTheme({ id, data }: { id: string; data: any })
   
   const clientName = remark || email || "Client";
   const brandName = portalSettings?.portalName || "Service";
+  const logoSrc = resolveThemeLogo({
+    logoLight: portalSettings?.logoUrl,
+    logoDark: portalSettings?.logoDarkUrl,
+    theme: "Minimalist",
+  });
 
+  const systemUrl =
+    typeof window !== "undefined"
+      ? `${window.location.origin}/s/${encodeURIComponent(subId || email)}`
+      : `/s/${encodeURIComponent(subId || email)}`;
   const getNativeUrl = () => {
     const sub = encodeURIComponent(subId || email);
-    if (inbound?.panel?.subUrl) return `${inbound.panel.subUrl}${sub}`;
-    if (inbound?.panel?.url) return `${inbound.panel.url}/sub/${sub}`;
-    return `${typeof window !== 'undefined' ? window.location.origin : ''}/sub/${sub}`;
+    if (inbound?.panel?.subUrl) {
+      const base = inbound.panel.subUrl.endsWith("/")
+        ? inbound.panel.subUrl
+        : `${inbound.panel.subUrl}/`;
+      return `${base}${sub}`;
+    }
+    if (inbound?.panel?.url) {
+      try {
+        const parsed = new URL(inbound.panel.url);
+        return `${parsed.origin}/sub/${sub}`;
+      } catch {
+        const base = inbound.panel.url.endsWith("/")
+          ? inbound.panel.url
+          : `${inbound.panel.url}/`;
+        return `${base}sub/${sub}`;
+      }
+    }
+    return `${typeof window !== "undefined" ? window.location.origin : ""}/sub/${sub}`;
   };
   const nativeUrl = getNativeUrl();
+  const primarySubUrl = systemUrl;
 
   const copyText = async (text: string, cid: string) => {
     try {
-      await copyToClipboard(text);
+      await navigator.clipboard.writeText(text);
       setCopiedText(cid);
       setTimeout(() => setCopiedText(null), 2000);
     } catch {}
@@ -62,8 +87,8 @@ export default function MinimalistTheme({ id, data }: { id: string; data: any })
       {/* Header */}
       <header className="w-full p-6 md:p-12 flex justify-between items-start border-b border-black/10">
         <div className="flex flex-col gap-4">
-          {portalSettings?.logoUrl && (
-            <img src={portalSettings.logoUrl} alt={brandName} className="h-10 w-auto object-contain grayscale" />
+          {logoSrc && (
+            <img src={logoSrc} alt={brandName} className="h-10 w-auto object-contain" />
           )}
           <div>
             <div className="text-xs font-bold uppercase tracking-widest text-zinc-400 mb-1">Provider</div>
@@ -107,11 +132,11 @@ export default function MinimalistTheme({ id, data }: { id: string; data: any })
               <div className="flex flex-col sm:flex-row gap-4">
                 <input 
                   readOnly 
-                  value={nativeUrl} 
+                  value={primarySubUrl} 
                   className="w-full bg-zinc-50 border border-black/10 p-4 font-mono text-xs outline-none text-zinc-600 focus:border-black transition-colors"
                 />
                 <button 
-                  onClick={() => copyText(nativeUrl, 'sub')}
+                  onClick={() => copyText(primarySubUrl, 'sub')}
                   className="bg-black text-white px-8 py-4 text-sm font-bold uppercase tracking-widest hover:bg-zinc-800 transition-colors shrink-0"
                 >
                   {copiedText === 'sub' ? 'Copied' : 'Copy'}
@@ -121,7 +146,7 @@ export default function MinimalistTheme({ id, data }: { id: string; data: any })
               <div className="flex gap-4 pt-4">
                 {portalSettings?.showNativeQR !== false && (
                   <button 
-                    onClick={() => openQR(nativeUrl)}
+                    onClick={() => openQR(primarySubUrl)}
                     className="flex-1 border border-black/20 hover:border-black text-black px-6 py-3 text-sm font-bold uppercase tracking-widest transition-colors flex items-center justify-center gap-2"
                   >
                     <QrCode size={18} /> View QR
@@ -217,10 +242,10 @@ export default function MinimalistTheme({ id, data }: { id: string; data: any })
               <button onClick={() => setImportSheet(false)} className="absolute top-6 right-6 text-zinc-400 hover:text-black"><X size={24} /></button>
               <h3 className="text-sm font-bold uppercase tracking-widest text-black mb-8">Import Config</h3>
               <div className="space-y-4">
-                <a href={`v2rayng://install-config?url=${encodeURIComponent(nativeUrl)}`} className="block w-full text-center bg-zinc-50 hover:bg-black hover:text-white border border-black/10 text-black py-4 uppercase tracking-widest text-xs font-bold transition-colors">
+                <a href={`v2rayng://install-config?url=${encodeURIComponent(primarySubUrl)}`} className="block w-full text-center bg-zinc-50 hover:bg-black hover:text-white border border-black/10 text-black py-4 uppercase tracking-widest text-xs font-bold transition-colors">
                   V2rayNG
                 </a>
-                <a href={`shadowrocket://add/sub://${btoa(nativeUrl)}`} className="block w-full text-center bg-zinc-50 hover:bg-black hover:text-white border border-black/10 text-black py-4 uppercase tracking-widest text-xs font-bold transition-colors">
+                <a href={`shadowrocket://add/sub://${btoa(primarySubUrl)}`} className="block w-full text-center bg-zinc-50 hover:bg-black hover:text-white border border-black/10 text-black py-4 uppercase tracking-widest text-xs font-bold transition-colors">
                   Shadowrocket
                 </a>
               </div>

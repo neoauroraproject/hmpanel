@@ -7,7 +7,7 @@ import { QRCodeCanvas } from "qrcode.react";
 import { formatBytes, formatDate } from "@/lib/format";
 import { useQuery } from "@tanstack/react-query";
 import { API_BASE } from "@/lib/api";
-import { copyToClipboard } from "@/lib/clipboard";
+import { resolveThemeLogo } from "@/modules/shared/brand-logo";
 
 export default function CyberpunkTheme({ id, data }: { id: string; data: any }) {
   const [copiedText, setCopiedText] = useState<string | null>(null);
@@ -34,18 +34,43 @@ export default function CyberpunkTheme({ id, data }: { id: string; data: any }) 
   
   const clientName = remark || email || "Unknown Client";
   const brandName = portalSettings?.portalName || "Command Center";
+  const logoSrc = resolveThemeLogo({
+    logoLight: portalSettings?.logoUrl,
+    logoDark: portalSettings?.logoDarkUrl,
+    theme: "Cyberpunk",
+  });
 
+  const systemUrl =
+    typeof window !== "undefined"
+      ? `${window.location.origin}/s/${encodeURIComponent(subId || email)}`
+      : `/s/${encodeURIComponent(subId || email)}`;
   const getNativeUrl = () => {
     const sub = encodeURIComponent(subId || email);
-    if (inbound?.panel?.subUrl) return `${inbound.panel.subUrl}${sub}`;
-    if (inbound?.panel?.url) return `${inbound.panel.url}/sub/${sub}`;
-    return `${typeof window !== 'undefined' ? window.location.origin : ''}/sub/${sub}`;
+    if (inbound?.panel?.subUrl) {
+      const base = inbound.panel.subUrl.endsWith("/")
+        ? inbound.panel.subUrl
+        : `${inbound.panel.subUrl}/`;
+      return `${base}${sub}`;
+    }
+    if (inbound?.panel?.url) {
+      try {
+        const parsed = new URL(inbound.panel.url);
+        return `${parsed.origin}/sub/${sub}`;
+      } catch {
+        const base = inbound.panel.url.endsWith("/")
+          ? inbound.panel.url
+          : `${inbound.panel.url}/`;
+        return `${base}sub/${sub}`;
+      }
+    }
+    return `${typeof window !== "undefined" ? window.location.origin : ""}/sub/${sub}`;
   };
   const nativeUrl = getNativeUrl();
+  const primarySubUrl = systemUrl;
 
   const copyText = async (text: string, cid: string) => {
     try {
-      await copyToClipboard(text);
+      await navigator.clipboard.writeText(text);
       setCopiedText(cid);
       setTimeout(() => setCopiedText(null), 2000);
     } catch {}
@@ -70,8 +95,12 @@ export default function CyberpunkTheme({ id, data }: { id: string; data: any }) 
         {/* HEADER */}
         <header className="flex justify-between items-center border-b border-cyan-900/50 pb-4">
           <div className="flex items-center gap-4">
-            {portalSettings?.logoUrl ? (
-              <img src={portalSettings.logoUrl} alt={brandName} className="h-12 w-auto filter drop-shadow-[0_0_10px_rgba(6,182,212,0.8)]" />
+            {logoSrc ? (
+              <img
+                src={logoSrc}
+                alt={brandName}
+                className="h-12 w-auto object-contain filter drop-shadow-[0_0_10px_rgba(6,182,212,0.8)]"
+              />
             ) : (
               <ShieldCheck size={36} className="text-cyan-500 drop-shadow-[0_0_10px_rgba(6,182,212,0.8)]" />
             )}
@@ -169,11 +198,11 @@ export default function CyberpunkTheme({ id, data }: { id: string; data: any }) 
                 <div className="flex">
                   <input 
                     readOnly 
-                    value={nativeUrl} 
+                    value={primarySubUrl} 
                     className="flex-1 bg-[#02060b] border border-cyan-900 text-cyan-500 px-4 py-3 outline-none text-xs truncate"
                   />
                   <button 
-                    onClick={() => copyText(nativeUrl, 'sub')}
+                    onClick={() => copyText(primarySubUrl, 'sub')}
                     className="bg-cyan-900/50 hover:bg-cyan-800 border border-cyan-800 border-l-0 px-6 text-cyan-100 uppercase tracking-widest text-xs transition-colors"
                   >
                     {copiedText === 'sub' ? 'COPIED' : 'COPY'}
@@ -183,7 +212,7 @@ export default function CyberpunkTheme({ id, data }: { id: string; data: any }) 
                 <div className="flex gap-4">
                   {portalSettings?.showNativeQR !== false && (
                     <button 
-                      onClick={() => openQR(nativeUrl)}
+                      onClick={() => openQR(primarySubUrl)}
                       className="flex-1 bg-transparent border border-cyan-800 hover:bg-cyan-900/30 text-cyan-400 flex items-center justify-center gap-2 py-3 text-xs uppercase tracking-widest transition-colors"
                     >
                       <QrCode size={16} /> QR CODE
@@ -243,10 +272,10 @@ export default function CyberpunkTheme({ id, data }: { id: string; data: any }) 
               <button onClick={() => setImportSheet(false)} className="absolute top-4 right-4 text-cyan-600 hover:text-cyan-400"><X size={24} /></button>
               <div className="text-[10px] text-cyan-600 mb-6 tracking-[0.3em] uppercase">AUTO_INJECT_PROTOCOL</div>
               <div className="space-y-4">
-                <a href={`v2rayng://install-config?url=${encodeURIComponent(nativeUrl)}`} className="block w-full text-center bg-cyan-900/30 border border-cyan-800 hover:bg-cyan-800 text-cyan-50 py-4 uppercase tracking-widest text-xs transition-colors">
+                <a href={`v2rayng://install-config?url=${encodeURIComponent(primarySubUrl)}`} className="block w-full text-center bg-cyan-900/30 border border-cyan-800 hover:bg-cyan-800 text-cyan-50 py-4 uppercase tracking-widest text-xs transition-colors">
                   Inject via V2rayNG
                 </a>
-                <a href={`shadowrocket://add/sub://${btoa(nativeUrl)}`} className="block w-full text-center bg-cyan-900/30 border border-cyan-800 hover:bg-cyan-800 text-cyan-50 py-4 uppercase tracking-widest text-xs transition-colors">
+                <a href={`shadowrocket://add/sub://${btoa(primarySubUrl)}`} className="block w-full text-center bg-cyan-900/30 border border-cyan-800 hover:bg-cyan-800 text-cyan-50 py-4 uppercase tracking-widest text-xs transition-colors">
                   Inject via Shadowrocket
                 </a>
               </div>

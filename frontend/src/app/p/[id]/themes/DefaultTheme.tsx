@@ -7,7 +7,7 @@ import { Copy, Download, QrCode, MonitorSmartphone, Check, MessageCircle, Phone,
 import { QRCodeCanvas } from "qrcode.react";
 import { formatBytes, formatDate } from "@/lib/format";
 import { API_BASE } from "@/lib/api";
-import { copyToClipboard } from "@/lib/clipboard";
+import { resolveThemeLogo } from "@/modules/shared/brand-logo";
 
 export default function DefaultTheme({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -120,18 +120,42 @@ export default function DefaultTheme({ params }: { params: Promise<{ id: string 
   let statusText = isExpired ? "Expired" : !enable ? "Disabled" : total > 0 && used >= total ? "Depleted" : "Active";
 
   const brandName = portalSettings?.portalName || "Subscription Info";
-  const platformUrl = typeof window !== "undefined" ? `${window.location.origin}/p/${id}` : "";
+  const logoSrc = resolveThemeLogo({
+    logoLight: portalSettings?.logoUrl,
+    logoDark: portalSettings?.logoDarkUrl,
+    theme: currentTheme,
+  });
+  const systemUrl =
+    typeof window !== "undefined"
+      ? `${window.location.origin}/s/${encodeURIComponent(subId || email)}`
+      : `/s/${encodeURIComponent(subId || email)}`;
   const getNativeUrl = () => {
     const sub = encodeURIComponent(subId || email);
-    if (inbound?.panel?.subUrl) return `${inbound.panel.subUrl}${sub}`;
-    if (inbound?.panel?.url) return `${inbound.panel.url}/sub/${sub}`;
-    return `${typeof window !== 'undefined' ? window.location.origin : ''}/sub/${sub}`;
+    if (inbound?.panel?.subUrl) {
+      const base = inbound.panel.subUrl.endsWith("/")
+        ? inbound.panel.subUrl
+        : `${inbound.panel.subUrl}/`;
+      return `${base}${sub}`;
+    }
+    if (inbound?.panel?.url) {
+      try {
+        const parsed = new URL(inbound.panel.url);
+        return `${parsed.origin}/sub/${sub}`;
+      } catch {
+        const base = inbound.panel.url.endsWith("/")
+          ? inbound.panel.url
+          : `${inbound.panel.url}/`;
+        return `${base}sub/${sub}`;
+      }
+    }
+    return `${typeof window !== "undefined" ? window.location.origin : ""}/sub/${sub}`;
   };
   const nativeUrl = getNativeUrl();
+  const primarySubUrl = systemUrl;
 
   const copyText = async (text: string, id: string) => {
     try {
-      await copyToClipboard(text);
+      await navigator.clipboard.writeText(text);
       setCopiedText(id);
       setTimeout(() => setCopiedText(null), 2000);
     } catch {}
@@ -150,8 +174,8 @@ export default function DefaultTheme({ params }: { params: Promise<{ id: string 
       {/* Top Navigation / Brand */}
       <div className="w-full max-w-7xl mx-auto p-4 md:px-8 py-6 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          {portalSettings?.logoUrl ? (
-            <img src={portalSettings.logoUrl} alt={brandName} className="h-14 w-auto rounded" />
+          {logoSrc ? (
+            <img src={logoSrc} alt={brandName} className="h-14 w-auto object-contain" />
           ) : (
             <div className={`h-12 w-12 rounded-xl ${ts.accentBg} flex items-center justify-center`}>
               <ShieldCheck size={28} className={`${ts.accent}`} />
@@ -281,12 +305,12 @@ export default function DefaultTheme({ params }: { params: Promise<{ id: string 
             <div className={`${ts.card} border ${ts.roundedLg} p-6 shadow-xl relative overflow-hidden group hover:border-zinc-700 transition-colors`}>
               <div className="flex flex-col sm:flex-row sm:items-center gap-4">
                 <div className="flex-1 min-w-0">
-                  <div className={`text-xs font-bold ${ts.muted} uppercase tracking-widest mb-2`}>Native URL</div>
-                  <div className="font-mono text-sm md:text-base text-zinc-300 truncate select-all">{nativeUrl}</div>
+                  <div className={`text-xs font-bold ${ts.muted} uppercase tracking-widest mb-2`}>System Sub</div>
+                  <div className="font-mono text-sm md:text-base text-zinc-300 truncate select-all">{primarySubUrl}</div>
                 </div>
                 <div className="flex gap-2 shrink-0">
-                  <MainActionBtn icon={copiedText === 'sub' ? <Check size={18} className={`${ts.accent}`}/> : <Copy size={18}/>} label="Copy" onClick={() => copyText(nativeUrl, 'sub')} active={copiedText === 'sub'} />
-                  <MainActionBtn icon={<QrCode size={18}/>} label="QR Code" onClick={() => openQR(nativeUrl)} />
+                  <MainActionBtn icon={copiedText === 'sub' ? <Check size={18} className={`${ts.accent}`}/> : <Copy size={18}/>} label="Copy" onClick={() => copyText(primarySubUrl, 'sub')} active={copiedText === 'sub'} />
+                  <MainActionBtn icon={<QrCode size={18}/>} label="QR Code" onClick={() => openQR(primarySubUrl)} />
                 </div>
               </div>
             </div>
@@ -330,14 +354,14 @@ export default function DefaultTheme({ params }: { params: Promise<{ id: string 
                 <MonitorSmartphone size={20} /> Import to App
               </button>
               
-              {/* Optional secondary platform URL */}
+              {/* Optional secondary native panel URL */}
               <div className="pt-4 mt-4 border-t border-zinc-800/80">
-                <div className={`text-xs font-bold ${ts.muted} uppercase tracking-widest mb-3`}>Panel URL</div>
+                <div className={`text-xs font-bold ${ts.muted} uppercase tracking-widest mb-3`}>Panel Native</div>
                 <div className="flex items-center gap-2">
                   <div className={`flex-1 bg-zinc-900 border border-zinc-800 rounded-lg p-2.5 font-mono text-xs ${ts.muted} truncate`}>
-                    {platformUrl}
+                    {nativeUrl}
                   </div>
-                  <button onClick={() => copyText(platformUrl, 'panel')} className="p-2.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 transition-colors">
+                  <button onClick={() => copyText(nativeUrl, 'panel')} className="p-2.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 transition-colors">
                     {copiedText === 'panel' ? <Check size={14} className={`${ts.accent}`}/> : <Copy size={14}/>}
                   </button>
                 </div>
@@ -399,10 +423,10 @@ export default function DefaultTheme({ params }: { params: Promise<{ id: string 
                 <p className="text-sm text-zinc-400 font-medium">Select your preferred app to automatically configure your connection.</p>
               </div>
               <div className="grid grid-cols-2 gap-4">
-                <AppImportBtn name="V2rayNG" icon="🟢" url={`v2rayng://install-sub?url=${encodeURIComponent(nativeUrl)}`} />
-                <AppImportBtn name="Hiddify" icon="🔵" url={`hiddify://install-sub?url=${encodeURIComponent(nativeUrl)}`} />
-                <AppImportBtn name="Shadowrocket" icon="🚀" url={`shadowrocket://add/sub://${btoa(nativeUrl)}?title=${encodeURIComponent(brandName)}`} />
-                <AppImportBtn name="Streisand" icon="⚡" url={`streisand://import/${encodeURIComponent(nativeUrl)}`} />
+                <AppImportBtn name="V2rayNG" icon="🟢" url={`v2rayng://install-sub?url=${encodeURIComponent(primarySubUrl)}`} />
+                <AppImportBtn name="Hiddify" icon="🔵" url={`hiddify://install-sub?url=${encodeURIComponent(primarySubUrl)}`} />
+                <AppImportBtn name="Shadowrocket" icon="🚀" url={`shadowrocket://add/sub://${btoa(primarySubUrl)}?title=${encodeURIComponent(brandName)}`} />
+                <AppImportBtn name="Streisand" icon="⚡" url={`streisand://import/${encodeURIComponent(primarySubUrl)}`} />
               </div>
               <button onClick={() => setImportSheet(false)} className={`w-full py-4 mt-4 rounded-xl bg-zinc-800 ${ts.heading} font-bold hover:bg-zinc-700 transition-colors shadow-md`}>
                 Cancel

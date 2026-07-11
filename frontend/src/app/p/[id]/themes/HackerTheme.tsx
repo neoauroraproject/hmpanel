@@ -7,7 +7,7 @@ import { QRCodeCanvas } from "qrcode.react";
 import { formatBytes, formatDate } from "@/lib/format";
 import { useQuery } from "@tanstack/react-query";
 import { API_BASE } from "@/lib/api";
-import { copyToClipboard } from "@/lib/clipboard";
+import { resolveThemeLogo } from "@/modules/shared/brand-logo";
 
 export default function HackerTheme({ id, data }: { id: string; data: any }) {
   const [copiedText, setCopiedText] = useState<string | null>(null);
@@ -34,18 +34,43 @@ export default function HackerTheme({ id, data }: { id: string; data: any }) {
   
   const clientName = remark || email || "Unknown Client";
   const brandName = portalSettings?.portalName || "SYSTEM";
+  const logoSrc = resolveThemeLogo({
+    logoLight: portalSettings?.logoUrl,
+    logoDark: portalSettings?.logoDarkUrl,
+    theme: "Hacker",
+  });
 
+  const systemUrl =
+    typeof window !== "undefined"
+      ? `${window.location.origin}/s/${encodeURIComponent(subId || email)}`
+      : `/s/${encodeURIComponent(subId || email)}`;
   const getNativeUrl = () => {
     const sub = encodeURIComponent(subId || email);
-    if (inbound?.panel?.subUrl) return `${inbound.panel.subUrl}${sub}`;
-    if (inbound?.panel?.url) return `${inbound.panel.url}/sub/${sub}`;
-    return `${typeof window !== 'undefined' ? window.location.origin : ''}/sub/${sub}`;
+    if (inbound?.panel?.subUrl) {
+      const base = inbound.panel.subUrl.endsWith("/")
+        ? inbound.panel.subUrl
+        : `${inbound.panel.subUrl}/`;
+      return `${base}${sub}`;
+    }
+    if (inbound?.panel?.url) {
+      try {
+        const parsed = new URL(inbound.panel.url);
+        return `${parsed.origin}/sub/${sub}`;
+      } catch {
+        const base = inbound.panel.url.endsWith("/")
+          ? inbound.panel.url
+          : `${inbound.panel.url}/`;
+        return `${base}sub/${sub}`;
+      }
+    }
+    return `${typeof window !== "undefined" ? window.location.origin : ""}/sub/${sub}`;
   };
   const nativeUrl = getNativeUrl();
+  const primarySubUrl = systemUrl;
 
   const copyText = async (text: string, cid: string) => {
     try {
-      await copyToClipboard(text);
+      await navigator.clipboard.writeText(text);
       setCopiedText(cid);
       setTimeout(() => setCopiedText(null), 2000);
     } catch {}
@@ -82,8 +107,8 @@ export default function HackerTheme({ id, data }: { id: string; data: any }) {
           
           {/* Header & Logo */}
           <div className="flex flex-col md:flex-row gap-6 border-b border-dashed border-green-900/50 pb-6 mb-6">
-            {portalSettings?.logoUrl ? (
-              <img src={portalSettings.logoUrl} alt={brandName} className="h-20 w-auto filter grayscale opacity-80 mix-blend-screen" />
+            {logoSrc ? (
+              <img src={logoSrc} alt={brandName} className="h-20 w-auto object-contain opacity-90" />
             ) : (
               <pre className="text-green-700 text-[10px] leading-tight select-none hidden sm:block">
                 {asciiLogo}
@@ -133,11 +158,11 @@ export default function HackerTheme({ id, data }: { id: string; data: any }) {
             
             <div className="mt-4 border border-green-900 bg-green-950/20 p-4 relative group">
               <div className="text-xs text-green-700 mb-2">## SUBSCRIPTION_LINK</div>
-              <div className="truncate text-green-400 mb-4">{nativeUrl}</div>
+              <div className="truncate text-green-400 mb-4">{primarySubUrl}</div>
               
               <div className="flex flex-wrap gap-4">
                 <button 
-                  onClick={() => copyText(nativeUrl, 'sub')}
+                  onClick={() => copyText(primarySubUrl, 'sub')}
                   className="bg-green-900/50 hover:bg-green-800 text-green-400 px-4 py-2 text-sm transition-colors border border-green-800"
                 >
                   {copiedText === 'sub' ? "> COPIED" : "> COPY_LINK"}
@@ -145,7 +170,7 @@ export default function HackerTheme({ id, data }: { id: string; data: any }) {
 
                 {portalSettings?.showNativeQR !== false && (
                   <button 
-                    onClick={() => openQR(nativeUrl)}
+                    onClick={() => openQR(primarySubUrl)}
                     className="bg-transparent hover:bg-green-900/30 text-green-500 px-4 py-2 text-sm transition-colors border border-green-900 flex items-center gap-2"
                   >
                     <QrCode size={14} /> GENERATE_QR
@@ -223,10 +248,10 @@ export default function HackerTheme({ id, data }: { id: string; data: any }) {
               <button onClick={() => setImportSheet(false)} className="absolute top-4 right-4 text-green-700 hover:text-green-400"><X size={24} /></button>
               <div className="text-green-600 mb-6 font-bold uppercase text-center border-b border-dashed border-green-900 pb-2">EXECUTE_INJECTION</div>
               <div className="space-y-4">
-                <a href={`v2rayng://install-config?url=${encodeURIComponent(nativeUrl)}`} className="block w-full text-center bg-green-950/30 border border-green-800 hover:bg-green-900 text-green-400 py-4 uppercase tracking-widest text-xs transition-colors">
+                <a href={`v2rayng://install-config?url=${encodeURIComponent(primarySubUrl)}`} className="block w-full text-center bg-green-950/30 border border-green-800 hover:bg-green-900 text-green-400 py-4 uppercase tracking-widest text-xs transition-colors">
                   ./inject_v2rayng.sh
                 </a>
-                <a href={`shadowrocket://add/sub://${btoa(nativeUrl)}`} className="block w-full text-center bg-green-950/30 border border-green-800 hover:bg-green-900 text-green-400 py-4 uppercase tracking-widest text-xs transition-colors">
+                <a href={`shadowrocket://add/sub://${btoa(primarySubUrl)}`} className="block w-full text-center bg-green-950/30 border border-green-800 hover:bg-green-900 text-green-400 py-4 uppercase tracking-widest text-xs transition-colors">
                   ./inject_shadowrocket.sh
                 </a>
               </div>
