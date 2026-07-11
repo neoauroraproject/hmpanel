@@ -114,8 +114,8 @@ RUN printf '%s\n' \
   'echo "[HMPanel] Cleaning up DB..."' \
   'node backend/dist/scripts/cleanup-dups.js || true' \
   'node backend/dist/scripts/upgrade-legacy-store-schema.js || true' \
-  'echo "[HMPanel] Running database migrations (data-preserving)..."' \
-  'npx prisma db push --schema=/app/prisma/schema.prisma' \
+  'echo "[HMPanel] Running database migrations..."' \
+  'npx prisma db push --schema=/app/prisma/schema.prisma --accept-data-loss' \
   'set +e' \
   '(' \
   '  while true; do' \

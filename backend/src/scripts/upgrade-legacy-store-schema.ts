@@ -1,9 +1,10 @@
 import { PrismaClient } from '@prisma/client';
 
 /**
- * Legacy StoreOrder/ProductTemplate shapes are incompatible with the premium OMS.
- * Drop only when the old shape is detected so prisma db push can recreate tables.
- * StoreProfile is kept. Exit 0 always — never block panel boot.
+ * Prepare DB for premium OMS / Brand / Incident schema expansion.
+ * - Drop legacy StoreOrder shape (incompatible with OMS) — StoreProfile kept
+ * - Deduplicate Brand rows so adminId can become unique
+ * Exit 0 always — never block panel boot.
  */
 const prisma = new PrismaClient();
 
@@ -30,41 +31,87 @@ async function columnExists(table: string, column: string): Promise<boolean> {
   return !!rows[0]?.exists;
 }
 
+async function dropTable(table: string): Promise<void> {
+  // Postgres prepared statements cannot run multiple commands — one DROP per call.
+  await prisma.$executeRawUnsafe(`DROP TABLE IF EXISTS "${table}" CASCADE`);
+}
+
+async function upgradeLegacyStore(): Promise<void> {
+  if (!(await tableExists('StoreOrder'))) {
+    // Still drop orphan ProductTemplate if it has the old `price` column
+    if (
+      (await tableExists('ProductTemplate')) &&
+      (await columnExists('ProductTemplate', 'price')) &&
+      !(await columnExists('ProductTemplate', 'priceUsd'))
+    ) {
+      console.warn('[HMPanel] Legacy ProductTemplate detected — dropping for OMS recreate');
+      await dropTable('ProductTemplate');
+    }
+    console.log('[HMPanel] No legacy StoreOrder — store upgrade ok');
+    return;
+  }
+
+  const modern =
+    (await columnExists('StoreOrder', 'customerId')) &&
+    (await columnExists('StoreOrder', 'amount'));
+  if (modern) {
+    console.log('[HMPanel] Store schema already modern — ok');
+    return;
+  }
+
+  console.warn(
+    '[HMPanel] Legacy StoreOrder detected — dropping incompatible store tables (StoreProfile kept)',
+  );
+
+  const tables = [
+    'OrderTimelineEvent',
+    'StorePayment',
+    'StoreCustomerActivity',
+    'StoreCustomerNotification',
+    'StoreCustomerSession',
+    'StoreOrder',
+    'StoreProduct',
+    'ProductTemplate',
+    'ProvisioningProfile',
+    'ProductCategory',
+    'StoreCustomer',
+  ];
+
+  for (const table of tables) {
+    await dropTable(table);
+    console.log(`[HMPanel] Dropped ${table}`);
+  }
+}
+
+async function dedupeBrand(): Promise<void> {
+  if (!(await tableExists('Brand'))) {
+    console.log('[HMPanel] No Brand table — skip dedupe');
+    return;
+  }
+
+  // Keep the newest Brand per adminId; clear domainId on losers to avoid unique conflicts.
+  const result = await prisma.$executeRawUnsafe(`
+    WITH ranked AS (
+      SELECT id, "adminId",
+             ROW_NUMBER() OVER (PARTITION BY "adminId" ORDER BY "updatedAt" DESC NULLS LAST, "createdAt" DESC NULLS LAST) AS rn
+      FROM "Brand"
+    )
+    DELETE FROM "Brand" b
+    USING ranked r
+    WHERE b.id = r.id AND r.rn > 1
+  `);
+  console.log(`[HMPanel] Brand dedupe done (removed extras for unique adminId)`);
+  void result;
+}
+
 async function main() {
-  console.log('[HMPanel] Checking legacy store schema…');
+  console.log('[HMPanel] Preparing premium schema upgrade…');
   try {
-    if (!(await tableExists('StoreOrder'))) {
-      console.log('[HMPanel] No StoreOrder table — skip store upgrade');
-      return;
-    }
-
-    const modern =
-      (await columnExists('StoreOrder', 'customerId')) &&
-      (await columnExists('StoreOrder', 'amount'));
-    if (modern) {
-      console.log('[HMPanel] Store schema already modern — ok');
-      return;
-    }
-
-    console.warn(
-      '[HMPanel] Legacy StoreOrder detected — dropping incompatible store tables (StoreProfile kept)',
-    );
-    await prisma.$executeRawUnsafe(`
-      DROP TABLE IF EXISTS "OrderTimelineEvent" CASCADE;
-      DROP TABLE IF EXISTS "StorePayment" CASCADE;
-      DROP TABLE IF EXISTS "StoreCustomerActivity" CASCADE;
-      DROP TABLE IF EXISTS "StoreCustomerNotification" CASCADE;
-      DROP TABLE IF EXISTS "StoreCustomerSession" CASCADE;
-      DROP TABLE IF EXISTS "StoreOrder" CASCADE;
-      DROP TABLE IF EXISTS "StoreProduct" CASCADE;
-      DROP TABLE IF EXISTS "ProductTemplate" CASCADE;
-      DROP TABLE IF EXISTS "ProvisioningProfile" CASCADE;
-      DROP TABLE IF EXISTS "ProductCategory" CASCADE;
-      DROP TABLE IF EXISTS "StoreCustomer" CASCADE;
-    `);
-    console.log('[HMPanel] Legacy store tables dropped');
+    await upgradeLegacyStore();
+    await dedupeBrand();
+    console.log('[HMPanel] Premium schema prep complete');
   } catch (err: any) {
-    console.warn(`[HMPanel] Store upgrade skipped: ${err?.message || err}`);
+    console.warn(`[HMPanel] Schema prep warning: ${err?.message || err}`);
   } finally {
     await prisma.$disconnect();
   }

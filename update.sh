@@ -212,7 +212,10 @@ END \$\$;
 " || warn "Pre-migration SQL failed, but continuing..."
 
   info "Running Prisma Schema Update & System Migrations..."
-  if ! docker compose run --rm panel-app /bin/sh -c "node backend/dist/scripts/upgrade-legacy-store-schema.js || true; npx prisma db push && node backend/dist/scripts/run-migrations.js"; then
+  # Upgrade scripts explicitly handle legacy store drops + Brand dedupe.
+  # --accept-data-loss is required by Prisma for unique-constraint / enum expansions
+  # after those safe prep steps; it does not wipe unrelated business tables.
+  if ! docker compose run --rm panel-app /bin/sh -c "node backend/dist/scripts/upgrade-legacy-store-schema.js || true; npx prisma db push --schema=/app/prisma/schema.prisma --accept-data-loss && node backend/dist/scripts/run-migrations.js"; then
     error "MIGRATION FAILED! Executing emergency rollback..."
     
     info "Stopping containers..."
