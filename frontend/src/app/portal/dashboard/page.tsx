@@ -623,7 +623,7 @@ function PortalBody(props: {
             </div>
             <button
               type="button"
-              onClick={() => setShowQr((v) => !v)}
+              onClick={() => setShowQr(!showQr)}
               className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-zinc-200 text-zinc-600 dark:border-zinc-800"
               aria-label="QR"
             >
