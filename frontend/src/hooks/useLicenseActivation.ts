@@ -1,8 +1,11 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { usePathname } from "next/navigation";
 import { api } from "@/lib/api";
+import { isPublicAppPath } from "@/lib/public-paths";
 import { useToast } from "@/components/toast";
+import { useAuth } from "@/store/auth";
 
 export interface LicenseState {
   status: string;
@@ -39,12 +42,17 @@ async function waitForBackend(timeoutMs = 90_000) {
 export function useLicenseActivation() {
   const qc = useQueryClient();
   const toast = useToast((s) => s.push);
+  const token = useAuth((s) => s.token);
+  const pathname = usePathname();
+  const onPublicPage = isPublicAppPath(pathname);
 
   const licenseQuery = useQuery({
     queryKey: ["platform-license"],
     queryFn: async () => (await api.get<LicenseState>("/platform/license")).data,
     retry: false,
     staleTime: 60_000,
+    // Guests on /p /shop /portal /track must not hit JWT-only endpoints.
+    enabled: !!token && !onPublicPage,
   });
 
   const invalidateAll = () => {

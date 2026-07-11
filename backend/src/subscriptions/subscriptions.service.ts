@@ -55,6 +55,32 @@ export class SubscriptionsService {
     }
 
     const primaryClient = clients[0];
+    const adminPortal =
+      ((primaryClient.admin as any)?.portalSettings as Record<string, unknown> | null) || {};
+
+    // Prefer Brand.theme (Premium Branding) as source of truth for portal themes.
+    let portalSettings: Record<string, unknown> = { ...adminPortal };
+    try {
+      const adminId = (primaryClient as any).adminId as string | null | undefined;
+      if (adminId) {
+        const brand = await this.prisma.brand.findUnique({
+          where: { adminId },
+          select: { theme: true, logo: true, logoDark: true, name: true, primaryColor: true },
+        });
+        if (brand) {
+          portalSettings = {
+            ...portalSettings,
+            theme: brand.theme || portalSettings.theme,
+            logoUrl: portalSettings.logoUrl || brand.logo || undefined,
+            logoDarkUrl: portalSettings.logoDarkUrl || brand.logoDark || undefined,
+            portalName: portalSettings.portalName || brand.name || undefined,
+            primaryColor: portalSettings.primaryColor || brand.primaryColor || undefined,
+          };
+        }
+      }
+    } catch {
+      /* Brand table may be absent on some installs */
+    }
 
     let totalUp = 0n;
     let totalDown = 0n;
@@ -86,7 +112,7 @@ export class SubscriptionsService {
       total: Number(maxTotal),
       expiryTime: Number(primaryClient.expiryTime),
       createdAt: primaryClient.createdAt,
-      portalSettings: (primaryClient.admin as any)?.portalSettings || {},
+      portalSettings,
       inbound: allInbounds[0] || null,
       inbounds: allInbounds,
     };

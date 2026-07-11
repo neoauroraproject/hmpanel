@@ -1,4 +1,5 @@
 import axios from "axios";
+import { isPublicAppPath } from "@/lib/public-paths";
 
 export const API_BASE = "/api";
 export const CUSTOMER_SESSION_STORAGE_KEY = "hm-storefront-session";
@@ -42,6 +43,16 @@ function getAuthState(): { token: string | null; refreshToken: string | null } {
   }
 }
 
+function clearAuthAndMaybeRedirectToLogin() {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem("panel-auth");
+  // Public portals (/p, /shop, …) must stay usable for guests — never bounce them to /login.
+  if (isPublicAppPath(window.location.pathname)) return;
+  if (!window.location.pathname.startsWith("/login")) {
+    window.location.href = "/login";
+  }
+}
+
 api.interceptors.request.use((config) => {
   const { token } = getAuthState();
   if (token && config.headers) {
@@ -70,12 +81,7 @@ api.interceptors.response.use(
     const originalRequest = error.config;
     if (error?.response?.status === 401 && !originalRequest._retry) {
       if (originalRequest.url === "/auth/refresh" || originalRequest.url === "/auth/login") {
-        if (typeof window !== "undefined") {
-          localStorage.removeItem("panel-auth");
-          if (!window.location.pathname.startsWith("/login")) {
-            window.location.href = "/login";
-          }
-        }
+        clearAuthAndMaybeRedirectToLogin();
         return Promise.reject(error);
       }
 
@@ -98,12 +104,7 @@ api.interceptors.response.use(
       const { refreshToken } = getAuthState();
       if (!refreshToken) {
         processQueue(error, null);
-        if (typeof window !== "undefined") {
-          localStorage.removeItem("panel-auth");
-          if (!window.location.pathname.startsWith("/login")) {
-            window.location.href = "/login";
-          }
-        }
+        clearAuthAndMaybeRedirectToLogin();
         return Promise.reject(error);
       }
 
@@ -127,12 +128,7 @@ api.interceptors.response.use(
         return api(originalRequest);
       } catch (err) {
         processQueue(err, null);
-        if (typeof window !== "undefined") {
-          localStorage.removeItem("panel-auth");
-          if (!window.location.pathname.startsWith("/login")) {
-            window.location.href = "/login";
-          }
-        }
+        clearAuthAndMaybeRedirectToLogin();
         return Promise.reject(err);
       } finally {
         isRefreshing = false;

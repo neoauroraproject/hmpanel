@@ -13,6 +13,8 @@ import { usePluginRegistry } from "@/store/pluginRegistry";
 import { useLicenseActivation } from "@/hooks/useLicenseActivation";
 import { usePremiumModules } from "@/hooks/usePremiumModules";
 import { api } from "@/lib/api";
+import { isPublicAppPath } from "@/lib/public-paths";
+import { useAuth } from "@/store/auth";
 
 declare global {
   interface Window {
@@ -110,11 +112,16 @@ async function syncModulesFromCatalog() {
 /** Loads premium frontend runtime from installed bundle when license is active. */
 export function PremiumBootstrap() {
   const pathname = usePathname();
+  const token = useAuth((s) => s.token);
+  const onPublicPage = isPublicAppPath(pathname);
   const { licenseQuery } = useLicenseActivation();
   const [loaded, setLoaded] = useState(false);
   const state = licenseQuery.data;
 
+  // Never bootstrap premium admin runtime on public guest pages.
   const isPremium =
+    !onPublicPage &&
+    !!token &&
     state?.edition === "PREMIUM" &&
     state?.status !== "community" &&
     state?.mode !== "disabled" &&
