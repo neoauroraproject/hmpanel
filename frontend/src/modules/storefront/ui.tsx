@@ -16,10 +16,9 @@ import {
 import { formatBytes, formatDate, formatExpiry } from "@/lib/format";
 import { copyToClipboard } from "@/lib/clipboard";
 import {
-  ensureVazirFont,
-  isPersianStorefront,
   resolveThemeLogo,
 } from "@/modules/shared/brand-logo";
+import { LanguageSwitcher, StorefrontLocaleProvider, useStorefrontLocale } from "./locale";
 import type {
   CustomerNotification,
   CustomerOrder,
@@ -61,35 +60,52 @@ function useIsDarkSurface() {
 export function StoreShell({
   store,
   children,
+  topBar,
 }: {
   store?: StorefrontStore;
   children: React.ReactNode;
+  topBar?: React.ReactNode;
 }) {
   const primaryColor = store?.branding?.primaryColor || "#3b82f6";
-  const persian = isPersianStorefront(store);
 
-  useEffect(() => {
-    if (!persian) return;
-    ensureVazirFont();
-    document.documentElement.lang = "fa";
-    document.documentElement.dir = "rtl";
-    return () => {
-      document.documentElement.dir = "ltr";
-      document.documentElement.lang = "en";
-    };
-  }, [persian]);
+  return (
+    <StorefrontLocaleProvider store={store}>
+      <StoreShellInner primaryColor={primaryColor} topBar={topBar}>
+        {children}
+      </StoreShellInner>
+    </StorefrontLocaleProvider>
+  );
+}
+
+function StoreShellInner({
+  primaryColor,
+  topBar,
+  children,
+}: {
+  primaryColor: string;
+  topBar?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  const { isFa } = useStorefrontLocale();
 
   return (
     <div
-      className={`min-h-screen bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.08),_transparent_42%),linear-gradient(180deg,#fafafa_0%,#f4f4f5_100%)] text-zinc-950 dark:bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.12),_transparent_40%),linear-gradient(180deg,#09090b_0%,#0a0a0c_100%)] dark:text-zinc-100 ${
-        persian ? "font-[Vazirmatn,Tahoma,sans-serif]" : ""
+      className={`min-h-[100dvh] bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.08),_transparent_42%),linear-gradient(180deg,#fafafa_0%,#f4f4f5_100%)] text-zinc-950 dark:bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.12),_transparent_40%),linear-gradient(180deg,#09090b_0%,#0a0a0c_100%)] dark:text-zinc-100 ${
+        isFa ? "font-[Vazirmatn,Tahoma,sans-serif]" : ""
       }`}
       style={{
         ["--store-primary" as string]: primaryColor,
-        ...(persian ? { fontFamily: '"Vazirmatn", Tahoma, sans-serif' } : null),
+        ...(isFa ? { fontFamily: '"Vazirmatn", Tahoma, sans-serif' } : null),
+        paddingBottom: "env(safe-area-inset-bottom)",
       }}
     >
-      {children}
+      <div className="sticky top-0 z-40 border-b border-zinc-200/70 bg-white/80 px-4 py-3 backdrop-blur-xl dark:border-zinc-800/70 dark:bg-zinc-950/80 pt-[max(0.75rem,env(safe-area-inset-top))]">
+        <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">
+          <div className="min-w-0 flex-1">{topBar}</div>
+          <LanguageSwitcher />
+        </div>
+      </div>
+      <div className="mx-auto w-full max-w-3xl pb-8">{children}</div>
     </div>
   );
 }
@@ -106,7 +122,7 @@ export function WelcomeHero({
   onTrack?: () => void;
 }) {
   const preferDark = useIsDarkSurface();
-  const persian = isPersianStorefront(store);
+  const { t, isFa } = useStorefrontLocale();
   const logo = resolveThemeLogo({
     logoLight: store?.logoUrl || store?.branding?.logo,
     logoDark: store?.logoDarkUrl || store?.branding?.logoDark,
@@ -118,20 +134,20 @@ export function WelcomeHero({
     <motion.section
       {...fadeUp}
       transition={{ duration: 0.45, ease: "easeOut" }}
-      className="mx-auto flex max-w-3xl flex-col items-center px-4 py-16 text-center sm:py-24"
+      className="mx-auto flex max-w-3xl flex-col items-center px-4 py-10 text-center sm:py-16"
     >
       {logo ? (
         <img
           src={logo}
           alt={store?.title || store?.branding?.name || "Store logo"}
-          className="mb-6 h-24 w-auto max-w-[12rem] object-contain"
+          className="mb-6 h-20 w-auto max-w-[10rem] object-contain sm:h-24 sm:max-w-[12rem]"
         />
       ) : (
-        <div className="mb-6 flex h-24 w-24 items-center justify-center rounded-[1.75rem] bg-[color:var(--store-primary)]/10 text-[color:var(--store-primary)]">
+        <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-[1.75rem] bg-[color:var(--store-primary)]/10 text-[color:var(--store-primary)] sm:h-24 sm:w-24">
           <ShieldCheck size={40} />
         </div>
       )}
-      <h1 className="text-4xl font-black tracking-tight sm:text-5xl">
+      <h1 className="text-3xl font-black tracking-tight sm:text-5xl">
         {store?.title || store?.branding?.name || "VPN Store"}
       </h1>
       {store?.description ? (
@@ -140,8 +156,8 @@ export function WelcomeHero({
         </p>
       ) : null}
       <div className="mt-8 grid w-full gap-3 sm:grid-cols-2">
-        <PrimaryButton onClick={onBuy}>{persian ? "سفارش جدید" : "New Order"}</PrimaryButton>
-        <SecondaryButton onClick={onLogin}>{persian ? "ورود" : "Login"}</SecondaryButton>
+        <PrimaryButton onClick={onBuy}>{t("سفارش جدید", "New Order")}</PrimaryButton>
+        <SecondaryButton onClick={onLogin}>{t("ورود", "Login")}</SecondaryButton>
       </div>
       {onTrack ? (
         <button
@@ -149,7 +165,7 @@ export function WelcomeHero({
           onClick={onTrack}
           className="mt-4 text-sm font-semibold text-[color:var(--store-primary)] hover:underline"
         >
-          {persian ? "پیگیری سفارش ←" : "Track an order →"}
+          {isFa ? "پیگیری سفارش ←" : "Track an order →"}
         </button>
       ) : null}
       <SupportFooter supportLinks={store?.branding?.supportLinks} />
@@ -166,6 +182,7 @@ export function ProductCard({
   onSelect: () => void;
   selected?: boolean;
 }) {
+  const { formatToman, t } = useStorefrontLocale();
   const hasUsd = Number(product.priceUsd) > 0;
   const hasToman = Number(product.priceToman) > 0;
 
@@ -173,10 +190,10 @@ export function ProductCard({
     <motion.button
       type="button"
       onClick={onSelect}
-      whileHover={{ y: -3 }}
+      whileHover={{ y: -2 }}
       whileTap={{ scale: 0.985 }}
       transition={{ type: "spring", stiffness: 320, damping: 24 }}
-      className={`relative rounded-3xl border bg-white p-5 text-left shadow-sm transition dark:bg-zinc-900 ${
+      className={`relative w-full rounded-3xl border bg-white p-4 text-start shadow-sm transition dark:bg-zinc-900 sm:p-5 ${
         selected
           ? "border-[color:var(--store-primary)] ring-2 ring-[color:var(--store-primary)]/20"
           : "border-zinc-200 hover:border-zinc-300 dark:border-zinc-800"
@@ -185,12 +202,17 @@ export function ProductCard({
       <div className="mb-3 flex flex-wrap items-center gap-2">
         {product.featured ? (
           <span className="inline-flex rounded-full bg-amber-500/15 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-400">
-            Featured
+            {t("ویژه", "Featured")}
           </span>
         ) : null}
         {product.badge ? (
           <span className="inline-flex rounded-full bg-[color:var(--store-primary)]/10 px-2.5 py-1 text-xs font-semibold text-[color:var(--store-primary)]">
             {product.badge}
+          </span>
+        ) : null}
+        {selected ? (
+          <span className="ms-auto inline-flex rounded-full bg-[color:var(--store-primary)] px-2.5 py-1 text-[11px] font-bold text-white">
+            {t("انتخاب شد", "Selected")}
           </span>
         ) : null}
       </div>
@@ -203,8 +225,7 @@ export function ProductCard({
       <div className="mt-5 space-y-1">
         {hasToman ? (
           <div className="text-2xl font-black text-[color:var(--store-primary)]">
-            {Number(product.priceToman).toLocaleString()}{" "}
-            <span className="text-base font-bold">تومان</span>
+            {formatToman(product.priceToman)}
           </div>
         ) : null}
         {hasUsd ? (
@@ -219,17 +240,19 @@ export function ProductCard({
           </div>
         ) : null}
         {!hasUsd && !hasToman ? (
-          <div className="text-lg font-bold text-zinc-400">Contact for price</div>
+          <div className="text-lg font-bold text-zinc-400">{t("تماس برای قیمت", "Contact for price")}</div>
         ) : null}
       </div>
       <div className="mt-4 space-y-2 text-sm text-zinc-600 dark:text-zinc-400">
-        <div className="flex justify-between">
-          <span>Traffic</span>
+        <div className="flex justify-between gap-3">
+          <span>{t("ترافیک", "Traffic")}</span>
           <span>{formatBytes(product.traffic)}</span>
         </div>
-        <div className="flex justify-between">
-          <span>Duration</span>
-          <span>{product.durationDays} days</span>
+        <div className="flex justify-between gap-3">
+          <span>{t("مدت", "Duration")}</span>
+          <span>
+            {product.durationDays} {t("روز", "days")}
+          </span>
         </div>
       </div>
     </motion.button>
@@ -237,21 +260,27 @@ export function ProductCard({
 }
 
 export function Stepper({ step }: { step: number }) {
-  const labels = ["Plan", "Profile", "Payment", "Pending"];
+  const { t } = useStorefrontLocale();
+  const labels = [
+    t("پلن", "Plan"),
+    t("پروفایل", "Profile"),
+    t("پرداخت", "Payment"),
+    t("تأیید", "Confirm"),
+  ];
   return (
-    <div className="mb-6 flex flex-wrap items-center justify-center gap-2 text-xs font-semibold uppercase tracking-wide">
+    <div className="mb-5 flex items-center justify-between gap-1 overflow-x-auto pb-1 text-[10px] font-semibold uppercase tracking-wide sm:justify-center sm:gap-2 sm:text-xs">
       {labels.map((label, index) => (
-        <div key={label} className="flex items-center gap-2">
+        <div key={label} className="flex shrink-0 items-center gap-1.5 sm:gap-2">
           <div
-            className={`flex h-8 w-8 items-center justify-center rounded-full border transition-colors ${
-              index <= step
+            className={`flex h-7 w-7 items-center justify-center rounded-full border transition-colors sm:h-8 sm:w-8 ${
+              index + 1 <= step
                 ? "border-[color:var(--store-primary)] bg-[color:var(--store-primary)] text-white"
                 : "border-zinc-200 bg-white text-zinc-400 dark:border-zinc-800 dark:bg-zinc-900"
             }`}
           >
             {index + 1}
           </div>
-          <span className={index <= step ? "text-zinc-800 dark:text-zinc-200" : "text-zinc-400"}>
+          <span className={index + 1 <= step ? "text-zinc-800 dark:text-zinc-200" : "text-zinc-400"}>
             {label}
           </span>
         </div>

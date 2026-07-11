@@ -11,6 +11,7 @@ export type StorefrontProduct = {
   durationDays: number;
   badge?: string | null;
   featured?: boolean;
+  renewable?: boolean;
 };
 
 export type StorefrontStore = {

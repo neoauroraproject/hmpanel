@@ -159,6 +159,11 @@ export default function CustomerDashboardPage() {
               <PrimaryButton
                 className="w-auto px-4"
                 onClick={() => {
+                  const slug = data.store?.slug;
+                  if (slug) {
+                    router.push(`/shop/${encodeURIComponent(slug)}?flow=buy`);
+                    return;
+                  }
                   setResult(null);
                   setFlow("buy");
                   setSelectedProduct(null);
@@ -392,6 +397,14 @@ export default function CustomerDashboardPage() {
                 onCopy={() => copyToClipboard(buildSubscriptionLink(service.subId, service.email))}
                 onOpen={() => window.open(buildSubscriptionLink(service.subId, service.email), "_blank")}
                 onRenew={() => {
+                  const slug = data.store?.slug;
+                  const name = service.remark || service.email || service.id;
+                  if (slug) {
+                    router.push(
+                      `/shop/${encodeURIComponent(slug)}?flow=renew&clientId=${encodeURIComponent(service.id)}&serviceName=${encodeURIComponent(name)}`,
+                    );
+                    return;
+                  }
                   setResult(null);
                   setFlow("renew");
                   setRenewingService(service.id);
