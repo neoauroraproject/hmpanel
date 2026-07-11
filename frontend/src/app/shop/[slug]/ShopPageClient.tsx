@@ -127,10 +127,17 @@ export default function ShopPage() {
   });
 
   const createOrder = useMutation({
-    mutationFn: async () =>
-      (
+    mutationFn: async () => {
+      const product = selectedProduct;
+      const hasToman = Number(product?.priceToman || 0) > 0;
+      const hasUsd = Number(product?.priceUsd || 0) > 0;
+      const storeCur = (store?.defaultCurrency || "").toUpperCase();
+      const preferToman =
+        hasToman &&
+        (!hasUsd || ["IRT", "IRR", "TOMAN", "TMN"].includes(storeCur));
+      return (
         await publicApi.post(`/store/public/${slug}/order`, {
-          productId: selectedProduct?.id,
+          productId: product?.id,
           configName: isRenewFlow ? undefined : form.configName,
           name: form.name,
           telegram: form.telegram,
@@ -142,8 +149,10 @@ export default function ShopPage() {
           haveToken,
           isRenewal: isRenewFlow,
           renewClientId: isRenewFlow ? renewClientId : undefined,
+          ...(preferToman ? { currency: "TOMAN" } : {}),
         })
-      ).data,
+      ).data;
+    },
     onSuccess: (response) => setResult(response),
   });
 

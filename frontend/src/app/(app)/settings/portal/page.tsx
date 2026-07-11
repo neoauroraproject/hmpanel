@@ -10,18 +10,13 @@ import { motion } from "framer-motion";
 import { useAuth } from "@/store/auth";
 
 const THEMES = [
-  { id: "Dark", label: "Dark Mode" },
-  { id: "Light", label: "Light Mode" },
-  { id: "Neo Default", label: "Neo Default" },
-  { id: "Neo Vibrant", label: "Neo Vibrant" },
-  { id: "Neo Eclipse", label: "Neo Eclipse" },
-  { id: "Neo Glass", label: "Neo Glass" },
-  { id: "Neo Minimal", label: "Neo Minimal" },
-  { id: "Neo Dashboard", label: "Neo Dashboard" },
-  { id: "Cyberpunk", label: "Cyberpunk" },
-  { id: "Sunset", label: "Sunset" },
-  { id: "Minimalist", label: "Minimalist" },
-  { id: "Hacker", label: "Hacker" },
+  { id: "Aurora", label: "Aurora" },
+  { id: "Obsidian", label: "Obsidian" },
+  { id: "Nordic", label: "Nordic" },
+  { id: "Pulse", label: "Pulse" },
+  { id: "Neon", label: "Neon" },
+  { id: "Ember", label: "Ember" },
+  { id: "Studio", label: "Studio" },
 ];
 
 const defaultSettings = {
@@ -34,7 +29,7 @@ const defaultSettings = {
   portalName: "",
   logoUrl: "",
   primaryColor: "#3b82f6",
-  theme: "Dark",
+  theme: "Aurora",
   // Portal Toggles
   showPlatformQR: true,
   showNativeQR: true,

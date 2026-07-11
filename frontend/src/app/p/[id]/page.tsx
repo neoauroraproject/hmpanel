@@ -2,24 +2,16 @@
 
 import { use } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { API_BASE } from "@/lib/api";
-import DefaultTheme from "./themes/DefaultTheme";
-import CyberpunkTheme from "./themes/CyberpunkTheme";
-import SunsetTheme from "./themes/SunsetTheme";
-import MinimalistTheme from "./themes/MinimalistTheme";
-import HackerTheme from "./themes/HackerTheme";
-import NeoTheme, { type NeoVariant } from "./themes/NeoTheme";
 import { Layers } from "lucide-react";
+import { API_BASE } from "@/lib/api";
 import { normalizePortalTheme } from "@/modules/shared/brand-logo";
-
-const NEO_THEMES = new Set<string>([
-  "Neo Default",
-  "Neo Vibrant",
-  "Neo Eclipse",
-  "Neo Glass",
-  "Neo Minimal",
-  "Neo Dashboard",
-]);
+import AuroraTheme from "./themes/AuroraTheme";
+import ObsidianTheme from "./themes/ObsidianTheme";
+import NordicTheme from "./themes/NordicTheme";
+import PulseTheme from "./themes/PulseTheme";
+import NeonTheme from "./themes/NeonTheme";
+import EmberTheme from "./themes/EmberTheme";
+import StudioTheme from "./themes/StudioTheme";
 
 export default function SubscriptionPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -37,31 +29,30 @@ export default function SubscriptionPage({ params }: { params: Promise<{ id: str
 
   if (isLoading) {
     return (
-      <div className="flex h-full min-h-[100dvh] items-center justify-center bg-[#0a0a0c]">
-        <div className="h-12 w-12 animate-spin rounded-full border-4 border-zinc-800 border-t-emerald-500" />
+      <div className="flex h-full min-h-[100dvh] items-center justify-center bg-[#07101f]">
+        <div className="h-12 w-12 animate-spin rounded-full border-4 border-slate-800 border-t-teal-400" />
       </div>
     );
   }
 
   if (error || !data) {
     return (
-      <div className="flex h-full min-h-[100dvh] flex-col items-center justify-center p-8 text-center bg-[#0a0a0c]">
-        <Layers className="mb-4 text-zinc-600" size={64} />
+      <div className="flex h-full min-h-[100dvh] flex-col items-center justify-center bg-[#07101f] p-8 text-center">
+        <Layers className="mb-4 text-slate-600" size={64} />
         <h2 className="text-2xl font-bold text-white">Subscription Not Found</h2>
-        <p className="mt-2 text-zinc-400">This link may be invalid, expired, or deleted.</p>
+        <p className="mt-2 text-slate-400">This link may be invalid, expired, or deleted.</p>
       </div>
     );
   }
 
   const currentTheme = normalizePortalTheme(data.portalSettings?.theme);
 
-  if (NEO_THEMES.has(currentTheme)) {
-    return <NeoTheme id={id} data={data} variant={currentTheme as NeoVariant} />;
-  }
-  if (currentTheme === "Cyberpunk") return <CyberpunkTheme id={id} data={data} />;
-  if (currentTheme === "Sunset") return <SunsetTheme id={id} data={data} />;
-  if (currentTheme === "Minimalist") return <MinimalistTheme id={id} data={data} />;
-  if (currentTheme === "Hacker") return <HackerTheme id={id} data={data} />;
+  if (currentTheme === "Obsidian") return <ObsidianTheme id={id} data={data} />;
+  if (currentTheme === "Nordic") return <NordicTheme id={id} data={data} />;
+  if (currentTheme === "Pulse") return <PulseTheme id={id} data={data} />;
+  if (currentTheme === "Neon") return <NeonTheme id={id} data={data} />;
+  if (currentTheme === "Ember") return <EmberTheme id={id} data={data} />;
+  if (currentTheme === "Studio") return <StudioTheme id={id} data={data} />;
 
-  return <DefaultTheme params={params} />;
+  return <AuroraTheme id={id} data={data} />;
 }
