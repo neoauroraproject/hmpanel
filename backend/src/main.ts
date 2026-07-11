@@ -1,11 +1,15 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { json, urlencoded } from 'express';
 import { AppModule } from './app.module';
 import { PrismaService } from './prisma/prisma.service';
 import { loadPremiumModulesForBootstrap, markPremiumBootstrapFailed } from './plugins/premium-bootstrap';
 import axios from 'axios';
 import * as https from 'https';
+
+/** Store receipt images are sent as base64 JSON — default Nest 100kb limit causes 413. */
+const BODY_LIMIT = '15mb';
 
 // Prisma returns BigInt for traffic counters; make them JSON-serializable.
 (BigInt.prototype as unknown as { toJSON: () => string }).toJSON = function () {
@@ -25,9 +29,10 @@ async function bootstrap() {
   // LazyModuleLoader cannot register HTTP controllers — that caused permanent 404s.
   const premium = loadPremiumModulesForBootstrap();
 
+  const nestOptions = { bodyParser: false as const };
   let app;
   try {
-    app = await NestFactory.create(AppModule.forRoot(premium.modules));
+    app = await NestFactory.create(AppModule.forRoot(premium.modules), nestOptions);
   } catch (err: any) {
     if (premium.modules.length === 0) throw err;
     console.error(
@@ -36,9 +41,11 @@ async function bootstrap() {
     );
     if (err?.stack) console.error(err.stack);
     markPremiumBootstrapFailed(err?.message || 'Nest failed to initialize premium modules');
-    app = await NestFactory.create(AppModule.forRoot([]));
+    app = await NestFactory.create(AppModule.forRoot([]), nestOptions);
   }
 
+  app.use(json({ limit: BODY_LIMIT }));
+  app.use(urlencoded({ extended: true, limit: BODY_LIMIT }));
   app.enableCors({ exposedHeaders: ['Content-Disposition'] });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
 

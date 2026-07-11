@@ -8,6 +8,7 @@ import { AlertCircle, LoaderCircle, Upload } from "lucide-react";
 import { publicApi, getCustomerSessionToken } from "@/lib/api";
 import type { CustomerProfile, StorefrontProduct, StorefrontStore } from "@/modules/storefront/types";
 import { useStorefrontLocale } from "@/modules/storefront/locale";
+import { compressReceiptImage } from "@/modules/storefront/receipt-image";
 import {
   PendingOrderCard,
   PrimaryButton,
@@ -36,6 +37,7 @@ export default function ShopPage() {
   const [selectedProduct, setSelectedProduct] = useState<StorefrontProduct | null>(null);
   const [haveToken, setHaveToken] = useState(isRenewFlow || isBuyFromPortal);
   const [lookupError, setLookupError] = useState("");
+  const [receiptError, setReceiptError] = useState("");
   const [receiptPreview, setReceiptPreview] = useState("");
   const [result, setResult] = useState<any>(null);
   const [trackCode, setTrackCode] = useState("");
@@ -193,6 +195,8 @@ export default function ShopPage() {
         setForm={setForm}
         lookupCustomer={lookupCustomer}
         lookupError={lookupError}
+        receiptError={receiptError}
+        setReceiptError={setReceiptError}
         receiptPreview={receiptPreview}
         setReceiptPreview={setReceiptPreview}
         createOrder={createOrder}
@@ -222,6 +226,8 @@ function ShopBody(props: {
   setForm: any;
   lookupCustomer: any;
   lookupError: string;
+  receiptError: string;
+  setReceiptError: (v: string) => void;
   receiptPreview: string;
   setReceiptPreview: (v: string) => void;
   createOrder: any;
@@ -247,6 +253,8 @@ function ShopBody(props: {
     setForm,
     lookupCustomer,
     lookupError,
+    receiptError,
+    setReceiptError,
     receiptPreview,
     setReceiptPreview,
     createOrder,
@@ -558,19 +566,25 @@ function ShopBody(props: {
                     type="file"
                     accept="image/*"
                     className="hidden"
-                    onChange={(event) => {
+                    onChange={async (event) => {
                       const file = event.target.files?.[0];
+                      event.target.value = "";
                       if (!file) return;
-                      const reader = new FileReader();
-                      reader.onload = () => {
-                        const resultValue = String(reader.result || "");
-                        setForm((current: any) => ({ ...current, receiptImage: resultValue }));
-                        setReceiptPreview(resultValue);
-                      };
-                      reader.readAsDataURL(file);
+                      setReceiptError("");
+                      try {
+                        const dataUrl = await compressReceiptImage(file);
+                        setForm((current: any) => ({ ...current, receiptImage: dataUrl }));
+                        setReceiptPreview(dataUrl);
+                      } catch (err: any) {
+                        setReceiptError(
+                          err?.message ||
+                            t("آپلود تصویر ناموفق بود", "Could not process receipt image"),
+                        );
+                      }
                     }}
                   />
                 </label>
+                {receiptError ? <p className="text-sm text-red-500">{receiptError}</p> : null}
                 {receiptPreview ? (
                   <img
                     src={receiptPreview}

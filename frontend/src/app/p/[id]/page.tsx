@@ -10,6 +10,7 @@ import MinimalistTheme from "./themes/MinimalistTheme";
 import HackerTheme from "./themes/HackerTheme";
 import NeoTheme, { type NeoVariant } from "./themes/NeoTheme";
 import { Layers } from "lucide-react";
+import { normalizePortalTheme } from "@/modules/shared/brand-logo";
 
 const NEO_THEMES = new Set<string>([
   "Neo Default",
@@ -52,7 +53,7 @@ export default function SubscriptionPage({ params }: { params: Promise<{ id: str
     );
   }
 
-  const currentTheme = data.portalSettings?.theme || "Dark";
+  const currentTheme = normalizePortalTheme(data.portalSettings?.theme);
 
   if (NEO_THEMES.has(currentTheme)) {
     return <NeoTheme id={id} data={data} variant={currentTheme as NeoVariant} />;

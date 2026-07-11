@@ -388,6 +388,7 @@ export function ServiceCard({
   onOpen: () => void;
   onRenew: () => void;
 }) {
+  const { t } = useStorefrontLocale();
   const used = Number(service.up) + Number(service.down);
   const total = Number(service.total);
   const [copied, setCopied] = useState(false);
@@ -396,25 +397,29 @@ export function ServiceCard({
     <motion.div
       {...fadeUp}
       transition={{ duration: 0.35 }}
-      className="rounded-3xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+      className="rounded-2xl border border-zinc-200/90 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900"
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <div className="text-lg font-bold">{service.remark || service.email}</div>
-          <div className="mt-1 text-sm text-zinc-500">{service.status.toUpperCase()}</div>
+          <div className="text-base font-semibold tracking-tight">{service.remark || service.email}</div>
+          <div className="mt-1 text-xs font-medium uppercase tracking-wide text-zinc-400">
+            {service.status}
+          </div>
         </div>
-        <div className="rounded-full bg-zinc-100 px-3 py-1 text-xs font-semibold text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+        <div className="rounded-full bg-zinc-100 px-3 py-1 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
           {formatExpiry(service.expiryTime)}
         </div>
       </div>
-      <div className="mt-4 grid gap-2 text-sm text-zinc-600 dark:text-zinc-400">
-        <div className="flex justify-between">
-          <span>Used</span>
-          <span>{formatBytes(used)}</span>
+      <div className="mt-4 space-y-2 text-sm text-zinc-600 dark:text-zinc-400">
+        <div className="flex justify-between gap-3">
+          <span>{t("مصرف", "Used")}</span>
+          <span className="tabular-nums">{formatBytes(used)}</span>
         </div>
-        <div className="flex justify-between">
-          <span>Remaining</span>
-          <span>{total > 0 ? formatBytes(Math.max(total - used, 0)) : "Unlimited"}</span>
+        <div className="flex justify-between gap-3">
+          <span>{t("باقیمانده", "Remaining")}</span>
+          <span className="tabular-nums">
+            {total > 0 ? formatBytes(Math.max(total - used, 0)) : t("نامحدود", "Unlimited")}
+          </span>
         </div>
       </div>
       <div className="mt-5 grid gap-2 sm:grid-cols-3">
@@ -425,10 +430,10 @@ export function ServiceCard({
             window.setTimeout(() => setCopied(false), 1600);
           }}
         >
-          {copied ? "Copied" : "Copy"}
+          {copied ? t("کپی شد", "Copied") : t("کپی", "Copy")}
         </SecondaryButton>
-        <SecondaryButton onClick={onOpen}>Subscription</SecondaryButton>
-        <PrimaryButton onClick={onRenew}>Renew</PrimaryButton>
+        <SecondaryButton onClick={onOpen}>{t("سابسکریپشن", "Subscription")}</SecondaryButton>
+        <PrimaryButton onClick={onRenew}>{t("تمدید", "Renew")}</PrimaryButton>
       </div>
     </motion.div>
   );
@@ -445,6 +450,7 @@ export function OrderCard({
   onCancel?: () => void;
   cancelling?: boolean;
 }) {
+  const { t, formatToman } = useStorefrontLocale();
   const canCancel = ["PENDING_PAYMENT", "PAYMENT_SUBMITTED", "UNDER_REVIEW"].includes(order.status);
   const tone =
     order.status === "ACTIVE" || order.status === "RENEWED"
@@ -452,28 +458,33 @@ export function OrderCard({
       : order.status === "PROVISION_FAILED" || order.status === "REJECTED" || order.status === "CANCELLED"
         ? "bg-red-500/10 text-red-700 dark:text-red-400"
         : order.status === "PROVISIONING" || order.status === "APPROVED"
-          ? "bg-purple-500/10 text-purple-700 dark:text-purple-400"
+          ? "bg-violet-500/10 text-violet-700 dark:text-violet-400"
           : "bg-amber-500/10 text-amber-700 dark:text-amber-400";
 
   const label = order.status.replaceAll("_", " ");
-  const amount =
-    order.currency === "USD" ? `$${order.amount}` : `${order.amount} ${order.currency}`;
+  const cur = String(order.currency || "").toUpperCase();
+  const isToman = ["TOMAN", "IRT", "IRR", "TMN"].includes(cur);
+  const amount = isToman
+    ? formatToman(order.amount)
+    : cur === "USD"
+      ? `$${order.amount}`
+      : `${order.amount} ${order.currency}`;
 
   return (
-    <div className="rounded-2xl border border-zinc-200 bg-white p-4 transition hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700">
+    <div className="rounded-2xl border border-zinc-200/90 bg-white p-4 transition hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="font-semibold">{order.productName}</div>
+          <div className="font-semibold tracking-tight">{order.productName}</div>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-zinc-500">
             <span>{formatDate(order.createdAt)}</span>
             <span>·</span>
-            <span>{order.isRenewal ? "Renewal" : "New"}</span>
+            <span>{order.isRenewal ? t("تمدید", "Renewal") : t("جدید", "New")}</span>
             <span>·</span>
             <span className="font-medium text-zinc-700 dark:text-zinc-300">{amount}</span>
           </div>
-          <div className="mt-2 font-mono text-xs text-zinc-500">{order.trackingCode}</div>
+          <div className="mt-2 font-mono text-xs text-zinc-400">{order.trackingCode}</div>
         </div>
-        <div className={`rounded-full px-3 py-1 text-[11px] font-semibold uppercase ${tone}`}>
+        <div className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide ${tone}`}>
           {label}
         </div>
       </div>
@@ -482,9 +493,9 @@ export function OrderCard({
           <button
             type="button"
             onClick={onTrack}
-            className="text-sm font-semibold text-[color:var(--store-primary)] hover:underline"
+            className="text-sm font-medium text-[color:var(--store-primary)] hover:underline"
           >
-            Track order →
+            {t("پیگیری سفارش", "Track order")} →
           </button>
         ) : null}
         {canCancel && onCancel ? (
@@ -492,11 +503,11 @@ export function OrderCard({
             type="button"
             disabled={cancelling}
             onClick={() => {
-              if (window.confirm("Cancel this order?")) onCancel();
+              if (window.confirm(t("این سفارش لغو شود؟", "Cancel this order?"))) onCancel();
             }}
-            className="text-sm font-semibold text-red-600 hover:underline disabled:opacity-50"
+            className="text-sm font-medium text-red-600 hover:underline disabled:opacity-50"
           >
-            {cancelling ? "Cancelling..." : "Cancel order"}
+            {cancelling ? t("در حال لغو…", "Cancelling…") : t("لغو سفارش", "Cancel order")}
           </button>
         ) : null}
       </div>

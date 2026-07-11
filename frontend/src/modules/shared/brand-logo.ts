@@ -1,14 +1,37 @@
-/** Portal / storefront themes that sit on light backgrounds. */
+/** Portal / storefront themes that sit on light (or frosted) backgrounds → use light logo. */
 export const LIGHT_PORTAL_THEMES = new Set([
   "Light",
   "Minimalist",
   "Sunset",
   "Neo Default",
   "Neo Minimal",
+  "Neo Glass",
 ]);
 
+export function normalizePortalTheme(theme?: string | null) {
+  const raw = String(theme || "").trim();
+  if (!raw) return "Dark";
+  // Tolerate casing / spacing drift from older saves
+  const lower = raw.toLowerCase().replace(/\s+/g, " ");
+  const aliases: Record<string, string> = {
+    dark: "Dark",
+    light: "Light",
+    "neo default": "Neo Default",
+    "neo vibrant": "Neo Vibrant",
+    "neo eclipse": "Neo Eclipse",
+    "neo glass": "Neo Glass",
+    "neo minimal": "Neo Minimal",
+    "neo dashboard": "Neo Dashboard",
+    cyberpunk: "Cyberpunk",
+    sunset: "Sunset",
+    minimalist: "Minimalist",
+    hacker: "Hacker",
+  };
+  return aliases[lower] || raw;
+}
+
 export function isLightPortalTheme(theme?: string | null) {
-  return LIGHT_PORTAL_THEMES.has(theme || "");
+  return LIGHT_PORTAL_THEMES.has(normalizePortalTheme(theme));
 }
 
 export function resolveThemeLogo(options: {
@@ -49,10 +72,9 @@ export function isPersianStorefront(store?: {
   );
 }
 
-const VAZIR_HREF =
-  "https://cdn.jsdelivr.net/npm/vazirmatn@33.003/Vazirmatn-font-face.css";
+const VAZIR_LOCAL_HREF = "/fonts/vazirmatn/vazirmatn.css";
 
-/** Inject Vazirmatn once; safe to call repeatedly. */
+/** Inject Vazirmatn once from same-origin assets (works without external CDN). */
 export function ensureVazirFont() {
   if (typeof document === "undefined") return;
   const id = "hmpanel-vazirmatn-font";
@@ -60,6 +82,6 @@ export function ensureVazirFont() {
   const link = document.createElement("link");
   link.id = id;
   link.rel = "stylesheet";
-  link.href = VAZIR_HREF;
+  link.href = VAZIR_LOCAL_HREF;
   document.head.appendChild(link);
 }
