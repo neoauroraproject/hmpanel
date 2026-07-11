@@ -75,6 +75,7 @@ model Panel {
   backups       Backup[]
   incidents     Incident[]
   storeProfiles StoreProfile[]
+  provisioningProfiles ProvisioningProfile[]
   clients       Client[]
   metrics       PanelMetric[]
   actionLogs    ActionLog[]
@@ -153,6 +154,11 @@ model Admin {
   storeProfile     StoreProfile?
   storeEnabled     Boolean              @default(false)
   productTemplates ProductTemplate[]
+  productCategories ProductCategory[]
+  provisioningProfiles ProvisioningProfile[]
+  storeProducts    StoreProduct[]
+  storeCustomers   StoreCustomer[]
+  clientTemplates  ClientTemplate[]
   Brand            Brand[]
   operationQueues  OperationQueue[]
   moduleAssignments AdminModuleAssignment[]
@@ -371,6 +377,7 @@ enum DomainType {
   PORTAL
   SUBSCRIPTION
   BRAND
+  STORE
 }
 
 enum DomainStatus {
@@ -401,14 +408,20 @@ model Domain {
 
 model Brand {
   id             String   @id @default(uuid())
-  adminId        String
+  adminId        String   @unique
   name           String
+  description    String?
   domainId       String?  @unique
   logo           String?
   favicon        String?
   theme          String?
+  primaryColor   String?
+  accentColor    String?
+  footerText     String?
+  supportEmail   String?
   supportLinks   Json?
   contactMethods Json?
+  portalSettings Json?    @default("{}")
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -440,8 +453,34 @@ model AlertConfiguration {
 }
 
 // ---------------------------------------------------------
-// Premium Storefront
+// Premium Storefront (Order Management System)
 // ---------------------------------------------------------
+
+enum StoreOrderStatus {
+  PENDING_PAYMENT
+  PAYMENT_SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  PROVISIONING
+  PROVISION_FAILED
+  ACTIVE
+  REJECTED
+  CANCELLED
+  EXPIRED
+  RENEWED
+}
+
+enum StorePaymentMethod {
+  MANUAL_BANK
+}
+
+enum StorePaymentStatus {
+  PENDING
+  SUBMITTED
+  APPROVED
+  REJECTED
+  REFUNDED
+}
 
 model StoreProfile {
   id                  String   @id @default(uuid())
@@ -452,12 +491,16 @@ model StoreProfile {
   description         String?
   logo                String?
   paymentInstructions String?
+  bankName            String?
   bankCardNumber      String?
+  bankCardHolder      String?
+  bankIban            String?
   bankAccountInfo     String?
   panelId             String?
   theme               String   @default("modern")
   supportLinks        Json?
   defaultCurrency     String   @default("USD")
+  enabled             Boolean  @default(true)
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
@@ -467,50 +510,271 @@ model StoreProfile {
   orders StoreOrder[]
 }
 
+model ProductCategory {
+  id          String   @id @default(uuid())
+  adminId     String
+  name        String
+  description String?
+  icon        String?
+  sortOrder   Int      @default(0)
+  visible     Boolean  @default(true)
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  admin    Admin          @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  products StoreProduct[]
+
+  @@index([adminId])
+}
+
+model ProvisioningProfile {
+  id            String   @id @default(uuid())
+  adminId       String
+  name          String
+  description   String?
+  panelId       String
+  inboundIds    Json
+  protocol      String?
+  settings      Json?
+  renewalPolicy Json?
+  clientPolicy  Json?
+  enabled       Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  admin     Admin             @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  panel     Panel             @relation(fields: [panelId], references: [id], onDelete: Restrict)
+  products  StoreProduct[]
+  templates ProductTemplate[]
+
+  @@index([adminId])
+  @@index([panelId])
+}
+
 model ProductTemplate {
   id           String   @id @default(uuid())
   adminId      String
+  profileId    String?
   name         String
   description  String?
-  price        Float
-  traffic      BigInt // in bytes
+  priceToman   Float?
+  priceUsd     Float    @default(0)
+  traffic      BigInt
   durationDays Int
-  inboundIds   Json // Array of inbound IDs
+  inboundIds   Json?
   locationSet  String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  admin  Admin        @relation(fields: [adminId], references: [id], onDelete: Cascade)
-  orders StoreOrder[]
+  admin    Admin                @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  profile  ProvisioningProfile? @relation(fields: [profileId], references: [id], onDelete: SetNull)
+  products StoreProduct[]
+
+  @@index([adminId])
+}
+
+// Quick-create presets used on the Clients page (not store products)
+model ClientTemplate {
+  id            String   @id @default(uuid())
+  adminId       String
+  name          String
+  description   String?
+  namePrefix    String?
+  nameSeparator String   @default("-")
+  nameStart     Int      @default(1)
+  inboundIds    Json
+  totalGB       Float    @default(0)
+  expiryDays    Int      @default(30)
+  limitIp       Int      @default(0)
+  flow          String?
+  remark        String?
+  enabled       Boolean  @default(true)
+  sortOrder     Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  admin Admin @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([adminId])
+}
+
+model StoreProduct {
+  id           String   @id @default(uuid())
+  adminId      String
+  categoryId   String
+  profileId    String
+  templateId   String?
+  name         String
+  description  String?
+  priceToman   Float?
+  priceUsd     Float    @default(0)
+  traffic      BigInt
+  durationDays Int
+  status       String   @default("active")
+  badge        String?
+  sortOrder    Int      @default(0)
+  featured     Boolean  @default(false)
+  visible      Boolean  @default(true)
+  renewable    Boolean  @default(true)
+  maxQuantity  Int      @default(1)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  admin    Admin               @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  category ProductCategory     @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  profile  ProvisioningProfile @relation(fields: [profileId], references: [id], onDelete: Restrict)
+  template ProductTemplate?    @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  orders   StoreOrder[]
+
+  @@index([adminId])
+  @@index([categoryId])
+  @@index([profileId])
+}
+
+model StoreCustomer {
+  id                String    @id @default(uuid())
+  adminId           String
+  token             String    @unique
+  name              String?
+  telegram          String?
+  whatsapp          String?
+  email             String?
+  status            String    @default("active")
+  notes             String?
+  notificationPrefs Json?     @default("{}")
+  metadata          Json?     @default("{}")
+  lastSeenAt        DateTime?
+  lastLoginAt       DateTime?
+  loginCount        Int       @default(0)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  admin         Admin                       @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  orders        StoreOrder[]
+  sessions      StoreCustomerSession[]
+  notifications StoreCustomerNotification[]
+  activities    StoreCustomerActivity[]
+
+  @@index([adminId])
+  @@index([token])
+}
+
+model StoreCustomerSession {
+  id         String    @id @default(uuid())
+  customerId String
+  tokenHash  String    @unique
+  userAgent  String?
+  ipAddress  String?
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime  @default(now())
+  expiresAt  DateTime
+  revokedAt  DateTime?
+
+  customer StoreCustomer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId, expiresAt])
+  @@index([expiresAt])
+}
+
+model StoreCustomerNotification {
+  id         String    @id @default(uuid())
+  customerId String
+  type       String
+  title      String
+  message    String?
+  payload    Json?     @default("{}")
+  readAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  customer StoreCustomer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId, createdAt])
+  @@index([customerId, readAt])
+}
+
+model StoreCustomerActivity {
+  id         String   @id @default(uuid())
+  customerId String
+  orderId    String?
+  type       String
+  title      String
+  message    String?
+  metadata   Json?    @default("{}")
+  createdAt  DateTime @default(now())
+
+  customer StoreCustomer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  order    StoreOrder?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([customerId, createdAt])
+  @@index([orderId])
 }
 
 model StoreOrder {
-  id           String @id @default(uuid())
-  trackingCode String @unique
-  storeId      String
-  productId    String
+  id             String           @id @default(uuid())
+  trackingCode   String           @unique
+  storeId        String
+  productId      String
+  customerId     String
+  configName     String
+  amount         Float
+  currency       String           @default("USD")
+  status         StoreOrderStatus @default(PENDING_PAYMENT)
+  rejectReason   String?
+  provisionError String?
+  notes          String?
+  clientId       String?
+  isRenewal      Boolean          @default(false)
+  renewClientId  String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
 
-  clientName String
-  telegramId String?
-  whatsapp   String?
-  notes      String?
+  store       StoreProfile            @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  product     StoreProduct            @relation(fields: [productId], references: [id], onDelete: Restrict)
+  customer    StoreCustomer           @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  client      Client?                 @relation("CreatedClient", fields: [clientId], references: [id], onDelete: SetNull)
+  renewClient Client?                 @relation("RenewClient", fields: [renewClientId], references: [id], onDelete: SetNull)
+  payment     StorePayment?
+  timeline    OrderTimelineEvent[]
+  activities  StoreCustomerActivity[]
 
+  @@index([storeId])
+  @@index([customerId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model StorePayment {
+  id           String             @id @default(uuid())
+  orderId      String             @unique
+  method       StorePaymentMethod @default(MANUAL_BANK)
+  status       StorePaymentStatus @default(PENDING)
+  amount       Float
+  currency     String             @default("USD")
   receiptText  String?
   receiptImage String?
+  metadata     Json?
+  reviewedAt   DateTime?
+  reviewedBy   String?
+  rejectReason String?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
 
-  status String @default("PENDING") // PENDING, APPROVED, REJECTED, DELIVERED
+  order StoreOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
 
-  clientId      String? // The newly created client (or modified existing client)
-  isRenewal     Boolean @default(false)
-  renewClientId String? // If renewal, which client are they renewing?
-
+model OrderTimelineEvent {
+  id        String   @id @default(uuid())
+  orderId   String
+  status    String
+  message   String?
+  actor     String?
+  metadata  Json?
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
 
-  store       StoreProfile    @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  product     ProductTemplate @relation(fields: [productId], references: [id], onDelete: Restrict)
-  client      Client?         @relation("CreatedClient", fields: [clientId], references: [id], onDelete: SetNull)
-  renewClient Client?         @relation("RenewClient", fields: [renewClientId], references: [id], onDelete: SetNull)
+  order StoreOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
 }
 
 // ---------------------------------------------------------
@@ -525,7 +789,10 @@ enum IncidentSeverity {
 
 enum IncidentStatus {
   ACTIVE
+  OPEN
+  ACKNOWLEDGED
   RESOLVED
+  ARCHIVED
 }
 
 enum PremiumModuleKind {
@@ -570,10 +837,27 @@ model Incident {
   recoveryTime    Int?
   affectedUsers   Int?
   metricsSnapshot Json?
+  suggestedFix    String?
+  acknowledgedAt  DateTime?
   detectedAt      DateTime         @default(now())
   resolvedAt      DateTime?
+  archivedAt      DateTime?
 
-  panel Panel? @relation(fields: [panelId], references: [id], onDelete: SetNull)
+  panel  Panel?          @relation(fields: [panelId], references: [id], onDelete: SetNull)
+  events IncidentEvent[]
+}
+
+model IncidentEvent {
+  id         String   @id @default(uuid())
+  incidentId String
+  event      String
+  message    String?
+  adminId    String?
+  createdAt  DateTime @default(now())
+
+  incident Incident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+
+  @@index([incidentId, createdAt])
 }
 
 model PanelMetric {

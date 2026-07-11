@@ -113,6 +113,7 @@ RUN printf '%s\n' \
   'if [ -f /app/VERSION ]; then export APP_VERSION="$(tr -d \"\\r\\n\" < /app/VERSION)"; fi' \
   'echo "[HMPanel] Cleaning up DB..."' \
   'node backend/dist/scripts/cleanup-dups.js || true' \
+  'node backend/dist/scripts/upgrade-legacy-store-schema.js || true' \
   'echo "[HMPanel] Running database migrations (data-preserving)..."' \
   'npx prisma db push --schema=/app/prisma/schema.prisma' \
   'set +e' \
