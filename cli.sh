@@ -1801,6 +1801,137 @@ cmd_version() {
 }
 
 # ─────────────────────────────────────────────────────────────────
+# Premium custom-domain vhosts (extra server_name + cert)
+# ─────────────────────────────────────────────────────────────────
+ssl_add_vhost() {
+  acquire_ssl_lock
+  local vhost_domain="${1:-}"
+  local mode_or_email="${2:-}"
+  local manual_cert="${3:-}"
+  local manual_key="${4:-}"
+
+  if [[ -z "$vhost_domain" ]]; then
+    if [[ "$JSON_OUTPUT" == "true" ]]; then output_json false "INVALID_DOMAIN"; exit 30; fi
+    echo "Usage: hm ssl add-vhost <domain> <email|selfsigned|manual> [cert] [key]"
+    exit 1
+  fi
+
+  local safe_domain
+  safe_domain=$(echo "$vhost_domain" | tr -c 'A-Za-z0-9.-' '_')
+  local SSL_DIR="${INSTALL_DIR}/nginx/ssl/domains/${safe_domain}"
+  local CONF_DIR="${INSTALL_DIR}/nginx/conf.d"
+  mkdir -p "$SSL_DIR" "$CONF_DIR"
+
+  stream_progress "Adding vhost for $vhost_domain..."
+
+  if [[ "$mode_or_email" == "selfsigned" ]]; then
+    stream_progress "Generating self-signed certificate..."
+    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+      -keyout "${SSL_DIR}/privkey.pem" \
+      -out "${SSL_DIR}/fullchain.pem" \
+      -subj "/CN=${vhost_domain}" >/dev/null 2>&1
+  elif [[ "$mode_or_email" == "manual" ]]; then
+    if [[ ! -f "$manual_cert" || ! -f "$manual_key" ]]; then
+      if [[ "$JSON_OUTPUT" == "true" ]]; then output_json false "MISSING_CERT"; exit 31; fi
+      echo "Manual cert/key files required"; exit 1
+    fi
+    cp -f "$manual_cert" "${SSL_DIR}/fullchain.pem"
+    cp -f "$manual_key" "${SSL_DIR}/privkey.pem"
+  else
+    # Let's Encrypt / ZeroSSL — same approach as ssl_issue
+    if ! verify_dns "$vhost_domain"; then
+      if [[ "$JSON_OUTPUT" == "true" ]]; then output_json false "DNS_ERROR"; exit 10; fi
+      echo "DNS verification failed for $vhost_domain"; exit 1
+    fi
+    if ! verify_port_80; then
+      if [[ "$JSON_OUTPUT" == "true" ]]; then output_json false "PORT_BUSY"; exit 11; fi
+      echo "Port 80 busy"; exit 1
+    fi
+
+    docker stop hmpanel-nginx >/dev/null 2>&1 || true
+    local cert_obtained=false
+    local acme_bin=""
+    if [[ -f "${INSTALL_DIR}/acme.sh/acme.sh" ]]; then
+      acme_bin="${INSTALL_DIR}/acme.sh/acme.sh"
+    elif [[ -f "/root/.acme.sh/acme.sh" ]]; then
+      acme_bin="/root/.acme.sh/acme.sh"
+    elif command -v acme.sh &>/dev/null; then
+      acme_bin=$(command -v acme.sh)
+    fi
+
+    local email="${mode_or_email:-admin@$vhost_domain}"
+    if [[ -n "$acme_bin" ]]; then
+      for ca in "letsencrypt" "zerossl"; do
+        if [[ "$cert_obtained" == false ]]; then
+          stream_progress "Trying acme.sh ($ca) for $vhost_domain..."
+          "$acme_bin" --home "${INSTALL_DIR}/acme.sh" --set-default-ca --server "$ca" >/dev/null 2>&1 || true
+          if "$acme_bin" --home "${INSTALL_DIR}/acme.sh" --issue -d "$vhost_domain" --standalone >/dev/null 2>&1; then
+            "$acme_bin" --home "${INSTALL_DIR}/acme.sh" --install-cert -d "$vhost_domain" \
+              --fullchain-file "${SSL_DIR}/fullchain.pem" \
+              --key-file "${SSL_DIR}/privkey.pem" >/dev/null 2>&1
+            cert_obtained=true
+          fi
+        fi
+      done
+    fi
+
+    if [[ "$cert_obtained" == false ]] && command -v certbot &>/dev/null; then
+      stream_progress "Trying certbot for $vhost_domain..."
+      if certbot certonly --standalone --non-interactive --agree-tos -m "$email" -d "$vhost_domain" >/dev/null 2>&1; then
+        local live="/etc/letsencrypt/live/${vhost_domain}"
+        if [[ -f "${live}/fullchain.pem" ]]; then
+          cp -f "${live}/fullchain.pem" "${SSL_DIR}/fullchain.pem"
+          cp -f "${live}/privkey.pem" "${SSL_DIR}/privkey.pem"
+          cert_obtained=true
+        fi
+      fi
+    fi
+
+    if [[ "$cert_obtained" == false ]]; then
+      docker start hmpanel-nginx >/dev/null 2>&1 || true
+      if [[ "$JSON_OUTPUT" == "true" ]]; then output_json false "SSL_ISSUE_FAILED"; exit 20; fi
+      echo "Failed to issue certificate for $vhost_domain"; exit 1
+    fi
+  fi
+
+  # Write nginx vhost config
+  local tmpl_ssl="${INSTALL_DIR}/nginx/vhost-domain.ssl.template"
+  local conf_out="${CONF_DIR}/${safe_domain}.conf"
+  if [[ -f "$tmpl_ssl" && -f "${SSL_DIR}/fullchain.pem" && -f "${SSL_DIR}/privkey.pem" ]]; then
+    VHOST_DOMAIN="$vhost_domain" VHOST_SAFE="$safe_domain" \
+      envsubst '$VHOST_DOMAIN $VHOST_SAFE' < "$tmpl_ssl" > "$conf_out"
+  else
+    local tmpl_http="${INSTALL_DIR}/nginx/vhost-domain.http.template"
+    if [[ -f "$tmpl_http" ]]; then
+      VHOST_DOMAIN="$vhost_domain" VHOST_SAFE="$safe_domain" \
+        envsubst '$VHOST_DOMAIN $VHOST_SAFE' < "$tmpl_http" > "$conf_out"
+    fi
+  fi
+
+  docker start hmpanel-nginx >/dev/null 2>&1 || true
+  reload_nginx
+  stream_progress "Vhost ready for $vhost_domain"
+  if [[ "$JSON_OUTPUT" == "true" ]]; then
+    output_json true "OK" "\"domain\":\"$vhost_domain\",\"cert\":\"${SSL_DIR}/fullchain.pem\""
+  fi
+}
+
+ssl_remove_vhost() {
+  acquire_ssl_lock
+  local vhost_domain="${1:-}"
+  if [[ -z "$vhost_domain" ]]; then
+    if [[ "$JSON_OUTPUT" == "true" ]]; then output_json false "INVALID_DOMAIN"; exit 30; fi
+    exit 1
+  fi
+  local safe_domain
+  safe_domain=$(echo "$vhost_domain" | tr -c 'A-Za-z0-9.-' '_')
+  rm -f "${INSTALL_DIR}/nginx/conf.d/${safe_domain}.conf"
+  rm -rf "${INSTALL_DIR}/nginx/ssl/domains/${safe_domain}"
+  reload_nginx
+  if [[ "$JSON_OUTPUT" == "true" ]]; then output_json true "OK" "\"domain\":\"$vhost_domain\""; fi
+}
+
+# ─────────────────────────────────────────────────────────────────
 # Headless Command Parser (for API/Backend integration)
 # ─────────────────────────────────────────────────────────────────
 if [[ "$JSON_OUTPUT" == "true" || "${1:-}" == "ssl" || "${1:-}" == "doctor" || "${1:-}" == "version" || "${1:-}" == "backup" || "${1:-}" == "restore" ]]; then
@@ -1836,9 +1967,15 @@ if [[ "$JSON_OUTPUT" == "true" || "${1:-}" == "ssl" || "${1:-}" == "doctor" || "
         export ADMIN_EMAIL="${4:-}"
         ssl_transactional "ssl_issue"
         ;;
+      add-vhost)
+        ssl_add_vhost "${3:-}" "${4:-}" "${5:-}" "${6:-}"
+        ;;
+      remove-vhost)
+        ssl_remove_vhost "${3:-}"
+        ;;
       *)
         if [[ "$JSON_OUTPUT" == "true" ]]; then output_json false "UNKNOWN_COMMAND"; exit 1; fi
-        echo "Usage: hm ssl {issue <domain> <email> | change-domain <domain> <email> | disable | renew | repair}"
+        echo "Usage: hm ssl {issue <domain> <email> | change-domain <domain> <email> | add-vhost <domain> <email> | remove-vhost <domain> | disable | renew | repair}"
         exit 1
         ;;
     esac

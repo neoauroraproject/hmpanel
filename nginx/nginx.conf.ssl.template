@@ -170,4 +170,7 @@ http {
             add_header Cache-Control "public, max-age=31536000, immutable";
         }
     }
+
+    # Per-admin custom domains (Premium) — written by `hm ssl add-vhost`
+    include /etc/nginx/conf.d/*.conf;
 }
