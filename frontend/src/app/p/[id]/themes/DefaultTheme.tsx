@@ -1,28 +1,15 @@
 "use client";
 
-import { use, useState, useEffect } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
-import { Copy, Download, QrCode, MonitorSmartphone, Check, MessageCircle, Phone, Globe, Mail, X, Layers, ShieldCheck, Clock, Zap, ChevronDown, ChevronUp } from "lucide-react";
+import { Copy, Download, QrCode, MonitorSmartphone, Check, MessageCircle, Phone, Globe, Mail, X, ShieldCheck, Clock, Zap, ChevronDown, ChevronUp } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
 import { formatBytes, formatDate } from "@/lib/format";
 import { API_BASE } from "@/lib/api";
-import { resolveThemeLogo } from "@/modules/shared/brand-logo";
+import { normalizePortalTheme, resolveThemeLogo } from "@/modules/shared/brand-logo";
 
-export default function DefaultTheme({ params }: { params: Promise<{ id: string }> }) {
-  const resolvedParams = use(params);
-  const id = resolvedParams.id;
-
-  const { data, isLoading, error } = useQuery({
-    queryKey: ["subscription", id],
-    queryFn: async () => {
-      const res = await fetch(`${API_BASE}/subscriptions/${id}`);
-      if (!res.ok) throw new Error("Failed to load subscription");
-      return res.json();
-    },
-    retry: false,
-  });
-
+export default function DefaultTheme({ id, data }: { id: string; data: any }) {
   const { data: nodes } = useQuery({
     queryKey: ["subscriptionNodes", id],
     queryFn: async () => {
@@ -39,28 +26,11 @@ export default function DefaultTheme({ params }: { params: Promise<{ id: string 
   const [copiedText, setCopiedText] = useState<string | null>(null);
   const [showTrafficDetails, setShowTrafficDetails] = useState(false);
 
-  if (isLoading) {
-    return (
-      <div className={`flex h-full min-h-[100dvh] items-center justify-center bg-[#0a0a0c]`}>
-        <div className="h-12 w-12 animate-spin rounded-full border-4 border-zinc-800 border-t-emerald-500" />
-      </div>
-    );
-  }
-
-  if (error || !data) {
-    return (
-      <div className={`flex h-full min-h-[100dvh] flex-col items-center justify-center p-8 text-center bg-[#0a0a0c]`}>
-        <Layers className="mb-4 text-zinc-600" size={64} />
-        <h2 className={`text-2xl font-bold text-white`}>Subscription Not Found</h2>
-        <p className="mt-2 text-zinc-400">This link may be invalid, expired, or deleted.</p>
-      </div>
-    );
-  }
-
   const { email, remark, enable, up, down, total, expiryTime, portalSettings, inbound, uuid, subId, subToken } = data;
   const used = up + down;
 
-    const currentTheme = 'Dark';
+  const normalized = normalizePortalTheme(portalSettings?.theme);
+  const currentTheme = normalized === "Light" ? "Light" : "Dark";
   const ts = {
     Dark: {
       bg: 'bg-[#0a0a0c]', cardBg: 'bg-[#121319]', card: 'bg-[#121319] border-zinc-800/80', cardHover: 'hover:bg-[#16171e]',
