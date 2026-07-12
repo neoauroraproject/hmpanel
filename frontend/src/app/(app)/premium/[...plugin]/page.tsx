@@ -42,5 +42,9 @@ export default function PremiumPluginPage() {
   }
 
   const Component = route.component;
-  return <Component />;
+  return (
+    <div id="hmpanel-premium-root" className="min-w-0">
+      <Component />
+    </div>
+  );
 }
