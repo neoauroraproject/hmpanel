@@ -5,49 +5,48 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import {
   Bell,
+  ChevronLeft,
   Copy,
+  ExternalLink,
   LoaderCircle,
   LogOut,
+  Package,
   Plus,
-  QrCode,
   RefreshCw,
+  ShoppingBag,
   Upload,
+  X,
 } from "lucide-react";
-import QRCode from "react-qr-code";
 import { copyToClipboard } from "@/lib/clipboard";
 import { publicApi } from "@/lib/api";
 import { useCustomerSession } from "@/modules/storefront/session";
 import { buildSubscriptionLink } from "@/modules/storefront/subscription";
 import { useStorefrontLocale } from "@/modules/storefront/locale";
 import { compressReceiptImage } from "@/modules/storefront/receipt-image";
-import type { StorefrontProduct } from "@/modules/storefront/types";
-import {
-  NotificationCard,
-  OrderCard,
-  PrimaryButton,
-  ProductCard,
-  SecondaryButton,
-  ServiceCard,
-  StoreShell,
-} from "@/modules/storefront/ui";
+import type { CustomerDashboard, CustomerService, StorefrontProduct } from "@/modules/storefront/types";
+import { StoreShell } from "@/modules/storefront/ui";
+import { scrollToTop } from "@/modules/storefront/scroll";
 
 type FlowMode = "idle" | "buy" | "renew";
+type DashTab = "home" | "orders" | "alerts";
 
 export default function CustomerDashboardPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { data, isLoading, error, logout, markNotificationRead, markAllNotificationsRead, cancelOrder } =
     useCustomerSession();
+
+  const [tab, setTab] = useState<DashTab>("home");
   const [flow, setFlow] = useState<FlowMode>("idle");
   const [selectedProduct, setSelectedProduct] = useState<StorefrontProduct | null>(null);
-  const [renewingService, setRenewingService] = useState<string | null>(null);
+  const [renewingService, setRenewingService] = useState<CustomerService | null>(null);
   const [configName, setConfigName] = useState("");
   const [receiptText, setReceiptText] = useState("");
   const [receiptImage, setReceiptImage] = useState("");
   const [receiptPreview, setReceiptPreview] = useState("");
-  const [result, setResult] = useState<{ trackingCode: string; status?: string } | null>(null);
-  const [showQr, setShowQr] = useState(false);
+  const [sheetStep, setSheetStep] = useState(0);
   const [copiedToken, setCopiedToken] = useState(false);
+  const [showToken, setShowToken] = useState(false);
 
   const unreadCount = useMemo(
     () => (data?.notifications ?? []).filter((item) => !item.isRead).length,
@@ -59,7 +58,7 @@ export default function CustomerDashboardPage() {
       if (!renewingService || !selectedProduct) return null;
       return (
         await publicApi.post("/store/customer/renew", {
-          clientId: renewingService,
+          clientId: renewingService.id,
           productId: selectedProduct.id,
           receiptText: receiptText || undefined,
           receiptImage: receiptImage || undefined,
@@ -70,8 +69,8 @@ export default function CustomerDashboardPage() {
       if (response?.trackingCode) {
         router.push(`/track/${encodeURIComponent(response.trackingCode)}`);
       }
-      setResult({ trackingCode: response.trackingCode, status: response.status });
-      setFlow("idle");
+      resetFlow();
+      setTab("orders");
       await queryClient.invalidateQueries({ queryKey: ["customer-session"] });
     },
   });
@@ -92,17 +91,19 @@ export default function CustomerDashboardPage() {
       if (response?.trackingCode) {
         router.push(`/track/${encodeURIComponent(response.trackingCode)}`);
       }
-      setResult({ trackingCode: response.trackingCode, status: response.status });
-      setFlow("idle");
+      resetFlow();
+      setTab("orders");
       await queryClient.invalidateQueries({ queryKey: ["customer-session"] });
     },
   });
 
   useEffect(() => {
-    if (!isLoading && (error || !data)) {
-      router.replace("/portal");
-    }
+    if (!isLoading && (error || !data)) router.replace("/portal");
   }, [data, error, isLoading, router]);
+
+  useEffect(() => {
+    scrollToTop();
+  }, [tab, sheetStep, flow]);
 
   const resetFlow = () => {
     setFlow("idle");
@@ -112,6 +113,7 @@ export default function CustomerDashboardPage() {
     setReceiptText("");
     setReceiptImage("");
     setReceiptPreview("");
+    setSheetStep(0);
   };
 
   const onReceiptFile = async (file?: File | null) => {
@@ -127,13 +129,16 @@ export default function CustomerDashboardPage() {
 
   if (isLoading) {
     return (
-      <div className="flex min-h-[100dvh] items-center justify-center bg-[#f6f6f7]">
+      <div className="flex min-h-[100dvh] items-center justify-center bg-zinc-50 dark:bg-zinc-950">
         <LoaderCircle className="animate-spin text-zinc-400" />
       </div>
     );
   }
-
   if (error || !data) return null;
+
+  const primary = data.branding?.primaryColor || "#2563eb";
+  const products = data.products || [];
+  const renewProducts = data.renewProducts?.length ? data.renewProducts : products;
 
   return (
     <StoreShell
@@ -143,541 +148,548 @@ export default function CustomerDashboardPage() {
         branding: data.branding,
       }}
     >
-      <PortalBody
-        data={data}
-        unreadCount={unreadCount}
-        flow={flow}
-        setFlow={setFlow}
-        selectedProduct={selectedProduct}
-        setSelectedProduct={setSelectedProduct}
-        renewingService={renewingService}
-        setRenewingService={setRenewingService}
-        configName={configName}
-        setConfigName={setConfigName}
-        receiptText={receiptText}
-        setReceiptText={setReceiptText}
-        receiptImage={receiptImage}
-        receiptPreview={receiptPreview}
-        result={result}
-        setResult={setResult}
-        showQr={showQr}
-        setShowQr={setShowQr}
-        copiedToken={copiedToken}
-        setCopiedToken={setCopiedToken}
-        resetFlow={resetFlow}
-        onReceiptFile={onReceiptFile}
-        orderMutation={orderMutation}
-        renewMutation={renewMutation}
-        logout={logout}
-        cancelOrder={cancelOrder}
-        markNotificationRead={markNotificationRead}
-        markAllNotificationsRead={markAllNotificationsRead}
-        queryClient={queryClient}
-        router={router}
-      />
+      <div className="px-4 pb-28 pt-4 sm:px-6">
+        {/* Hero */}
+        <section className="mb-5 overflow-hidden rounded-[1.6rem] bg-[color:var(--store-primary)] p-5 text-white shadow-[0_18px_40px_-24px_var(--store-primary)]">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/70">
+                Portal
+              </p>
+              <h1 className="mt-1 truncate text-[1.45rem] font-bold leading-tight">
+                {data.profile?.name || "Customer"}
+              </h1>
+              <p className="mt-1 text-sm text-white/80">
+                {(data.activeServices || []).length} active · {(data.pendingOrders || []).length} pending
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => logout.mutateAsync().then(() => router.replace("/portal"))}
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-white/15 active:scale-95"
+              aria-label="Logout"
+            >
+              <LogOut size={18} />
+            </button>
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setFlow("buy");
+                setSheetStep(0);
+                setSelectedProduct(products[0] || null);
+              }}
+              className="flex h-12 items-center justify-center gap-2 rounded-2xl bg-white text-sm font-bold text-zinc-900 active:scale-[0.98]"
+            >
+              <Plus size={16} /> New order
+            </button>
+            <button
+              type="button"
+              onClick={() => setTab("home")}
+              className="flex h-12 items-center justify-center gap-2 rounded-2xl bg-white/15 text-sm font-semibold active:scale-[0.98]"
+            >
+              <Package size={16} /> Services
+            </button>
+          </div>
+        </section>
+
+        {/* Segmented tabs */}
+        <div className="mb-4 grid grid-cols-3 gap-1 rounded-2xl border border-zinc-200 bg-white p-1 dark:border-zinc-800 dark:bg-zinc-900">
+          {(
+            [
+              { id: "home", label: "Home" },
+              { id: "orders", label: "Orders" },
+              { id: "alerts", label: unreadCount ? `Alerts (${unreadCount})` : "Alerts" },
+            ] as const
+          ).map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setTab(item.id)}
+              className={`rounded-xl px-2 py-2.5 text-[13px] font-semibold transition ${
+                tab === item.id
+                  ? "bg-[color:var(--store-primary)] text-white"
+                  : "text-zinc-500"
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+
+        {tab === "home" ? (
+          <HomeTab
+            data={data}
+            showToken={showToken}
+            setShowToken={setShowToken}
+            copiedToken={copiedToken}
+            setCopiedToken={setCopiedToken}
+            onRenew={(service) => {
+              setRenewingService(service);
+              setSelectedProduct(renewProducts[0] || null);
+              setFlow("renew");
+              setSheetStep(0);
+            }}
+          />
+        ) : null}
+
+        {tab === "orders" ? (
+          <OrdersTab
+            data={data}
+            cancelOrder={cancelOrder}
+            onBuy={() => {
+              setFlow("buy");
+              setSheetStep(0);
+              setSelectedProduct(products[0] || null);
+            }}
+          />
+        ) : null}
+
+        {tab === "alerts" ? (
+          <AlertsTab
+            data={data}
+            markNotificationRead={markNotificationRead}
+            markAllNotificationsRead={markAllNotificationsRead}
+          />
+        ) : null}
+      </div>
+
+      {flow !== "idle" ? (
+        <CheckoutSheet
+          mode={flow}
+          step={sheetStep}
+          setStep={setSheetStep}
+          products={flow === "renew" ? renewProducts : products}
+          selectedProduct={selectedProduct}
+          setSelectedProduct={setSelectedProduct}
+          renewingService={renewingService}
+          configName={configName}
+          setConfigName={setConfigName}
+          receiptText={receiptText}
+          setReceiptText={setReceiptText}
+          receiptPreview={receiptPreview}
+          onReceiptFile={onReceiptFile}
+          onClose={resetFlow}
+          submitting={orderMutation.isPending || renewMutation.isPending}
+          error={(orderMutation.error || renewMutation.error) as any}
+          onSubmit={() => {
+            if (flow === "buy") orderMutation.mutate();
+            else renewMutation.mutate();
+          }}
+          primary={primary}
+        />
+      ) : null}
     </StoreShell>
   );
 }
 
-function PortalBody(props: {
-  data: NonNullable<ReturnType<typeof useCustomerSession>["data"]>;
-  unreadCount: number;
-  flow: FlowMode;
-  setFlow: (f: FlowMode) => void;
-  selectedProduct: StorefrontProduct | null;
-  setSelectedProduct: (p: StorefrontProduct | null) => void;
-  renewingService: string | null;
-  setRenewingService: (id: string | null) => void;
-  configName: string;
-  setConfigName: (v: string) => void;
-  receiptText: string;
-  setReceiptText: (v: string) => void;
-  receiptImage: string;
-  receiptPreview: string;
-  result: { trackingCode: string; status?: string } | null;
-  setResult: (v: { trackingCode: string; status?: string } | null) => void;
-  showQr: boolean;
-  setShowQr: Dispatch<SetStateAction<boolean>>;
+function HomeTab({
+  data,
+  showToken,
+  setShowToken,
+  copiedToken,
+  setCopiedToken,
+  onRenew,
+}: {
+  data: CustomerDashboard;
+  showToken: boolean;
+  setShowToken: (v: boolean) => void;
   copiedToken: boolean;
   setCopiedToken: (v: boolean) => void;
-  resetFlow: () => void;
-  onReceiptFile: (file?: File | null) => void;
-  orderMutation: { isPending: boolean; error: unknown; mutate: () => void };
-  renewMutation: { isPending: boolean; error: unknown; mutate: () => void };
-  logout: ReturnType<typeof useCustomerSession>["logout"];
-  cancelOrder: ReturnType<typeof useCustomerSession>["cancelOrder"];
-  markNotificationRead: ReturnType<typeof useCustomerSession>["markNotificationRead"];
-  markAllNotificationsRead: ReturnType<typeof useCustomerSession>["markAllNotificationsRead"];
-  queryClient: ReturnType<typeof useQueryClient>;
-  router: ReturnType<typeof useRouter>;
+  onRenew: (service: CustomerService) => void;
 }) {
   const { t } = useStorefrontLocale();
-  const {
-    data,
-    unreadCount,
-    flow,
-    setFlow,
-    selectedProduct,
-    setSelectedProduct,
-    setRenewingService,
-    configName,
-    setConfigName,
-    receiptText,
-    setReceiptText,
-    receiptImage,
-    receiptPreview,
-    result,
-    setResult,
-    showQr,
-    setShowQr,
-    copiedToken,
-    setCopiedToken,
-    resetFlow,
-    onReceiptFile,
-    orderMutation,
-    renewMutation,
-    logout,
-    cancelOrder,
-    markNotificationRead,
-    markAllNotificationsRead,
-    queryClient,
-    router,
-  } = props;
-
-  const products = data.products ?? [];
-  const renewProducts = data.renewProducts ?? [];
-  const notifications = data.notifications ?? [];
-  const orders = data.orders ?? [];
-  const pendingOrders = data.pendingOrders ?? [];
-  const services = data.services ?? [];
-  const payment = data.store?.payment;
-  const submitting = orderMutation.isPending || renewMutation.isPending;
-  const submitError =
-    (orderMutation.error as any)?.response?.data?.message ||
-    (renewMutation.error as any)?.response?.data?.message ||
-    null;
-
-  const latestSub =
-    services[0]?.subId || services[0]?.email
-      ? buildSubscriptionLink(services[0]?.subId, services[0]?.email)
-      : "";
-
-  const activeCount = services.filter((s) => s.status === "active").length;
-  const expiredCount = services.filter((s) => s.status === "expired").length;
-  const pendingCount = pendingOrders.length;
+  const services = data.services || [];
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 px-4 py-6 sm:py-10">
-      {/* Profile */}
-      <header className="space-y-4">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div className="min-w-0 space-y-1">
-            <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-zinc-400">
-              {t("پروفایل مشتری", "Customer profile")}
-            </p>
-            <h1 className="truncate text-3xl font-semibold tracking-tight text-zinc-950 dark:text-white sm:text-4xl">
-              {data.profile.name || t("مشتری", "Customer")}
-            </h1>
+    <div className="space-y-4">
+      <div className="rounded-[1.35rem] border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+              {t("شناسه وب", "Web access token")}
+            </div>
+            <div className="mt-1 font-mono text-sm font-semibold">
+              {showToken ? data.token : "••••-••••-••••"}
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setShowToken(!showToken)}
+              className="rounded-xl border border-zinc-200 px-3 py-2 text-xs font-semibold dark:border-zinc-700"
+            >
+              {showToken ? t("مخفی", "Hide") : t("نمایش", "Show")}
+            </button>
             <button
               type="button"
               onClick={async () => {
                 await copyToClipboard(data.token);
                 setCopiedToken(true);
-                window.setTimeout(() => setCopiedToken(false), 1600);
+                setTimeout(() => setCopiedToken(false), 1500);
               }}
-              className="mt-2 inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1.5 font-mono text-xs text-zinc-600 transition hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300"
+              className="inline-flex items-center gap-1 rounded-xl bg-zinc-900 px-3 py-2 text-xs font-semibold text-white dark:bg-zinc-100 dark:text-zinc-900"
             >
-              <Copy size={12} />
-              {copiedToken ? t("کپی شد", "Copied") : data.token}
+              <Copy size={13} /> {copiedToken ? t("کپی شد", "Copied") : t("کپی", "Copy")}
             </button>
           </div>
-
-          <div className="flex flex-wrap gap-2">
-            <PrimaryButton
-              className="w-auto min-w-[8.5rem] px-4"
-              onClick={() => {
-                const slug = data.store?.slug;
-                if (slug) {
-                  router.push(`/shop/${encodeURIComponent(slug)}?flow=buy`);
-                  return;
-                }
-                setResult(null);
-                setFlow("buy");
-                setSelectedProduct(null);
-                setConfigName("");
-                setReceiptText("");
-              }}
-            >
-              <span className="inline-flex items-center gap-2">
-                <Plus size={15} /> {t("سفارش جدید", "New order")}
-              </span>
-            </PrimaryButton>
-            <SecondaryButton className="w-auto px-4" onClick={() => logout.mutate()}>
-              <span className="inline-flex items-center gap-2">
-                <LogOut size={15} /> {t("خروج", "Logout")}
-              </span>
-            </SecondaryButton>
-          </div>
         </div>
+      </div>
 
-        {/* Status strip */}
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <div className="rounded-2xl border border-zinc-200/80 bg-white px-3.5 py-3 dark:border-zinc-800 dark:bg-zinc-900">
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
-              {t("فعال", "Active")}
-            </div>
-            <div className="mt-1 text-2xl font-bold tabular-nums text-emerald-600">{activeCount}</div>
-          </div>
-          <div className="rounded-2xl border border-zinc-200/80 bg-white px-3.5 py-3 dark:border-zinc-800 dark:bg-zinc-900">
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
-              {t("منقضی", "Expired")}
-            </div>
-            <div className="mt-1 text-2xl font-bold tabular-nums text-rose-600">{expiredCount}</div>
-          </div>
-          <div className="rounded-2xl border border-zinc-200/80 bg-white px-3.5 py-3 dark:border-zinc-800 dark:bg-zinc-900">
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
-              {t("در انتظار", "Pending")}
-            </div>
-            <div className="mt-1 text-2xl font-bold tabular-nums text-amber-600">{pendingCount}</div>
-          </div>
-          <div className="rounded-2xl border border-zinc-200/80 bg-white px-3.5 py-3 dark:border-zinc-800 dark:bg-zinc-900">
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
-              {t("اعلان‌ها", "Alerts")}
-            </div>
-            <div className="mt-1 flex items-center gap-2 text-2xl font-bold tabular-nums">
-              {unreadCount}
-              {unreadCount > 0 ? <Bell size={16} className="text-rose-500" /> : null}
-            </div>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-zinc-500">
-          {data.profile.telegram ? (
-            <a
-              href={
-                /^https?:\/\//i.test(data.profile.telegram)
-                  ? data.profile.telegram
-                  : `https://t.me/${data.profile.telegram.replace(/^@/, "")}`
-              }
-              target="_blank"
-              rel="noreferrer"
-              className="hover:text-zinc-800 dark:hover:text-zinc-200"
-            >
-              {data.profile.telegram}
-            </a>
-          ) : null}
-          {data.profile.whatsapp ? <span>{data.profile.whatsapp}</span> : null}
-          {data.profile.email ? (
-            <a href={`mailto:${data.profile.email}`} className="hover:text-zinc-800">
-              {data.profile.email}
-            </a>
-          ) : null}
-        </div>
-      </header>
-
-      {result ? (
-        <section className="rounded-2xl border border-emerald-200/80 bg-emerald-50/80 px-5 py-4 dark:border-emerald-900 dark:bg-emerald-950/30">
-          <div className="font-semibold text-emerald-800 dark:text-emerald-300">
-            {t("سفارش ثبت شد", "Order submitted")}
-          </div>
-          <p className="mt-1 text-sm text-emerald-700/80 dark:text-emerald-200/80">
-            {t("کد پیگیری", "Tracking")}: <span className="font-mono font-bold">{result.trackingCode}</span>
-          </p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <PrimaryButton
-              className="w-auto px-4"
-              onClick={() => router.push(`/track/${result.trackingCode}`)}
-            >
-              {t("پیگیری سفارش", "Track order")}
-            </PrimaryButton>
-            <SecondaryButton className="w-auto px-4" onClick={() => setResult(null)}>
-              {t("بستن", "Dismiss")}
-            </SecondaryButton>
-          </div>
-        </section>
-      ) : null}
-
-      {flow !== "idle" ? (
-        <section className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900 sm:p-6">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-semibold">
-                {flow === "buy" ? t("سفارش جدید", "New order") : t("تمدید سرویس", "Renew service")}
-              </h2>
-              <p className="mt-1 text-sm text-zinc-500">
-                {flow === "buy"
-                  ? t("پلن را انتخاب و رسید پرداخت را بفرستید.", "Pick a plan and submit payment proof.")
-                  : t("پلن تمدید را انتخاب و رسید را بفرستید.", "Choose a renewal plan and submit proof.")}
-              </p>
-            </div>
-            <SecondaryButton className="w-auto px-3" onClick={resetFlow}>
-              {t("انصراف", "Cancel")}
-            </SecondaryButton>
-          </div>
-
-          <div className="mt-5 grid gap-3 sm:grid-cols-2">
-            {(flow === "buy" ? products : renewProducts).map((product) => (
-              <ProductCard
-                key={product.id}
-                product={product}
-                selected={selectedProduct?.id === product.id}
-                onSelect={() => setSelectedProduct(product)}
-              />
-            ))}
-          </div>
-
-          {selectedProduct ? (
-            <div className="mt-6 space-y-4">
-              {flow === "buy" ? (
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium">
-                    {t("نام کانفیگ", "Config name")}
-                  </label>
-                  <input
-                    value={configName}
-                    onChange={(e) => setConfigName(e.target.value)}
-                    className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 outline-none focus:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-950"
-                  />
+      <div>
+        <h2 className="mb-2 px-0.5 text-lg font-bold">{t("سرویس‌ها", "Services")}</h2>
+        <div className="space-y-2.5">
+          {services.map((service) => {
+            const link = buildSubscriptionLink(service.subId, service.subToken);
+            return (
+              <div
+                key={service.id}
+                className="rounded-[1.35rem] border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="truncate font-semibold">{service.remark || service.email}</div>
+                    <div className="mt-1 text-xs text-zinc-500">{service.expiryTime}</div>
+                  </div>
+                  <span
+                    className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase ${
+                      service.status === "active"
+                        ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
+                        : service.status === "expired"
+                          ? "bg-rose-500/15 text-rose-700 dark:text-rose-400"
+                          : "bg-zinc-500/15 text-zinc-600"
+                    }`}
+                  >
+                    {service.status}
+                  </span>
                 </div>
-              ) : null}
-
-              {payment ? (
-                <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 text-sm dark:border-zinc-800 dark:bg-zinc-950">
-                  <div className="font-medium">{t("اطلاعات پرداخت", "Payment details")}</div>
-                  {payment.bankName ? <div className="mt-2">{payment.bankName}</div> : null}
-                  {payment.cardNumber ? <div className="font-mono">{payment.cardNumber}</div> : null}
-                  {payment.cardHolder ? <div>{payment.cardHolder}</div> : null}
-                  {payment.instructions ? (
-                    <p className="mt-2 text-zinc-500">{payment.instructions}</p>
+                <div className="mt-3 flex gap-2">
+                  {link ? (
+                    <a
+                      href={link}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-xl bg-[color:var(--store-primary)] text-sm font-semibold text-white active:scale-[0.98]"
+                    >
+                      Open <ExternalLink size={14} />
+                    </a>
+                  ) : null}
+                  {service.status !== "disabled" ? (
+                    <button
+                      type="button"
+                      onClick={() => onRenew(service)}
+                      className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border border-zinc-200 text-sm font-semibold dark:border-zinc-700 active:scale-[0.98]"
+                    >
+                      <RefreshCw size={14} /> {t("تمدید", "Renew")}
+                    </button>
                   ) : null}
                 </div>
-              ) : null}
+              </div>
+            );
+          })}
+          {!services.length ? (
+            <div className="rounded-[1.35rem] border border-dashed border-zinc-300 px-4 py-10 text-center text-sm text-zinc-500 dark:border-zinc-700">
+              {t("هنوز سرویسی ندارید.", "No services yet.")}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
 
-              <textarea
-                rows={3}
-                value={receiptText}
-                onChange={(e) => setReceiptText(e.target.value)}
-                placeholder={t("شناسه تراکنش یا یادداشت", "Transaction ID or note")}
-                className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 outline-none dark:border-zinc-800 dark:bg-zinc-950"
+function OrdersTab({
+  data,
+  cancelOrder,
+  onBuy,
+}: {
+  data: CustomerDashboard;
+  cancelOrder: ReturnType<typeof useCustomerSession>["cancelOrder"];
+  onBuy: () => void;
+}) {
+  const { t } = useStorefrontLocale();
+  const orders = data.orders || [];
+
+  return (
+    <div className="space-y-2.5">
+      <div className="mb-1 flex items-center justify-between">
+        <h2 className="text-lg font-bold">{t("سفارش‌ها", "Orders")}</h2>
+        <button
+          type="button"
+          onClick={onBuy}
+          className="inline-flex items-center gap-1 rounded-full bg-[color:var(--store-primary)] px-3 py-1.5 text-xs font-bold text-white"
+        >
+          <ShoppingBag size={13} /> {t("خرید", "Buy")}
+        </button>
+      </div>
+      {orders.map((order) => (
+        <div
+          key={order.id}
+          className="rounded-[1.35rem] border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900"
+        >
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <div className="font-semibold">{order.productName}</div>
+              <div className="mt-1 text-xs text-zinc-500">
+                {order.trackingCode} · {order.status.replace(/_/g, " ")}
+              </div>
+            </div>
+            <a
+              href={`/track/${encodeURIComponent(order.trackingCode)}`}
+              className="text-xs font-bold text-[color:var(--store-primary)]"
+            >
+              Track
+            </a>
+          </div>
+          {["PENDING_PAYMENT", "PAYMENT_SUBMITTED", "UNDER_REVIEW"].includes(order.status) ? (
+            <button
+              type="button"
+              className="mt-3 text-xs font-semibold text-rose-500"
+              onClick={() => cancelOrder.mutate(order.id)}
+            >
+              {t("لغو سفارش", "Cancel order")}
+            </button>
+          ) : null}
+        </div>
+      ))}
+      {!orders.length ? (
+        <div className="rounded-[1.35rem] border border-dashed border-zinc-300 px-4 py-10 text-center text-sm text-zinc-500 dark:border-zinc-700">
+          {t("سفارشی ثبت نشده.", "No orders yet.")}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function AlertsTab({
+  data,
+  markNotificationRead,
+  markAllNotificationsRead,
+}: {
+  data: CustomerDashboard;
+  markNotificationRead: ReturnType<typeof useCustomerSession>["markNotificationRead"];
+  markAllNotificationsRead: ReturnType<typeof useCustomerSession>["markAllNotificationsRead"];
+}) {
+  const { t } = useStorefrontLocale();
+  const items = data.notifications || [];
+
+  return (
+    <div className="space-y-2.5">
+      <div className="mb-1 flex items-center justify-between">
+        <h2 className="text-lg font-bold">{t("اعلان‌ها", "Alerts")}</h2>
+        {items.some((n) => !n.isRead) ? (
+          <button
+            type="button"
+            onClick={() => markAllNotificationsRead.mutate()}
+            className="text-xs font-semibold text-[color:var(--store-primary)]"
+          >
+            {t("خواندن همه", "Mark all read")}
+          </button>
+        ) : null}
+      </div>
+      {items.map((n) => (
+        <button
+          key={n.id}
+          type="button"
+          onClick={() => {
+            if (!n.isRead) markNotificationRead.mutate(n.id);
+          }}
+          className={`w-full rounded-[1.35rem] border p-4 text-left dark:border-zinc-800 ${
+            n.isRead
+              ? "border-zinc-200 bg-white dark:bg-zinc-900"
+              : "border-[color:var(--store-primary)]/30 bg-[color:var(--store-primary)]/5"
+          }`}
+        >
+          <div className="flex items-start gap-2">
+            <Bell size={16} className="mt-0.5 shrink-0 text-[color:var(--store-primary)]" />
+            <div className="min-w-0">
+              <div className="font-semibold">{n.title}</div>
+              {n.message ? <p className="mt-1 text-sm text-zinc-500">{n.message}</p> : null}
+            </div>
+          </div>
+        </button>
+      ))}
+      {!items.length ? (
+        <div className="rounded-[1.35rem] border border-dashed border-zinc-300 px-4 py-10 text-center text-sm text-zinc-500 dark:border-zinc-700">
+          {t("اعلانی نیست.", "No alerts.")}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function CheckoutSheet({
+  mode,
+  step,
+  setStep,
+  products,
+  selectedProduct,
+  setSelectedProduct,
+  renewingService,
+  configName,
+  setConfigName,
+  receiptText,
+  setReceiptText,
+  receiptPreview,
+  onReceiptFile,
+  onClose,
+  submitting,
+  error,
+  onSubmit,
+  primary,
+}: {
+  mode: FlowMode;
+  step: number;
+  setStep: Dispatch<SetStateAction<number>>;
+  products: StorefrontProduct[];
+  selectedProduct: StorefrontProduct | null;
+  setSelectedProduct: (p: StorefrontProduct | null) => void;
+  renewingService: CustomerService | null;
+  configName: string;
+  setConfigName: (v: string) => void;
+  receiptText: string;
+  setReceiptText: (v: string) => void;
+  receiptPreview: string;
+  onReceiptFile: (file?: File | null) => void;
+  onClose: () => void;
+  submitting: boolean;
+  error: any;
+  onSubmit: () => void;
+  primary: string;
+}) {
+  const { t, formatToman } = useStorefrontLocale();
+  const maxStep = mode === "buy" ? 2 : 1;
+
+  const goNext = () => {
+    if (step === 0 && !selectedProduct) return;
+    if (mode === "buy" && step === 1 && !configName.trim()) return;
+    if (step >= maxStep) onSubmit();
+    else setStep((s) => s + 1);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end bg-black/45 sm:items-center sm:justify-center sm:p-4">
+      <button type="button" className="absolute inset-0" aria-label="Close" onClick={onClose} />
+      <div className="relative z-10 flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-[1.75rem] bg-white dark:bg-zinc-950 sm:rounded-[1.75rem]">
+        <div className="flex items-center gap-2 border-b border-zinc-200 px-3 py-3 dark:border-zinc-800">
+          <button
+            type="button"
+            onClick={() => (step === 0 ? onClose() : setStep((s) => s - 1))}
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-900"
+          >
+            {step === 0 ? <X size={18} /> : <ChevronLeft size={20} />}
+          </button>
+          <div className="min-w-0 flex-1">
+            <div className="font-semibold">
+              {mode === "renew" ? t("تمدید سرویس", "Renew service") : t("سفارش جدید", "New order")}
+            </div>
+            <div className="text-[11px] text-zinc-500">
+              {t("مرحله", "Step")} {step + 1}/{maxStep + 1}
+            </div>
+          </div>
+        </div>
+
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4">
+          {mode === "renew" && renewingService ? (
+            <div className="rounded-2xl bg-zinc-100 px-3 py-2 text-sm dark:bg-zinc-900">
+              {t("تمدید", "Renewing")}: <b>{renewingService.remark || renewingService.email}</b>
+            </div>
+          ) : null}
+
+          {step === 0 ? (
+            <div className="space-y-2">
+              {products.map((p) => {
+                const active = selectedProduct?.id === p.id;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setSelectedProduct(p)}
+                    className={`flex w-full items-center justify-between rounded-2xl border px-3.5 py-3.5 text-left ${
+                      active
+                        ? "border-[color:var(--store-primary)] bg-[color:var(--store-primary)]/10"
+                        : "border-zinc-200 dark:border-zinc-800"
+                    }`}
+                  >
+                    <div>
+                      <div className="font-semibold">{p.name}</div>
+                      <div className="text-xs text-zinc-500">
+                        {p.traffic} · {p.durationDays}d
+                      </div>
+                    </div>
+                    <div className="text-sm font-bold text-[color:var(--store-primary)]">
+                      {p.priceToman ? formatToman(p.priceToman) : `$${p.priceUsd}`}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+
+          {mode === "buy" && step === 1 ? (
+            <label className="block space-y-2 text-sm">
+              <span className="font-medium">{t("نام کانفیگ", "Config name")}</span>
+              <input
+                className="w-full rounded-2xl border border-zinc-200 bg-transparent px-4 py-3.5 outline-none dark:border-zinc-800"
+                style={{ fontSize: 16 }}
+                value={configName}
+                onChange={(e) => setConfigName(e.target.value)}
+                placeholder="phone-1"
               />
+            </label>
+          ) : null}
 
-              <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-zinc-300 px-4 py-4 text-sm dark:border-zinc-700">
-                <Upload size={16} />
-                <span>{t("آپلود تصویر رسید", "Upload receipt image")}</span>
+          {(mode === "buy" && step === 2) || (mode === "renew" && step === 1) ? (
+            <>
+              <label className="block space-y-2 text-sm">
+                <span className="font-medium">{t("یادداشت پرداخت", "Payment note")}</span>
+                <textarea
+                  rows={2}
+                  className="w-full rounded-2xl border border-zinc-200 bg-transparent px-4 py-3 outline-none dark:border-zinc-800"
+                  style={{ fontSize: 16 }}
+                  value={receiptText}
+                  onChange={(e) => setReceiptText(e.target.value)}
+                />
+              </label>
+              <label className="flex cursor-pointer flex-col items-center gap-2 rounded-2xl border border-dashed border-zinc-300 px-4 py-7 text-sm dark:border-zinc-700">
+                <Upload size={18} />
+                {receiptPreview ? t("رسید پیوست شد", "Receipt attached") : t("آپلود رسید", "Upload receipt")}
                 <input
                   type="file"
                   accept="image/*"
                   className="hidden"
                   onChange={(e) => onReceiptFile(e.target.files?.[0])}
                 />
+                {receiptPreview ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={receiptPreview} alt="" className="max-h-32 rounded-xl object-contain" />
+                ) : null}
               </label>
-              {receiptPreview ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={receiptPreview} alt="" className="max-h-44 rounded-xl object-contain" />
-              ) : null}
-
-              {submitError ? (
-                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-                  {submitError}
-                </div>
-              ) : null}
-
-              <PrimaryButton
-                disabled={
-                  submitting ||
-                  !selectedProduct ||
-                  (!receiptText.trim() && !receiptImage) ||
-                  (flow === "buy" && !configName.trim())
-                }
-                onClick={() => {
-                  if (flow === "buy") orderMutation.mutate();
-                  else renewMutation.mutate();
-                }}
-              >
-                {submitting
-                  ? t("در حال ثبت…", "Submitting…")
-                  : flow === "buy"
-                    ? t("ثبت سفارش", "Submit order")
-                    : t("ثبت تمدید", "Submit renewal")}
-              </PrimaryButton>
-            </div>
+            </>
           ) : null}
-        </section>
-      ) : null}
 
-      {pendingOrders.length > 0 ? (
-        <section className="space-y-3">
-          <h2 className="text-sm font-medium uppercase tracking-[0.12em] text-zinc-400">
-            {t("در انتظار", "Pending")}
-          </h2>
-          <div className="space-y-3">
-            {pendingOrders.map((order) => (
-              <OrderCard
-                key={order.id}
-                order={order}
-                onTrack={() => router.push(`/track/${encodeURIComponent(order.trackingCode)}`)}
-                onCancel={() => cancelOrder.mutate(order.id)}
-                cancelling={cancelOrder.isPending && cancelOrder.variables === order.id}
-              />
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      {/* Services */}
-      <section className="space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="text-sm font-medium uppercase tracking-[0.12em] text-zinc-400">
-            {t("سرویس‌ها", "Services")}
-          </h2>
-          <button
-            type="button"
-            onClick={() => queryClient.invalidateQueries({ queryKey: ["customer-session"] })}
-            className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-800"
-          >
-            <RefreshCw size={13} /> {t("بروزرسانی", "Refresh")}
-          </button>
-        </div>
-        <div className="space-y-3">
-          {services.map((service) => (
-            <ServiceCard
-              key={service.id}
-              service={service}
-              onCopy={() => copyToClipboard(buildSubscriptionLink(service.subId, service.email))}
-              onOpen={() => window.open(buildSubscriptionLink(service.subId, service.email), "_blank")}
-              onRenew={() => {
-                const slug = data.store?.slug;
-                const name = service.remark || service.email || service.id;
-                if (slug) {
-                  router.push(
-                    `/shop/${encodeURIComponent(slug)}?flow=renew&clientId=${encodeURIComponent(service.id)}&serviceName=${encodeURIComponent(name)}`,
-                  );
-                  return;
-                }
-                setResult(null);
-                setFlow("renew");
-                setRenewingService(service.id);
-                setSelectedProduct(null);
-                setReceiptText("");
-              }}
-            />
-          ))}
-          {!services.length ? (
-            <p className="rounded-2xl border border-dashed border-zinc-200 px-4 py-8 text-center text-sm text-zinc-500 dark:border-zinc-800">
-              {t("هنوز سرویسی ندارید. سفارش جدید بزنید.", "No services yet. Place a new order.")}
+          {error ? (
+            <p className="text-sm text-rose-500">
+              {error?.response?.data?.message || error?.message || "Failed"}
             </p>
           ) : null}
         </div>
-      </section>
 
-      {/* History + Updates */}
-      <section className="grid gap-8 lg:grid-cols-2">
-        <div className="space-y-3">
-          <h2 className="text-sm font-medium uppercase tracking-[0.12em] text-zinc-400">
-            {t("تاریخچه خرید", "Purchase history")}
-          </h2>
-          <div className="space-y-3">
-            {orders.map((order) => (
-              <OrderCard
-                key={order.id}
-                order={order}
-                onTrack={() => router.push(`/track/${encodeURIComponent(order.trackingCode)}`)}
-                onCancel={() => cancelOrder.mutate(order.id)}
-                cancelling={cancelOrder.isPending && cancelOrder.variables === order.id}
-              />
-            ))}
-            {!orders.length ? (
-              <p className="text-sm text-zinc-500">{t("سفارشی نیست.", "No orders yet.")}</p>
-            ) : null}
-          </div>
+        <div className="border-t border-zinc-200 p-4 dark:border-zinc-800">
+          <button
+            type="button"
+            disabled={submitting || (step === 0 && !selectedProduct)}
+            onClick={goNext}
+            className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl text-[15px] font-bold text-white disabled:opacity-50"
+            style={{ background: primary }}
+          >
+            {submitting ? <LoaderCircle size={18} className="animate-spin" /> : null}
+            {step >= maxStep ? t("ثبت", "Submit") : t("بعدی", "Next")}
+          </button>
         </div>
-
-        <div className="space-y-3">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="inline-flex items-center gap-2 text-sm font-medium uppercase tracking-[0.12em] text-zinc-400">
-              <Bell size={14} /> {t("اعلان‌ها", "Updates")}
-              {unreadCount > 0 ? (
-                <span className="rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] font-bold normal-case tracking-normal text-white">
-                  {unreadCount}
-                </span>
-              ) : null}
-            </h2>
-            {unreadCount > 0 ? (
-              <button
-                type="button"
-                onClick={() => markAllNotificationsRead.mutate()}
-                className="text-xs font-medium text-[color:var(--store-primary)] hover:underline"
-              >
-                {t("همه خوانده شد", "Mark all read")}
-              </button>
-            ) : null}
-          </div>
-          <div className="space-y-3">
-            {notifications.slice(0, 8).map((notification) => {
-              const trackingCode =
-                typeof notification.payload?.trackingCode === "string"
-                  ? notification.payload.trackingCode
-                  : null;
-              return (
-                <NotificationCard
-                  key={notification.id}
-                  notification={notification}
-                  onRead={
-                    notification.isRead
-                      ? undefined
-                      : () => markNotificationRead.mutate(notification.id)
-                  }
-                  onOpen={
-                    trackingCode
-                      ? () => router.push(`/track/${encodeURIComponent(trackingCode)}`)
-                      : undefined
-                  }
-                />
-              );
-            })}
-            {!notifications.length ? (
-              <p className="text-sm text-zinc-500">{t("اعلانی نیست.", "No updates yet.")}</p>
-            ) : null}
-          </div>
-        </div>
-      </section>
-
-      {latestSub ? (
-        <section className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900 sm:p-6">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h2 className="text-base font-semibold">{t("دسترسی سریع", "Quick access")}</h2>
-              <p className="mt-1 text-sm text-zinc-500">
-                {t("لینک آخرین سابسکریپشن را کپی یا اسکن کنید.", "Copy or scan your latest subscription link.")}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowQr((v) => !v)}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-zinc-200 text-zinc-600 dark:border-zinc-800"
-              aria-label="QR"
-            >
-              <QrCode size={18} />
-            </button>
-          </div>
-          {showQr ? (
-            <div className="mt-5 flex justify-center rounded-2xl bg-white p-4">
-              <QRCode value={latestSub} size={168} />
-            </div>
-          ) : null}
-          <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-            <PrimaryButton
-              className="sm:flex-1"
-              onClick={() => copyToClipboard(latestSub)}
-            >
-              {t("کپی لینک", "Copy link")}
-            </PrimaryButton>
-            <SecondaryButton className="sm:flex-1" onClick={() => window.open(latestSub, "_blank")}>
-              {t("باز کردن", "Open")}
-            </SecondaryButton>
-          </div>
-        </section>
-      ) : null}
+      </div>
     </div>
   );
 }

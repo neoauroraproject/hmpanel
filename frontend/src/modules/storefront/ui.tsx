@@ -70,7 +70,7 @@ export function StoreShell({
 
   return (
     <StorefrontLocaleProvider store={store}>
-      <StoreShellInner primaryColor={primaryColor} topBar={topBar}>
+      <StoreShellInner store={store} primaryColor={primaryColor} topBar={topBar}>
         {children}
       </StoreShellInner>
     </StorefrontLocaleProvider>
@@ -78,15 +78,25 @@ export function StoreShell({
 }
 
 function StoreShellInner({
+  store,
   primaryColor,
   topBar,
   children,
 }: {
+  store?: StorefrontStore;
   primaryColor: string;
   topBar?: React.ReactNode;
   children: React.ReactNode;
 }) {
   const { isFa } = useStorefrontLocale();
+  const isDark = useIsDarkSurface();
+  const logo =
+    resolveThemeLogo({
+      logoLight: store?.logoUrl || store?.branding?.logo,
+      logoDark: store?.logoDarkUrl || store?.branding?.logoDark,
+      preferDark: isDark,
+    }) || null;
+  const title = store?.branding?.name || store?.title || "Store";
 
   return (
     <div
@@ -101,8 +111,25 @@ function StoreShellInner({
     >
       <div className="sticky top-0 z-40 border-b border-zinc-200/70 bg-white/80 px-4 py-3 backdrop-blur-xl dark:border-zinc-800/70 dark:bg-zinc-950/80 pt-[max(0.75rem,env(safe-area-inset-top))]">
         <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">
-          <div className="min-w-0 flex-1">{topBar}</div>
-          <LanguageSwitcher />
+          {/* Brand opposite language: in LTR brand=start, lang=end; RTL flex auto-flips */}
+          <div className="flex min-w-0 flex-1 items-center gap-2.5">
+            {logo ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={logo} alt="" className="h-9 w-9 shrink-0 rounded-xl object-cover" />
+            ) : (
+              <div
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sm font-bold text-white"
+                style={{ background: primaryColor }}
+              >
+                {title.slice(0, 1)}
+              </div>
+            )}
+            <div className="min-w-0">
+              <div className="truncate text-[15px] font-bold leading-tight">{title}</div>
+              {topBar ? <div className="mt-0.5 min-w-0">{topBar}</div> : null}
+            </div>
+          </div>
+          <LanguageSwitcher className="shrink-0" />
         </div>
       </div>
       <div className="mx-auto w-full max-w-3xl pb-8">{children}</div>
