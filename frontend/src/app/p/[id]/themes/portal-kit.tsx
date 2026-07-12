@@ -526,13 +526,14 @@ export function TrafficBar({
 export function useExpiryLabel(
   remainingDays: number | null,
   expiryTime: number | undefined,
-  t: (k: PortalStringKey) => string,
+  t?: (k: PortalStringKey) => string,
 ) {
   return useMemo(() => {
-    if (!expiryTime || expiryTime <= 0) return t("unlimited");
+    const tr = t ?? ((k: PortalStringKey) => STRINGS[k].en);
+    if (!expiryTime || expiryTime <= 0) return tr("unlimited");
     if (remainingDays == null) return formatDate(expiryTime);
-    if (remainingDays <= 0) return t("expired");
-    return `${remainingDays} ${t("daysLeft")} · ${formatDate(expiryTime)}`;
+    if (remainingDays <= 0) return tr("expired");
+    return `${remainingDays} ${tr("daysLeft")} · ${formatDate(expiryTime)}`;
   }, [remainingDays, expiryTime, t]);
 }
 
