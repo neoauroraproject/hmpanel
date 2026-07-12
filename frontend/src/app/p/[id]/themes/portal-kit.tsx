@@ -65,10 +65,10 @@ export const PORTAL_THEMES = [
   "Aurora",
   "Dark",
   "Light",
-  "Cyberpunk",
+  "Eclipse",
   "Sunset",
-  "Minimalist",
-  "Hacker",
+  "Glass",
+  "Vibrant",
 ] as const;
 
 export type PortalThemeId = (typeof PORTAL_THEMES)[number];
@@ -108,6 +108,18 @@ const STRINGS = {
   upload: { fa: "آپلود", en: "Upload" },
   timeLeft: { fa: "زمان باقی‌مانده", en: "Time remaining" },
   connect: { fa: "اتصال سریع", en: "Quick connect" },
+  remainingTraffic: { fa: "ترافیک باقی‌مانده", en: "Remaining Traffic" },
+  remainingData: { fa: "داده باقی‌مانده", en: "Remaining Data" },
+  totalUsed: { fa: "مصرف کل", en: "Total Used" },
+  totalLimit: { fa: "سقف کل", en: "Total Limit" },
+  clientProfile: { fa: "پروفایل مشتری", en: "Client Profile" },
+  hi: { fa: "سلام،", en: "Hi," },
+  advancedInfo: { fa: "اطلاعات پیشرفته", en: "Advanced Information" },
+  appsActions: { fa: "اپ‌ها و عملیات", en: "Apps & Actions" },
+  copySubLink: { fa: "کپی لینک سابسکریپشن", en: "Copy Subscription Link" },
+  quickActions: { fa: "عملیات سریع", en: "Quick Actions" },
+  poweredBy: { fa: "قدرت‌گرفته از", en: "Powered by" },
+  daysRemaining: { fa: "روز باقی‌مانده", en: "days remaining" },
 } as const;
 
 export type PortalStringKey = keyof typeof STRINGS;
@@ -545,17 +557,17 @@ export function useThemeFont(theme: PortalThemeId | string, isFa?: boolean) {
     }
     const map: Record<string, [string, string]> = {
       Aurora: ["Outfit", "https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap"],
-      Cyberpunk: [
-        "CyberpunkFonts",
-        "https://fonts.googleapis.com/css2?family=Syne:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap",
+      Eclipse: [
+        "EclipseFonts",
+        "https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap",
       ],
-      Minimalist: [
-        "MinimalistFonts",
-        "https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap",
+      Glass: [
+        "GlassFonts",
+        "https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap",
       ],
-      Hacker: [
-        "HackerFonts",
-        "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap",
+      Vibrant: [
+        "VibrantFonts",
+        "https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap",
       ],
       Sunset: [
         "SunsetFonts",

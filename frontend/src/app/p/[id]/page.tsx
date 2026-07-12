@@ -7,16 +7,11 @@ import { API_BASE } from "@/lib/api";
 import { normalizePortalTheme } from "@/modules/shared/brand-logo";
 import AuroraTheme from "./themes/AuroraTheme";
 import DefaultTheme from "./themes/DefaultTheme";
-import CyberpunkTheme from "./themes/CyberpunkTheme";
+import EclipseTheme from "./themes/EclipseTheme";
 import SunsetTheme from "./themes/SunsetTheme";
-import MinimalistTheme from "./themes/MinimalistTheme";
-import HackerTheme from "./themes/HackerTheme";
+import GlassTheme from "./themes/GlassTheme";
+import VibrantTheme from "./themes/VibrantTheme";
 
-/**
- * Subscription portal theme router.
- * Free edition UI only offers Dark; Premium Branding can persist any theme
- * via Brand.theme / portalSettings.theme, which this page honors.
- */
 export default function SubscriptionPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
   const id = resolvedParams.id;
@@ -52,10 +47,10 @@ export default function SubscriptionPage({ params }: { params: Promise<{ id: str
   const currentTheme = normalizePortalTheme(data.portalSettings?.theme);
 
   if (currentTheme === "Dark" || currentTheme === "Light") return <DefaultTheme id={id} data={data} />;
-  if (currentTheme === "Cyberpunk") return <CyberpunkTheme id={id} data={data} />;
+  if (currentTheme === "Eclipse") return <EclipseTheme id={id} data={data} />;
   if (currentTheme === "Sunset") return <SunsetTheme id={id} data={data} />;
-  if (currentTheme === "Minimalist") return <MinimalistTheme id={id} data={data} />;
-  if (currentTheme === "Hacker") return <HackerTheme id={id} data={data} />;
+  if (currentTheme === "Glass") return <GlassTheme id={id} data={data} />;
+  if (currentTheme === "Vibrant") return <VibrantTheme id={id} data={data} />;
 
   return <AuroraTheme id={id} data={data} />;
 }
