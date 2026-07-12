@@ -10,13 +10,7 @@ import { motion } from "framer-motion";
 import { useAuth } from "@/store/auth";
 
 const THEMES = [
-  { id: "Aurora", label: "Aurora" },
-  { id: "Obsidian", label: "Obsidian" },
-  { id: "Nordic", label: "Nordic" },
-  { id: "Pulse", label: "Pulse" },
-  { id: "Neon", label: "Neon" },
-  { id: "Ember", label: "Ember" },
-  { id: "Studio", label: "Studio" },
+  { id: "Dark", label: "Dark Mode" },
 ];
 
 const defaultSettings = {
@@ -29,7 +23,7 @@ const defaultSettings = {
   portalName: "",
   logoUrl: "",
   primaryColor: "#3b82f6",
-  theme: "Aurora",
+  theme: "Dark",
   // Portal Toggles
   showPlatformQR: true,
   showNativeQR: true,

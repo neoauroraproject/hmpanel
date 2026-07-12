@@ -1,32 +1,32 @@
 /** Portal / storefront themes that sit on light (or frosted) backgrounds → use light logo. */
-export const LIGHT_PORTAL_THEMES = new Set(["Nordic", "Pulse"]);
+export const LIGHT_PORTAL_THEMES = new Set(["Light", "Minimalist", "Sunset"]);
 
 export function normalizePortalTheme(theme?: string | null) {
   const raw = String(theme || "").trim();
-  if (!raw) return "Aurora";
+  if (!raw) return "Dark";
   // Tolerate casing / spacing drift from older saves
   const lower = raw.toLowerCase().replace(/\s+/g, " ");
   const aliases: Record<string, string> = {
     aurora: "Aurora",
-    obsidian: "Obsidian",
-    nordic: "Nordic",
-    pulse: "Pulse",
-    neon: "Neon",
-    ember: "Ember",
-    studio: "Studio",
-    // Legacy portal themes → new set
-    dark: "Aurora",
-    light: "Nordic",
-    "neo eclipse": "Aurora",
-    "neo dashboard": "Aurora",
-    "neo default": "Nordic",
-    "neo minimal": "Nordic",
-    "neo glass": "Studio",
-    "neo vibrant": "Ember",
-    sunset: "Ember",
-    cyberpunk: "Neon",
-    hacker: "Neon",
-    minimalist: "Pulse",
+    dark: "Dark",
+    light: "Light",
+    cyberpunk: "Cyberpunk",
+    sunset: "Sunset",
+    minimalist: "Minimalist",
+    hacker: "Hacker",
+    // Legacy / previous set
+    obsidian: "Dark",
+    nordic: "Light",
+    pulse: "Minimalist",
+    neon: "Cyberpunk",
+    ember: "Sunset",
+    studio: "Dark",
+    "neo eclipse": "Dark",
+    "neo dashboard": "Dark",
+    "neo default": "Light",
+    "neo minimal": "Light",
+    "neo glass": "Dark",
+    "neo vibrant": "Sunset",
   };
   return aliases[lower] || raw;
 }

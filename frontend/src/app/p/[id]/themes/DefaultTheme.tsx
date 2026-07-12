@@ -60,7 +60,7 @@ export default function DefaultTheme({ params }: { params: Promise<{ id: string 
   const { email, remark, enable, up, down, total, expiryTime, portalSettings, inbound, uuid, subId, subToken } = data;
   const used = up + down;
 
-    const currentTheme = portalSettings?.theme || 'Dark';
+    const currentTheme = 'Dark';
   const ts = {
     Dark: {
       bg: 'bg-[#0a0a0c]', cardBg: 'bg-[#121319]', card: 'bg-[#121319] border-zinc-800/80', cardHover: 'hover:bg-[#16171e]',
