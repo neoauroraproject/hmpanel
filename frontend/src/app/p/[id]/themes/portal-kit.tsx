@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Check,
@@ -16,7 +16,11 @@ import {
 import { QRCodeCanvas } from "qrcode.react";
 import { API_BASE } from "@/lib/api";
 import { formatBytes, formatDate } from "@/lib/format";
-import { resolveThemeLogo } from "@/modules/shared/brand-logo";
+import {
+  ensureVazirFont,
+  hasPersianText,
+  resolveThemeLogo,
+} from "@/modules/shared/brand-logo";
 
 export type PortalNode = { link: string; protocol: string; tag: string };
 
@@ -59,15 +63,54 @@ export type SubData = {
 
 export const PORTAL_THEMES = [
   "Aurora",
-  "Obsidian",
-  "Nordic",
-  "Pulse",
-  "Neon",
-  "Ember",
-  "Studio",
+  "Dark",
+  "Light",
+  "Cyberpunk",
+  "Sunset",
+  "Minimalist",
+  "Hacker",
 ] as const;
 
 export type PortalThemeId = (typeof PORTAL_THEMES)[number];
+export type PortalLang = "fa" | "en";
+
+const PORTAL_LANG_KEY = "hmpanel-portal-lang";
+
+const STRINGS = {
+  active: { fa: "فعال", en: "Active" },
+  expired: { fa: "منقضی", en: "Expired" },
+  disabled: { fa: "غیرفعال", en: "Disabled" },
+  depleted: { fa: "تمام‌شده", en: "Depleted" },
+  traffic: { fa: "ترافیک", en: "Traffic" },
+  usage: { fa: "مصرف", en: "Usage" },
+  unlimited: { fa: "نامحدود", en: "Unlimited" },
+  daysLeft: { fa: "روز مانده", en: "days left" },
+  expiresOn: { fa: "انقضا", en: "Expires" },
+  never: { fa: "بدون انقضا", en: "Never" },
+  copyLink: { fa: "کپی لینک ساب", en: "Copy subscription" },
+  copied: { fa: "کپی شد", en: "Copied" },
+  qr: { fa: "کیوآر", en: "QR" },
+  scanQr: { fa: "اسکن کیوآر کد", en: "Scan QR Code" },
+  configs: { fa: "کانفیگ‌ها", en: "Configurations" },
+  nodes: { fa: "نود", en: "nodes" },
+  noConfigs: { fa: "هنوز کانفیگی موجود نیست.", en: "No configs available yet." },
+  support: { fa: "پشتیبانی", en: "Support" },
+  telegram: { fa: "تلگرام", en: "Telegram" },
+  whatsapp: { fa: "واتساپ", en: "WhatsApp" },
+  website: { fa: "وب‌سایت", en: "Website" },
+  email: { fa: "ایمیل", en: "Email" },
+  importApp: { fa: "ورود به اپ", en: "Import to App" },
+  systemSub: { fa: "لینک سیستم", en: "System Sub" },
+  nativeSub: { fa: "لینک پنل", en: "Panel Native" },
+  client: { fa: "مشتری", en: "Client" },
+  remaining: { fa: "باقی‌مانده", en: "Remaining" },
+  download: { fa: "دانلود", en: "Download" },
+  upload: { fa: "آپلود", en: "Upload" },
+  timeLeft: { fa: "زمان باقی‌مانده", en: "Time remaining" },
+  connect: { fa: "اتصال سریع", en: "Quick connect" },
+} as const;
+
+export type PortalStringKey = keyof typeof STRINGS;
 
 export function ensurePortalFont(family: string, href: string) {
   if (typeof document === "undefined") return;
@@ -80,17 +123,23 @@ export function ensurePortalFont(family: string, href: string) {
   document.head.appendChild(link);
 }
 
-export function supportContacts(ps?: PortalSettings) {
+export function supportContacts(ps?: PortalSettings, t?: (k: PortalStringKey) => string) {
   if (!ps || ps.showSupportSection === false) return [];
-  const items: { label: string; href: string; icon: typeof Mail }[] = [];
+  const label = (key: PortalStringKey, fallback: string) => (t ? t(key) : fallback);
+  const items: { label: string; href: string; icon: typeof Mail; kind: string }[] = [];
   if (ps.showTelegram && ps.telegramLink)
-    items.push({ label: "Telegram", href: ps.telegramLink, icon: MessageCircle });
+    items.push({ label: label("telegram", "Telegram"), href: ps.telegramLink, icon: MessageCircle, kind: "telegram" });
   if (ps.showWhatsApp && ps.whatsappLink)
-    items.push({ label: "WhatsApp", href: ps.whatsappLink, icon: Phone });
+    items.push({ label: label("whatsapp", "WhatsApp"), href: ps.whatsappLink, icon: Phone, kind: "whatsapp" });
   if (ps.showWebsite && ps.websiteUrl)
-    items.push({ label: "Website", href: ps.websiteUrl, icon: Globe });
+    items.push({ label: label("website", "Website"), href: ps.websiteUrl, icon: Globe, kind: "website" });
   if (ps.showEmail && ps.emailAddress)
-    items.push({ label: "Email", href: `mailto:${ps.emailAddress}`, icon: Mail });
+    items.push({
+      label: label("email", "Email"),
+      href: `mailto:${ps.emailAddress}`,
+      icon: Mail,
+      kind: "email",
+    });
   return items;
 }
 
@@ -135,13 +184,114 @@ export function useSubscriptionNodes(id: string) {
   });
 }
 
+function detectPortalLang(data: SubData): PortalLang {
+  if (typeof window !== "undefined") {
+    const saved = window.localStorage.getItem(PORTAL_LANG_KEY);
+    if (saved === "fa" || saved === "en") return saved;
+  }
+  const ps = data.portalSettings;
+  if (
+    hasPersianText(
+      ps?.portalName,
+      ps?.footerText,
+      data.remark,
+      data.email,
+    )
+  ) {
+    return "fa";
+  }
+  return "en";
+}
+
+export function usePortalLocale(data: SubData) {
+  const [lang, setLangState] = useState<PortalLang>(() => detectPortalLang(data));
+
+  const setLang = useCallback((next: PortalLang) => {
+    setLangState(next);
+    try {
+      window.localStorage.setItem(PORTAL_LANG_KEY, next);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  useEffect(() => {
+    if (lang === "fa") {
+      ensureVazirFont();
+      document.documentElement.lang = "fa";
+      document.documentElement.dir = "rtl";
+    } else {
+      document.documentElement.lang = "en";
+      document.documentElement.dir = "ltr";
+    }
+    return () => {
+      document.documentElement.dir = "ltr";
+      document.documentElement.lang = "en";
+    };
+  }, [lang]);
+
+  const isFa = lang === "fa";
+  const t = useCallback(
+    (key: PortalStringKey) => STRINGS[key][lang],
+    [lang],
+  );
+  const tf = useCallback((fa: string, en: string) => (isFa ? fa : en), [isFa]);
+
+  return {
+    lang,
+    setLang,
+    isFa,
+    t,
+    tf,
+    fontFamily: isFa
+      ? '"Vazirmatn", Tahoma, sans-serif'
+      : undefined as string | undefined,
+  };
+}
+
+export function LangToggle({
+  lang,
+  setLang,
+  className = "",
+}: {
+  lang: PortalLang;
+  setLang: (l: PortalLang) => void;
+  className?: string;
+}) {
+  return (
+    <div
+      className={`inline-flex overflow-hidden rounded-full border text-[11px] font-semibold uppercase tracking-wider ${className}`}
+      role="group"
+      aria-label="Language"
+    >
+      <button
+        type="button"
+        onClick={() => setLang("fa")}
+        className={`px-2.5 py-1 transition ${lang === "fa" ? "bg-current/15" : "opacity-55 hover:opacity-90"}`}
+      >
+        FA
+      </button>
+      <button
+        type="button"
+        onClick={() => setLang("en")}
+        className={`px-2.5 py-1 transition ${lang === "en" ? "bg-current/15" : "opacity-55 hover:opacity-90"}`}
+      >
+        EN
+      </button>
+    </div>
+  );
+}
+
 export function usePortalModel(id: string, data: SubData, theme: string) {
   const { data: nodes = [] } = useSubscriptionNodes(id);
   const [copied, setCopied] = useState<string | null>(null);
   const [qrValue, setQrValue] = useState<string | null>(null);
+  const locale = usePortalLocale(data);
 
   const ps = data.portalSettings || {};
   const used = Number(data.up || 0) + Number(data.down || 0);
+  const down = Number(data.down || 0);
+  const up = Number(data.up || 0);
   const total = Number(data.total || 0);
   const pct = total > 0 ? Math.min(100, (used / total) * 100) : 0;
   const isExpired = Number(data.expiryTime || 0) > 0 && Date.now() > Number(data.expiryTime);
@@ -150,14 +300,14 @@ export function usePortalModel(id: string, data: SubData, theme: string) {
     Number(data.expiryTime || 0) > 0
       ? Math.max(0, Math.ceil((Number(data.expiryTime) - Date.now()) / 86400000))
       : null;
-  const clientName = data.remark || data.email || "Client";
+  const clientName = data.remark || data.email || locale.t("client");
   const brandName = ps.portalName || "Subscription";
   const logoSrc = resolveThemeLogo({
     logoLight: ps.logoUrl,
     logoDark: ps.logoDarkUrl,
     theme,
   });
-  const contacts = supportContacts(ps);
+  const contacts = supportContacts(ps, locale.t);
   const systemUrl = buildSystemSubUrl(data.subId, data.email);
   const nativeUrl = buildNativeSubUrl(data);
 
@@ -171,6 +321,14 @@ export function usePortalModel(id: string, data: SubData, theme: string) {
     }
   };
 
+  const statusLabel = isActive
+    ? locale.t("active")
+    : isExpired
+      ? locale.t("expired")
+      : !data.enable
+        ? locale.t("disabled")
+        : locale.t("depleted");
+
   return {
     nodes: nodes as PortalNode[],
     copied,
@@ -179,6 +337,8 @@ export function usePortalModel(id: string, data: SubData, theme: string) {
     setQrValue,
     ps,
     used,
+    up,
+    down,
     total,
     pct,
     isExpired,
@@ -192,6 +352,8 @@ export function usePortalModel(id: string, data: SubData, theme: string) {
     nativeUrl,
     formatBytes,
     formatDate,
+    statusLabel,
+    ...locale,
   };
 }
 
@@ -218,7 +380,7 @@ export function QrModal({
         <button
           type="button"
           onClick={onClose}
-          className="absolute right-3 top-3 rounded-full p-2 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-800"
+          className="absolute end-3 top-3 rounded-full p-2 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-800"
           aria-label="Close"
         >
           <X size={18} />
@@ -258,8 +420,9 @@ export function ConfigList({
   onQr,
   className = "",
   itemClassName = "",
-  title = "Configurations",
-  empty = "No configs available yet.",
+  title,
+  empty,
+  nodesLabel,
 }: {
   nodes: PortalNode[];
   copied: string | null;
@@ -269,15 +432,18 @@ export function ConfigList({
   itemClassName?: string;
   title?: string;
   empty?: string;
+  nodesLabel?: string;
 }) {
   return (
     <section className={className}>
       <div className="mb-3 flex items-end justify-between gap-3">
-        <h3 className="text-sm font-semibold tracking-wide">{title}</h3>
-        <span className="text-xs opacity-60">{nodes.length} nodes</span>
+        <h3 className="text-sm font-semibold tracking-wide">{title || "Configurations"}</h3>
+        <span className="text-xs opacity-60">
+          {nodes.length} {nodesLabel || "nodes"}
+        </span>
       </div>
       {!nodes.length ? (
-        <p className="text-sm opacity-60">{empty}</p>
+        <p className="text-sm opacity-60">{empty || "No configs available yet."}</p>
       ) : (
         <ul className="space-y-2">
           {nodes.map((node, idx) => {
@@ -322,19 +488,21 @@ export function ConfigList({
 export function StatusPill({
   isActive,
   isExpired,
+  label,
   className = "",
 }: {
   isActive: boolean;
   isExpired: boolean;
+  label?: string;
   className?: string;
 }) {
-  const label = isActive ? "Active" : isExpired ? "Expired" : "Disabled";
+  const text = label || (isActive ? "Active" : isExpired ? "Expired" : "Disabled");
   const tone = isActive
     ? "bg-emerald-500/15 text-emerald-500"
     : "bg-rose-500/15 text-rose-500";
   return (
     <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${tone} ${className}`}>
-      {label}
+      {text}
     </span>
   );
 }
@@ -355,39 +523,45 @@ export function TrafficBar({
   );
 }
 
-export function useExpiryLabel(remainingDays: number | null, expiryTime?: number) {
+export function useExpiryLabel(
+  remainingDays: number | null,
+  expiryTime: number | undefined,
+  t: (k: PortalStringKey) => string,
+) {
   return useMemo(() => {
-    if (!expiryTime || expiryTime <= 0) return "Unlimited";
+    if (!expiryTime || expiryTime <= 0) return t("unlimited");
     if (remainingDays == null) return formatDate(expiryTime);
-    if (remainingDays <= 0) return "Expired";
-    return `${remainingDays}d left · ${formatDate(expiryTime)}`;
-  }, [remainingDays, expiryTime]);
+    if (remainingDays <= 0) return t("expired");
+    return `${remainingDays} ${t("daysLeft")} · ${formatDate(expiryTime)}`;
+  }, [remainingDays, expiryTime, t]);
 }
 
-export function useThemeFont(theme: PortalThemeId) {
+export function useThemeFont(theme: PortalThemeId | string, isFa?: boolean) {
   useEffect(() => {
-    const map: Record<PortalThemeId, [string, string]> = {
+    if (isFa) {
+      ensureVazirFont();
+      return;
+    }
+    const map: Record<string, [string, string]> = {
       Aurora: ["Outfit", "https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap"],
-      Obsidian: [
-        "Instrument",
-        "https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Instrument+Serif:ital@0;1&display=swap",
+      Cyberpunk: [
+        "CyberpunkFonts",
+        "https://fonts.googleapis.com/css2?family=Syne:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap",
       ],
-      Nordic: [
-        "Fraunces",
-        "https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Source+Sans+3:wght@400;600&display=swap",
+      Minimalist: [
+        "MinimalistFonts",
+        "https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap",
       ],
-      Pulse: ["Sora", "https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&display=swap"],
-      Neon: [
-        "SpaceGrotesk",
-        "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Space+Grotesk:wght@400;500;600;700&display=swap",
+      Hacker: [
+        "HackerFonts",
+        "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap",
       ],
-      Ember: ["Manrope", "https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap"],
-      Studio: [
-        "Syne",
-        "https://fonts.googleapis.com/css2?family=Syne:wght@500;600;700;800&family=Work+Sans:wght@400;500;600&display=swap",
+      Sunset: [
+        "SunsetFonts",
+        "https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&display=swap",
       ],
     };
-    const [name, href] = map[theme];
-    ensurePortalFont(name, href);
-  }, [theme]);
+    const entry = map[theme];
+    if (entry) ensurePortalFont(entry[0], entry[1]);
+  }, [theme, isFa]);
 }

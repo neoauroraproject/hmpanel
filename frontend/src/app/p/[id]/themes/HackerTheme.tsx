@@ -1,265 +1,189 @@
 "use client";
 
-import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { QrCode, MonitorSmartphone, X, MessageCircle, Phone, Globe, Mail } from "lucide-react";
-import { QRCodeCanvas } from "qrcode.react";
-import { formatBytes, formatDate } from "@/lib/format";
-import { useQuery } from "@tanstack/react-query";
-import { API_BASE } from "@/lib/api";
-import { resolveThemeLogo } from "@/modules/shared/brand-logo";
+import type { CSSProperties } from "react";
+import { Check, Copy, QrCode } from "lucide-react";
+import {
+  usePortalModel,
+  QrModal,
+  BrandMark,
+  ConfigList,
+  TrafficBar,
+  LangToggle,
+  useExpiryLabel,
+  useThemeFont,
+  type SubData,
+} from "./portal-kit";
 
-export default function HackerTheme({ id, data }: { id: string; data: any }) {
-  const [copiedText, setCopiedText] = useState<string | null>(null);
-  const [qrModal, setQrModal] = useState(false);
-  const [importSheet, setImportSheet] = useState(false);
-  const [urlForQR, setUrlForQR] = useState("");
+/** Ops Console — phosphor terminal, monospace, command-line actions. */
+export default function HackerTheme({ id, data }: { id: string; data: SubData }) {
+  const model = usePortalModel(id, data, "Hacker");
+  useThemeFont("Hacker", model.isFa);
+  const expiry = useExpiryLabel(model.remainingDays, data.expiryTime, model.t);
+  const {
+    brandName,
+    logoSrc,
+    clientName,
+    isActive,
+    used,
+    total,
+    pct,
+    up,
+    down,
+    formatBytes,
+    systemUrl,
+    copy,
+    copied,
+    setQrValue,
+    qrValue,
+    nodes,
+    contacts,
+    ps,
+    t,
+    statusLabel,
+    fontFamily,
+    lang,
+    setLang,
+  } = model;
 
-  const { data: nodes } = useQuery({
-    queryKey: ["subscriptionNodes", id],
-    queryFn: async () => {
-      const res = await fetch(`${API_BASE}/subscriptions/${id}/nodes`);
-      if (!res.ok) return [];
-      return res.json();
-    },
-    retry: false,
-  });
-
-  const { email, remark, enable, up, down, total, expiryTime, uuid, subId, subToken, inbound, portalSettings } = data;
-  const used = up + down;
-  const pct = total > 0 ? Math.min(100, (used / total) * 100) : 0;
-  
-  const isExpired = expiryTime > 0 && Date.now() > expiryTime;
-  const isActive = enable && !isExpired && (total === 0 || used < total);
-  
-  const clientName = remark || email || "Unknown Client";
-  const brandName = portalSettings?.portalName || "SYSTEM";
-  const logoSrc = resolveThemeLogo({
-    logoLight: portalSettings?.logoUrl,
-    logoDark: portalSettings?.logoDarkUrl,
-    theme: "Hacker",
-  });
-
-  const systemUrl =
-    typeof window !== "undefined"
-      ? `${window.location.origin}/s/${encodeURIComponent(subId || email)}`
-      : `/s/${encodeURIComponent(subId || email)}`;
-  const getNativeUrl = () => {
-    const sub = encodeURIComponent(subId || email);
-    if (inbound?.panel?.subUrl) {
-      const base = inbound.panel.subUrl.endsWith("/")
-        ? inbound.panel.subUrl
-        : `${inbound.panel.subUrl}/`;
-      return `${base}${sub}`;
-    }
-    if (inbound?.panel?.url) {
-      try {
-        const parsed = new URL(inbound.panel.url);
-        return `${parsed.origin}/sub/${sub}`;
-      } catch {
-        const base = inbound.panel.url.endsWith("/")
-          ? inbound.panel.url
-          : `${inbound.panel.url}/`;
-        return `${base}sub/${sub}`;
-      }
-    }
-    return `${typeof window !== "undefined" ? window.location.origin : ""}/sub/${sub}`;
-  };
-  const nativeUrl = getNativeUrl();
-  const primarySubUrl = systemUrl;
-
-  const copyText = async (text: string, cid: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopiedText(cid);
-      setTimeout(() => setCopiedText(null), 2000);
-    } catch {}
-  };
-
-  const openQR = (url: string) => {
-    setUrlForQR(url);
-    setQrModal(true);
-  };
-
-  const drawProgressBar = (percentage: number) => {
-    const totalBars = 30;
-    const filledBars = Math.round((percentage / 100) * totalBars);
-    return `[${"#".repeat(filledBars)}${".".repeat(totalBars - filledBars)}] ${percentage.toFixed(1)}%`;
-  };
-
-  // ASCII Art generation for Logo (very basic fallback)
-  const asciiLogo = `
-  ___  _   _  ___  
- / _ \\| | | |/ _ \\ 
-| (_) | |_| | (_) |
- \\___/ \\___/ \\___/ 
-  `;
+  const mono = fontFamily || "'IBM Plex Mono', ui-monospace, monospace";
 
   return (
-    <div className="min-h-[100dvh] w-full bg-black text-green-500 font-mono p-4 md:p-8 flex flex-col selection:bg-green-500/30">
-      
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.5 }} className="w-full max-w-4xl mx-auto border border-dashed border-green-500/50 p-6 md:p-10 relative shadow-[0_0_15px_rgba(34,197,94,0.1)]">
-        <div className="absolute top-0 left-0 bg-black px-2 -mt-3 ml-4 text-green-400 font-bold">
-          TERMINAL_ACCESS
-        </div>
-        
-        <div className="space-y-6">
-          
-          {/* Header & Logo */}
-          <div className="flex flex-col md:flex-row gap-6 border-b border-dashed border-green-900/50 pb-6 mb-6">
-            {logoSrc ? (
-              <img src={logoSrc} alt={brandName} className="h-20 w-auto object-contain opacity-90" />
-            ) : (
-              <pre className="text-green-700 text-[10px] leading-tight select-none hidden sm:block">
-                {asciiLogo}
-              </pre>
-            )}
-            <div className="flex flex-col justify-end">
-              <div className="text-green-700">root@system:~# echo $HOSTNAME</div>
-              <div className="text-2xl font-bold uppercase tracking-widest">{brandName}</div>
+    <div
+      className="relative min-h-[100dvh] text-[#3dff7a]"
+      style={
+        {
+          fontFamily: mono,
+          background: "#030504",
+        } as CSSProperties
+      }
+    >
+      <div
+        className="pointer-events-none absolute inset-0 opacity-[0.12]"
+        style={{
+          backgroundImage:
+            "repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.35) 3px)",
+        }}
+      />
+
+      <div className="relative z-10 mx-auto flex w-full max-w-4xl flex-col gap-4 px-3 py-5 sm:px-5 sm:py-8">
+        <div className="flex items-center justify-between gap-3 border border-[#3dff7a]/35 bg-[#061008] px-3 py-2">
+          <div className="flex min-w-0 items-center gap-3">
+            <BrandMark
+              logoSrc={logoSrc}
+              brandName={brandName}
+              className="h-8 w-auto max-w-[6.5rem] object-contain brightness-110 contrast-125"
+              fallbackClassName="flex h-8 w-8 items-center justify-center border border-[#3dff7a]/40 text-[#3dff7a]"
+            />
+            <div className="min-w-0 truncate text-[12px] sm:text-sm">
+              <span className="text-[#3dff7a]/55">root@</span>
+              <span className="text-[#9cffb8]">{brandName.replace(/\s+/g, "-").toLowerCase()}</span>
+              <span className="text-[#3dff7a]/55">:~#</span>
             </div>
           </div>
+          <LangToggle lang={lang} setLang={setLang} className="border-[#3dff7a]/35 text-[#3dff7a]" />
+        </div>
 
-          <div className="flex flex-col gap-1">
-            <div className="text-green-700">root@system:~# whoami</div>
-            <div className="text-xl md:text-3xl font-bold">{clientName}</div>
-            <div className="text-sm text-green-700">UUID: {uuid}</div>
+        <pre className="overflow-x-auto border border-[#3dff7a]/25 bg-[#061008] p-4 text-[11px] leading-relaxed text-[#6dff9a] sm:text-xs whitespace-pre-wrap">
+{`$ session --status
+> client: ${clientName}
+> state:  ${statusLabel.toUpperCase()}
+> expiry: ${expiry}
+> uuid:   ${data.uuid || "n/a"}
+> link:   ${isActive ? "ESTABLISHED" : "CLOSED"}`}
+        </pre>
+
+        <section className="border border-[#3dff7a]/25 bg-[#061008] p-4 sm:p-5">
+          <div className="mb-2 text-[11px] text-[#3dff7a]/60">
+            $ {t("traffic").toLowerCase()} --report
           </div>
-
-          <div className="flex flex-col gap-1 mt-6">
-            <div className="text-green-700">root@system:~# ./check_status.sh</div>
-            <div className="flex items-center gap-2">
-              <span className="text-green-400">STATUS:</span>
-              <span className={isActive ? "text-green-400 animate-pulse font-bold" : "text-red-500 font-bold"}>
-                [{isActive ? "ONLINE" : "OFFLINE"}]
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div className="text-xl tabular-nums text-[#b8ffd0] sm:text-2xl">
+              {formatBytes(used)}
+              <span className="ms-2 text-sm text-[#3dff7a]/45">
+                / {total > 0 ? formatBytes(total) : t("unlimited")}
               </span>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-green-400">EXPIRY:</span>
-              <span>{expiryTime > 0 ? formatDate(expiryTime) : "NEVER"}</span>
+            <div className="text-[11px] text-[#3dff7a]/55">
+              <div>rx {formatBytes(down)}</div>
+              <div>tx {formatBytes(up)}</div>
             </div>
           </div>
-
-          <div className="flex flex-col gap-1 mt-6">
-            <div className="text-green-700">root@system:~# ./check_quota.sh</div>
-            <div className="mt-2">
-              <div className="mb-1 text-sm flex justify-between max-w-md">
-                <span>{formatBytes(used)}</span>
-                <span>{total === 0 ? "UNLIMITED" : formatBytes(total)}</span>
-              </div>
-              <div className="text-green-400">
-                {drawProgressBar(pct)}
-              </div>
-            </div>
+          <div className="mt-3">
+            <TrafficBar
+              pct={pct}
+              barClassName="bg-[#3dff7a]"
+              trackClassName="h-1 overflow-hidden bg-[#3dff7a]/15"
+            />
           </div>
-
-          <div className="flex flex-col gap-1 mt-6">
-            <div className="text-green-700">root@system:~# cat connection_info.txt</div>
-            
-            <div className="mt-4 border border-green-900 bg-green-950/20 p-4 relative group">
-              <div className="text-xs text-green-700 mb-2">## SUBSCRIPTION_LINK</div>
-              <div className="truncate text-green-400 mb-4">{primarySubUrl}</div>
-              
-              <div className="flex flex-wrap gap-4">
-                <button 
-                  onClick={() => copyText(primarySubUrl, 'sub')}
-                  className="bg-green-900/50 hover:bg-green-800 text-green-400 px-4 py-2 text-sm transition-colors border border-green-800"
-                >
-                  {copiedText === 'sub' ? "> COPIED" : "> COPY_LINK"}
-                </button>
-
-                {portalSettings?.showNativeQR !== false && (
-                  <button 
-                    onClick={() => openQR(primarySubUrl)}
-                    className="bg-transparent hover:bg-green-900/30 text-green-500 px-4 py-2 text-sm transition-colors border border-green-900 flex items-center gap-2"
-                  >
-                    <QrCode size={14} /> GENERATE_QR
-                  </button>
-                )}
-
-                {portalSettings?.allowDirectImport !== false && (
-                  <button 
-                    onClick={() => setImportSheet(true)}
-                    className="bg-transparent hover:bg-green-900/30 text-green-500 px-4 py-2 text-sm transition-colors border border-green-900 flex items-center gap-2"
-                  >
-                    <MonitorSmartphone size={14} /> AUTO_INJECT
-                  </button>
-                )}
-              </div>
-            </div>
+          <div className="mt-2 text-[11px] text-[#3dff7a]/50">
+            [{Math.round(pct)}%] {t("usage").toLowerCase()}
           </div>
+        </section>
 
-          {nodes && nodes.length > 0 && (
-            <div className="flex flex-col gap-1 mt-6">
-              <div className="text-green-700">root@system:~# ls -l /nodes</div>
-              <div className="mt-2 flex flex-col gap-2">
-                {nodes.map((node: any, idx: number) => (
-                  <div key={idx} className="flex flex-col md:flex-row md:items-center justify-between border-b border-dashed border-green-900/50 py-2 hover:bg-green-950/30">
-                    <div className="truncate">{node.tag}</div>
-                    <button 
-                      onClick={() => copyText(node.link, `node-${idx}`)}
-                      className="text-xs text-green-600 hover:text-green-400 transition-colors mt-2 md:mt-0"
-                    >
-                      {copiedText === `node-${idx}` ? "[COPIED]" : "[COPY]"}
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          
-          {/* Support section terminal style */}
-          {portalSettings?.showSupportSection !== false && (
-            <div className="flex flex-col gap-1 mt-6 pt-6 border-t border-dashed border-green-900/50">
-              <div className="text-green-700">root@system:~# ./contact_admin.sh</div>
-              <div className="flex gap-6 mt-4">
-                {portalSettings?.showTelegram && <a href={portalSettings.telegramLink} className="text-green-600 hover:text-green-400"><MessageCircle size={20}/></a>}
-                {portalSettings?.showWhatsApp && <a href={portalSettings.whatsappLink} className="text-green-600 hover:text-green-400"><Phone size={20}/></a>}
-                {portalSettings?.showWebsite && <a href={portalSettings.websiteUrl} className="text-green-600 hover:text-green-400"><Globe size={20}/></a>}
-                {portalSettings?.showEmail && <a href={`mailto:${portalSettings.emailAddress}`} className="text-green-600 hover:text-green-400"><Mail size={20}/></a>}
-              </div>
-            </div>
-          )}
+        <section className="grid gap-2 sm:grid-cols-[1fr_auto]">
+          <button
+            type="button"
+            onClick={() => copy(systemUrl, "system")}
+            className="inline-flex items-center justify-center gap-2 border border-[#3dff7a] bg-[#3dff7a]/10 px-4 py-3 text-sm text-[#b8ffd0] transition hover:bg-[#3dff7a]/20"
+          >
+            {copied === "system" ? <Check size={15} /> : <Copy size={15} />}
+            <span>
+              [{copied === "system" ? t("copied").toUpperCase() : "COPY"}] {t("systemSub")}
+            </span>
+          </button>
+          {ps.showPlatformQR !== false ? (
+            <button
+              type="button"
+              onClick={() => setQrValue(systemUrl)}
+              className="inline-flex items-center justify-center gap-2 border border-[#3dff7a]/35 px-4 py-3 text-sm text-[#3dff7a] transition hover:border-[#3dff7a]"
+            >
+              <QrCode size={15} />
+              [QR]
+            </button>
+          ) : null}
+        </section>
 
-          <div className="pt-2 mt-2 text-green-700 text-sm animate-pulse">
-            _
+        <div className="border border-[#3dff7a]/25 bg-[#061008] p-3 sm:p-4">
+          <div className="mb-3 text-[11px] text-[#3dff7a]/60">
+            $ ls ./{t("configs").toLowerCase()}
           </div>
+          <ConfigList
+            nodes={nodes}
+            copied={copied}
+            onCopy={copy}
+            onQr={setQrValue}
+            title=""
+            empty={t("noConfigs")}
+            nodesLabel={t("nodes")}
+            className="[&>div:first-child]:hidden"
+            itemClassName="border border-[#3dff7a]/20 bg-black/40 px-2.5 py-2"
+          />
         </div>
-      </motion.div>
 
-      {/* MODALS */}
-      <AnimatePresence>
-        {qrModal && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm">
-            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }} className="bg-black border border-green-500 p-8 max-w-sm w-full relative shadow-[0_0_30px_rgba(34,197,94,0.2)]">
-              <button onClick={() => setQrModal(false)} className="absolute top-4 right-4 text-green-700 hover:text-green-400"><X size={24} /></button>
-              <div className="text-green-600 mb-6 font-bold uppercase text-center border-b border-dashed border-green-900 pb-2">OPTICAL_DATA_MATRIX</div>
-              <div className="bg-white p-4 rounded-sm flex justify-center mb-6">
-                <QRCodeCanvas value={urlForQR} size={220} bgColor="#ffffff" fgColor="#000000" level="H" />
-              </div>
-              <p className="text-green-700 text-xs text-center">Execute scanner protocol.</p>
-            </motion.div>
-          </motion.div>
-        )}
+        {contacts.length ? (
+          <div className="flex flex-wrap gap-2 border border-[#3dff7a]/20 bg-[#061008] p-3">
+            <span className="w-full text-[11px] text-[#3dff7a]/55">$ {t("support").toLowerCase()}</span>
+            {contacts.map((c) => (
+              <a
+                key={c.kind}
+                href={c.href}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-2 border border-[#3dff7a]/25 px-2.5 py-1.5 text-[11px] text-[#9cffb8] transition hover:border-[#3dff7a]/60"
+              >
+                <c.icon size={12} />
+                {c.label}
+              </a>
+            ))}
+          </div>
+        ) : null}
 
-        {importSheet && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/90 backdrop-blur-sm">
-            <motion.div initial={{ y: 100 }} animate={{ y: 0 }} exit={{ y: 100 }} className="bg-black border border-green-500 p-8 w-full max-w-md relative shadow-[0_0_30px_rgba(34,197,94,0.2)]">
-              <button onClick={() => setImportSheet(false)} className="absolute top-4 right-4 text-green-700 hover:text-green-400"><X size={24} /></button>
-              <div className="text-green-600 mb-6 font-bold uppercase text-center border-b border-dashed border-green-900 pb-2">EXECUTE_INJECTION</div>
-              <div className="space-y-4">
-                <a href={`v2rayng://install-config?url=${encodeURIComponent(primarySubUrl)}`} className="block w-full text-center bg-green-950/30 border border-green-800 hover:bg-green-900 text-green-400 py-4 uppercase tracking-widest text-xs transition-colors">
-                  ./inject_v2rayng.sh
-                </a>
-                <a href={`shadowrocket://add/sub://${btoa(primarySubUrl)}`} className="block w-full text-center bg-green-950/30 border border-green-800 hover:bg-green-900 text-green-400 py-4 uppercase tracking-widest text-xs transition-colors">
-                  ./inject_shadowrocket.sh
-                </a>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+        {ps.footerText ? (
+          <p className="text-center text-[11px] text-[#3dff7a]/35"># {ps.footerText}</p>
+        ) : null}
+      </div>
 
+      <QrModal value={qrValue} onClose={() => setQrValue(null)} title={t("scanQr")} />
     </div>
   );
 }

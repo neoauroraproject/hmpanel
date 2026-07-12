@@ -1,259 +1,181 @@
 "use client";
 
-import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { QrCode, MonitorSmartphone, X, MessageCircle, Phone, Globe, Mail } from "lucide-react";
-import { QRCodeCanvas } from "qrcode.react";
-import { formatBytes, formatDate } from "@/lib/format";
-import { useQuery } from "@tanstack/react-query";
-import { API_BASE } from "@/lib/api";
-import { resolveThemeLogo } from "@/modules/shared/brand-logo";
+import type { CSSProperties } from "react";
+import { Check, Copy, QrCode } from "lucide-react";
+import {
+  usePortalModel,
+  QrModal,
+  BrandMark,
+  ConfigList,
+  TrafficBar,
+  LangToggle,
+  useExpiryLabel,
+  useThemeFont,
+  type SubData,
+} from "./portal-kit";
 
-export default function MinimalistTheme({ id, data }: { id: string; data: any }) {
-  const [copiedText, setCopiedText] = useState<string | null>(null);
-  const [qrModal, setQrModal] = useState(false);
-  const [importSheet, setImportSheet] = useState(false);
-  const [urlForQR, setUrlForQR] = useState("");
-
-  const { data: nodes } = useQuery({
-    queryKey: ["subscriptionNodes", id],
-    queryFn: async () => {
-      const res = await fetch(`${API_BASE}/subscriptions/${id}/nodes`);
-      if (!res.ok) return [];
-      return res.json();
-    },
-    retry: false,
-  });
-
-  const { email, remark, enable, up, down, total, expiryTime, uuid, subId, subToken, inbound, portalSettings } = data;
-  const used = up + down;
-  const pct = total > 0 ? Math.min(100, (used / total) * 100) : 0;
-  
-  const isExpired = expiryTime > 0 && Date.now() > expiryTime;
-  const isActive = enable && !isExpired && (total === 0 || used < total);
-  
-  const clientName = remark || email || "Client";
-  const brandName = portalSettings?.portalName || "Service";
-  const logoSrc = resolveThemeLogo({
-    logoLight: portalSettings?.logoUrl,
-    logoDark: portalSettings?.logoDarkUrl,
-    theme: "Minimalist",
-  });
-
-  const systemUrl =
-    typeof window !== "undefined"
-      ? `${window.location.origin}/s/${encodeURIComponent(subId || email)}`
-      : `/s/${encodeURIComponent(subId || email)}`;
-  const getNativeUrl = () => {
-    const sub = encodeURIComponent(subId || email);
-    if (inbound?.panel?.subUrl) {
-      const base = inbound.panel.subUrl.endsWith("/")
-        ? inbound.panel.subUrl
-        : `${inbound.panel.subUrl}/`;
-      return `${base}${sub}`;
-    }
-    if (inbound?.panel?.url) {
-      try {
-        const parsed = new URL(inbound.panel.url);
-        return `${parsed.origin}/sub/${sub}`;
-      } catch {
-        const base = inbound.panel.url.endsWith("/")
-          ? inbound.panel.url
-          : `${inbound.panel.url}/`;
-        return `${base}sub/${sub}`;
-      }
-    }
-    return `${typeof window !== "undefined" ? window.location.origin : ""}/sub/${sub}`;
-  };
-  const nativeUrl = getNativeUrl();
-  const primarySubUrl = systemUrl;
-
-  const copyText = async (text: string, cid: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopiedText(cid);
-      setTimeout(() => setCopiedText(null), 2000);
-    } catch {}
-  };
-
-  const openQR = (url: string) => {
-    setUrlForQR(url);
-    setQrModal(true);
-  };
+/** Quiet Ledger — sparse white field, editorial type, hairline structure. */
+export default function MinimalistTheme({ id, data }: { id: string; data: SubData }) {
+  const model = usePortalModel(id, data, "Minimalist");
+  useThemeFont("Minimalist", model.isFa);
+  const expiry = useExpiryLabel(model.remainingDays, data.expiryTime, model.t);
+  const {
+    brandName,
+    logoSrc,
+    clientName,
+    isActive,
+    used,
+    total,
+    pct,
+    up,
+    down,
+    formatBytes,
+    systemUrl,
+    copy,
+    copied,
+    setQrValue,
+    qrValue,
+    nodes,
+    contacts,
+    ps,
+    t,
+    statusLabel,
+    fontFamily,
+    lang,
+    setLang,
+  } = model;
 
   return (
-    <div className="min-h-[100dvh] w-full bg-white text-black font-sans flex flex-col selection:bg-black/10 relative">
-      
-      {/* Header */}
-      <header className="w-full p-6 md:p-12 flex justify-between items-start border-b border-black/10">
-        <div className="flex flex-col gap-4">
-          {logoSrc && (
-            <img src={logoSrc} alt={brandName} className="h-10 w-auto object-contain" />
-          )}
-          <div>
-            <div className="text-xs font-bold uppercase tracking-widest text-zinc-400 mb-1">Provider</div>
-            <div className="text-xl font-bold tracking-tight">{brandName}</div>
+    <div
+      className="min-h-[100dvh] bg-[#f7f6f3] text-[#141414]"
+      style={
+        {
+          fontFamily: fontFamily || "'DM Sans', 'Segoe UI', sans-serif",
+        } as CSSProperties
+      }
+    >
+      <div className="mx-auto flex w-full max-w-3xl flex-col px-5 py-8 sm:px-8 sm:py-14">
+        <div className="mb-12 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <BrandMark
+              logoSrc={logoSrc}
+              brandName={brandName}
+              className="h-10 w-auto max-w-[8rem] object-contain"
+              fallbackClassName="flex h-10 w-10 items-center justify-center border border-[#141414]/15 text-[#141414]"
+            />
+            <span className="text-xs font-medium tracking-[0.22em] text-[#141414]/45 uppercase">
+              {brandName}
+            </span>
           </div>
+          <LangToggle lang={lang} setLang={setLang} className="border-[#141414]/20 text-[#141414]" />
         </div>
 
-        <div className="flex gap-12 text-right">
-          {/* Support Icons */}
-          {portalSettings?.showSupportSection !== false && (
-            <div className="hidden md:flex gap-4 items-end pb-1 border-b border-transparent">
-              {portalSettings?.showTelegram && <a href={portalSettings.telegramLink} className="text-zinc-400 hover:text-black transition-colors"><MessageCircle size={20}/></a>}
-              {portalSettings?.showWhatsApp && <a href={portalSettings.whatsappLink} className="text-zinc-400 hover:text-black transition-colors"><Phone size={20}/></a>}
-              {portalSettings?.showWebsite && <a href={portalSettings.websiteUrl} className="text-zinc-400 hover:text-black transition-colors"><Globe size={20}/></a>}
-              {portalSettings?.showEmail && <a href={`mailto:${portalSettings.emailAddress}`} className="text-zinc-400 hover:text-black transition-colors"><Mail size={20}/></a>}
-            </div>
-          )}
+        <header className="mb-10 space-y-3 border-b border-[#141414]/10 pb-10">
+          <p className="text-[11px] font-medium tracking-[0.24em] text-[#141414]/40 uppercase">
+            {statusLabel}
+          </p>
+          <h1
+            className="text-4xl leading-[1.05] text-[#141414] sm:text-6xl"
+            style={{ fontFamily: fontFamily || "'Instrument Serif', Georgia, serif" }}
+          >
+            {clientName}
+          </h1>
+          <p className="text-sm text-[#141414]/45">{expiry}</p>
+        </header>
 
-          <div>
-            <div className="text-xs font-bold uppercase tracking-widest text-zinc-400 mb-1">Status</div>
-            <div className={`text-sm font-bold uppercase tracking-widest ${isActive ? 'text-black' : 'text-zinc-400'}`}>
-              {isActive ? 'Active' : 'Inactive'}
+        <section className="mb-10 space-y-5">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <div className="text-[11px] font-medium tracking-[0.2em] text-[#141414]/40 uppercase">
+                {t("traffic")}
+              </div>
+              <div className="mt-2 text-3xl font-medium tabular-nums tracking-tight sm:text-4xl">
+                {formatBytes(used)}
+                <span className="ms-2 text-base font-normal text-[#141414]/35">
+                  / {total > 0 ? formatBytes(total) : t("unlimited")}
+                </span>
+              </div>
+            </div>
+            <div className="space-y-1 text-end text-xs text-[#141414]/45">
+              <div>
+                {t("download")} · {formatBytes(down)}
+              </div>
+              <div>
+                {t("upload")} · {formatBytes(up)}
+              </div>
             </div>
           </div>
-        </div>
-      </header>
+          <TrafficBar
+            pct={pct}
+            barClassName="bg-[#141414]"
+            trackClassName="h-0.5 overflow-hidden bg-[#141414]/12"
+          />
+          <div className="flex items-center gap-2 text-xs text-[#141414]/40">
+            <span
+              className={`inline-block h-1.5 w-1.5 rounded-full ${isActive ? "bg-emerald-600" : "bg-rose-500"}`}
+            />
+            {statusLabel}
+          </div>
+        </section>
 
-      {/* Main Content */}
-      <main className="flex-1 w-full max-w-7xl mx-auto p-6 md:p-12 grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-24 relative z-10">
-        
-        {/* Left Column: Big Title & Link */}
-        <div className="lg:col-span-7 flex flex-col justify-center">
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8 }}>
-            <h1 className="text-6xl md:text-8xl font-black tracking-tighter leading-none mb-6">
-              {clientName}
-            </h1>
-            <p className="text-zinc-500 font-mono text-sm mb-12">ID: {uuid}</p>
-            
-            <div className="space-y-4">
-              <div className="text-sm font-bold uppercase tracking-widest">Subscription Link</div>
-              <div className="flex flex-col sm:flex-row gap-4">
-                <input 
-                  readOnly 
-                  value={primarySubUrl} 
-                  className="w-full bg-zinc-50 border border-black/10 p-4 font-mono text-xs outline-none text-zinc-600 focus:border-black transition-colors"
-                />
-                <button 
-                  onClick={() => copyText(primarySubUrl, 'sub')}
-                  className="bg-black text-white px-8 py-4 text-sm font-bold uppercase tracking-widest hover:bg-zinc-800 transition-colors shrink-0"
-                >
-                  {copiedText === 'sub' ? 'Copied' : 'Copy'}
-                </button>
-              </div>
+        <section className="mb-12 flex flex-col gap-3 border-y border-[#141414]/10 py-8 sm:flex-row sm:items-center">
+          <button
+            type="button"
+            onClick={() => copy(systemUrl, "system")}
+            className="inline-flex flex-1 items-center justify-center gap-2 bg-[#141414] px-5 py-3.5 text-sm font-medium tracking-wide text-[#f7f6f3] transition hover:bg-[#2a2a2a]"
+          >
+            {copied === "system" ? <Check size={16} /> : <Copy size={16} />}
+            {copied === "system" ? t("copied") : t("copyLink")}
+          </button>
+          {ps.showPlatformQR !== false ? (
+            <button
+              type="button"
+              onClick={() => setQrValue(systemUrl)}
+              className="inline-flex items-center justify-center gap-2 border border-[#141414]/20 px-5 py-3.5 text-sm font-medium transition hover:border-[#141414]/45"
+            >
+              <QrCode size={16} />
+              {t("qr")}
+            </button>
+          ) : null}
+        </section>
 
-              <div className="flex gap-4 pt-4">
-                {portalSettings?.showNativeQR !== false && (
-                  <button 
-                    onClick={() => openQR(primarySubUrl)}
-                    className="flex-1 border border-black/20 hover:border-black text-black px-6 py-3 text-sm font-bold uppercase tracking-widest transition-colors flex items-center justify-center gap-2"
-                  >
-                    <QrCode size={18} /> View QR
-                  </button>
-                )}
-                {portalSettings?.allowDirectImport !== false && (
-                  <button 
-                    onClick={() => setImportSheet(true)}
-                    className="flex-1 border border-black/20 hover:border-black text-black px-6 py-3 text-sm font-bold uppercase tracking-widest transition-colors flex items-center justify-center gap-2"
-                  >
-                    <MonitorSmartphone size={18} /> Auto Import
-                  </button>
-                )}
-              </div>
-            </div>
-          </motion.div>
-        </div>
+        <ConfigList
+          nodes={nodes}
+          copied={copied}
+          onCopy={copy}
+          onQr={setQrValue}
+          title={t("configs")}
+          empty={t("noConfigs")}
+          nodesLabel={t("nodes")}
+          className="mb-12"
+          itemClassName="border-b border-[#141414]/8 px-0 py-3 last:border-b-0"
+        />
 
-        {/* Right Column: Data Grid */}
-        <div className="lg:col-span-5 flex flex-col justify-center gap-12">
-          
-          <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.8, delay: 0.2 }}>
-            <div className="text-xs font-bold uppercase tracking-widest text-zinc-400 mb-4">Traffic Usage</div>
-            <div className="text-5xl font-bold tracking-tighter mb-2">
-              {formatBytes(used)} <span className="text-2xl text-zinc-400">/ {total === 0 ? "∞" : formatBytes(total)}</span>
-            </div>
-            
-            <div className="h-1 w-full bg-zinc-100 mt-6 relative overflow-hidden">
-              <motion.div 
-                initial={{ width: 0 }}
-                animate={{ width: `${pct}%` }}
-                transition={{ duration: 1, delay: 0.5 }}
-                className="absolute top-0 left-0 h-full bg-black"
-              />
-            </div>
-          </motion.div>
+        {contacts.length ? (
+          <div className="mb-8 flex flex-wrap gap-x-6 gap-y-3">
+            {contacts.map((c) => (
+              <a
+                key={c.kind}
+                href={c.href}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-2 text-sm text-[#141414]/70 underline-offset-4 transition hover:text-[#141414] hover:underline"
+              >
+                <c.icon size={14} />
+                {c.label}
+              </a>
+            ))}
+          </div>
+        ) : null}
 
-          <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.8, delay: 0.3 }}>
-            <div className="text-xs font-bold uppercase tracking-widest text-zinc-400 mb-4">Expiration Date</div>
-            <div className="text-3xl font-bold tracking-tighter">
-              {expiryTime > 0 ? formatDate(expiryTime) : 'Never Expires'}
-            </div>
-          </motion.div>
+        {ps.footerText ? (
+          <p className="border-t border-[#141414]/10 pt-6 text-center text-xs text-[#141414]/35">
+            {ps.footerText}
+          </p>
+        ) : null}
+      </div>
 
-          {nodes && nodes.length > 0 && (
-            <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.8, delay: 0.4 }}>
-              <div className="text-xs font-bold uppercase tracking-widest text-zinc-400 mb-4">Nodes</div>
-              <ul className="space-y-4">
-                {nodes.map((node: any, idx: number) => (
-                  <li key={idx} className="flex justify-between items-center group cursor-pointer border-b border-black/5 pb-2 hover:border-black/30 transition-colors" onClick={() => copyText(node.link, `node-${idx}`)}>
-                    <span className="font-medium">{node.tag}</span>
-                    <span className="text-xs font-bold uppercase tracking-widest text-zinc-400 group-hover:text-black transition-colors">
-                      {copiedText === `node-${idx}` ? 'Copied' : 'Copy'}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </motion.div>
-          )}
-
-        </div>
-
-      </main>
-
-      {/* Support Mobile Footer */}
-      {portalSettings?.showSupportSection !== false && (
-        <footer className="md:hidden p-6 border-t border-black/10 flex justify-center gap-8">
-          {portalSettings?.showTelegram && <a href={portalSettings.telegramLink} className="text-zinc-500 hover:text-black"><MessageCircle size={24}/></a>}
-          {portalSettings?.showWhatsApp && <a href={portalSettings.whatsappLink} className="text-zinc-500 hover:text-black"><Phone size={24}/></a>}
-          {portalSettings?.showWebsite && <a href={portalSettings.websiteUrl} className="text-zinc-500 hover:text-black"><Globe size={24}/></a>}
-          {portalSettings?.showEmail && <a href={`mailto:${portalSettings.emailAddress}`} className="text-zinc-500 hover:text-black"><Mail size={24}/></a>}
-        </footer>
-      )}
-
-      {/* MODALS */}
-      <AnimatePresence>
-        {qrModal && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-white/90 backdrop-blur-sm">
-            <motion.div initial={{ y: 20 }} animate={{ y: 0 }} exit={{ y: 20 }} className="bg-white border border-black/10 p-8 md:p-12 max-w-sm w-full relative shadow-2xl">
-              <button onClick={() => setQrModal(false)} className="absolute top-6 right-6 text-zinc-400 hover:text-black"><X size={24} /></button>
-              <h3 className="text-sm font-bold uppercase tracking-widest text-black mb-8 text-center">Scan QR Code</h3>
-              <div className="bg-white flex justify-center mb-8 border border-black/5 p-4">
-                <QRCodeCanvas value={urlForQR} size={240} bgColor="#ffffff" fgColor="#000000" level="H" />
-              </div>
-              <p className="text-zinc-500 text-sm text-center">Scan with your mobile client to import.</p>
-            </motion.div>
-          </motion.div>
-        )}
-
-        {importSheet && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-white/90 backdrop-blur-sm">
-            <motion.div initial={{ y: 100 }} animate={{ y: 0 }} exit={{ y: 100 }} className="bg-white border border-black/10 p-8 md:p-12 w-full max-w-md relative shadow-2xl">
-              <button onClick={() => setImportSheet(false)} className="absolute top-6 right-6 text-zinc-400 hover:text-black"><X size={24} /></button>
-              <h3 className="text-sm font-bold uppercase tracking-widest text-black mb-8">Import Config</h3>
-              <div className="space-y-4">
-                <a href={`v2rayng://install-config?url=${encodeURIComponent(primarySubUrl)}`} className="block w-full text-center bg-zinc-50 hover:bg-black hover:text-white border border-black/10 text-black py-4 uppercase tracking-widest text-xs font-bold transition-colors">
-                  V2rayNG
-                </a>
-                <a href={`shadowrocket://add/sub://${btoa(primarySubUrl)}`} className="block w-full text-center bg-zinc-50 hover:bg-black hover:text-white border border-black/10 text-black py-4 uppercase tracking-widest text-xs font-bold transition-colors">
-                  Shadowrocket
-                </a>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
+      <QrModal value={qrValue} onClose={() => setQrValue(null)} title={t("scanQr")} />
     </div>
   );
 }
