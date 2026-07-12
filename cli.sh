@@ -1838,7 +1838,7 @@ ssl_add_vhost() {
     cp -f "$manual_cert" "${SSL_DIR}/fullchain.pem"
     cp -f "$manual_key" "${SSL_DIR}/privkey.pem"
   else
-    # Let's Encrypt / ZeroSSL — same approach as ssl_issue
+    # Let's Encrypt / ZeroSSL — aligned with ssl_issue (install acme, timeouts, docker certbot)
     if ! verify_dns "$vhost_domain"; then
       if [[ "$JSON_OUTPUT" == "true" ]]; then output_json false "DNS_ERROR"; exit 10; fi
       echo "DNS verification failed for $vhost_domain"; exit 1
@@ -1850,47 +1850,139 @@ ssl_add_vhost() {
 
     docker stop hmpanel-nginx >/dev/null 2>&1 || true
     local cert_obtained=false
+    local last_ssl_error=""
+    local acme_log="/tmp/hm-ssl-vhost-${safe_domain}.log"
+    : > "$acme_log"
+
     local acme_bin=""
     if [[ -f "${INSTALL_DIR}/acme.sh/acme.sh" ]]; then
       acme_bin="${INSTALL_DIR}/acme.sh/acme.sh"
     elif [[ -f "/root/.acme.sh/acme.sh" ]]; then
       acme_bin="/root/.acme.sh/acme.sh"
+    elif [[ -f "$HOME/.acme.sh/acme.sh" ]]; then
+      acme_bin="$HOME/.acme.sh/acme.sh"
     elif command -v acme.sh &>/dev/null; then
       acme_bin=$(command -v acme.sh)
     fi
 
     local email="${mode_or_email:-admin@$vhost_domain}"
+
+    # Install acme.sh when missing (same as panel ssl_issue)
+    if [[ -z "$acme_bin" ]] && command -v git &>/dev/null && command -v curl &>/dev/null && command -v socat &>/dev/null; then
+      stream_progress "Installing acme.sh for custom domain..."
+      rm -rf /tmp/acme.sh
+      local clone_success=false
+      if command -v timeout &>/dev/null; then
+        if timeout 45 git clone --depth 1 https://github.com/acmesh-official/acme.sh.git /tmp/acme.sh >>"$acme_log" 2>&1; then
+          clone_success=true
+        elif timeout 45 git clone --depth 1 https://gitee.com/neilpang/acme.sh.git /tmp/acme.sh >>"$acme_log" 2>&1; then
+          clone_success=true
+        fi
+      else
+        if git clone --depth 1 https://github.com/acmesh-official/acme.sh.git /tmp/acme.sh >>"$acme_log" 2>&1; then
+          clone_success=true
+        elif git clone --depth 1 https://gitee.com/neilpang/acme.sh.git /tmp/acme.sh >>"$acme_log" 2>&1; then
+          clone_success=true
+        fi
+      fi
+      if [[ "$clone_success" == true ]]; then
+        (
+          cd /tmp/acme.sh
+          ./acme.sh --install \
+            --home "${INSTALL_DIR}/acme.sh" \
+            --config-home "${INSTALL_DIR}/acme.sh/data" \
+            --accountemail "$email" >>"$acme_log" 2>&1
+        ) || true
+        rm -rf /tmp/acme.sh
+        if [[ -f "${INSTALL_DIR}/acme.sh/acme.sh" ]]; then
+          acme_bin="${INSTALL_DIR}/acme.sh/acme.sh"
+        fi
+      else
+        stream_progress "acme.sh download failed, trying certbot fallback..."
+        last_ssl_error="acme_install_failed"
+      fi
+    fi
+
     if [[ -n "$acme_bin" ]]; then
+      "$acme_bin" --home "${INSTALL_DIR}/acme.sh" --register-account -m "$email" >>"$acme_log" 2>&1 || true
       for ca in "letsencrypt" "zerossl"; do
         if [[ "$cert_obtained" == false ]]; then
           stream_progress "Trying acme.sh ($ca) for $vhost_domain..."
-          "$acme_bin" --home "${INSTALL_DIR}/acme.sh" --set-default-ca --server "$ca" >/dev/null 2>&1 || true
-          if "$acme_bin" --home "${INSTALL_DIR}/acme.sh" --issue -d "$vhost_domain" --standalone >/dev/null 2>&1; then
+          "$acme_bin" --home "${INSTALL_DIR}/acme.sh" --set-default-ca --server "$ca" >>"$acme_log" 2>&1 || true
+          local issue_success=false
+          if command -v timeout &>/dev/null; then
+            if timeout 120 "$acme_bin" --home "${INSTALL_DIR}/acme.sh" --issue -d "$vhost_domain" --standalone --accountemail "$email" --force >>"$acme_log" 2>&1; then
+              issue_success=true
+            fi
+          else
+            if "$acme_bin" --home "${INSTALL_DIR}/acme.sh" --issue -d "$vhost_domain" --standalone --accountemail "$email" --force >>"$acme_log" 2>&1; then
+              issue_success=true
+            fi
+          fi
+          if [[ "$issue_success" == true ]]; then
             "$acme_bin" --home "${INSTALL_DIR}/acme.sh" --install-cert -d "$vhost_domain" \
               --fullchain-file "${SSL_DIR}/fullchain.pem" \
-              --key-file "${SSL_DIR}/privkey.pem" >/dev/null 2>&1
+              --key-file "${SSL_DIR}/privkey.pem" >>"$acme_log" 2>&1
             cert_obtained=true
+            stream_progress "Certificate issued via acme.sh ($ca)"
+          else
+            last_ssl_error="acme_${ca}_failed"
+            stream_progress "acme.sh ($ca) failed for $vhost_domain"
           fi
         fi
       done
     fi
 
-    if [[ "$cert_obtained" == false ]] && command -v certbot &>/dev/null; then
+    if [[ "$cert_obtained" == false ]]; then
       stream_progress "Trying certbot for $vhost_domain..."
-      if certbot certonly --standalone --non-interactive --agree-tos -m "$email" -d "$vhost_domain" >/dev/null 2>&1; then
+      local certbot_exit=1
+      if command -v certbot &>/dev/null; then
+        if command -v timeout &>/dev/null; then
+          timeout 120 certbot certonly --standalone --non-interactive --agree-tos -m "$email" -d "$vhost_domain" >>"$acme_log" 2>&1
+          certbot_exit=$?
+        else
+          certbot certonly --standalone --non-interactive --agree-tos -m "$email" -d "$vhost_domain" >>"$acme_log" 2>&1
+          certbot_exit=$?
+        fi
+      else
+        if command -v timeout &>/dev/null; then
+          timeout 180 docker run --rm -p 80:80 \
+            -v "${SSL_DIR}:/etc/letsencrypt" \
+            certbot/certbot certonly --standalone --non-interactive --agree-tos -m "$email" -d "$vhost_domain" >>"$acme_log" 2>&1
+          certbot_exit=$?
+        else
+          docker run --rm -p 80:80 \
+            -v "${SSL_DIR}:/etc/letsencrypt" \
+            certbot/certbot certonly --standalone --non-interactive --agree-tos -m "$email" -d "$vhost_domain" >>"$acme_log" 2>&1
+          certbot_exit=$?
+        fi
+      fi
+
+      if [[ $certbot_exit -eq 0 ]]; then
         local live="/etc/letsencrypt/live/${vhost_domain}"
         if [[ -f "${live}/fullchain.pem" ]]; then
           cp -f "${live}/fullchain.pem" "${SSL_DIR}/fullchain.pem"
           cp -f "${live}/privkey.pem" "${SSL_DIR}/privkey.pem"
           cert_obtained=true
+        elif [[ -f "${SSL_DIR}/live/${vhost_domain}/fullchain.pem" ]]; then
+          cp -f "${SSL_DIR}/live/${vhost_domain}/fullchain.pem" "${SSL_DIR}/fullchain.pem"
+          cp -f "${SSL_DIR}/live/${vhost_domain}/privkey.pem" "${SSL_DIR}/privkey.pem"
+          cert_obtained=true
         fi
+      else
+        last_ssl_error="certbot_failed"
       fi
     fi
 
     if [[ "$cert_obtained" == false ]]; then
       docker start hmpanel-nginx >/dev/null 2>&1 || true
-      if [[ "$JSON_OUTPUT" == "true" ]]; then output_json false "SSL_ISSUE_FAILED"; exit 20; fi
-      echo "Failed to issue certificate for $vhost_domain"; exit 1
+      local hint
+      hint=$(tail -n 8 "$acme_log" 2>/dev/null | tr '\n' ' ' | sed 's/"/\\"/g' | cut -c1-400)
+      if [[ "$JSON_OUTPUT" == "true" ]]; then
+        output_json false "SSL_ISSUE_FAILED" "\"domain\":\"$vhost_domain\",\"reason\":\"${last_ssl_error:-unknown}\",\"hint\":\"${hint}\""
+        exit 20
+      fi
+      echo "Failed to issue certificate for $vhost_domain (${last_ssl_error:-unknown})"; exit 1
     fi
   fi
 

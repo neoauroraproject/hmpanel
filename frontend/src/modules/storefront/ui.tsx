@@ -391,38 +391,81 @@ export function ServiceCard({
   const { t } = useStorefrontLocale();
   const used = Number(service.up) + Number(service.down);
   const total = Number(service.total);
+  const pct = total > 0 ? Math.min(100, (used / total) * 100) : 0;
+  const remaining = total > 0 ? Math.max(total - used, 0) : null;
   const [copied, setCopied] = useState(false);
+
+  const statusTone =
+    service.status === "active"
+      ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
+      : service.status === "expired"
+        ? "bg-rose-500/15 text-rose-700 dark:text-rose-400"
+        : service.status === "pending"
+          ? "bg-amber-500/15 text-amber-700 dark:text-amber-400"
+          : "bg-zinc-500/15 text-zinc-600 dark:text-zinc-400";
+
+  const statusLabel =
+    service.status === "active"
+      ? t("فعال", "Active")
+      : service.status === "expired"
+        ? t("منقضی", "Expired")
+        : service.status === "pending"
+          ? t("در انتظار", "Pending")
+          : t("غیرفعال", "Disabled");
+
+  const barColor =
+    pct >= 90 ? "bg-rose-500" : pct >= 75 ? "bg-amber-500" : "bg-emerald-500";
 
   return (
     <motion.div
       {...fadeUp}
       transition={{ duration: 0.35 }}
-      className="rounded-2xl border border-zinc-200/90 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900"
+      className="overflow-hidden rounded-2xl border border-zinc-200/90 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.04)] dark:border-zinc-800 dark:bg-zinc-900"
     >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="text-base font-semibold tracking-tight">{service.remark || service.email}</div>
-          <div className="mt-1 text-xs font-medium uppercase tracking-wide text-zinc-400">
-            {service.status}
+      <div className="flex items-start justify-between gap-3 border-b border-zinc-100 px-5 py-4 dark:border-zinc-800">
+        <div className="min-w-0">
+          <div className="truncate text-base font-semibold tracking-tight">
+            {service.remark || service.email}
+          </div>
+          <div className="mt-1 text-xs text-zinc-400">
+            {t("انقضا", "Expires")}: {formatExpiry(service.expiryTime)}
           </div>
         </div>
-        <div className="rounded-full bg-zinc-100 px-3 py-1 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-          {formatExpiry(service.expiryTime)}
-        </div>
+        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${statusTone}`}>
+          {statusLabel}
+        </span>
       </div>
-      <div className="mt-4 space-y-2 text-sm text-zinc-600 dark:text-zinc-400">
-        <div className="flex justify-between gap-3">
-          <span>{t("مصرف", "Used")}</span>
-          <span className="tabular-nums">{formatBytes(used)}</span>
+
+      <div className="space-y-3 px-5 py-4">
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-400">
+              {t("ترافیک", "Traffic")}
+            </div>
+            <div className="mt-1 text-lg font-semibold tabular-nums">
+              {formatBytes(used)}
+              <span className="ms-1 text-sm font-normal text-zinc-400">
+                / {total > 0 ? formatBytes(total) : t("نامحدود", "Unlimited")}
+              </span>
+            </div>
+          </div>
+          <div className="text-end text-xs text-zinc-500">
+            <div>
+              {t("باقیمانده", "Left")}:{" "}
+              <span className="font-semibold text-zinc-800 dark:text-zinc-200">
+                {remaining == null ? t("نامحدود", "Unlimited") : formatBytes(remaining)}
+              </span>
+            </div>
+          </div>
         </div>
-        <div className="flex justify-between gap-3">
-          <span>{t("باقیمانده", "Remaining")}</span>
-          <span className="tabular-nums">
-            {total > 0 ? formatBytes(Math.max(total - used, 0)) : t("نامحدود", "Unlimited")}
-          </span>
-        </div>
+        {total > 0 ? (
+          <div className="h-1.5 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
+            <div className={`h-full rounded-full ${barColor}`} style={{ width: `${pct}%` }} />
+          </div>
+        ) : null}
       </div>
-      <div className="mt-5 grid gap-2 sm:grid-cols-3">
+
+      <div className="grid gap-2 border-t border-zinc-100 px-5 py-4 sm:grid-cols-3 dark:border-zinc-800">
         <SecondaryButton
           onClick={async () => {
             onCopy();
@@ -430,9 +473,9 @@ export function ServiceCard({
             window.setTimeout(() => setCopied(false), 1600);
           }}
         >
-          {copied ? t("کپی شد", "Copied") : t("کپی", "Copy")}
+          {copied ? t("کپی شد", "Copied") : t("کپی لینک", "Copy link")}
         </SecondaryButton>
-        <SecondaryButton onClick={onOpen}>{t("سابسکریپشن", "Subscription")}</SecondaryButton>
+        <SecondaryButton onClick={onOpen}>{t("باز کردن ساب", "Open sub")}</SecondaryButton>
         <PrimaryButton onClick={onRenew}>{t("تمدید", "Renew")}</PrimaryButton>
       </div>
     </motion.div>

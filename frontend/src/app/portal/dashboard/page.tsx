@@ -202,8 +202,8 @@ function PortalBody(props: {
   setCopiedToken: (v: boolean) => void;
   resetFlow: () => void;
   onReceiptFile: (file?: File | null) => void;
-  orderMutation: { isPending: boolean; error: unknown; mutate: () => void };
-  renewMutation: { isPending: boolean; error: unknown; mutate: () => void };
+  orderMutation: ReturnType<typeof useMutation>;
+  renewMutation: ReturnType<typeof useMutation>;
   logout: ReturnType<typeof useCustomerSession>["logout"];
   cancelOrder: ReturnType<typeof useCustomerSession>["cancelOrder"];
   markNotificationRead: ReturnType<typeof useCustomerSession>["markNotificationRead"];
@@ -262,11 +262,15 @@ function PortalBody(props: {
       ? buildSubscriptionLink(services[0]?.subId, services[0]?.email)
       : "";
 
+  const activeCount = services.filter((s) => s.status === "active").length;
+  const expiredCount = services.filter((s) => s.status === "expired").length;
+  const pendingCount = pendingOrders.length;
+
   return (
-    <div className="mx-auto max-w-3xl space-y-8 px-4 py-6 sm:py-10">
+    <div className="mx-auto max-w-3xl space-y-6 px-4 py-6 sm:py-10">
       {/* Profile */}
-      <header className="space-y-5">
-        <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+      <header className="space-y-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div className="min-w-0 space-y-1">
             <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-zinc-400">
               {t("پروفایل مشتری", "Customer profile")}
@@ -316,6 +320,37 @@ function PortalBody(props: {
           </div>
         </div>
 
+        {/* Status strip */}
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div className="rounded-2xl border border-zinc-200/80 bg-white px-3.5 py-3 dark:border-zinc-800 dark:bg-zinc-900">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+              {t("فعال", "Active")}
+            </div>
+            <div className="mt-1 text-2xl font-bold tabular-nums text-emerald-600">{activeCount}</div>
+          </div>
+          <div className="rounded-2xl border border-zinc-200/80 bg-white px-3.5 py-3 dark:border-zinc-800 dark:bg-zinc-900">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+              {t("منقضی", "Expired")}
+            </div>
+            <div className="mt-1 text-2xl font-bold tabular-nums text-rose-600">{expiredCount}</div>
+          </div>
+          <div className="rounded-2xl border border-zinc-200/80 bg-white px-3.5 py-3 dark:border-zinc-800 dark:bg-zinc-900">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+              {t("در انتظار", "Pending")}
+            </div>
+            <div className="mt-1 text-2xl font-bold tabular-nums text-amber-600">{pendingCount}</div>
+          </div>
+          <div className="rounded-2xl border border-zinc-200/80 bg-white px-3.5 py-3 dark:border-zinc-800 dark:bg-zinc-900">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+              {t("اعلان‌ها", "Alerts")}
+            </div>
+            <div className="mt-1 flex items-center gap-2 text-2xl font-bold tabular-nums">
+              {unreadCount}
+              {unreadCount > 0 ? <Bell size={16} className="text-rose-500" /> : null}
+            </div>
+          </div>
+        </div>
+
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-zinc-500">
           {data.profile.telegram ? (
             <a
@@ -336,11 +371,6 @@ function PortalBody(props: {
             <a href={`mailto:${data.profile.email}`} className="hover:text-zinc-800">
               {data.profile.email}
             </a>
-          ) : null}
-          {unreadCount > 0 ? (
-            <span className="inline-flex items-center gap-1 text-rose-600">
-              <Bell size={13} /> {unreadCount} {t("اعلان جدید", "new")}
-            </span>
           ) : null}
         </div>
       </header>
@@ -623,7 +653,7 @@ function PortalBody(props: {
             </div>
             <button
               type="button"
-              onClick={() => setShowQr(!showQr)}
+              onClick={() => setShowQr((v) => !v)}
               className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-zinc-200 text-zinc-600 dark:border-zinc-800"
               aria-label="QR"
             >
