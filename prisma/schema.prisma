@@ -534,6 +534,7 @@ model StoreProfile {
   telegramBotUsername String?
   telegramWebhookSecret String?
   telegramWelcomeText String?
+  telegramAdminChatId String?
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
