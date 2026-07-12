@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import {
@@ -197,13 +197,13 @@ function PortalBody(props: {
   result: { trackingCode: string; status?: string } | null;
   setResult: (v: { trackingCode: string; status?: string } | null) => void;
   showQr: boolean;
-  setShowQr: (v: boolean) => void;
+  setShowQr: Dispatch<SetStateAction<boolean>>;
   copiedToken: boolean;
   setCopiedToken: (v: boolean) => void;
   resetFlow: () => void;
   onReceiptFile: (file?: File | null) => void;
-  orderMutation: ReturnType<typeof useMutation>;
-  renewMutation: ReturnType<typeof useMutation>;
+  orderMutation: { isPending: boolean; error: unknown; mutate: () => void };
+  renewMutation: { isPending: boolean; error: unknown; mutate: () => void };
   logout: ReturnType<typeof useCustomerSession>["logout"];
   cancelOrder: ReturnType<typeof useCustomerSession>["cancelOrder"];
   markNotificationRead: ReturnType<typeof useCustomerSession>["markNotificationRead"];
