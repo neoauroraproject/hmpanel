@@ -529,6 +529,11 @@ model StoreProfile {
   supportLinks        Json?
   defaultCurrency     String   @default("USD")
   enabled             Boolean  @default(true)
+  telegramBotEnabled  Boolean  @default(false)
+  telegramBotTokenEnc String?
+  telegramBotUsername String?
+  telegramWebhookSecret String?
+  telegramWelcomeText String?
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
@@ -666,6 +671,8 @@ model StoreCustomer {
   token             String    @unique
   name              String?
   telegram          String?
+  telegramUserId    String?
+  telegramUsername  String?
   whatsapp          String?
   email             String?
   status            String    @default("active")
@@ -684,8 +691,10 @@ model StoreCustomer {
   notifications StoreCustomerNotification[]
   activities    StoreCustomerActivity[]
 
+  @@unique([adminId, telegramUserId])
   @@index([adminId])
   @@index([token])
+  @@index([telegramUserId])
 }
 
 model StoreCustomerSession {
