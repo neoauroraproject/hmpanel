@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Check,
@@ -19,6 +19,7 @@ import {
   resolveThemeLogo,
 } from "@/modules/shared/brand-logo";
 import { LanguageSwitcher, StorefrontLocaleProvider, useStorefrontLocale } from "./locale";
+import { StorefrontThemeToggle, useStorefrontTheme, fadeUp, fadeUpTransition } from "./design";
 import type {
   CustomerNotification,
   CustomerOrder,
@@ -27,34 +28,9 @@ import type {
   StorefrontStore,
 } from "./types";
 
-const fadeUp = {
-  initial: { opacity: 0, y: 14 },
-  animate: { opacity: 1, y: 0 },
-  exit: { opacity: 0, y: -8 },
-};
-
 function useIsDarkSurface() {
-  const [dark, setDark] = useState(false);
-
-  useEffect(() => {
-    const sync = () => {
-      const root = document.documentElement;
-      const byClass = root.classList.contains("dark");
-      const byMedia = window.matchMedia("(prefers-color-scheme: dark)").matches;
-      setDark(byClass || (!root.classList.contains("light") && byMedia));
-    };
-    sync();
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    mq.addEventListener("change", sync);
-    const observer = new MutationObserver(sync);
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
-    return () => {
-      mq.removeEventListener("change", sync);
-      observer.disconnect();
-    };
-  }, []);
-
-  return dark;
+  const { isDark } = useStorefrontTheme();
+  return isDark;
 }
 
 export function StoreShell({
@@ -89,6 +65,7 @@ function StoreShellInner({
   children: React.ReactNode;
 }) {
   const { isFa } = useStorefrontLocale();
+  useStorefrontTheme();
   const isDark = useIsDarkSurface();
   const logo =
     resolveThemeLogo({
@@ -100,39 +77,52 @@ function StoreShellInner({
 
   return (
     <div
-      className={`min-h-[100dvh] bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.08),_transparent_42%),linear-gradient(180deg,#fafafa_0%,#f4f4f5_100%)] text-zinc-950 dark:bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.12),_transparent_40%),linear-gradient(180deg,#09090b_0%,#0a0a0c_100%)] dark:text-zinc-100 ${
-        isFa ? "font-[Vazirmatn,Tahoma,sans-serif]" : ""
+      className={`min-h-[100dvh] bg-[#F5F5F7] text-[#1D1D1F] dark:bg-[#0B0B0F] dark:text-zinc-50 ${
+        isFa ? "font-[Vazirmatn,Tahoma,sans-serif]" : "font-[ui-sans-serif,system-ui,sans-serif]"
       }`}
       style={{
         ["--store-primary" as string]: primaryColor,
         ...(isFa ? { fontFamily: '"Vazirmatn", Tahoma, sans-serif' } : null),
-        paddingBottom: "env(safe-area-inset-bottom)",
       }}
     >
-      <div className="sticky top-0 z-40 border-b border-zinc-200/70 bg-white/80 px-4 py-3 backdrop-blur-xl dark:border-zinc-800/70 dark:bg-zinc-950/80 pt-[max(0.75rem,env(safe-area-inset-top))]">
-        <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">
-          {/* Brand opposite language: in LTR brand=start, lang=end; RTL flex auto-flips */}
-          <div className="flex min-w-0 flex-1 items-center gap-2.5">
+      {/* Soft brand wash */}
+      <div
+        aria-hidden
+        className="pointer-events-none fixed inset-x-0 top-0 h-72 opacity-90"
+        style={{
+          background: `radial-gradient(ellipse 90% 70% at 50% -20%, color-mix(in srgb, ${primaryColor} 28%, transparent), transparent 70%)`,
+        }}
+      />
+
+      <header className="sticky top-0 z-40 px-3 pt-[max(0.65rem,env(safe-area-inset-top))] sm:px-4">
+        <div className="mx-auto flex max-w-5xl items-center gap-3 rounded-[1.5rem] border border-black/[0.05] bg-white/80 px-3 py-2.5 shadow-[0_8px_30px_-18px_rgba(15,23,42,0.35)] backdrop-blur-2xl dark:border-white/[0.08] dark:bg-zinc-950/75 lg:px-4">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
             {logo ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={logo} alt="" className="h-9 w-9 shrink-0 rounded-xl object-cover" />
+              <img src={logo} alt="" className="h-11 w-11 shrink-0 rounded-[1.05rem] object-cover shadow-sm" />
             ) : (
               <div
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sm font-bold text-white"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[1.05rem] text-base font-black text-white shadow-sm"
                 style={{ background: primaryColor }}
               >
                 {title.slice(0, 1)}
               </div>
             )}
             <div className="min-w-0">
-              <div className="truncate text-[15px] font-bold leading-tight">{title}</div>
-              {topBar ? <div className="mt-0.5 min-w-0">{topBar}</div> : null}
+              <div className="truncate text-[16px] font-bold leading-tight tracking-tight">{title}</div>
+              {topBar ? <div className="mt-0.5 truncate text-[12px] text-zinc-500">{topBar}</div> : null}
             </div>
           </div>
-          <LanguageSwitcher className="shrink-0" />
+          <div className="flex shrink-0 items-center gap-1.5">
+            <StorefrontThemeToggle />
+            <LanguageSwitcher className="!shadow-none !h-11 !rounded-2xl" />
+          </div>
         </div>
-      </div>
-      <div className="mx-auto w-full max-w-3xl pb-8">{children}</div>
+      </header>
+
+      <main className="relative z-10 mx-auto w-full max-w-5xl px-4 pb-[calc(6.5rem+env(safe-area-inset-bottom))] pt-4 sm:px-6 lg:px-8 lg:pb-16 lg:pt-6">
+        {children}
+      </main>
     </div>
   );
 }
@@ -160,25 +150,29 @@ export function WelcomeHero({
   return (
     <motion.section
       {...fadeUp}
-      transition={{ duration: 0.45, ease: "easeOut" }}
-      className="mx-auto flex max-w-3xl flex-col items-center px-4 py-10 text-center sm:py-16"
+      transition={fadeUpTransition}
+      className="mx-auto flex max-w-2xl flex-col items-center py-6 text-center sm:py-10"
     >
       {logo ? (
+        // eslint-disable-next-line @next/next/no-img-element
         <img
           src={logo}
           alt={store?.title || store?.branding?.name || "Store logo"}
-          className="mb-6 h-20 w-auto max-w-[10rem] object-contain sm:h-24 sm:max-w-[12rem]"
+          className="mb-5 h-[4.5rem] w-auto max-w-[9rem] object-contain drop-shadow-sm sm:h-24 sm:max-w-[11rem]"
         />
       ) : (
-        <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-[1.75rem] bg-[color:var(--store-primary)]/10 text-[color:var(--store-primary)] sm:h-24 sm:w-24">
-          <ShieldCheck size={40} />
+        <div className="mb-5 flex h-[4.5rem] w-[4.5rem] items-center justify-center rounded-[1.5rem] bg-[color:var(--store-primary)] text-white shadow-[0_16px_40px_-18px_var(--store-primary)] sm:h-24 sm:w-24">
+          <ShieldCheck size={36} />
         </div>
       )}
-      <h1 className="text-3xl font-black tracking-tight sm:text-5xl">
+      <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-zinc-400">
+        {t("فروشگاه", "Store")}
+      </p>
+      <h1 className="mt-2 text-[2rem] font-black tracking-tight text-zinc-900 dark:text-zinc-50 sm:text-[2.75rem]">
         {store?.title || store?.branding?.name || "VPN Store"}
       </h1>
       {store?.description ? (
-        <p className="mt-4 max-w-xl text-sm text-zinc-600 dark:text-zinc-400 sm:text-base">
+        <p className="mt-3 max-w-md text-[15px] leading-relaxed text-zinc-500 sm:text-base">
           {store.description}
         </p>
       ) : null}
@@ -190,9 +184,9 @@ export function WelcomeHero({
         <button
           type="button"
           onClick={onTrack}
-          className="mt-4 text-sm font-semibold text-[color:var(--store-primary)] hover:underline"
+          className="mt-5 cursor-pointer text-[14px] font-semibold text-[color:var(--store-primary)]"
         >
-          {isFa ? "پیگیری سفارش ←" : "Track an order →"}
+          {isFa ? "پیگیری سفارش" : "Track an order"}
         </button>
       ) : null}
       <SupportFooter supportLinks={store?.branding?.supportLinks} />
@@ -220,10 +214,10 @@ export function ProductCard({
       whileHover={{ y: -2 }}
       whileTap={{ scale: 0.985 }}
       transition={{ type: "spring", stiffness: 320, damping: 24 }}
-      className={`relative w-full rounded-3xl border bg-white p-4 text-start shadow-sm transition dark:bg-zinc-900 sm:p-5 ${
+      className={`relative w-full cursor-pointer rounded-[1.75rem] border bg-white p-5 text-start shadow-[0_8px_30px_-18px_rgba(15,23,42,0.28)] transition dark:bg-zinc-900 sm:p-5 ${
         selected
-          ? "border-[color:var(--store-primary)] ring-2 ring-[color:var(--store-primary)]/20"
-          : "border-zinc-200 hover:border-zinc-300 dark:border-zinc-800"
+          ? "border-[color:var(--store-primary)] ring-2 ring-[color:var(--store-primary)]/25"
+          : "border-black/[0.04] hover:border-black/[0.08] dark:border-white/[0.06]"
       }`}
     >
       <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -290,12 +284,13 @@ export function Stepper({ step }: { step: number }) {
   const { t } = useStorefrontLocale();
   const labels = [
     t("پلن", "Plan"),
+    t("کانفیگ", "Config"),
     t("پروفایل", "Profile"),
     t("پرداخت", "Payment"),
     t("تأیید", "Confirm"),
   ];
   return (
-    <div className="mb-5 flex items-center justify-between gap-1 overflow-x-auto pb-1 text-[10px] font-semibold uppercase tracking-wide sm:justify-center sm:gap-2 sm:text-xs">
+    <div className="mb-6 flex items-center justify-between gap-1 overflow-x-auto pb-1 text-[10px] font-semibold uppercase tracking-wide sm:mb-8 sm:justify-center sm:gap-2 sm:text-xs">
       {labels.map((label, index) => (
         <div key={label} className="flex shrink-0 items-center gap-1.5 sm:gap-2">
           <div
@@ -328,6 +323,7 @@ export function PendingOrderCard({
   onCopy?: () => void;
   onTrack: () => void;
 }) {
+  const { t } = useStorefrontLocale();
   const [copied, setCopied] = useState<"token" | "tracking" | null>(null);
 
   const handleCopy = async (value: string, kind: "token" | "tracking") => {
@@ -346,9 +342,12 @@ export function PendingOrderCard({
         <LoaderCircle size={14} className="animate-spin" />
         {orderStatus.replaceAll("_", " ")}
       </div>
-      <h2 className="text-2xl font-black">Order Submitted</h2>
+      <h2 className="text-2xl font-black">{t("سفارش ثبت شد", "Order Submitted")}</h2>
       <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
-        Waiting for approval. Your order will usually be reviewed within a few minutes.
+        {t(
+          "در انتظار تأیید. معمولاً ظرف چند دقیقه بررسی می‌شود.",
+          "Waiting for approval. Your order will usually be reviewed within a few minutes.",
+        )}
       </p>
 
       <div className="mt-6 rounded-2xl border border-amber-500/15 bg-amber-500/5 p-4">
@@ -357,16 +356,23 @@ export function PendingOrderCard({
             <LoaderCircle size={18} className="animate-spin" />
           </div>
           <div>
-            <div className="font-semibold text-amber-700 dark:text-amber-400">Review in progress</div>
+            <div className="font-semibold text-amber-700 dark:text-amber-400">
+              {t("در حال بررسی", "Review in progress")}
+            </div>
             <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-              Hang tight — an admin will check your payment shortly. This page and your dashboard update automatically once approved.
+              {t(
+                "لطفاً صبر کنید — ادمین به‌زودی پرداخت را بررسی می‌کند. این صفحه و داشبورد پس از تأیید به‌روز می‌شوند.",
+                "Hang tight — an admin will check your payment shortly. This page and your dashboard update automatically once approved.",
+              )}
             </p>
           </div>
         </div>
       </div>
 
       <div className="mt-6 rounded-2xl bg-zinc-50 p-4 dark:bg-zinc-950">
-        <div className="text-xs uppercase tracking-wide text-zinc-500">Tracking Code</div>
+        <div className="text-xs uppercase tracking-wide text-zinc-500">
+          {t("کد پیگیری", "Tracking Code")}
+        </div>
         <div className="mt-2 flex items-center gap-2">
           <div className="min-w-0 flex-1 truncate font-mono text-lg font-bold">{trackingCode}</div>
           <CopyFeedbackButton
@@ -378,7 +384,7 @@ export function PendingOrderCard({
 
       <div className="mt-4 rounded-2xl border border-[color:var(--store-primary)]/20 bg-[color:var(--store-primary)]/5 p-4">
         <div className="flex items-center gap-2 text-sm font-semibold text-[color:var(--store-primary)]">
-          <KeyRound size={16} /> Customer Token
+          <KeyRound size={16} /> {t("توکن ورود وب", "Web login token")}
         </div>
         <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
           <code className="w-full break-all rounded-xl bg-white px-3 py-3 font-mono text-sm font-bold tracking-wide dark:bg-zinc-900 sm:flex-1">
@@ -390,15 +396,20 @@ export function PendingOrderCard({
           >
             <span className="inline-flex items-center justify-center gap-2">
               {copied === "token" ? <Check size={16} /> : <Copy size={16} />}
-              {copied === "token" ? "Copied" : "Copy"}
+              {copied === "token" ? t("کپی شد", "Copied") : t("کپی", "Copy")}
             </span>
           </PrimaryButton>
         </div>
-        <p className="mt-3 text-xs text-zinc-500">Save this token. It is required for future access.</p>
+        <p className="mt-3 text-xs text-zinc-500">
+          {t(
+            "این کد فقط برای ورود از وب/پورتال است. در مینی‌اپ تلگرام لازم نیست.",
+            "Only needed for web/portal login. Not required inside the Telegram Mini App.",
+          )}
+        </p>
       </div>
 
       <SecondaryButton className="mt-5" onClick={onTrack}>
-        Track Order
+        {t("پیگیری سفارش", "Track Order")}
       </SecondaryButton>
     </motion.div>
   );
@@ -757,7 +768,7 @@ export function PrimaryButton({
   return (
     <button
       {...props}
-      className={`w-full rounded-2xl bg-[color:var(--store-primary)] px-5 py-3.5 font-semibold text-white shadow-[0_10px_24px_-16px_var(--store-primary)] transition hover:opacity-95 active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
+      className={`inline-flex h-12 min-h-[48px] w-full cursor-pointer items-center justify-center rounded-2xl bg-[color:var(--store-primary)] px-5 text-[15px] font-semibold text-white shadow-[0_12px_28px_-14px_var(--store-primary)] transition duration-200 hover:opacity-95 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
     >
       {children}
     </button>
@@ -772,7 +783,7 @@ export function SecondaryButton({
   return (
     <button
       {...props}
-      className={`w-full rounded-2xl border border-zinc-200 bg-white px-5 py-3.5 font-semibold text-zinc-900 transition hover:border-zinc-300 active:scale-[0.985] dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 ${className}`}
+      className={`inline-flex h-12 min-h-[48px] w-full cursor-pointer items-center justify-center rounded-2xl border border-black/[0.06] bg-white px-5 text-[15px] font-semibold text-zinc-900 transition duration-200 active:scale-[0.98] dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100 ${className}`}
     >
       {children}
     </button>

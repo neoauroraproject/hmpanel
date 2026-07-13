@@ -17,8 +17,9 @@ export async function compressReceiptImage(
 
   const bitmap = await createImageBitmap(file);
   try {
-    let width = Math.max(1, Math.round(bitmap.width * Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height))));
-    let height = Math.max(1, Math.round(bitmap.height * Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height))));
+    let scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
+    let width = Math.max(1, Math.round(bitmap.width * scale));
+    let height = Math.max(1, Math.round(bitmap.height * scale));
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Could not process image");

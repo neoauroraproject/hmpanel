@@ -18,8 +18,9 @@ import {
   StoreShell,
   WelcomeHero,
 } from "@/modules/storefront/ui";
+import { FieldBlock } from "@/modules/storefront/design";
 
-type Step = 0 | 1 | 2 | 3 | 4;
+type Step = 0 | 1 | 2 | 3 | 4 | 5;
 
 export default function ShopPage() {
   const params = useParams();
@@ -278,13 +279,10 @@ function ShopBody(props: {
   } = props;
   const { t, formatToman } = useStorefrontLocale();
 
+  const canContinueConfig = isRenewFlow || !!form.configName.trim();
   const canContinueProfile =
     !!selectedProduct &&
-    (isRenewFlow
-      ? haveToken
-        ? !!form.customerToken.trim()
-        : !!form.name.trim()
-      : !!form.configName.trim() && (haveToken ? !!form.customerToken.trim() : !!form.name.trim()));
+    (haveToken ? !!form.customerToken.trim() : !!form.name.trim());
 
   const contextBanner =
     isRenewFlow || isBuyFromPortal ? (
@@ -429,13 +427,48 @@ function ShopBody(props: {
             {step === 2 ? (
               <div className="space-y-5">
                 <div>
-                  <div className="text-lg font-bold">{t("اطلاعات مشتری", "Customer Information")}</div>
+                  <div className="text-lg font-bold">{t("نام کانفیگ", "Config name")}</div>
+                  <p className="mt-1 text-sm text-zinc-500">
+                    {t(
+                      "این نام روی سرویس شما نمایش داده می‌شود — جدا از اطلاعات تماس.",
+                      "Shown on your service — separate from contact details.",
+                    )}
+                  </p>
+                </div>
+                {isRenewFlow ? (
+                  <p className="rounded-2xl bg-zinc-50 px-4 py-3 text-sm text-zinc-500 dark:bg-zinc-950">
+                    {t("برای تمدید نام کانفیگ لازم نیست.", "Config name is not required for renewal.")}
+                  </p>
+                ) : (
+                  <FieldBlock
+                    title={t("نام کانفیگ", "Config name")}
+                    hint={t("مثلاً phone-1 یا laptop", "e.g. phone-1 or laptop")}
+                    accent
+                  >
+                    <input
+                      value={form.configName}
+                      onChange={(event) =>
+                        setForm((current: any) => ({ ...current, configName: event.target.value }))
+                      }
+                      placeholder={t("مثلاً phone-1", "e.g. phone-1")}
+                      className="w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3.5 outline-none dark:border-zinc-700 dark:bg-zinc-950"
+                      style={{ fontSize: 16 }}
+                    />
+                  </FieldBlock>
+                )}
+              </div>
+            ) : null}
+
+            {step === 3 ? (
+              <div className="space-y-5">
+                <div>
+                  <div className="text-lg font-bold">{t("اطلاعات تماس و پروفایل", "Contact & profile")}</div>
                   <p className="mt-1 text-sm text-zinc-500">
                     {isRenewFlow
                       ? t("تمدید با پروفایل مشتری شما انجام می‌شود.", "Renewal uses your customer profile.")
                       : t(
-                          "مشتری جدید پروفایل می‌سازد؛ مشتری قبلی می‌تواند توکن بزند.",
-                          "New customers create a profile. Returning customers can reuse their token.",
+                          "مشتری جدید پروفایل می‌سازد؛ مشتری قبلی می‌تواند توکن وب بزند.",
+                          "New customers create a profile. Returning customers can use a web token.",
                         )}
                   </p>
                 </div>
@@ -446,7 +479,7 @@ function ShopBody(props: {
                       onClick={() => setHaveToken(true)}
                       className={`rounded-2xl border px-4 py-3 text-start ${haveToken ? "border-[color:var(--store-primary)] bg-[color:var(--store-primary)]/5" : "border-zinc-200 dark:border-zinc-800"}`}
                     >
-                      <div className="font-semibold">{t("توکن دارم", "Have Token")}</div>
+                      <div className="font-semibold">{t("توکن وب دارم", "Have web token")}</div>
                       <div className="mt-1 text-xs text-zinc-500">{t("بارگذاری پروفایل", "Load your customer profile")}</div>
                     </button>
                     <button
@@ -459,74 +492,66 @@ function ShopBody(props: {
                     </button>
                   </div>
                 ) : null}
-                {!isRenewFlow ? (
-                  <label className="block text-sm font-medium">
-                    {t("نام کانفیگ", "Config Name")}
-                    <input
-                      value={form.configName}
-                      onChange={(event) => setForm((current: any) => ({ ...current, configName: event.target.value }))}
-                      className="mt-2 w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 outline-none dark:border-zinc-800 dark:bg-zinc-950"
-                    />
-                  </label>
-                ) : null}
-                {haveToken ? (
-                  <div className="space-y-3">
-                    <div className="flex gap-2">
-                      <input
-                        value={form.customerToken}
-                        onChange={(event) =>
-                          setForm((current: any) => ({
-                            ...current,
-                            customerToken: event.target.value.toUpperCase(),
-                          }))
-                        }
-                        placeholder="HM-XXXX-XXXX-XXXX"
-                        className="flex-1 rounded-2xl border border-zinc-200 bg-white px-4 py-3 font-mono outline-none dark:border-zinc-800 dark:bg-zinc-950"
-                      />
-                      <PrimaryButton
-                        className="w-auto px-5"
-                        onClick={() => lookupCustomer.mutate(form.customerToken.trim())}
-                        disabled={!form.customerToken.trim() || lookupCustomer.isPending}
-                      >
-                        {t("بارگذاری", "Load")}
-                      </PrimaryButton>
+                <FieldBlock title={t("اطلاعات تماس", "Contact details")} hint={t("نام و راه‌های ارتباطی", "Name and contact channels")}>
+                  {haveToken ? (
+                    <div className="space-y-3">
+                      <div className="flex gap-2">
+                        <input
+                          value={form.customerToken}
+                          onChange={(event) =>
+                            setForm((current: any) => ({
+                              ...current,
+                              customerToken: event.target.value.toUpperCase(),
+                            }))
+                          }
+                          placeholder="HM-XXXX-XXXX-XXXX"
+                          className="flex-1 rounded-2xl border border-zinc-200 bg-white px-4 py-3 font-mono outline-none dark:border-zinc-800 dark:bg-zinc-950"
+                        />
+                        <PrimaryButton
+                          className="w-auto px-5"
+                          onClick={() => lookupCustomer.mutate(form.customerToken.trim())}
+                          disabled={!form.customerToken.trim() || lookupCustomer.isPending}
+                        >
+                          {t("بارگذاری", "Load")}
+                        </PrimaryButton>
+                      </div>
+                      {lookupError ? <p className="text-sm text-red-500">{lookupError}</p> : null}
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <Input label={t("نام", "Display Name")} value={form.name} disabled />
+                        <Input label="Telegram" value={form.telegram} disabled />
+                        <Input label="WhatsApp" value={form.whatsapp} disabled />
+                        <Input label="Email" value={form.email} disabled />
+                      </div>
                     </div>
-                    {lookupError ? <p className="text-sm text-red-500">{lookupError}</p> : null}
+                  ) : (
                     <div className="grid gap-3 sm:grid-cols-2">
-                      <Input label={t("نام", "Display Name")} value={form.name} disabled />
-                      <Input label="Telegram" value={form.telegram} disabled />
-                      <Input label="WhatsApp" value={form.whatsapp} disabled />
-                      <Input label="Email" value={form.email} disabled />
+                      <Input
+                        label={t("نام", "Display Name")}
+                        value={form.name}
+                        onChange={(value) => setForm((current: any) => ({ ...current, name: value }))}
+                      />
+                      <Input
+                        label="Telegram"
+                        value={form.telegram}
+                        onChange={(value) => setForm((current: any) => ({ ...current, telegram: value }))}
+                      />
+                      <Input
+                        label="WhatsApp"
+                        value={form.whatsapp}
+                        onChange={(value) => setForm((current: any) => ({ ...current, whatsapp: value }))}
+                      />
+                      <Input
+                        label="Email"
+                        value={form.email}
+                        onChange={(value) => setForm((current: any) => ({ ...current, email: value }))}
+                      />
                     </div>
-                  </div>
-                ) : (
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <Input
-                      label={t("نام", "Display Name")}
-                      value={form.name}
-                      onChange={(value) => setForm((current: any) => ({ ...current, name: value }))}
-                    />
-                    <Input
-                      label="Telegram"
-                      value={form.telegram}
-                      onChange={(value) => setForm((current: any) => ({ ...current, telegram: value }))}
-                    />
-                    <Input
-                      label="WhatsApp"
-                      value={form.whatsapp}
-                      onChange={(value) => setForm((current: any) => ({ ...current, whatsapp: value }))}
-                    />
-                    <Input
-                      label="Email"
-                      value={form.email}
-                      onChange={(value) => setForm((current: any) => ({ ...current, email: value }))}
-                    />
-                  </div>
-                )}
+                  )}
+                </FieldBlock>
               </div>
             ) : null}
 
-            {step === 3 ? (
+            {step === 4 ? (
               <div className="space-y-4">
                 <div>
                   <div className="text-lg font-bold">{t("پرداخت", "Payment")}</div>
@@ -604,7 +629,7 @@ function ShopBody(props: {
               </div>
             ) : null}
 
-            {step === 4 ? (
+            {step === 5 ? (
               <div className="space-y-3 text-sm">
                 {isRenewFlow ? (
                   <SummaryRow label={t("سرویس", "Service")} value={serviceName || "—"} />
@@ -637,18 +662,38 @@ function ShopBody(props: {
                     setSelectedProduct(null);
                     return;
                   }
+                  if (isRenewFlow && step === 3) {
+                    setStep(1);
+                    return;
+                  }
+                  if (isRenewFlow && step === 4) {
+                    setStep(3);
+                    return;
+                  }
                   setStep((current) => Math.max(1, current - 1) as Step);
                 }}
               >
                 {t("بازگشت", "Back")}
               </SecondaryButton>
-              {step < 4 ? (
+              {step < 5 ? (
                 <PrimaryButton
-                  onClick={() => setStep((current) => (current + 1) as Step)}
+                  onClick={() => {
+                    // Renew skips config step (2 → 3)
+                    if (step === 1 && isRenewFlow) {
+                      setStep(3);
+                      return;
+                    }
+                    if (step === 3 && isRenewFlow) {
+                      setStep(4);
+                      return;
+                    }
+                    setStep((current) => (current + 1) as Step);
+                  }}
                   disabled={
                     (step === 1 && !selectedProduct) ||
-                    (step === 2 && !canContinueProfile) ||
-                    (step === 3 && !form.receiptText.trim() && !form.receiptImage)
+                    (step === 2 && !canContinueConfig) ||
+                    (step === 3 && !canContinueProfile) ||
+                    (step === 4 && !form.receiptText.trim() && !form.receiptImage)
                   }
                 >
                   {t("ادامه", "Continue")}
