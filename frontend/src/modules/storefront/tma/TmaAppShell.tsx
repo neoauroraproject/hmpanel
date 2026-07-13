@@ -9,7 +9,7 @@ import {
   ShoppingBag,
 } from "lucide-react";
 import { buildSubscriptionLink } from "../subscription";
-import type { CustomerService, StorefrontProduct } from "../types";
+import type { CustomerOrder, CustomerService, StorefrontProduct } from "../types";
 import { TmaBottomNav, type TmaTab } from "./TmaBottomNav";
 import { TmaCheckoutSheet } from "./TmaCheckoutSheet";
 import { useTelegramSession } from "./useTelegramSession";
@@ -426,7 +426,7 @@ function TmaAppShellInner({
               subtitle={t("یک پلن انتخاب کنید", "Pick a plan to get started")}
             />
             <div className="space-y-2.5">
-              {products.map((p) => (
+              {products.map((p: StorefrontProduct) => (
                 <ProductTile
                   key={p.id}
                   product={p}
@@ -458,7 +458,7 @@ function TmaAppShellInner({
               subtitle={t("اشتراک‌های فعال و قبلی", "Your active and past subscriptions")}
             />
             <div className="space-y-2.5">
-              {(data.services || []).map((service) => (
+              {(data.services || []).map((service: CustomerService) => (
                 <ServiceRow
                   key={service.id}
                   service={service}
@@ -493,7 +493,7 @@ function TmaAppShellInner({
               subtitle={t("پیگیری و مدیریت درخواست‌ها", "Track and manage your requests")}
             />
             <div className="space-y-2.5">
-              {(data.orders || []).map((order) => (
+              {(data.orders || []).map((order: CustomerOrder) => (
                 <div
                   key={order.id}
                   className="rounded-[1.25rem] p-4"

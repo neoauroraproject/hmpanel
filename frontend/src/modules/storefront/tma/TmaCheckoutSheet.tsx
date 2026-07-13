@@ -105,7 +105,7 @@ export function TmaCheckoutSheet({
       setError(t("نام پروفایل الزامی است", "Profile name is required"));
       return;
     }
-    setStep((s) => Math.min(maxStep, (s + 1) as Step));
+    setStep((s) => Math.min(maxStep, s + 1) as Step);
   };
 
   const goBack = () => {
@@ -114,7 +114,7 @@ export function TmaCheckoutSheet({
       onClose();
       return;
     }
-    setStep((s) => Math.max(0, (s - 1) as Step));
+    setStep((s) => Math.max(0, s - 1) as Step);
   };
 
   const submit = useMutation({
