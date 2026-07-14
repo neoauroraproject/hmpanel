@@ -322,7 +322,7 @@ function ShopBody(props: {
           <WelcomeHero
             store={store}
             onBuy={() => setStep(1)}
-            onLogin={() => router.push(`/portal?slug=${encodeURIComponent(slug)}`)}
+            onLogin={() => router.push(`/portal?slug=${encodeURIComponent(store.slug)}`)}
             onTrack={() => setShowTrack(true)}
           />
           <AnimatePresence>
