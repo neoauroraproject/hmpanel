@@ -6,9 +6,8 @@ import { LoaderCircle } from "lucide-react";
 import TmaAppShell from "@/modules/storefront/tma/TmaAppShell";
 import {
   forceTelegramMiniApp,
-  isTelegramContext,
+  hasTelegramInitData,
   isTelegramUserAgent,
-  isTelegramWebAppPresent,
   loadTelegramScript,
   applyTelegramFullscreen,
 } from "@/modules/storefront/tma/useTelegramWebApp";
@@ -31,31 +30,31 @@ function ShopRouter() {
       setMode("tma");
     };
 
+    const pickWeb = () => {
+      if (!cancelled) setMode("web");
+    };
+
     const run = async () => {
-      // Never show web token checkout when opened as Mini App
-      if (forceTg || forceTelegramMiniApp() || isTelegramContext() || isTelegramWebAppPresent()) {
-        pickTma();
-        try {
-          await loadTelegramScript();
-          if (!cancelled) applyTelegramFullscreen(window.Telegram?.WebApp);
-        } catch {
-          /* ignore */
-        }
+      // Regular browser (no ?tg=1): always web storefront with token checkout
+      if (!forceTg && !forceTelegramMiniApp() && !isTelegramUserAgent()) {
+        pickWeb();
         return;
       }
 
+      // Mini App path: bot Open (?tg=1) or Telegram in-app browser
       try {
         await loadTelegramScript();
       } catch {
-        /* ignore */
+        /* continue */
       }
       if (cancelled) return;
 
-      if (isTelegramContext() || isTelegramWebAppPresent() || isTelegramUserAgent()) {
+      if (hasTelegramInitData()) {
         pickTma();
         return;
       }
 
+      // Wait briefly for initData — never fall back to blocking Retry forever in browser
       let tries = 0;
       const t = window.setInterval(() => {
         if (cancelled) {
@@ -63,22 +62,23 @@ function ShopRouter() {
           return;
         }
         tries += 1;
-        if (isTelegramContext() || isTelegramWebAppPresent() || isTelegramUserAgent()) {
+        if (hasTelegramInitData()) {
           window.clearInterval(t);
           pickTma();
           return;
         }
-        // If URL forced Mini App, never fall back to web token UI
         if (forceTg) {
-          if (tries >= 60) {
+          // Still in Mini App intent — keep TMA shell (shows Retry with initData help)
+          if (tries >= 40) {
             window.clearInterval(t);
             pickTma();
           }
           return;
         }
-        if (tries >= 50) {
+        // Telegram UA but no initData → open web storefront (token flow)
+        if (tries >= 25) {
           window.clearInterval(t);
-          setMode("web");
+          pickWeb();
         }
       }, 100);
     };

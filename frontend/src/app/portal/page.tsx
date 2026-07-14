@@ -4,13 +4,21 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { KeyRound, ArrowRight, LoaderCircle, ShoppingBag } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { publicApi } from "@/lib/api";
 import { useCustomerSession } from "@/modules/storefront/session";
 import { StoreShell, PrimaryButton, SecondaryButton } from "@/modules/storefront/ui";
 import { usePortalTelegramGate } from "@/modules/storefront/tma/usePortalTelegramGate";
-import { useStorefrontLocale } from "@/modules/storefront/locale";
+import { StorefrontLocaleProvider, useStorefrontLocale } from "@/modules/storefront/locale";
 import { fadeUp, fadeUpTransition, Surface } from "@/modules/storefront/design";
+import {
+  rememberStoreSlug,
+  resolveStoreSlug,
+  shopPathForSlug,
+} from "@/modules/storefront/store-slug";
+import type { StorefrontStore } from "@/modules/storefront/types";
 
-function PortalLoginForm() {
+function PortalLoginForm({ store }: { store?: StorefrontStore | null }) {
   const router = useRouter();
   const { t, isFa } = useStorefrontLocale();
   const [token, setToken] = useState("");
@@ -28,8 +36,15 @@ function PortalLoginForm() {
   }, [data, login]);
 
   useEffect(() => {
-    if (data) router.replace("/portal/dashboard");
+    if (data) {
+      if (data.store?.slug) rememberStoreSlug(data.store.slug);
+      router.replace("/portal/dashboard");
+    }
   }, [data, router]);
+
+  const goShop = () => {
+    router.push(shopPathForSlug(store?.slug || resolveStoreSlug()));
+  };
 
   return (
     <motion.div
@@ -79,12 +94,7 @@ function PortalLoginForm() {
               </span>
             )}
           </PrimaryButton>
-          <SecondaryButton
-            onClick={() => {
-              const slug = new URLSearchParams(window.location.search).get("slug");
-              router.push(slug ? `/shop/${encodeURIComponent(slug)}` : "/");
-            }}
-          >
+          <SecondaryButton onClick={goShop}>
             <span className="inline-flex items-center justify-center gap-2">
               <ShoppingBag size={16} />
               {t("بازگشت به فروشگاه", "Back to store")}
@@ -101,15 +111,66 @@ function PortalLoginForm() {
   );
 }
 
+function PortalLoginBody() {
+  const [slug, setSlug] = useState(() => resolveStoreSlug());
+
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      const known = resolveStoreSlug();
+      if (known) {
+        setSlug(known);
+        return;
+      }
+      try {
+        const host = window.location.host;
+        const res = await publicApi.get("/store/public/by-domain", {
+          params: { domain: host },
+        });
+        const found = res.data?.store?.slug || "";
+        if (!cancelled && found) {
+          rememberStoreSlug(found);
+          setSlug(found);
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const { data: publicStore } = useQuery({
+    queryKey: ["portal-login-store", slug],
+    queryFn: async () => (await publicApi.get(`/store/public/${slug}`)).data,
+    enabled: !!slug,
+    retry: false,
+  });
+
+  const store = (publicStore?.store || (slug ? { slug, title: slug } : null)) as
+    | StorefrontStore
+    | null
+    | undefined;
+
+  return (
+    <StoreShell store={store || undefined} topBar={slug || undefined}>
+      <PortalLoginForm store={store} />
+    </StoreShell>
+  );
+}
+
 export default function PortalEntryPage() {
   const router = useRouter();
   const gate = usePortalTelegramGate();
 
   useEffect(() => {
     if (gate.phase === "done") {
+      if (gate.slug) rememberStoreSlug(gate.slug);
       router.replace("/portal/dashboard");
     }
-  }, [gate.phase, router]);
+  }, [gate.phase, gate.slug, router]);
 
   if (gate.isBusy || gate.phase === "checking" || gate.phase === "authing") {
     return (
@@ -134,8 +195,8 @@ export default function PortalEntryPage() {
   }
 
   return (
-    <StoreShell>
-      <PortalLoginForm />
-    </StoreShell>
+    <StorefrontLocaleProvider>
+      <PortalLoginBody />
+    </StorefrontLocaleProvider>
   );
 }

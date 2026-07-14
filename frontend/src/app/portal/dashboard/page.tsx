@@ -22,7 +22,6 @@ import { copyToClipboard } from "@/lib/clipboard";
 import { publicApi } from "@/lib/api";
 import { useCustomerSession } from "@/modules/storefront/session";
 import { buildSubscriptionLink } from "@/modules/storefront/subscription";
-import { useStorefrontLocale } from "@/modules/storefront/locale";
 import { compressReceiptImage } from "@/modules/storefront/receipt-image";
 import type { CustomerDashboard, CustomerService, StorefrontProduct } from "@/modules/storefront/types";
 import { StoreShell } from "@/modules/storefront/ui";
@@ -40,11 +39,26 @@ import {
   staggerItem,
 } from "@/modules/storefront/design";
 import { usePortalTelegramGate } from "@/modules/storefront/tma/usePortalTelegramGate";
+import { StorefrontLocaleProvider, useStorefrontLocale } from "@/modules/storefront/locale";
+import { rememberStoreSlug, shopPathForSlug } from "@/modules/storefront/store-slug";
 
 type FlowMode = "idle" | "buy" | "renew";
 type DashTab = "home" | "orders" | "alerts";
 
+function PortalTopBarLabel() {
+  const { t } = useStorefrontLocale();
+  return <>{t("پورتال مشتری", "Customer portal")}</>;
+}
+
 export default function CustomerDashboardPage() {
+  return (
+    <StorefrontLocaleProvider>
+      <CustomerDashboardInner />
+    </StorefrontLocaleProvider>
+  );
+}
+
+function CustomerDashboardInner() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const gate = usePortalTelegramGate();
@@ -147,10 +161,12 @@ export default function CustomerDashboardPage() {
     }
   };
 
+  useEffect(() => {
+    if (data?.store?.slug) rememberStoreSlug(data.store.slug);
+  }, [data?.store?.slug]);
+
   const goShop = () => {
-    const slug = data?.store?.slug || gate.slug;
-    if (slug) router.replace(`/shop/${encodeURIComponent(slug)}`);
-    else router.replace("/");
+    router.replace(shopPathForSlug(data?.store?.slug || gate.slug));
   };
 
   if (gate.isBusy) {
@@ -203,7 +219,7 @@ export default function CustomerDashboardPage() {
         slug: data.store?.slug || "",
         branding: data.branding,
       }}
-      topBar={t("پورتال مشتری", "Customer portal")}
+      topBar={<PortalTopBarLabel />}
     >
       <MotionPage className={isFa ? "font-[Vazirmatn,Tahoma,sans-serif]" : ""}>
         {/* Greeting + quick actions — app home header */}
@@ -418,19 +434,23 @@ function HomeTab({
                       <div className="mt-1 text-xs text-zinc-500">{service.expiryTime}</div>
                     </div>
                     <span
-                      className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase ${
+                      className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold ${
                         service.status === "active"
                           ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
                           : service.status === "expired"
                             ? "bg-rose-500/15 text-rose-700 dark:text-rose-400"
-                            : "bg-zinc-500/15 text-zinc-600"
+                            : service.status === "pending"
+                              ? "bg-amber-500/15 text-amber-700 dark:text-amber-400"
+                              : "bg-zinc-500/15 text-zinc-600"
                       }`}
                     >
                       {service.status === "active"
                         ? t("فعال", "Active")
                         : service.status === "expired"
                           ? t("منقضی", "Expired")
-                          : service.status}
+                          : service.status === "pending"
+                            ? t("در انتظار", "Pending")
+                            : t("غیرفعال", "Disabled")}
                     </span>
                   </div>
                   <div className="mt-4 flex gap-2">
@@ -504,7 +524,18 @@ function OrdersTab({
               <div>
                 <div className="font-semibold">{order.productName}</div>
                 <div className="mt-1 text-xs text-zinc-500">
-                  {order.trackingCode} · {order.status.replace(/_/g, " ")}
+                  {order.trackingCode} ·{" "}
+                  {order.status === "PENDING_PAYMENT"
+                    ? t("در انتظار پرداخت", "Pending payment")
+                    : order.status === "PAYMENT_SUBMITTED"
+                      ? t("پرداخت ارسال شد", "Payment submitted")
+                      : order.status === "UNDER_REVIEW"
+                        ? t("در حال بررسی", "Under review")
+                        : order.status === "COMPLETED" || order.status === "FULFILLED"
+                          ? t("تکمیل شده", "Completed")
+                          : order.status === "CANCELLED"
+                            ? t("لغو شده", "Cancelled")
+                            : order.status.replace(/_/g, " ")}
                 </div>
               </div>
               <a

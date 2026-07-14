@@ -19,6 +19,7 @@ import {
   WelcomeHero,
 } from "@/modules/storefront/ui";
 import { FieldBlock } from "@/modules/storefront/design";
+import { rememberStoreSlug } from "@/modules/storefront/store-slug";
 
 type Step = 0 | 1 | 2 | 3 | 4 | 5;
 
@@ -27,6 +28,10 @@ export default function ShopPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const slug = params.slug as string;
+
+  useEffect(() => {
+    rememberStoreSlug(slug);
+  }, [slug]);
 
   const flow = (searchParams.get("flow") || "").toLowerCase();
   const renewClientId = searchParams.get("clientId") || "";
@@ -317,7 +322,7 @@ function ShopBody(props: {
           <WelcomeHero
             store={store}
             onBuy={() => setStep(1)}
-            onLogin={() => router.push("/portal")}
+            onLogin={() => router.push(`/portal?slug=${encodeURIComponent(slug)}`)}
             onTrack={() => setShowTrack(true)}
           />
           <AnimatePresence>

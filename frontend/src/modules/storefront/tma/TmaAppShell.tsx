@@ -353,13 +353,14 @@ function TmaAppShellInner({
         background: "var(--tma-bg)",
         color: "var(--tma-text)",
         WebkitTapHighlightColor: "transparent",
-        paddingTop: "env(safe-area-inset-top)",
+        paddingTop:
+          "max(env(safe-area-inset-top, 0px), var(--tg-safe-top, 0px), 12px)",
         minHeight: "var(--tg-viewport-stable-height, 100dvh)",
         ...(isFa ? { fontFamily: '"Vazirmatn", Tahoma, sans-serif' } : null),
       }}
     >
       <header
-        className="sticky top-0 z-20 px-4 pb-3 pt-3 backdrop-blur-xl"
+        className="sticky top-0 z-20 px-4 pb-3 pt-2 backdrop-blur-xl"
         style={{
           background: "color-mix(in srgb, var(--tma-bg) 86%, transparent)",
         }}

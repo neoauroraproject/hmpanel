@@ -42,6 +42,19 @@ export function StorefrontLocaleProvider({
   store?: StorefrontStore | null;
   children: ReactNode;
 }) {
+  // Avoid nested providers resetting / desyncing language with chrome outside StoreShell.
+  const parent = useContext(LocaleContext);
+  if (parent) return <>{children}</>;
+  return <StorefrontLocaleProviderInner store={store}>{children}</StorefrontLocaleProviderInner>;
+}
+
+function StorefrontLocaleProviderInner({
+  store,
+  children,
+}: {
+  store?: StorefrontStore | null;
+  children: ReactNode;
+}) {
   const [lang, setLangState] = useState<StorefrontLang>(() => detectDefaultLang(store));
 
   const setLang = useCallback((next: StorefrontLang) => {
@@ -106,35 +119,29 @@ export function LanguageSwitcher({ className = "" }: { className?: string }) {
   const { lang, setLang, t } = useStorefrontLocale();
   return (
     <div
-      className={`inline-flex rounded-full border border-zinc-200/80 bg-white/90 p-1 text-xs font-bold shadow-sm backdrop-blur dark:border-zinc-700 dark:bg-zinc-900/90 ${className}`}
+      className={`inline-flex items-center rounded-full border border-zinc-200 bg-white p-1 text-xs font-bold shadow-sm dark:border-zinc-600 dark:bg-zinc-800 ${className}`}
       role="group"
       aria-label={t("زبان", "Language")}
-      style={{
-        borderColor: "color-mix(in srgb, var(--tma-hint, #a1a1aa) 35%, transparent)",
-        background: "color-mix(in srgb, var(--tma-secondary-bg, #fff) 88%, transparent)",
-      }}
     >
       <button
         type="button"
         onClick={() => setLang("fa")}
-        className={`rounded-full px-3 py-1.5 transition ${
+        className={`cursor-pointer rounded-full px-3 py-1.5 transition ${
           lang === "fa"
             ? "bg-[color:var(--store-primary,var(--tma-button,#2563eb))] text-white"
-            : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+            : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-white"
         }`}
-        style={lang !== "fa" ? { color: "var(--tma-hint, inherit)" } : undefined}
       >
         فارسی
       </button>
       <button
         type="button"
         onClick={() => setLang("en")}
-        className={`rounded-full px-3 py-1.5 transition ${
+        className={`cursor-pointer rounded-full px-3 py-1.5 transition ${
           lang === "en"
             ? "bg-[color:var(--store-primary,var(--tma-button,#2563eb))] text-white"
-            : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+            : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-white"
         }`}
-        style={lang !== "en" ? { color: "var(--tma-hint, inherit)" } : undefined}
       >
         EN
       </button>

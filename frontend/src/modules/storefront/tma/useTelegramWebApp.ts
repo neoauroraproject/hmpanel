@@ -110,6 +110,7 @@ export function applyTelegramFullscreen(wa?: TelegramWebApp | null) {
     if (wa.themeParams?.header_bg_color && wa.setHeaderColor) {
       wa.setHeaderColor(wa.themeParams.header_bg_color);
     }
+    applyTelegramSafeArea(wa);
     const h = wa.viewportStableHeight || wa.viewportHeight;
     if (h) {
       document.documentElement.style.setProperty("--tg-viewport-stable-height", `${h}px`);
@@ -133,19 +134,48 @@ export function isTelegramUserAgent() {
   return /Telegram/i.test(window.navigator.userAgent || "");
 }
 
+/** True only when we have real Mini App session data (script stub alone is NOT enough). */
+export function hasTelegramInitData() {
+  if (typeof window === "undefined") return false;
+  const wa = window.Telegram?.WebApp;
+  return Boolean(wa && (wa.initData || wa.initDataUnsafe?.user?.id));
+}
+
 export function isTelegramContext() {
   if (typeof window === "undefined") return false;
   const params = new URLSearchParams(window.location.search);
+  // ?tg=1 means bot Open button — treat as Mini App intent
   if (params.get("tg") === "1") return true;
-  if (isTelegramUserAgent()) return true;
-  const wa = window.Telegram?.WebApp;
-  return Boolean(wa && (wa.initData || wa.initDataUnsafe?.user));
+  // Real in-app browser with init payload
+  if (hasTelegramInitData()) return true;
+  // Telegram UA alone is not enough (false positives / after script inject)
+  return false;
 }
 
-/** True when we must never show web token login (force Mini App / silent TG auth). */
+/** True when URL forces Mini App (bot web_app). Browser without ?tg=1 must stay web. */
 export function forceTelegramMiniApp() {
   if (typeof window === "undefined") return false;
-  return new URLSearchParams(window.location.search).get("tg") === "1" || isTelegramContext();
+  return new URLSearchParams(window.location.search).get("tg") === "1";
+}
+
+export function applyTelegramSafeArea(wa?: TelegramWebApp | null) {
+  if (typeof window === "undefined") return;
+  const anyWa = wa as TelegramWebApp & {
+    safeAreaInset?: { top?: number; bottom?: number };
+    contentSafeAreaInset?: { top?: number; bottom?: number };
+  };
+  const top = Math.max(
+    Number(anyWa?.contentSafeAreaInset?.top || 0),
+    Number(anyWa?.safeAreaInset?.top || 0),
+  );
+  const bottom = Math.max(
+    Number(anyWa?.contentSafeAreaInset?.bottom || 0),
+    Number(anyWa?.safeAreaInset?.bottom || 0),
+  );
+  // Fullscreen Mini Apps often need a floor so UI clears status bar / TG chrome
+  const topPad = Math.max(top, isTelegramUserAgent() || forceTelegramMiniApp() ? 72 : 0);
+  document.documentElement.style.setProperty("--tg-safe-top", `${topPad}px`);
+  document.documentElement.style.setProperty("--tg-safe-bottom", `${bottom}px`);
 }
 
 export function useTelegramWebApp() {
