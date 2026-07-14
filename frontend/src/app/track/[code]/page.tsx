@@ -23,6 +23,7 @@ import { buildPortalBridgeLink, buildSubscriptionLink } from "@/modules/storefro
 import { copyToClipboard } from "@/lib/clipboard";
 import { StoreShell } from "@/modules/storefront/ui";
 import { StorefrontLocaleProvider, useStorefrontLocale } from "@/modules/storefront/locale";
+import { portalPathForSlug, shopPathForSlug } from "@/modules/storefront/store-slug";
 
 type StatusKey =
   | "PENDING_PAYMENT"
@@ -175,6 +176,7 @@ export default function TrackOrderPage() {
           isRateLimited={isRateLimited}
           message={String(apiMessage || (failureReason as any)?.message || "")}
           onRetry={() => refetch()}
+          storeSlug={undefined}
         />
       </StorefrontLocaleProvider>
     );
@@ -205,11 +207,13 @@ function TrackError({
   isRateLimited,
   message,
   onRetry,
+  storeSlug,
 }: {
   isNotFound: boolean;
   isRateLimited: boolean;
   message: string;
   onRetry: () => void;
+  storeSlug?: string;
 }) {
   const { t } = useStorefrontLocale();
   return (
@@ -229,7 +233,7 @@ function TrackError({
             ? t("کمی صبر کنید و دوباره تلاش کنید.", "Please wait a moment and retry.")
             : message || t("مشکل موقت شبکه.", "Temporary network issue.")}
       </p>
-      <div className="mt-5 flex gap-2">
+      <div className="mt-5 flex flex-wrap justify-center gap-2">
         <button
           onClick={onRetry}
           className="rounded-xl bg-zinc-900 px-4 py-2 text-sm font-semibold text-white"
@@ -237,11 +241,19 @@ function TrackError({
           {t("تلاش مجدد", "Retry")}
         </button>
         <Link
-          href="/portal"
+          href={portalPathForSlug(storeSlug, "login")}
           className="rounded-xl border border-zinc-300 bg-white px-4 py-2 text-sm font-semibold"
         >
           {t("پورتال مشتری", "Customer portal")}
         </Link>
+        {storeSlug ? (
+          <Link
+            href={shopPathForSlug(storeSlug)}
+            className="rounded-xl border border-zinc-300 bg-white px-4 py-2 text-sm font-semibold"
+          >
+            {t("فروشگاه", "Store")}
+          </Link>
+        ) : null}
       </div>
     </div>
   );
@@ -287,6 +299,24 @@ function TrackBody({ data, isFetching }: { data: any; isFetching: boolean }) {
 
   return (
     <div className="mx-auto max-w-xl space-y-6 px-4 py-6 sm:py-10">
+      <div className="flex flex-wrap gap-2">
+        <Link
+          href={shopPathForSlug(data.storeSlug)}
+          className="inline-flex h-11 items-center justify-center rounded-2xl border border-zinc-200 bg-white px-4 text-sm font-semibold dark:border-zinc-700 dark:bg-zinc-900"
+        >
+          {t("بازگشت به فروشگاه", "Back to store")}
+        </Link>
+        <Link
+          href={
+            data.customerToken
+              ? `${portalPathForSlug(data.storeSlug, "login")}?token=${encodeURIComponent(data.customerToken)}`
+              : portalPathForSlug(data.storeSlug, "login")
+          }
+          className="inline-flex h-11 items-center justify-center rounded-2xl bg-[color:var(--store-primary,#2563eb)] px-4 text-sm font-semibold text-white"
+        >
+          {t("پورتال مشتری", "Customer portal")}
+        </Link>
+      </div>
       <header className="text-center">
         <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-zinc-400">
           {t("پیگیری سفارش", "Order tracking")}
@@ -349,7 +379,7 @@ function TrackBody({ data, isFetching }: { data: any; isFetching: boolean }) {
               {copied === "token" ? t("کپی شد", "Copied") : t("کپی", "Copy")}
             </button>
             <Link
-              href={buildPortalBridgeLink(data.customerToken)}
+              href={buildPortalBridgeLink(data.customerToken, data.storeSlug)}
               className="inline-flex items-center justify-center rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm font-semibold dark:border-zinc-700 dark:bg-zinc-950"
             >
               {t("پورتال", "Portal")}
@@ -430,9 +460,18 @@ function TrackBody({ data, isFetching }: { data: any; isFetching: boolean }) {
       ) : null}
 
       {(isFailed || isRejected) && (
-        <div className="text-center">
-          <Link href="/portal" className="text-sm font-medium text-zinc-700 underline-offset-2 hover:underline">
+        <div className="flex flex-wrap justify-center gap-3 text-center">
+          <Link
+            href={portalPathForSlug(data.storeSlug, "login")}
+            className="text-sm font-medium text-zinc-700 underline-offset-2 hover:underline dark:text-zinc-200"
+          >
             {t("بازگشت به پورتال", "Back to customer portal")}
+          </Link>
+          <Link
+            href={shopPathForSlug(data.storeSlug)}
+            className="text-sm font-medium text-zinc-700 underline-offset-2 hover:underline dark:text-zinc-200"
+          >
+            {t("بازگشت به فروشگاه", "Back to store")}
           </Link>
         </div>
       )}

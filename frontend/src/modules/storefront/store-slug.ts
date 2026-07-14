@@ -21,8 +21,25 @@ export function readRememberedStoreSlug(): string {
   }
 }
 
+/** Extract `/shop/{slug}/…` from a pathname. */
+export function slugFromPathname(pathname?: string | null): string {
+  if (!pathname) return "";
+  const m = pathname.match(/^\/shop\/([^/]+)/i);
+  if (!m?.[1]) return "";
+  try {
+    return decodeURIComponent(m[1]);
+  } catch {
+    return m[1];
+  }
+}
+
 export function resolveStoreSlug(preferred?: string | null): string {
   if (typeof window === "undefined") return preferred || "";
+  const fromPath = slugFromPathname(window.location.pathname);
+  if (fromPath) {
+    rememberStoreSlug(fromPath);
+    return fromPath;
+  }
   const fromQuery = new URLSearchParams(window.location.search).get("slug");
   if (fromQuery) {
     rememberStoreSlug(fromQuery);
@@ -38,4 +55,15 @@ export function resolveStoreSlug(preferred?: string | null): string {
 export function shopPathForSlug(slug?: string | null): string {
   const s = resolveStoreSlug(slug);
   return s ? `/shop/${encodeURIComponent(s)}` : "/";
+}
+
+/** Sticky store portal URLs: /shop/{slug}/portal[…] */
+export function portalPathForSlug(
+  slug?: string | null,
+  path: "login" | "dashboard" = "login",
+): string {
+  const s = resolveStoreSlug(slug);
+  if (!s) return path === "dashboard" ? "/portal/dashboard" : "/portal";
+  const base = `/shop/${encodeURIComponent(s)}/portal`;
+  return path === "dashboard" ? `${base}/dashboard` : base;
 }

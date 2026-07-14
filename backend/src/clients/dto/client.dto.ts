@@ -28,6 +28,7 @@ export class UpdateClientDto {
   @ApiPropertyOptional() @IsOptional() @IsNumber() expiryTime?: number;
   @ApiPropertyOptional() @IsOptional() @IsString() remark?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() flow?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() subId?: string;
   @ApiPropertyOptional({ type: [String] })
   @IsOptional()
   @IsArray()

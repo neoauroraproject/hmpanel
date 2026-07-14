@@ -13,6 +13,7 @@ import { StorefrontLocaleProvider, useStorefrontLocale } from "@/modules/storefr
 import { fadeUp, fadeUpTransition, Surface } from "@/modules/storefront/design";
 import {
   rememberStoreSlug,
+  portalPathForSlug,
   resolveStoreSlug,
   shopPathForSlug,
 } from "@/modules/storefront/store-slug";
@@ -38,7 +39,7 @@ function PortalLoginForm({ store }: { store?: StorefrontStore | null }) {
   useEffect(() => {
     if (data) {
       if (data.store?.slug) rememberStoreSlug(data.store.slug);
-      router.replace("/portal/dashboard");
+      router.replace(portalPathForSlug(data.store?.slug || resolveStoreSlug(), "dashboard"));
     }
   }, [data, router]);
 
@@ -168,7 +169,7 @@ export default function PortalEntryPage() {
   useEffect(() => {
     if (gate.phase === "done") {
       if (gate.slug) rememberStoreSlug(gate.slug);
-      router.replace("/portal/dashboard");
+      router.replace(portalPathForSlug(gate.slug || resolveStoreSlug(), "dashboard"));
     }
   }, [gate.phase, gate.slug, router]);
 

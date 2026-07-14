@@ -8,12 +8,10 @@ import {
   Bell,
   ChevronLeft,
   Copy,
-  ExternalLink,
   LoaderCircle,
   LogOut,
   Package,
   Plus,
-  RefreshCw,
   ShoppingBag,
   Upload,
   X,
@@ -24,7 +22,7 @@ import { useCustomerSession } from "@/modules/storefront/session";
 import { buildSubscriptionLink } from "@/modules/storefront/subscription";
 import { compressReceiptImage } from "@/modules/storefront/receipt-image";
 import type { CustomerDashboard, CustomerService, StorefrontProduct } from "@/modules/storefront/types";
-import { StoreShell } from "@/modules/storefront/ui";
+import { StoreShell, ServiceCard } from "@/modules/storefront/ui";
 import { scrollToTop } from "@/modules/storefront/scroll";
 import {
   FieldBlock,
@@ -40,7 +38,7 @@ import {
 } from "@/modules/storefront/design";
 import { usePortalTelegramGate } from "@/modules/storefront/tma/usePortalTelegramGate";
 import { StorefrontLocaleProvider, useStorefrontLocale } from "@/modules/storefront/locale";
-import { rememberStoreSlug, shopPathForSlug } from "@/modules/storefront/store-slug";
+import { rememberStoreSlug, portalPathForSlug, shopPathForSlug } from "@/modules/storefront/store-slug";
 
 type FlowMode = "idle" | "buy" | "renew";
 type DashTab = "home" | "orders" | "alerts";
@@ -131,7 +129,7 @@ function CustomerDashboardInner() {
     if (gate.isBusy) return;
     if (gate.phase === "error") return;
     if (!isLoading && (error || !data) && gate.phase === "skip") {
-      router.replace("/portal");
+      router.replace(portalPathForSlug(gate.slug, "login"));
     }
   }, [data, error, isLoading, router, gate.isBusy, gate.phase]);
 
@@ -198,7 +196,7 @@ function CustomerDashboardInner() {
   const primary = data.branding?.primaryColor || "#2563eb";
   const products = data.products || [];
   const renewProducts = data.renewProducts?.length ? data.renewProducts : products;
-  const activeCount = (data.activeServices || []).length;
+  const activeCount = (data.activeServices || []).length || (data.services || []).filter((s) => s.status === "active" || s.status === "pending").length;
   const pendingCount = (data.pendingOrders || []).length;
 
   const bottomTabs = [
@@ -244,8 +242,8 @@ function CustomerDashboardInner() {
           </div>
 
           <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4 sm:gap-3">
-            <StatTile label={t("فعال", "Active")} value={activeCount} tone="success" />
-            <StatTile label={t("در انتظار", "Pending")} value={pendingCount} tone="warn" />
+            <StatTile label={t("سرویس فعال", "Active services")} value={activeCount} tone="success" />
+            <StatTile label={t("سفارش در صف", "Orders in queue")} value={pendingCount} tone="warn" />
             <button
               type="button"
               onClick={() => {
@@ -425,56 +423,16 @@ function HomeTab({
             const link = buildSubscriptionLink(service.subId, service.subToken);
             return (
               <motion.div key={service.id} variants={staggerItem}>
-                <Surface className="h-full">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="truncate text-[15px] font-semibold">
-                        {service.remark || service.email}
-                      </div>
-                      <div className="mt-1 text-xs text-zinc-500">{service.expiryTime}</div>
-                    </div>
-                    <span
-                      className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold ${
-                        service.status === "active"
-                          ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
-                          : service.status === "expired"
-                            ? "bg-rose-500/15 text-rose-700 dark:text-rose-400"
-                            : service.status === "pending"
-                              ? "bg-amber-500/15 text-amber-700 dark:text-amber-400"
-                              : "bg-zinc-500/15 text-zinc-600"
-                      }`}
-                    >
-                      {service.status === "active"
-                        ? t("فعال", "Active")
-                        : service.status === "expired"
-                          ? t("منقضی", "Expired")
-                          : service.status === "pending"
-                            ? t("در انتظار", "Pending")
-                            : t("غیرفعال", "Disabled")}
-                    </span>
-                  </div>
-                  <div className="mt-4 flex gap-2">
-                    {link ? (
-                      <a
-                        href={link}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-xl bg-[color:var(--store-primary)] text-sm font-semibold text-white active:scale-[0.98]"
-                      >
-                        {t("باز کردن", "Open")} <ExternalLink size={14} />
-                      </a>
-                    ) : null}
-                    {service.status !== "disabled" ? (
-                      <button
-                        type="button"
-                        onClick={() => onRenew(service)}
-                        className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border border-zinc-200 text-sm font-semibold dark:border-zinc-700 active:scale-[0.98]"
-                      >
-                        <RefreshCw size={14} /> {t("تمدید", "Renew")}
-                      </button>
-                    ) : null}
-                  </div>
-                </Surface>
+                <ServiceCard
+                  service={service}
+                  onCopy={() => {
+                    if (link) void copyToClipboard(link);
+                  }}
+                  onOpen={() => {
+                    if (link) window.open(link, "_blank", "noopener,noreferrer");
+                  }}
+                  onRenew={() => onRenew(service)}
+                />
               </motion.div>
             );
           })}
@@ -708,8 +666,16 @@ function CheckoutSheet({
 
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-5">
           {mode === "renew" && renewingService ? (
-            <div className="rounded-2xl bg-zinc-100 px-3.5 py-2.5 text-sm dark:bg-zinc-900">
-              {t("تمدید", "Renewing")}: <b>{renewingService.remark || renewingService.email}</b>
+            <div className="space-y-2">
+              <div className="rounded-2xl bg-zinc-100 px-3.5 py-2.5 text-sm dark:bg-zinc-900">
+                {t("تمدید", "Renewing")}: <b>{renewingService.remark || renewingService.email}</b>
+              </div>
+              <p className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-3.5 py-2.5 text-[13px] leading-relaxed text-emerald-800 dark:text-emerald-300">
+                {t(
+                  "حجم و زمان پلن انتخابی به سرویس فعلی اضافه می‌شود؛ مصرف قبلی و تنظیمات پاک نمی‌شوند.",
+                  "Selected plan volume and days are added to this service. Used traffic and settings are kept.",
+                )}
+              </p>
             </div>
           ) : null}
 

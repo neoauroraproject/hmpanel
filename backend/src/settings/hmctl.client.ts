@@ -1,9 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { exec, spawn } from 'child_process';
-import { promisify } from 'util';
+import { spawn } from 'child_process';
 import { Observable } from 'rxjs';
-
-const execAsync = promisify(exec);
 
 export interface HmctlEvent {
   type: 'progress' | 'complete' | 'error';
@@ -22,6 +19,7 @@ interface HmctlResponse {
   code?: string;
   log?: string;
   data?: any;
+  [key: string]: unknown;
 }
 
 @Injectable()
@@ -29,48 +27,121 @@ export class HmctlClient {
   private readonly logger = new Logger(HmctlClient.name);
 
   /**
-   * Executes a command on the host via the reusable privileged host-agent container.
-   * This abstraction ensures that the backend API is decoupled from the execution mechanism
-   * (e.g., can be swapped to Unix Socket or Named Pipe later).
+   * Executes a command on the host via the privileged host-agent container.
+   * Uses spawn (not shell) — same arg-safe path as SSL Manager streaming —
+   * so large PEM/base64 args for custom domains survive.
    */
   async execute(
     module: string,
     action: string,
     args: string[] = [],
     opId?: string,
-  ): Promise<any> {
-    // Escape arguments to prevent injection
-    const escapedArgs = args
-      .map((arg) => `"${arg.replace(/"/g, '\\"')}"`)
-      .join(' ');
-    const envPrefix = opId ? `env OPERATION_ID=${opId} ` : '';
-    // Always append --json for programmatic execution
-    const cmd = `docker exec hmpanel-host-agent chroot /host ${envPrefix}/usr/local/bin/hm ${module} ${action} ${escapedArgs} --json`;
-
+    opts?: { timeoutMs?: number },
+  ): Promise<HmctlResponse> {
+    const timeoutMs = opts?.timeoutMs ?? 600_000;
     this.logger.log(`Executing HMCTL: hm ${module} ${action} --json`);
 
-    try {
-      const { stdout } = await execAsync(cmd);
-      try {
-        const jsonOutput = JSON.parse(stdout) as HmctlResponse;
-        if (!jsonOutput.success && jsonOutput.code) {
-          throw new Error(
-            `HMCTL Error [${jsonOutput.code}]: ${JSON.stringify(jsonOutput)}`,
-          );
-        }
-        return jsonOutput;
-      } catch (parseError: any) {
-        const parseMsg =
-          parseError instanceof Error ? parseError.message : String(parseError);
-        if (parseMsg.includes('HMCTL Error')) throw parseError;
-        this.logger.error(`Failed to parse HMCTL JSON output: ${stdout}`);
-        throw new Error(`Failed to parse host response: ${parseMsg}`);
-      }
-    } catch (error: any) {
-      const errMsg = error instanceof Error ? error.message : String(error);
-      this.logger.error(`HMCTL command failed: ${errMsg}`);
-      throw new Error(`Host command failed: ${errMsg}`);
+    const childArgs = ['exec'];
+    if (opId) {
+      childArgs.push('-e', `OPERATION_ID=${opId}`);
     }
+    childArgs.push('hmpanel-host-agent', 'chroot', '/host');
+    if (opId) {
+      childArgs.push('env', `OPERATION_ID=${opId}`);
+    }
+    childArgs.push('/usr/local/bin/hm', module, action, ...args, '--json');
+
+    return new Promise((resolve, reject) => {
+      const child = spawn('docker', childArgs);
+      let stdoutData = '';
+      let stderrData = '';
+      let settled = false;
+
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        child.kill('SIGKILL');
+        reject(
+          new Error(
+            `HMCTL timed out after ${Math.round(timeoutMs / 1000)}s (hm ${module} ${action})`,
+          ),
+        );
+      }, timeoutMs);
+
+      child.stdout.on('data', (data: Buffer) => {
+        stdoutData += data.toString();
+      });
+      child.stderr.on('data', (data: Buffer) => {
+        stderrData += data.toString();
+      });
+
+      child.on('error', (err: Error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        this.logger.error(`HMCTL spawn failed: ${err.message}`);
+        reject(new Error(`Host command failed: ${err.message}`));
+      });
+
+      child.on('close', (code: number | null) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+
+        const parsed = this.parseJsonOutput(stdoutData);
+        if (parsed) {
+          if (!parsed.success && parsed.code) {
+            reject(
+              new Error(
+                `HMCTL Error [${parsed.code}]: ${JSON.stringify(parsed)}`,
+              ),
+            );
+            return;
+          }
+          if (code && code !== 0 && !parsed.success) {
+            reject(
+              new Error(
+                `HMCTL Error [${parsed.code || code}]: ${JSON.stringify(parsed)}`,
+              ),
+            );
+            return;
+          }
+          resolve(parsed);
+          return;
+        }
+
+        const hint = (stderrData || stdoutData).trim().slice(-800);
+        this.logger.error(
+          `HMCTL failed (exit ${code}): ${hint || 'no output'}`,
+        );
+        reject(
+          new Error(
+            `Host command failed: exit ${code}${hint ? ` — ${hint}` : ''}`,
+          ),
+        );
+      });
+    });
+  }
+
+  /** Last JSON object in stdout (PROGRESS goes to stderr). */
+  private parseJsonOutput(stdout: string): HmctlResponse | null {
+    const trimmed = stdout.trim();
+    if (!trimmed) return null;
+    try {
+      return JSON.parse(trimmed) as HmctlResponse;
+    } catch {
+      // Fall through: sometimes unrelated lines appear before the JSON blob
+    }
+    const start = trimmed.lastIndexOf('{');
+    const end = trimmed.lastIndexOf('}');
+    if (start >= 0 && end > start) {
+      try {
+        return JSON.parse(trimmed.slice(start, end + 1)) as HmctlResponse;
+      } catch {
+        return null;
+      }
+    }
+    return null;
   }
 
   executeStream(
@@ -117,7 +188,9 @@ export class HmctlClient {
       child.on('close', (code: number) => {
         try {
           if (stdoutData.trim()) {
-            const jsonOutput = JSON.parse(stdoutData) as HmctlResponse;
+            const jsonOutput =
+              this.parseJsonOutput(stdoutData) ||
+              (JSON.parse(stdoutData) as HmctlResponse);
             if (!jsonOutput.success && jsonOutput.code) {
               subscriber.next({ type: 'error', error: jsonOutput });
             } else {

@@ -19,7 +19,7 @@ import {
   WelcomeHero,
 } from "@/modules/storefront/ui";
 import { FieldBlock } from "@/modules/storefront/design";
-import { rememberStoreSlug } from "@/modules/storefront/store-slug";
+import { rememberStoreSlug, portalPathForSlug } from "@/modules/storefront/store-slug";
 
 type Step = 0 | 1 | 2 | 3 | 4 | 5;
 
@@ -322,7 +322,7 @@ function ShopBody(props: {
           <WelcomeHero
             store={store}
             onBuy={() => setStep(1)}
-            onLogin={() => router.push(`/portal?slug=${encodeURIComponent(store.slug)}`)}
+            onLogin={() => router.push(portalPathForSlug(store.slug, "login"))}
             onTrack={() => setShowTrack(true)}
           />
           <AnimatePresence>
@@ -660,7 +660,7 @@ function ShopBody(props: {
                 onClick={() => {
                   if (step === 1) {
                     if (isBuyFromPortal || isRenewFlow) {
-                      router.push("/portal/dashboard");
+                      router.push(portalPathForSlug(store.slug, "dashboard"));
                       return;
                     }
                     setStep(0);

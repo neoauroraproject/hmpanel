@@ -959,6 +959,7 @@ export class ClientsService {
       flow?: string;
       inboundIds?: string[];
       limitIp?: number;
+      subId?: string;
     },
   ) {
     const existing = await this.findOne(id, adminId, role);
@@ -972,6 +973,27 @@ export class ClientsService {
         ? BigInt(data.expiryTime)
         : existing.expiryTime;
     const newFlow = data.flow !== undefined ? data.flow : existing.flow;
+    const nextSubId =
+      data.subId !== undefined
+        ? String(data.subId || "").trim()
+        : existing.subId || "";
+    if (data.subId !== undefined) {
+      if (!nextSubId) {
+        throw new BadRequestException('Subscription id (subId) cannot be empty');
+      }
+      if (!/^[a-zA-Z0-9_-]{4,64}$/.test(nextSubId)) {
+        throw new BadRequestException(
+          'Subscription id must be 4–64 chars (letters, numbers, _ or -)',
+        );
+      }
+      const clash = await this.prisma.client.findFirst({
+        where: { subId: nextSubId, NOT: { id } },
+        select: { id: true },
+      });
+      if (clash) {
+        throw new BadRequestException('This subscription id is already in use');
+      }
+    }
     const now = BigInt(Date.now());
     const usedTraffic = existing.up + existing.down;
 
@@ -1018,7 +1040,7 @@ export class ClientsService {
 
     const baseClientPayload: any = {
       id: existing.uuid,
-      subId: existing.subId || '',
+      subId: nextSubId,
       email: existing.email.trim(),
       enable: newEnable,
       totalGB: Number(newTotal),
@@ -1129,6 +1151,7 @@ export class ClientsService {
         if (data.remark !== undefined) updateData.remark = data.remark;
         if (data.flow !== undefined) updateData.flow = data.flow;
         if (data.limitIp !== undefined) updateData.limitIp = data.limitIp;
+        if (data.subId !== undefined) updateData.subId = nextSubId;
 
         let diff = 0n;
         const previousAllocation = existing.total;

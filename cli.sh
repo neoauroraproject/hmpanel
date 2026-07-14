@@ -88,16 +88,41 @@ verify_dns() {
   local domain="$1"
   if [[ "$domain" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || [[ "$domain" == "localhost" ]]; then
     stream_progress "Skipping DNS verification for IP/localhost: $domain"
+    VERIFY_STEP_MESSAGE="Skipped for IP/localhost"
+    VERIFY_STEP_DETAILS="{\"skipped\": true}"
     return 0
   fi
 
   stream_progress "Verifying DNS resolution for $domain..."
-  if ! host "$domain" >/dev/null 2>&1 && ! dig +short "$domain" >/dev/null 2>&1 && ! getent hosts "$domain" >/dev/null 2>&1; then
-    stream_progress "DNS check failed: $domain does not resolve."
-    return 1
+  local ip=""
+  if command -v dig &>/dev/null; then
+    ip=$(dig +short A "$domain" 2>/dev/null | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | tail -n1 || true)
   fi
-  stream_progress "DNS verification passed"
-  return 0
+  if [[ -z "$ip" ]] && command -v host &>/dev/null; then
+    ip=$(host "$domain" 2>/dev/null | awk '/has address/ {print $NF}' | tail -n1 || true)
+  fi
+  if [[ -z "$ip" ]] && command -v getent &>/dev/null; then
+    ip=$(getent ahostsv4 "$domain" 2>/dev/null | awk '{print $1}' | head -n1 || true)
+  fi
+  if [[ -z "$ip" ]]; then
+    # Last resort: ping won't work for resolution-only — try nslookup
+    if command -v nslookup &>/dev/null; then
+      ip=$(nslookup "$domain" 2>/dev/null | awk '/^Address: / {print $2}' | tail -n1 || true)
+    fi
+  fi
+
+  if [[ -n "$ip" ]]; then
+    VERIFY_STEP_MESSAGE="Resolved to $ip"
+    VERIFY_STEP_DETAILS="{\"resolvedIp\": \"$ip\"}"
+    if [[ -n "${VERIFY_LOG_FILE:-}" ]]; then echo "[verify_dns] DNS resolved $domain to $ip" >> "$VERIFY_LOG_FILE"; fi
+    stream_progress "DNS verification passed ($ip)"
+    return 0
+  fi
+
+  VERIFY_STEP_MESSAGE="DNS resolution failed"
+  if [[ -n "${VERIFY_LOG_FILE:-}" ]]; then echo "[verify_dns] DNS failed for $domain" >> "$VERIFY_LOG_FILE"; fi
+  stream_progress "DNS check failed: $domain does not resolve."
+  return 1
 }
 
 verify_port_80() {
@@ -1024,22 +1049,7 @@ clean_json_val() {
 }
 
 # ----------------- Verification Modules -----------------
-
-verify_dns() {
-  local domain="$1"
-  local ip
-  ip=$(dig +short "$domain" 2>/dev/null | tail -n1)
-  if [[ -n "$ip" ]]; then
-    VERIFY_STEP_MESSAGE="Resolved to $ip"
-    VERIFY_STEP_DETAILS="{\"resolvedIp\": \"$ip\"}"
-    if [[ -n "$VERIFY_LOG_FILE" ]]; then echo "[verify_dns] DNS resolved $domain to $ip" >> "$VERIFY_LOG_FILE"; fi
-    return 0
-  else
-    VERIFY_STEP_MESSAGE="DNS resolution failed"
-    if [[ -n "$VERIFY_LOG_FILE" ]]; then echo "[verify_dns] DNS failed for $domain" >> "$VERIFY_LOG_FILE"; fi
-    return 1
-  fi
-}
+# verify_dns() is defined once near the top of this script (used by SSL + doctor).
 
 verify_nginx() {
   local out
@@ -1812,7 +1822,7 @@ ssl_add_vhost() {
 
   if [[ -z "$vhost_domain" ]]; then
     if [[ "$JSON_OUTPUT" == "true" ]]; then output_json false "INVALID_DOMAIN"; exit 30; fi
-    echo "Usage: hm ssl add-vhost <domain> <email|selfsigned|manual> [cert] [key]"
+    echo "Usage: hm ssl add-vhost <domain> <email|selfsigned|manual|manual-b64> [cert] [key]"
     exit 1
   fi
 
@@ -1826,10 +1836,13 @@ ssl_add_vhost() {
 
   if [[ "$mode_or_email" == "selfsigned" ]]; then
     stream_progress "Generating self-signed certificate..."
-    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+    if ! openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
       -keyout "${SSL_DIR}/privkey.pem" \
       -out "${SSL_DIR}/fullchain.pem" \
-      -subj "/CN=${vhost_domain}" >/dev/null 2>&1
+      -subj "/CN=${vhost_domain}" >/dev/null 2>&1; then
+      if [[ "$JSON_OUTPUT" == "true" ]]; then output_json false "OPENSSL_FAILED"; exit 32; fi
+      echo "openssl failed"; exit 1
+    fi
   elif [[ "$mode_or_email" == "manual" ]]; then
     if [[ ! -f "$manual_cert" || ! -f "$manual_key" ]]; then
       if [[ "$JSON_OUTPUT" == "true" ]]; then output_json false "MISSING_CERT"; exit 31; fi
@@ -1837,8 +1850,41 @@ ssl_add_vhost() {
     fi
     cp -f "$manual_cert" "${SSL_DIR}/fullchain.pem"
     cp -f "$manual_key" "${SSL_DIR}/privkey.pem"
+  elif [[ "$mode_or_email" == "manual-b64" ]]; then
+    if [[ -z "$manual_cert" || -z "$manual_key" ]]; then
+      if [[ "$JSON_OUTPUT" == "true" ]]; then output_json false "MISSING_CERT"; exit 31; fi
+      echo "manual-b64 requires base64 cert and key args"; exit 1
+    fi
+    if ! printf '%s' "$manual_cert" | base64 -d > "${SSL_DIR}/fullchain.pem" 2>/dev/null; then
+      if [[ "$JSON_OUTPUT" == "true" ]]; then output_json false "INVALID_CERT_B64"; exit 31; fi
+      echo "Invalid certificate base64"; exit 1
+    fi
+    if ! printf '%s' "$manual_key" | base64 -d > "${SSL_DIR}/privkey.pem" 2>/dev/null; then
+      if [[ "$JSON_OUTPUT" == "true" ]]; then output_json false "INVALID_KEY_B64"; exit 31; fi
+      echo "Invalid key base64"; exit 1
+    fi
+    chmod 600 "${SSL_DIR}/privkey.pem" 2>/dev/null || true
   else
-    # Let's Encrypt / ZeroSSL — aligned with ssl_issue (install acme, timeouts, docker certbot)
+    # Let's Encrypt / ZeroSSL — same stack as panel ssl_issue()
+    local missing_deps=()
+    for dep in git curl socat; do
+      if ! command -v "$dep" &>/dev/null; then
+        missing_deps+=("$dep")
+      fi
+    done
+    if [[ ${#missing_deps[@]} -gt 0 ]]; then
+      if [[ "$JSON_OUTPUT" == "true" ]]; then
+        local deps_json=""
+        for dep in "${missing_deps[@]}"; do
+          if [[ -n "$deps_json" ]]; then deps_json+=","; fi
+          deps_json+="\"$dep\""
+        done
+        output_json false "MISSING_DEPENDENCIES" "\"missing\":[$deps_json]"
+        exit 40
+      fi
+      echo "Missing dependencies: ${missing_deps[*]}"; exit 1
+    fi
+
     if ! verify_dns "$vhost_domain"; then
       if [[ "$JSON_OUTPUT" == "true" ]]; then output_json false "DNS_ERROR"; exit 10; fi
       echo "DNS verification failed for $vhost_domain"; exit 1
@@ -1866,9 +1912,12 @@ ssl_add_vhost() {
     fi
 
     local email="${mode_or_email:-admin@$vhost_domain}"
+    if [[ "$email" != *"@"* ]]; then
+      email="admin@${vhost_domain}"
+    fi
 
     # Install acme.sh when missing (same as panel ssl_issue)
-    if [[ -z "$acme_bin" ]] && command -v git &>/dev/null && command -v curl &>/dev/null && command -v socat &>/dev/null; then
+    if [[ -z "$acme_bin" ]]; then
       stream_progress "Installing acme.sh for custom domain..."
       rm -rf /tmp/acme.sh
       local clone_success=false
@@ -1910,12 +1959,13 @@ ssl_add_vhost() {
           stream_progress "Trying acme.sh ($ca) for $vhost_domain..."
           "$acme_bin" --home "${INSTALL_DIR}/acme.sh" --set-default-ca --server "$ca" >>"$acme_log" 2>&1 || true
           local issue_success=false
+          # Match panel ssl_issue timeouts / flags (standalone HTTP-01)
           if command -v timeout &>/dev/null; then
-            if timeout 120 "$acme_bin" --home "${INSTALL_DIR}/acme.sh" --issue -d "$vhost_domain" --standalone --accountemail "$email" --force >>"$acme_log" 2>&1; then
+            if timeout 90 "$acme_bin" --home "${INSTALL_DIR}/acme.sh" --issue -d "$vhost_domain" --standalone --force >>"$acme_log" 2>&1; then
               issue_success=true
             fi
           else
-            if "$acme_bin" --home "${INSTALL_DIR}/acme.sh" --issue -d "$vhost_domain" --standalone --accountemail "$email" --force >>"$acme_log" 2>&1; then
+            if "$acme_bin" --home "${INSTALL_DIR}/acme.sh" --issue -d "$vhost_domain" --standalone --force >>"$acme_log" 2>&1; then
               issue_success=true
             fi
           fi
@@ -1923,8 +1973,13 @@ ssl_add_vhost() {
             "$acme_bin" --home "${INSTALL_DIR}/acme.sh" --install-cert -d "$vhost_domain" \
               --fullchain-file "${SSL_DIR}/fullchain.pem" \
               --key-file "${SSL_DIR}/privkey.pem" >>"$acme_log" 2>&1
-            cert_obtained=true
-            stream_progress "Certificate issued via acme.sh ($ca)"
+            if [[ -f "${SSL_DIR}/fullchain.pem" && -f "${SSL_DIR}/privkey.pem" ]]; then
+              cert_obtained=true
+              stream_progress "Certificate issued via acme.sh ($ca)"
+            else
+              last_ssl_error="acme_install_cert_missing"
+              stream_progress "acme.sh issued but cert files missing"
+            fi
           else
             last_ssl_error="acme_${ca}_failed"
             stream_progress "acme.sh ($ca) failed for $vhost_domain"
@@ -1986,25 +2041,36 @@ ssl_add_vhost() {
     fi
   fi
 
-  # Write nginx vhost config
+  if [[ ! -f "${SSL_DIR}/fullchain.pem" || ! -f "${SSL_DIR}/privkey.pem" ]]; then
+    docker start hmpanel-nginx >/dev/null 2>&1 || true
+    if [[ "$JSON_OUTPUT" == "true" ]]; then output_json false "CERTIFICATE_MISSING"; exit 33; fi
+    echo "Certificate files missing after issue"; exit 1
+  fi
+
+  # Write nginx vhost config (HTTPS required — HTTP-only fallback is not success)
   local tmpl_ssl="${INSTALL_DIR}/nginx/vhost-domain.ssl.template"
   local conf_out="${CONF_DIR}/${safe_domain}.conf"
-  if [[ -f "$tmpl_ssl" && -f "${SSL_DIR}/fullchain.pem" && -f "${SSL_DIR}/privkey.pem" ]]; then
-    VHOST_DOMAIN="$vhost_domain" VHOST_SAFE="$safe_domain" \
-      envsubst '$VHOST_DOMAIN $VHOST_SAFE' < "$tmpl_ssl" > "$conf_out"
-  else
-    local tmpl_http="${INSTALL_DIR}/nginx/vhost-domain.http.template"
-    if [[ -f "$tmpl_http" ]]; then
-      VHOST_DOMAIN="$vhost_domain" VHOST_SAFE="$safe_domain" \
-        envsubst '$VHOST_DOMAIN $VHOST_SAFE' < "$tmpl_http" > "$conf_out"
-    fi
+  if [[ ! -f "$tmpl_ssl" ]]; then
+    docker start hmpanel-nginx >/dev/null 2>&1 || true
+    if [[ "$JSON_OUTPUT" == "true" ]]; then output_json false "TEMPLATE_MISSING"; exit 34; fi
+    echo "Missing nginx template: $tmpl_ssl"; exit 1
   fi
+  VHOST_DOMAIN="$vhost_domain" VHOST_SAFE="$safe_domain" \
+    envsubst '$VHOST_DOMAIN $VHOST_SAFE' < "$tmpl_ssl" > "$conf_out"
 
   docker start hmpanel-nginx >/dev/null 2>&1 || true
   reload_nginx
+  if ! docker exec hmpanel-nginx nginx -t >/dev/null 2>&1; then
+    # Bad vhost — remove it and surface failure
+    rm -f "$conf_out"
+    docker exec hmpanel-nginx nginx -s reload >/dev/null 2>&1 || true
+    if [[ "$JSON_OUTPUT" == "true" ]]; then output_json false "NGINX_CONFIG_INVALID"; exit 35; fi
+    echo "nginx config test failed for $vhost_domain"; exit 1
+  fi
+
   stream_progress "Vhost ready for $vhost_domain"
   if [[ "$JSON_OUTPUT" == "true" ]]; then
-    output_json true "OK" "\"domain\":\"$vhost_domain\",\"cert\":\"${SSL_DIR}/fullchain.pem\""
+    output_json true "OK" "\"domain\":\"$vhost_domain\",\"cert\":\"${SSL_DIR}/fullchain.pem\",\"key\":\"${SSL_DIR}/privkey.pem\""
   fi
 }
 

@@ -27,6 +27,7 @@ type TelegramWebApp = {
   initDataUnsafe?: { user?: TelegramWebAppUser; start_param?: string };
   themeParams?: TelegramThemeParams;
   colorScheme?: "light" | "dark";
+  platform?: string;
   isExpanded?: boolean;
   viewportHeight?: number;
   viewportStableHeight?: number;
@@ -93,13 +94,27 @@ export function loadTelegramScript(): Promise<void> {
   });
 }
 
+/** Mobile Telegram clients only — desktop/web keep the compact Mini App size. */
+export function isTelegramMobilePlatform(wa?: TelegramWebApp | null) {
+  const platform = String(wa?.platform || "").toLowerCase();
+  if (platform === "ios" || platform === "android" || platform === "android_x") return true;
+  if (platform === "tdesktop" || platform === "macos" || platform === "web" || platform === "weba" || platform === "webk") {
+    return false;
+  }
+  if (typeof window === "undefined") return false;
+  // Fallback when platform missing: treat touch + narrow as mobile.
+  return window.matchMedia?.("(pointer: coarse)").matches && window.innerWidth < 900;
+}
+
 export function applyTelegramFullscreen(wa?: TelegramWebApp | null) {
   if (!wa) return;
   try {
     wa.ready();
     wa.expand();
+    const mobile = isTelegramMobilePlatform(wa);
     try {
-      wa.requestFullscreen?.();
+      if (mobile) wa.requestFullscreen?.();
+      else wa.exitFullscreen?.();
     } catch {
       /* older clients */
     }
@@ -119,6 +134,7 @@ export function applyTelegramFullscreen(wa?: TelegramWebApp | null) {
       document.body.style.minHeight = `${h}px`;
       document.body.style.height = "100%";
     }
+    document.documentElement.dataset.tgPlatform = String(wa.platform || (mobile ? "mobile" : "desktop"));
   } catch {
     /* ignore */
   }
@@ -172,8 +188,10 @@ export function applyTelegramSafeArea(wa?: TelegramWebApp | null) {
     Number(anyWa?.contentSafeAreaInset?.bottom || 0),
     Number(anyWa?.safeAreaInset?.bottom || 0),
   );
-  // Fullscreen Mini Apps often need a floor so UI clears status bar / TG chrome
-  const topPad = Math.max(top, isTelegramUserAgent() || forceTelegramMiniApp() ? 72 : 0);
+  // Fullscreen mobile Mini Apps need a floor so UI clears status bar / TG chrome.
+  // Desktop Mini App stays compact — do not force large top padding.
+  const mobile = isTelegramMobilePlatform(wa || window.Telegram?.WebApp || null);
+  const topPad = Math.max(top, mobile && (isTelegramUserAgent() || forceTelegramMiniApp()) ? 72 : 0);
   document.documentElement.style.setProperty("--tg-safe-top", `${topPad}px`);
   document.documentElement.style.setProperty("--tg-safe-bottom", `${bottom}px`);
 }

@@ -143,7 +143,6 @@ export function WelcomeHero({
   const logo = resolveThemeLogo({
     logoLight: store?.logoUrl || store?.branding?.logo,
     logoDark: store?.logoDarkUrl || store?.branding?.logoDark,
-    theme: store?.branding?.theme,
     preferDark,
   });
 
@@ -434,22 +433,20 @@ export function ServiceCard({
   const [copied, setCopied] = useState(false);
 
   const statusTone =
-    service.status === "active"
+    service.status === "active" || service.status === "pending"
       ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
       : service.status === "expired"
         ? "bg-rose-500/15 text-rose-700 dark:text-rose-400"
-        : service.status === "pending"
-          ? "bg-amber-500/15 text-amber-700 dark:text-amber-400"
-          : "bg-zinc-500/15 text-zinc-600 dark:text-zinc-400";
+        : "bg-zinc-500/15 text-zinc-600 dark:text-zinc-400";
 
   const statusLabel =
-    service.status === "active"
-      ? t("فعال", "Active")
-      : service.status === "expired"
-        ? t("منقضی", "Expired")
-        : service.status === "pending"
-          ? t("در انتظار", "Pending")
-          : t("غیرفعال", "Disabled");
+    service.status === "expired"
+      ? t("منقضی", "Expired")
+      : service.status === "disabled"
+        ? t("غیرفعال", "Disabled")
+        : service.unused || service.status === "pending"
+          ? t("آمادۀ اتصال", "Ready")
+          : t("فعال", "Active");
 
   const barColor =
     pct >= 90 ? "bg-rose-500" : pct >= 75 ? "bg-amber-500" : "bg-emerald-500";

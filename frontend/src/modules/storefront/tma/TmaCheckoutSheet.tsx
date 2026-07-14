@@ -230,11 +230,22 @@ export function TmaCheckoutSheet({
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4">
           {mode === "renew" && renewService ? (
-            <div
-              className="mb-4 rounded-2xl px-3.5 py-2.5 text-[13px]"
-              style={{ background: LIGHT.secondary }}
-            >
-              {t("تمدید", "Renewing")}: <b>{renewService.remark || renewService.email}</b>
+            <div className="mb-4 space-y-2">
+              <div
+                className="rounded-2xl px-3.5 py-2.5 text-[13px]"
+                style={{ background: LIGHT.secondary }}
+              >
+                {t("تمدید", "Renewing")}: <b>{renewService.remark || renewService.email}</b>
+              </div>
+              <p
+                className="rounded-2xl px-3.5 py-2.5 text-[12px] leading-relaxed"
+                style={{ background: "rgba(34,197,94,0.12)", color: "#166534" }}
+              >
+                {t(
+                  "حجم و زمان پلن انتخابی به سرویس فعلی اضافه می‌شود؛ مصرف قبلی پاک نمی‌شود.",
+                  "Selected plan volume and days are added. Used traffic is kept.",
+                )}
+              </p>
             </div>
           ) : null}
 
