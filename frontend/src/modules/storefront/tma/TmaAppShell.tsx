@@ -5,16 +5,14 @@ import {
   ArrowUpRight,
   Copy,
   ExternalLink,
-  Headphones,
   LoaderCircle,
   MessageCircle,
   Package,
   Plus,
   RefreshCw,
-  Settings2,
   ShoppingBag,
-  Sparkles,
 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { copyToClipboard } from "@/lib/clipboard";
 import { buildSubscriptionLink } from "../subscription";
 import { resolveThemeLogo } from "@/modules/shared/brand-logo";
@@ -25,6 +23,9 @@ import { useTelegramSession } from "./useTelegramSession";
 import { isTelegramMobilePlatform, useTelegramWebApp } from "./useTelegramWebApp";
 import { scrollTmaToTop } from "./scroll";
 import { LanguageSwitcher, StorefrontLocaleProvider, useStorefrontLocale } from "../locale";
+import { API_BASE } from "@/lib/api";
+import { getConnectionRenderer } from "@/components/connection/RendererRegistry";
+import type { ClientOutputModel } from "@/components/connection/types";
 
 /** Soft white/blue surfaces for light; Telegram-native for dark. Layout stays Karta-like. */
 function cssVars(
@@ -202,6 +203,8 @@ function ProductTile({
   daysLabel: string;
   formatToman: (value: number | string | null | undefined) => string;
 }) {
+  const traffic =
+    product.traffic && String(product.traffic).length <= 24 ? String(product.traffic) : null;
   return (
     <SoftSurface className="flex h-full w-full flex-col p-3.5" onClick={onSelect}>
       <div
@@ -213,65 +216,11 @@ function ProductTile({
       <div className="min-w-0 flex-1">
         <div className="line-clamp-2 text-[14px] font-semibold leading-snug">{product.name}</div>
         <div className="mt-1 text-[11px]" style={{ color: "var(--tma-hint)" }}>
-          {product.traffic} · {product.durationDays} {daysLabel}
+          {[traffic, `${product.durationDays} ${daysLabel}`].filter(Boolean).join(" · ")}
         </div>
       </div>
       <div className="mt-3 text-[15px] font-bold" style={{ color: "var(--tma-button)" }}>
         {product.priceToman ? formatToman(product.priceToman) : `$${product.priceUsd}`}
-      </div>
-    </SoftSurface>
-  );
-}
-
-function ServiceMiniCard({
-  service,
-  active,
-  onSelect,
-  labels,
-}: {
-  service: CustomerService;
-  active?: boolean;
-  onSelect: () => void;
-  labels: { active: string; ready: string; expired: string };
-}) {
-  const statusLabel =
-    service.status === "expired"
-      ? labels.expired
-      : service.unused || service.status === "pending"
-        ? labels.ready
-        : labels.active;
-  const left = trafficLeft(service);
-
-  return (
-    <SoftSurface
-      className={`flex h-full w-full flex-col p-3.5 ${active ? "ring-2" : ""}`}
-      onClick={onSelect}
-    >
-      <div className="mb-2.5 flex items-start justify-between gap-2">
-        <div
-          className="flex h-9 w-9 items-center justify-center rounded-xl"
-          style={{ background: "color-mix(in srgb, var(--tma-button) 14%, transparent)" }}
-        >
-          <Sparkles size={15} style={{ color: "var(--tma-button)" }} />
-        </div>
-        <span
-          className="max-w-[55%] truncate rounded-full px-2 py-0.5 text-[10px] font-bold"
-          style={{
-            background:
-              service.status === "expired"
-                ? "color-mix(in srgb, #f43f5e 16%, transparent)"
-                : "color-mix(in srgb, var(--tma-button) 12%, transparent)",
-            color: service.status === "expired" ? "#e11d48" : "var(--tma-button)",
-          }}
-        >
-          {statusLabel}
-        </span>
-      </div>
-      <div className="line-clamp-2 text-[14px] font-semibold leading-snug">
-        {service.remark || service.email}
-      </div>
-      <div className="mt-auto pt-2 text-[12px]" style={{ color: "var(--tma-hint)" }}>
-        {left == null ? "∞ GB" : `${gb(left)} GB`}
       </div>
     </SoftSurface>
   );
@@ -298,6 +247,19 @@ function ServiceDetail({
   };
 }) {
   const [copied, setCopied] = useState(false);
+  const key = service.subToken || service.subId || service.id;
+  const { data: output } = useQuery({
+    queryKey: ["tma-service-output", key],
+    queryFn: async () => {
+      if (!key) return null;
+      const res = await fetch(`${API_BASE}/subscriptions/${encodeURIComponent(key)}/output`);
+      if (!res.ok) return null;
+      return (await res.json()) as ClientOutputModel;
+    },
+    enabled: !!key,
+    retry: false,
+  });
+
   const link = buildSubscriptionLink(service.subId, service.subToken);
   const used = Number(service.up) + Number(service.down);
   const total = Number(service.total);
@@ -312,6 +274,9 @@ function ServiceDetail({
     service.status === "expired"
       ? "color-mix(in srgb, #f43f5e 16%, transparent)"
       : "color-mix(in srgb, var(--tma-button) 14%, transparent)";
+
+  const Renderer = output ? getConnectionRenderer(output.outputType) : null;
+  const useOutputPanel = output && output.outputType !== "subscription" && Renderer;
 
   return (
     <SoftSurface className="p-4">
@@ -336,55 +301,74 @@ function ServiceDetail({
           {statusLabel}
         </span>
       </div>
-      {link ? (
-        <div
-          className="mt-3 break-all rounded-xl px-3 py-2 font-mono text-[11px]"
-          dir="ltr"
-          style={{ background: "color-mix(in srgb, var(--tma-bg) 80%, transparent)" }}
-        >
-          {link}
+
+      {useOutputPanel ? (
+        <div className="mt-3">
+          <Renderer output={output} />
         </div>
+      ) : (
+        <>
+          {link ? (
+            <div
+              className="mt-3 break-all rounded-xl px-3 py-2 font-mono text-[11px]"
+              dir="ltr"
+              style={{ background: "color-mix(in srgb, var(--tma-bg) 80%, transparent)" }}
+            >
+              {link}
+            </div>
+          ) : null}
+          <div className="mt-3.5 flex flex-wrap gap-2">
+            {link ? (
+              <button
+                type="button"
+                onClick={async () => {
+                  await copyToClipboard(link);
+                  setCopied(true);
+                  window.setTimeout(() => setCopied(false), 1500);
+                }}
+                className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-xl text-[13px] font-semibold active:scale-[0.98]"
+                style={{
+                  background: "var(--tma-button)",
+                  color: "var(--tma-button-text)",
+                }}
+              >
+                <Copy size={14} /> {copied ? labels.copied : labels.copy}
+              </button>
+            ) : null}
+            {link ? (
+              <a
+                href={link}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border text-[13px] font-semibold active:scale-[0.98]"
+                style={{ borderColor: "var(--tma-card-border)" }}
+              >
+                {labels.open} <ExternalLink size={14} />
+              </a>
+            ) : null}
+            {onRenew && service.status !== "disabled" ? (
+              <button
+                type="button"
+                onClick={onRenew}
+                className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border text-[13px] font-semibold active:scale-[0.98]"
+                style={{ borderColor: "var(--tma-card-border)" }}
+              >
+                <RefreshCw size={14} /> {labels.renew}
+              </button>
+            ) : null}
+          </div>
+        </>
+      )}
+      {useOutputPanel && onRenew && service.status !== "disabled" ? (
+        <button
+          type="button"
+          onClick={onRenew}
+          className="mt-3 inline-flex h-11 w-full items-center justify-center gap-1.5 rounded-xl border text-[13px] font-semibold"
+          style={{ borderColor: "var(--tma-card-border)" }}
+        >
+          <RefreshCw size={14} /> {labels.renew}
+        </button>
       ) : null}
-      <div className="mt-3.5 flex flex-wrap gap-2">
-        {link ? (
-          <button
-            type="button"
-            onClick={async () => {
-              await copyToClipboard(link);
-              setCopied(true);
-              window.setTimeout(() => setCopied(false), 1500);
-            }}
-            className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-xl text-[13px] font-semibold active:scale-[0.98]"
-            style={{
-              background: "var(--tma-button)",
-              color: "var(--tma-button-text)",
-            }}
-          >
-            <Copy size={14} /> {copied ? labels.copied : labels.copy}
-          </button>
-        ) : null}
-        {link ? (
-          <a
-            href={link}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border text-[13px] font-semibold active:scale-[0.98]"
-            style={{ borderColor: "var(--tma-card-border)" }}
-          >
-            {labels.open} <ExternalLink size={14} />
-          </a>
-        ) : null}
-        {onRenew && service.status !== "disabled" ? (
-          <button
-            type="button"
-            onClick={onRenew}
-            className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border text-[13px] font-semibold active:scale-[0.98]"
-            style={{ borderColor: "var(--tma-card-border)" }}
-          >
-            <RefreshCw size={14} /> {labels.renew}
-          </button>
-        ) : null}
-      </div>
     </SoftSurface>
   );
 }
@@ -653,12 +637,6 @@ function TmaAppShellInner({
     return sum + (left == null ? 0 : left);
   }, 0);
   const hasMetered = activeServices.some((s) => Number(s.total) > 0);
-  const heroValue = !activeServices.length
-    ? "—"
-    : hasMetered
-      ? `${gb(remainingBytes)}`
-      : "∞";
-  const heroUnit = t("گیگابایت باقیمانده", "GB LEFT");
   const displayName =
     user?.first_name ||
     data.profile?.name ||
@@ -719,9 +697,12 @@ function TmaAppShellInner({
         ...(isFa ? { fontFamily: '"Vazirmatn", Tahoma, sans-serif' } : null),
       }}
     >
-      {/* Karta-like hero: avatar · balance · actions */}
-      <header className="px-4 pb-1 pt-1">
-        <div className="flex items-start justify-between gap-2">
+      <style>{`
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+        @keyframes slideUp { from { opacity: 0.6; transform: translateY(28px); } to { opacity: 1; transform: none; } }
+      `}</style>
+      <header className="sticky top-0 z-20 px-4 pb-2 pt-1 backdrop-blur-xl" style={{ background: "color-mix(in srgb, var(--tma-bg) 88%, transparent)" }}>
+        <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={() => {
@@ -733,88 +714,60 @@ function TmaAppShellInner({
           >
             {headerLogo ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={headerLogo}
-                alt=""
-                className="h-12 w-12 rounded-full object-cover ring-2 ring-white/80"
-              />
+              <img src={headerLogo} alt="" className="h-11 w-11 rounded-full object-cover" />
             ) : (
               <div
-                className="flex h-12 w-12 items-center justify-center rounded-full text-base font-bold text-white ring-2 ring-white/80"
+                className="flex h-11 w-11 items-center justify-center rounded-full text-sm font-bold text-white"
                 style={{ background: "var(--tma-button)" }}
               >
                 {avatarLetter}
               </div>
             )}
-            <span
-              className="absolute -bottom-0.5 -right-0.5 flex h-5 w-5 items-center justify-center rounded-full border-2"
-              style={{
-                background: "var(--tma-secondary-bg)",
-                borderColor: "var(--tma-bg)",
-                color: "var(--tma-hint)",
-              }}
-            >
-              <Settings2 size={11} />
-            </span>
           </button>
 
-          <div className="min-w-0 flex-1 px-2 pt-0.5 text-center">
-            <div
-              className="text-[10px] font-semibold uppercase tracking-[0.14em]"
-              style={{ color: "var(--tma-hint)" }}
-            >
-              {heroUnit}
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[16px] font-bold leading-tight">
+              {data.store?.title || "Store"}
             </div>
-            <div className="mt-0.5 text-[2.15rem] font-bold leading-none tracking-tight">
-              {heroValue}
-              {hasMetered && activeServices.length ? (
-                <span className="ms-1 text-[1rem] font-semibold opacity-50">GB</span>
-              ) : null}
-            </div>
-            <div className="mt-1.5 truncate text-[12px]" style={{ color: "var(--tma-hint)" }}>
+            <div className="truncate text-[12px]" style={{ color: "var(--tma-hint)" }}>
               {t(`سلام، ${displayName}`, `Hi, ${displayName}`)}
+              {tab === "services" && activeServices.length && hasMetered
+                ? ` · ${gb(remainingBytes)} GB`
+                : ""}
             </div>
           </div>
 
-          <div className="flex shrink-0 flex-col items-end gap-2">
+          <div className="flex shrink-0 items-center gap-1.5">
             {supportUrl ? (
               <a
                 href={supportUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="flex h-10 w-10 items-center justify-center rounded-full active:scale-95"
-                style={{
-                  background: "var(--tma-card)",
-                  border: "1px solid var(--tma-card-border)",
-                }}
+                className="flex h-9 w-9 items-center justify-center rounded-full active:scale-95"
+                style={{ background: "var(--tma-card)", border: "1px solid var(--tma-card-border)" }}
                 aria-label="Support"
               >
-                <MessageCircle size={17} style={{ color: "var(--tma-button)" }} />
+                <MessageCircle size={16} style={{ color: "var(--tma-button)" }} />
               </a>
-            ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  haptic("selection");
-                  refetch();
-                }}
-                className="flex h-10 w-10 items-center justify-center rounded-full active:scale-95"
-                style={{
-                  background: "var(--tma-card)",
-                  border: "1px solid var(--tma-card-border)",
-                }}
-                aria-label="Refresh"
-              >
-                <RefreshCw size={16} style={{ color: "var(--tma-button)" }} />
-              </button>
-            )}
-            <LanguageSwitcher className="!shadow-none scale-90 origin-top-right" />
+            ) : null}
+            <button
+              type="button"
+              onClick={() => {
+                haptic("selection");
+                refetch();
+              }}
+              className="flex h-9 w-9 items-center justify-center rounded-full active:scale-95"
+              style={{ background: "var(--tma-card)", border: "1px solid var(--tma-card-border)" }}
+              aria-label="Refresh"
+            >
+              <RefreshCw size={15} style={{ color: "var(--tma-button)" }} />
+            </button>
           </div>
         </div>
 
         {flash ? (
           <div
-            className="mt-3 rounded-2xl px-3.5 py-2.5 text-[13px] font-medium"
+            className="mt-2 animate-[fadeIn_0.25s_ease] rounded-2xl px-3.5 py-2.5 text-[13px] font-medium"
             style={{ background: "color-mix(in srgb, var(--tma-button) 16%, transparent)" }}
           >
             {flash}
@@ -822,27 +775,10 @@ function TmaAppShellInner({
         ) : null}
       </header>
 
-      <main className="mx-auto max-w-lg space-y-3.5 px-4 pb-[calc(6.5rem+env(safe-area-inset-bottom))] pt-3">
-        {/* Twin primary actions — always visible like Karta Top up / Send */}
-        <TwinCta
-          left={{
-            label: t("خرید", "Buy"),
-            icon: Plus,
-            onClick: openBuy,
-          }}
-          right={{
-            label: t("تمدید", "Renew"),
-            icon: ArrowUpRight,
-            onClick: openRenew,
-          }}
-        />
-
+      <main className="mx-auto max-w-lg space-y-3 px-4 pb-[calc(6.5rem+env(safe-area-inset-bottom))] pt-2">
         {tab === "shop" ? (
-          <>
-            <SectionTitle
-              title={t("پلن‌ها", "Plans")}
-              subtitle={t("یک پلن انتخاب کنید", "Pick a plan to get started")}
-            />
+          <div className="animate-[fadeIn_0.28s_ease] space-y-3">
+            <SectionTitle title={t("پلن‌ها", "Plans")} />
             <div className="grid grid-cols-2 gap-2.5">
               {products.map((p: StorefrontProduct) => (
                 <ProductTile
@@ -866,123 +802,44 @@ function TmaAppShellInner({
                 hint={t("این فروشگاه هنوز پلنی منتشر نکرده.", "This store has not published any plans.")}
               />
             ) : null}
-          </>
+          </div>
         ) : null}
 
         {tab === "services" ? (
-          <>
-            <div className="grid grid-cols-2 gap-2.5">
-              {activeServices.slice(0, 3).map((service) => (
-                <ServiceMiniCard
-                  key={service.id}
-                  service={service}
-                  active={service.id === selectedService?.id}
-                  onSelect={() => {
-                    haptic("selection");
-                    setSelectedServiceId(service.id);
-                  }}
-                  labels={serviceLabels}
-                />
-              ))}
-              {/* Promo / upsell tile — mirrors Karta “Pre-order” card */}
-              <SoftSurface
-                className="flex min-h-[7.5rem] flex-col justify-between overflow-hidden p-0"
-                onClick={openBuy}
-              >
-                <div className="p-3.5">
-                  <div className="text-[14px] font-semibold">{t("پلن جدید", "New plan")}</div>
-                  <div className="mt-1 text-[11px]" style={{ color: "var(--tma-hint)" }}>
-                    {t("خرید سریع از فروشگاه", "Quick buy from shop")}
-                  </div>
-                </div>
-                <div
-                  className="flex items-center justify-between px-3.5 py-2.5 text-[12px] font-bold"
-                  style={{
-                    background: "color-mix(in srgb, var(--tma-button) 12%, transparent)",
-                    color: "var(--tma-button)",
-                  }}
-                >
-                  {t("خرید الان", "Buy now")}
-                  <ArrowUpRight size={14} />
-                </div>
-              </SoftSurface>
-            </div>
-
+          <div className="animate-[fadeIn_0.28s_ease] space-y-3">
+            <TwinCta
+              left={{ label: t("خرید", "Buy"), icon: Plus, onClick: openBuy }}
+              right={{ label: t("تمدید", "Renew"), icon: ArrowUpRight, onClick: openRenew }}
+            />
             {!services.length ? (
               <EmptyState
                 icon={Package}
                 title={t("هنوز سرویسی نیست", "No services yet")}
-                hint={t("از دکمه خرید یک پلن بگیرید.", "Use Buy to get a plan.")}
+                hint={t("از فروشگاه یک پلن بخرید.", "Buy a plan from Shop.")}
               />
-            ) : selectedService ? (
-              <ServiceDetail
-                service={selectedService}
-                onRenew={() => {
-                  haptic("light");
-                  setRenewService(selectedService);
-                  setCheckout("renew");
-                }}
-                labels={serviceLabels}
-              />
-            ) : null}
-
-            {/* Soft invite / support strip */}
-            <SoftSurface
-              className="flex items-center gap-3 px-3.5 py-3"
-              onClick={() => {
-                if (supportUrl) window.open(supportUrl, "_blank");
-                else setTab("profile");
-              }}
-            >
-              <div
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
-                style={{ background: "color-mix(in srgb, var(--tma-button) 14%, transparent)" }}
-              >
-                <Headphones size={18} style={{ color: "var(--tma-button)" }} />
+            ) : (
+              <div className="space-y-2.5">
+                {services.map((service: CustomerService) => (
+                  <ServiceDetail
+                    key={service.id}
+                    service={service}
+                    onRenew={() => {
+                      haptic("light");
+                      setSelectedServiceId(service.id);
+                      setRenewService(service);
+                      setCheckout("renew");
+                    }}
+                    labels={serviceLabels}
+                  />
+                ))}
               </div>
-              <div className="min-w-0 flex-1">
-                <div className="text-[14px] font-semibold">{t("پشتیبانی", "Support")}</div>
-                <div className="text-[12px]" style={{ color: "var(--tma-hint)" }}>
-                  {t("کمک سریع از تیم فروشگاه", "Get help from the store team")}
-                </div>
-              </div>
-              <ArrowUpRight size={16} style={{ color: "var(--tma-hint)" }} />
-            </SoftSurface>
-
-            {(data.orders || []).length ? (
-              <div>
-                <SectionTitle
-                  title={t("سفارش‌های اخیر", "Recent orders")}
-                  subtitle={t("آخرین خریدها", "Your latest purchases")}
-                />
-                <div className="space-y-2">
-                  {(data.orders as CustomerOrder[]).slice(0, 3).map((order) => (
-                    <OrderTxnRow
-                      key={order.id}
-                      order={order}
-                      trackLabel={t("پیگیری", "Track")}
-                    />
-                  ))}
-                </div>
-                <button
-                  type="button"
-                  className="mt-2 w-full py-2 text-center text-[13px] font-semibold"
-                  style={{ color: "var(--tma-button)" }}
-                  onClick={() => setTab("orders")}
-                >
-                  {t("همه سفارش‌ها", "See all orders")}
-                </button>
-              </div>
-            ) : null}
-          </>
+            )}
+          </div>
         ) : null}
 
         {tab === "orders" ? (
-          <>
-            <SectionTitle
-              title={t("سفارش‌ها", "Orders")}
-              subtitle={t("پیگیری و مدیریت درخواست‌ها", "Track and manage your requests")}
-            />
+          <div className="animate-[fadeIn_0.28s_ease] space-y-3">
+            <SectionTitle title={t("سفارش‌ها", "Orders")} />
             <div className="space-y-2.5">
               {(data.orders || []).map((order: CustomerOrder) => (
                 <div key={order.id} className="space-y-1">
@@ -1008,15 +865,12 @@ function TmaAppShellInner({
                 />
               ) : null}
             </div>
-          </>
+          </div>
         ) : null}
 
         {tab === "profile" ? (
-          <>
-            <SectionTitle
-              title={t("پروفایل", "Profile")}
-              subtitle={t("ورود با تلگرام", "Signed in with Telegram")}
-            />
+          <div className="animate-[fadeIn_0.28s_ease] space-y-3">
+            <SectionTitle title={t("پروفایل", "Profile")} />
             <SoftSurface className="overflow-hidden p-0">
               <div
                 className="flex items-center gap-3 border-b px-4 py-4"
@@ -1039,28 +893,12 @@ function TmaAppShellInner({
                   </div>
                 </div>
               </div>
-              <p className="px-4 py-3.5 text-[12px] leading-relaxed" style={{ color: "var(--tma-hint)" }}>
-                {t(
-                  "در مینی‌اپ نیازی به توکن نیست. حساب شما به‌صورت خودکار متصل است. توکن ورود وب فقط در چت ربات ارسال می‌شود.",
-                  "No token needed in the Mini App. Your account is linked automatically. Web login tokens are only sent in the bot chat.",
-                )}
-              </p>
+              <div className="flex items-center justify-between px-4 py-3">
+                <span className="text-[13px] font-medium">{t("زبان", "Language")}</span>
+                <LanguageSwitcher className="!shadow-none" />
+              </div>
             </SoftSurface>
-            <button
-              type="button"
-              onClick={() => {
-                haptic("selection");
-                refetch();
-              }}
-              className="flex h-12 w-full items-center justify-center gap-2 rounded-[1.15rem] text-[14px] font-semibold active:scale-[0.98]"
-              style={{
-                background: "var(--tma-card)",
-                border: "1px solid var(--tma-card-border)",
-              }}
-            >
-              <RefreshCw size={16} /> {t("بروزرسانی", "Refresh")}
-            </button>
-          </>
+          </div>
         ) : null}
       </main>
 

@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
+import { isPanelApiAtLeast } from '../common/utils/panel-version.util';
 
 export interface PanelCapabilities {
   bulkEnable?: boolean;
@@ -15,6 +16,14 @@ export interface PanelCapabilities {
   slimInbounds?: boolean;
   observatory?: boolean;
   websocket?: boolean;
+  /** Client schema exposes WireGuard peer fields (3.4.2+) */
+  wireguardClientFields?: boolean;
+  /** InboundOption exposes wgDns/wgMtu/wgPublicKey (3.4.2+) */
+  wireguardInboundFields?: boolean;
+  /** Hosts API uses groupId paths (3.5.0+) */
+  hostsGroupedApi?: boolean;
+  /** Panel self-update status endpoint (3.5.0+) */
+  panelUpdateStatus?: boolean;
   [key: string]: boolean | undefined;
 }
 
@@ -85,9 +94,7 @@ export class ApiCapabilityResolver {
 
       if (!specFile) {
         this.logger.warn(`[CAP_RESOLVER] No spec files found in ${docsDir}.`);
-        const fallbackCaps = this.getDefaultCapabilities(
-          major >= 3 && minor >= 4,
-        );
+        const fallbackCaps = this.getDefaultCapabilities(apiVersion);
         return { capabilities: fallbackCaps, hash: 'fallback-no-specs' };
       }
 
@@ -102,9 +109,7 @@ export class ApiCapabilityResolver {
         this.logger.warn(
           `OpenAPI spec not found at ${specPath}, falling back to default capabilities`,
         );
-        const fallbackCaps = this.getDefaultCapabilities(
-          major >= 3 && minor >= 4,
-        );
+        const fallbackCaps = this.getDefaultCapabilities(apiVersion);
         return {
           capabilities: fallbackCaps,
           hash: `fallback-missing-${specFile}`,
@@ -126,6 +131,11 @@ export class ApiCapabilityResolver {
 
       const spec = JSON.parse(raw);
       const paths = spec.paths ? Object.keys(spec.paths) : [];
+      const schemas = spec.components?.schemas || {};
+      const clientProps = Object.keys(schemas.Client?.properties || {});
+      const inboundOptionProps = Object.keys(
+        schemas.InboundOption?.properties || {},
+      );
 
       const capabilities: PanelCapabilities = {
         clientsApi: paths.includes('/panel/api/clients/list'),
@@ -142,6 +152,23 @@ export class ApiCapabilityResolver {
         bulkAdjust: paths.includes('/panel/api/clients/bulkAdjust'),
         bulkDelete: paths.includes('/panel/api/clients/bulkDel'),
         bulkResetTraffic: paths.includes('/panel/api/clients/bulkResetTraffic'),
+        // WireGuard + protocol extras (derive from schema, not hardcoded version)
+        wireguardClientFields:
+          clientProps.includes('privateKey') &&
+          clientProps.includes('publicKey') &&
+          clientProps.includes('allowedIPs'),
+        wireguardInboundFields:
+          inboundOptionProps.includes('wgDns') ||
+          inboundOptionProps.includes('wgPublicKey') ||
+          inboundOptionProps.includes('wgMtu'),
+        hostsGroupedApi: paths.some(
+          (p) =>
+            p.includes('/panel/api/hosts/') &&
+            (p.includes('{groupId}') || p.includes('/bulk/add')),
+        ),
+        panelUpdateStatus: paths.includes(
+          '/panel/api/server/getUpdateStatus',
+        ),
       };
 
       this.logger.log(
@@ -156,27 +183,31 @@ export class ApiCapabilityResolver {
       return result;
     } catch (err: any) {
       this.logger.error(`Failed to resolve capabilities: ${err.message}`);
-      const fallbackCaps = this.getDefaultCapabilities(
-        major >= 3 && minor >= 4,
-      );
+      const fallbackCaps = this.getDefaultCapabilities(apiVersion);
       return { capabilities: fallbackCaps, hash: 'fallback-error' };
     }
   }
 
-  private getDefaultCapabilities(isNewApi: boolean): PanelCapabilities {
+  private getDefaultCapabilities(apiVersion: string): PanelCapabilities {
+    const is342Plus = isPanelApiAtLeast(apiVersion, 3, 4, 2);
+    const is350Plus = isPanelApiAtLeast(apiVersion, 3, 5, 0);
     return {
       clientsApi: true,
-      pagination: isNewApi,
-      slimInbounds: isNewApi,
-      observatory: isNewApi,
+      pagination: is342Plus,
+      slimInbounds: is342Plus,
+      observatory: is342Plus,
       websocket: false,
-      bulkEnable: isNewApi,
-      bulkDisable: isNewApi,
-      bulkExport: isNewApi,
-      bulkCreate: isNewApi,
-      bulkAdjust: isNewApi,
-      bulkDelete: isNewApi,
-      bulkResetTraffic: isNewApi,
+      bulkEnable: is342Plus,
+      bulkDisable: is342Plus,
+      bulkExport: is342Plus,
+      bulkCreate: is342Plus,
+      bulkAdjust: is342Plus,
+      bulkDelete: is342Plus,
+      bulkResetTraffic: is342Plus,
+      wireguardClientFields: is342Plus,
+      wireguardInboundFields: is342Plus,
+      hostsGroupedApi: is350Plus,
+      panelUpdateStatus: is350Plus,
     };
   }
 }

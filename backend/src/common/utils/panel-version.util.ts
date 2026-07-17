@@ -42,6 +42,33 @@ export function supportsBulkClientApi(panel: {
   );
 }
 
+/** WireGuard peer fields on Client + InboundOption (3.4.2+). */
+export function supportsWireGuardFields(panel: {
+  apiVersion?: string | null;
+  capabilities?: unknown;
+}): boolean {
+  const caps = panel.capabilities as Record<string, boolean> | undefined;
+  if (
+    caps?.wireguardClientFields === true ||
+    caps?.wireguardInboundFields === true
+  ) {
+    return true;
+  }
+  if (panel.apiVersion) {
+    return isPanelApiAtLeast(panel.apiVersion, 3, 4, 2);
+  }
+  return false;
+}
+
+/** Read a boolean capability from Panel.capabilities JSON. */
+export function panelHasCapability(
+  panel: { capabilities?: unknown },
+  key: string,
+): boolean {
+  const caps = panel.capabilities as Record<string, boolean> | undefined;
+  return !!caps?.[key];
+}
+
 /** Installed panel version from env or package.json */
 export function getPanelVersion(): string {
   if (process.env.PANEL_VERSION) return process.env.PANEL_VERSION;

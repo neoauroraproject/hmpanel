@@ -21,6 +21,8 @@ import {
   hasPersianText,
   resolveThemeLogo,
 } from "@/modules/shared/brand-logo";
+import { getConnectionRenderer } from "@/components/connection/RendererRegistry";
+import type { ClientOutputModel } from "@/components/connection/types";
 
 export type PortalNode = { link: string; protocol: string; tag: string };
 
@@ -196,6 +198,19 @@ export function useSubscriptionNodes(id: string) {
   });
 }
 
+export function useClientOutput(id: string) {
+  return useQuery({
+    queryKey: ["subscription-output", id],
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE}/subscriptions/${id}/output`);
+      if (!res.ok) return null;
+      return (await res.json()) as ClientOutputModel;
+    },
+    retry: false,
+    enabled: !!id,
+  });
+}
+
 function detectPortalLang(data: SubData): PortalLang {
   if (typeof window !== "undefined") {
     const saved = window.localStorage.getItem(PORTAL_LANG_KEY);
@@ -296,6 +311,7 @@ export function LangToggle({
 
 export function usePortalModel(id: string, data: SubData, theme: string) {
   const { data: nodes = [] } = useSubscriptionNodes(id);
+  const { data: connectionOutput = null } = useClientOutput(id);
   const [copied, setCopied] = useState<string | null>(null);
   const [qrValue, setQrValue] = useState<string | null>(null);
   const locale = usePortalLocale(data);
@@ -320,8 +336,15 @@ export function usePortalModel(id: string, data: SubData, theme: string) {
     theme,
   });
   const contacts = supportContacts(ps, locale.t);
-  const systemUrl = buildSystemSubUrl(data.subId, data.email);
-  const nativeUrl = buildNativeSubUrl(data);
+  const payload = (connectionOutput?.payload || {}) as {
+    systemSubUrl?: string;
+    nativeSubUrl?: string | null;
+  };
+  const systemUrl =
+    payload.systemSubUrl || buildSystemSubUrl(data.subId, data.email);
+  const nativeUrl =
+    payload.nativeSubUrl || buildNativeSubUrl(data);
+  const outputType = connectionOutput?.outputType || "subscription";
 
   const copy = async (text: string, key: string) => {
     try {
@@ -362,11 +385,33 @@ export function usePortalModel(id: string, data: SubData, theme: string) {
     contacts,
     systemUrl,
     nativeUrl,
+    connectionOutput,
+    outputType,
     formatBytes,
     formatDate,
     statusLabel,
     ...locale,
   };
+}
+
+/** Drop-in connection panel keyed by outputType (never by protocol). */
+export function PortalConnectionPanel({
+  output,
+  portalSettings,
+}: {
+  output: ClientOutputModel | null | undefined;
+  portalSettings?: PortalSettings;
+}) {
+  if (!output) return null;
+  const Renderer = getConnectionRenderer(output.outputType);
+  return (
+    <Renderer
+      output={output}
+      showPlatformQR={portalSettings?.showPlatformQR !== false}
+      showNativeQR={portalSettings?.showNativeQR !== false}
+      allowQRDownload={portalSettings?.allowQRDownload !== false}
+    />
+  );
 }
 
 export function QrModal({

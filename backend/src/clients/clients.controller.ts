@@ -8,11 +8,15 @@ import {
   Param,
   Query,
   Req,
+  Res,
   UseGuards,
+  NotFoundException,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { ClientsService } from './clients.service';
+import { ClientOutputService } from './output/client-output.service';
 import {
   CreateClientDto,
   UpdateClientDto,
@@ -26,7 +30,10 @@ import type { AuthRequest } from '../common/auth-request';
 @UseGuards(AuthGuard('jwt'))
 @Controller('clients')
 export class ClientsController {
-  constructor(private clientsService: ClientsService) {}
+  constructor(
+    private clientsService: ClientsService,
+    private clientOutput: ClientOutputService,
+  ) {}
 
   @Post()
   @ApiOperation({ summary: 'Create a client' })
@@ -103,6 +110,40 @@ export class ClientsController {
   @ApiOperation({ summary: 'Get client details' })
   findOne(@Req() req: AuthRequest, @Param('id') id: string) {
     return this.clientsService.findOne(id, req.user.id, req.user.role);
+  }
+
+  @Get(':id/output')
+  @ApiOperation({ summary: 'Protocol-aware connection output model' })
+  async getOutput(
+    @Req() req: AuthRequest,
+    @Param('id') id: string,
+    @Query('inboundId') inboundId?: string,
+  ) {
+    await this.clientsService.findOne(id, req.user.id, req.user.role);
+    const origin = `${req.protocol}://${req.get('host')}`;
+    return this.clientOutput.getOutputByClientId(id, { origin, inboundId });
+  }
+
+  @Get(':id/config')
+  @ApiOperation({
+    summary: 'Download protocol config file (e.g. WireGuard .conf)',
+  })
+  async downloadConfig(
+    @Req() req: AuthRequest,
+    @Param('id') id: string,
+    @Res() res: Response,
+  ) {
+    await this.clientsService.findOne(id, req.user.id, req.user.role);
+    const file = await this.clientOutput.getConfigFile(id, 'clientId');
+    if (!file) {
+      throw new NotFoundException('No downloadable config for this client');
+    }
+    res.setHeader('Content-Type', file.contentType);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${file.filename.replace(/"/g, '')}"`,
+    );
+    return res.send(file.configText);
   }
 
   @Get(':id/qrcode')

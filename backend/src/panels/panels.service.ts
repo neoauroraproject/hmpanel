@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PanelCapabilitiesService } from './panel-capabilities.service';
+import { buildConnectionExtrasEnvelope } from '../clients/output/connection-extras';
 import axios, { AxiosError } from 'axios';
 import * as https from 'https';
 import * as crypto from 'crypto';
@@ -1044,6 +1045,12 @@ export class PanelsService implements OnModuleInit {
         );
 
         for (const c of apiClientsList) {
+          const primaryInboundId = Array.isArray(c.inboundIds)
+            ? c.inboundIds[0]
+            : null;
+          const primaryInbound = apiInbounds.find(
+            (ib: any) => ib.id === primaryInboundId,
+          );
           unifiedClients.push({
             uuid: c.uuid || c.id,
             subId: c.subId,
@@ -1056,6 +1063,22 @@ export class PanelsService implements OnModuleInit {
             total: c.totalGB || 0,
             expiryTime: c.expiryTime || 0,
             inboundIds: c.inboundIds || [],
+            // Protocol extras for connectionExtras envelope (WireGuard etc.)
+            _raw: c,
+            _protocol: primaryInbound?.protocol || null,
+            _inboundMeta: primaryInbound
+              ? {
+                  protocol: primaryInbound.protocol,
+                  port: primaryInbound.port,
+                  listen: primaryInbound.listen,
+                  shareAddr: primaryInbound.shareAddr,
+                  shareAddrStrategy: primaryInbound.shareAddrStrategy,
+                  nodeAddress: primaryInbound.nodeAddress,
+                  wgDns: primaryInbound.wgDns,
+                  wgMtu: primaryInbound.wgMtu,
+                  wgPublicKey: primaryInbound.wgPublicKey,
+                }
+              : null,
           });
         }
       } else {
@@ -1105,6 +1128,19 @@ export class PanelsService implements OnModuleInit {
               total: stats.total || 0,
               expiryTime: stats.expiryTime || 0,
               inboundIds: [apiInbound.id],
+              _raw: c,
+              _protocol: apiInbound.protocol || null,
+              _inboundMeta: {
+                protocol: apiInbound.protocol,
+                port: apiInbound.port,
+                listen: apiInbound.listen,
+                shareAddr: apiInbound.shareAddr,
+                shareAddrStrategy: apiInbound.shareAddrStrategy,
+                nodeAddress: apiInbound.nodeAddress,
+                wgDns: apiInbound.wgDns,
+                wgMtu: apiInbound.wgMtu,
+                wgPublicKey: apiInbound.wgPublicKey,
+              },
             });
           }
         }
@@ -1236,6 +1272,12 @@ export class PanelsService implements OnModuleInit {
             .map((id: number) => apiInboundIdToDbId.get(id))
             .filter(Boolean) as string[];
 
+          const connectionExtras = buildConnectionExtrasEnvelope({
+            protocol: unifiedClient._protocol,
+            client: unifiedClient._raw || unifiedClient,
+            inbound: unifiedClient._inboundMeta,
+          });
+
           // If client doesn't exist locally at all:
           if (!dbClient) {
             this.logger.log(
@@ -1255,6 +1297,7 @@ export class PanelsService implements OnModuleInit {
                 total,
                 expiryTime,
                 flow: unifiedClient.flow || null,
+                connectionExtras,
                 inbounds: {
                   create: localInboundIds.map((id: string) => ({
                     inboundId: id,
@@ -1343,6 +1386,8 @@ export class PanelsService implements OnModuleInit {
               changedData.expiryTime = expiryTime;
             if (dbClient.flow !== unifiedClient.flow)
               changedData.flow = unifiedClient.flow;
+            // Always refresh protocol extras on sync (keys/endpoint may change)
+            changedData.connectionExtras = connectionExtras;
 
             if (Object.keys(changedData).length > 0) {
               await this.prisma.client.update({

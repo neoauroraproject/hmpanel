@@ -190,6 +190,8 @@ model Client {
   subId         String? // 3x-ui subId (used for subscription links)
   subToken      String? @unique // Secure generated token for portal proxy
   flow          String? // XTLS Flow (e.g. xtls-rprx-vision)
+  /// Protocol-aware envelope: { protocol, protocolVersion, generatedAt, payload }
+  connectionExtras Json? @default("{}")
   balanceDeducted Boolean @default(false) // Whether reseller balance was actually deducted for this client
   enable        Boolean @default(true)
   disableReason String? // MANUAL | EXPIRED | TRAFFIC_LIMIT | BALANCE_EXHAUSTED

@@ -10,6 +10,7 @@ import {
   TrafficBar,
   useExpiryLabel,
   useThemeFont,
+  PortalConnectionPanel,
   type SubData,
 } from "./portal-kit";
 
@@ -35,6 +36,8 @@ export default function PulseTheme({ id, data }: { id: string; data: SubData }) 
     nodes,
     contacts,
     ps,
+    connectionOutput,
+    outputType,
   } = model;
 
   const remPct = total > 0 ? Math.max(0, 100 - pct) : 100;
@@ -100,35 +103,43 @@ export default function PulseTheme({ id, data }: { id: string; data: SubData }) 
           </div>
         </section>
 
-        <section className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => copy(systemUrl, "system")}
-            className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-[#2563eb] px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-500"
-          >
-            {copied === "system" ? <Check size={16} /> : <Copy size={16} />}
-            Copy subscription link
-          </button>
-          {ps.showPlatformQR !== false ? (
-            <button
-              type="button"
-              onClick={() => setQrValue(systemUrl)}
-              className="inline-flex h-12 w-12 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm"
-              aria-label="QR"
-            >
-              <QrCode size={18} />
-            </button>
-          ) : null}
-        </section>
+        {outputType !== "subscription" ? (
+          <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <PortalConnectionPanel output={connectionOutput} portalSettings={ps} />
+          </section>
+        ) : (
+          <>
+            <section className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => copy(systemUrl, "system")}
+                className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-[#2563eb] px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-500"
+              >
+                {copied === "system" ? <Check size={16} /> : <Copy size={16} />}
+                Copy subscription link
+              </button>
+              {ps.showPlatformQR !== false ? (
+                <button
+                  type="button"
+                  onClick={() => setQrValue(systemUrl)}
+                  className="inline-flex h-12 w-12 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm"
+                  aria-label="QR"
+                >
+                  <QrCode size={18} />
+                </button>
+              ) : null}
+            </section>
 
-        <ConfigList
-          nodes={nodes}
-          copied={copied}
-          onCopy={copy}
-          onQr={setQrValue}
-          className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm [&_ul]:space-y-2"
-          itemClassName="rounded-xl border border-slate-100 bg-slate-50/80 px-3 py-2.5"
-        />
+            <ConfigList
+              nodes={nodes}
+              copied={copied}
+              onCopy={copy}
+              onQr={setQrValue}
+              className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm [&_ul]:space-y-2"
+              itemClassName="rounded-xl border border-slate-100 bg-slate-50/80 px-3 py-2.5"
+            />
+          </>
+        )}
 
         {contacts.length ? (
           <div className="flex justify-center gap-2">

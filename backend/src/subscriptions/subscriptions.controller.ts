@@ -1,12 +1,23 @@
-import { Controller, Get, Param, Res, Req } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Param,
+  Res,
+  Req,
+  NotFoundException,
+} from '@nestjs/common';
 import type { Response, Request } from 'express';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { SubscriptionsService } from './subscriptions.service';
+import { ClientOutputService } from '../clients/output/client-output.service';
 
 @ApiTags('Subscriptions (Public)')
 @Controller('subscriptions')
 export class SubscriptionsController {
-  constructor(private readonly subscriptionsService: SubscriptionsService) {}
+  constructor(
+    private readonly subscriptionsService: SubscriptionsService,
+    private readonly clientOutput: ClientOutputService,
+  ) {}
 
   @Get(':id')
   @ApiOperation({
@@ -14,6 +25,30 @@ export class SubscriptionsController {
   })
   getSubscriptionDetails(@Param('id') id: string) {
     return this.subscriptionsService.getSubscriptionDetails(id);
+  }
+
+  @Get(':id/output')
+  @ApiOperation({ summary: 'Protocol-aware connection output for portal / storefront' })
+  getOutput(@Param('id') id: string, @Req() req: Request) {
+    const origin = `${req.protocol}://${req.get('host')}`;
+    return this.clientOutput.getOutputBySubscriptionKey(id, { origin });
+  }
+
+  @Get(':id/config')
+  @ApiOperation({
+    summary: 'Download protocol config file (WireGuard .conf) — attachment',
+  })
+  async downloadConfig(@Param('id') id: string, @Res() res: Response) {
+    const file = await this.clientOutput.getConfigFile(id, 'subscriptionKey');
+    if (!file) {
+      throw new NotFoundException('No downloadable config for this subscription');
+    }
+    res.setHeader('Content-Type', file.contentType);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${file.filename.replace(/"/g, '')}"`,
+    );
+    return res.send(file.configText);
   }
 
   @Get(':id/nodes')

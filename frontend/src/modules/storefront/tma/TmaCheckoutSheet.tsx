@@ -105,6 +105,11 @@ export function TmaCheckoutSheet({
       setError(t("نام پروفایل الزامی است", "Profile name is required"));
       return;
     }
+    // Renew: step 1 is payment — require receipt before confirm
+    if (mode === "renew" && step === 1 && !receiptText.trim() && !receiptImage) {
+      setError(t("رسید یا یادداشت پرداخت الزامی است", "Payment receipt or note is required"));
+      return;
+    }
     setStep((s) => Math.min(maxStep, s + 1) as Step);
   };
 
@@ -125,6 +130,11 @@ export function TmaCheckoutSheet({
       }
       if (mode === "renew" && !renewService?.id) {
         throw new Error(t("سرویس یافت نشد", "Service missing"));
+      }
+      if (!receiptText.trim() && !receiptImage) {
+        throw new Error(
+          t("رسید یا یادداشت پرداخت الزامی است", "Payment receipt or note is required"),
+        );
       }
 
       if (mode === "renew") {
@@ -174,11 +184,15 @@ export function TmaCheckoutSheet({
     (mode === "buy" && step === 3) || (mode === "renew" && (step === 1 || step === 2));
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 p-0 animate-[fadeIn_0.2s_ease]">
+      <style>{`
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes slideUp { from { opacity: 0.65; transform: translateY(36px); } to { opacity: 1; transform: none; } }
+      `}</style>
       <button type="button" className="absolute inset-0" aria-label="Close" onClick={onClose} />
       <div
         ref={sheetRef}
-        className={`relative z-10 flex max-h-[94dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-[1.75rem] shadow-2xl ${
+        className={`relative z-10 flex max-h-[94dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-[1.75rem] shadow-2xl animate-[slideUp_0.32s_cubic-bezier(0.22,1,0.36,1)] ${
           isFa ? "font-[Vazirmatn,Tahoma,sans-serif]" : ""
         }`}
         style={{
@@ -228,7 +242,10 @@ export function TmaCheckoutSheet({
           ))}
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4">
+        <div
+          key={step}
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 animate-[fadeIn_0.22s_ease]"
+        >
           {mode === "renew" && renewService ? (
             <div className="mb-4 space-y-2">
               <div
@@ -377,7 +394,10 @@ export function TmaCheckoutSheet({
                 <>
                   <label className="block space-y-2 text-sm">
                     <span className="font-medium">
-                      {t("یادداشت پرداخت (اختیاری)", "Payment note (optional)")}
+                      {t("یادداشت پرداخت", "Payment note")}
+                      <span className="ms-1 font-normal" style={{ color: LIGHT.hint }}>
+                        ({t("یا رسید تصویری", "or image receipt")})
+                      </span>
                     </span>
                     <textarea
                       rows={2}
@@ -400,7 +420,7 @@ export function TmaCheckoutSheet({
                         : t("آپلود رسید", "Upload receipt")}
                     </span>
                     <span className="text-[12px]" style={{ color: LIGHT.hint }}>
-                      {t("اختیاری", "Optional")}
+                      {t("الزامی برای بررسی ادمین", "Required for admin review")}
                     </span>
                     <input
                       type="file"
@@ -428,15 +448,19 @@ export function TmaCheckoutSheet({
 
               {step === 2 && mode === "renew" ? (
                 <p className="text-[13px]" style={{ color: LIGHT.hint }}>
-                  {receiptImage || receiptText
-                    ? t(
-                        "رسید پیوست شد. برای تکمیل تمدید ثبت کنید.",
-                        "Receipt attached. Submit to complete renewal.",
-                      )
-                    : t(
-                        "بدون رسید هم می‌توانید ثبت کنید؛ پرداخت بعداً قابل ارسال است.",
-                        "You can submit without a receipt; payment can be added later.",
-                      )}
+                  {t(
+                    "رسید برای بررسی ادمین الزامی است. پس از ثبت، اعلان به ربات ادمین می‌رود.",
+                    "A receipt is required for admin review. After submit, the admin bot is notified.",
+                  )}
+                </p>
+              ) : null}
+
+              {(mode === "buy" && step === 3) ? (
+                <p className="text-[12px]" style={{ color: LIGHT.hint }}>
+                  {t(
+                    "با ثبت سفارش، رسید برای ادمین در ربات ارسال می‌شود تا تأیید یا رد کند.",
+                    "On submit, your receipt is sent to the admin bot for approve/reject.",
+                  )}
                 </p>
               ) : null}
             </div>

@@ -8,6 +8,7 @@ import { QRCodeCanvas } from "qrcode.react";
 import { formatBytes, formatDate } from "@/lib/format";
 import { API_BASE } from "@/lib/api";
 import { normalizePortalTheme, resolveThemeLogo } from "@/modules/shared/brand-logo";
+import { useClientOutput, PortalConnectionPanel } from "./portal-kit";
 
 export default function DefaultTheme({ id, data }: { id: string; data: any }) {
   const { data: nodes } = useQuery({
@@ -19,6 +20,8 @@ export default function DefaultTheme({ id, data }: { id: string; data: any }) {
     },
     retry: false,
   });
+  const { data: connectionOutput } = useClientOutput(id);
+  const outputType = connectionOutput?.outputType || "subscription";
 
   const [qrModal, setQrModal] = useState(false);
   const [urlForQR, setUrlForQR] = useState("");
@@ -319,6 +322,13 @@ export default function DefaultTheme({ id, data }: { id: string; data: any }) {
             </div>
             
             <div className={`${ts.card} border ${ts.roundedLg} p-6 shadow-xl space-y-4`}>
+              {outputType !== "subscription" ? (
+                <PortalConnectionPanel
+                  output={connectionOutput}
+                  portalSettings={portalSettings}
+                />
+              ) : (
+                <>
               <p className="text-zinc-400 text-sm mb-4">Automatically import your subscription into a compatible VPN client.</p>
               <button onClick={() => setImportSheet(true)} className={`flex items-center justify-center gap-3 w-full py-4 bg-emerald-600 hover:bg-emerald-500 transition-colors rounded-xl ${ts.heading} font-bold shadow-lg shadow-emerald-600/20`}>
                 <MonitorSmartphone size={20} /> Import to App
@@ -336,6 +346,8 @@ export default function DefaultTheme({ id, data }: { id: string; data: any }) {
                   </button>
                 </div>
               </div>
+                </>
+              )}
             </div>
           </motion.div>
           

@@ -4,7 +4,8 @@ import { useMemo, useState, type ReactNode } from "react";
 import { Check, ChevronDown, Copy, MessageCircle, QrCode, Zap } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
 import type { PortalNode, SubData } from "./portal-kit";
-import { usePortalModel } from "./portal-kit";
+import { usePortalModel, PortalConnectionPanel } from "./portal-kit";
+import type { ClientOutputModel } from "@/components/connection/types";
 
 export function useNeoMetrics(id: string, data: SubData, theme: string) {
   const model = usePortalModel(id, data, theme);
@@ -146,6 +147,29 @@ export function NeoQrOverlay({
       </div>
     </div>
   );
+}
+
+export function NeoConnectionBlock({
+  outputType,
+  connectionOutput,
+  portalSettings,
+  children,
+  className = "",
+}: {
+  outputType: string;
+  connectionOutput: ClientOutputModel | null | undefined;
+  portalSettings?: any;
+  children: ReactNode;
+  className?: string;
+}) {
+  if (outputType !== "subscription") {
+    return (
+      <div className={className}>
+        <PortalConnectionPanel output={connectionOutput} portalSettings={portalSettings} />
+      </div>
+    );
+  }
+  return <>{children}</>;
 }
 
 export function NeoFab({

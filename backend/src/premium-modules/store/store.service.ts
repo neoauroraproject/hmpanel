@@ -1486,11 +1486,19 @@ export class StoreService {
       orderId: order.id,
     });
 
-    if (hasPayment) {
-      void this.telegram.notifyAdminNewOrder(store.adminId, order.id).catch((err) => {
+    // Always push to the store admin bot chat (receipt optional — caption adapts).
+    void this.telegram
+      .notifyAdminNewOrder(store.adminId, order.id)
+      .then((ok) => {
+        if (!ok) {
+          this.logger.warn(
+            `Admin Telegram notify skipped/failed for order ${order.id} (bot disabled, no admin chat, or send error)`,
+          );
+        }
+      })
+      .catch((err) => {
         this.logger.warn(`Admin Telegram notify failed: ${err?.message || err}`);
       });
-    }
 
     return {
       orderId: order.id,
