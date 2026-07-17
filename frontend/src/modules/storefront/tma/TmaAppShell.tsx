@@ -426,8 +426,16 @@ function OrderTxnRow({
 }) {
   const initial = (order.productName || "?").slice(0, 1).toUpperCase();
   const time = order.createdAt
-    ? new Date(order.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    ? new Date(order.createdAt).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      })
     : "";
+  const status = order.status.replace(/_/g, " ");
+  const amountLabel = order.amount
+    ? `${order.amount} ${order.currency || ""}`.trim()
+    : trackLabel;
   return (
     <SoftSurface className="flex items-center gap-3 px-3.5 py-3">
       <div className="relative shrink-0">
@@ -438,7 +446,7 @@ function OrderTxnRow({
           {initial}
         </div>
         <span
-          className="absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-full border-2"
+          className="absolute -bottom-0.5 -end-0.5 h-4 w-4 rounded-full border-2"
           style={{
             background:
               order.status === "COMPLETED" || order.status === "PROVISIONED"
@@ -450,20 +458,26 @@ function OrderTxnRow({
       </div>
       <div className="min-w-0 flex-1">
         <div className="truncate text-[14px] font-semibold">{order.productName}</div>
-        <div className="mt-0.5 text-[11px]" style={{ color: "var(--tma-hint)" }}>
+        <div
+          className="mt-0.5 text-[11px]"
+          dir="ltr"
+          style={{ color: "var(--tma-hint)", unicodeBidi: "isolate" }}
+        >
           {time}
           {time ? " · " : ""}
-          {order.status.replace(/_/g, " ")}
+          {status}
         </div>
       </div>
       <a
         href={`/track/${encodeURIComponent(order.trackingCode)}`}
-        className="shrink-0 text-right"
+        className="shrink-0 text-end"
       >
-        <div className="text-[13px] font-bold" style={{ color: "var(--tma-button)" }}>
-          {order.amount
-            ? `${order.amount} ${order.currency || ""}`.trim()
-            : trackLabel}
+        <div
+          className="text-[13px] font-bold"
+          dir="ltr"
+          style={{ color: "var(--tma-button)", unicodeBidi: "isolate" }}
+        >
+          {amountLabel}
         </div>
         <div className="text-[10px]" style={{ color: "var(--tma-hint)" }}>
           {trackLabel}

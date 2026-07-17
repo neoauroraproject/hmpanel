@@ -19,7 +19,13 @@ import {
   resolveThemeLogo,
 } from "@/modules/shared/brand-logo";
 import { LanguageSwitcher, StorefrontLocaleProvider, useStorefrontLocale } from "./locale";
-import { StorefrontThemeToggle, useStorefrontTheme, fadeUp, fadeUpTransition } from "./design";
+import {
+  StorefrontThemeProvider,
+  StorefrontThemeToggle,
+  useStorefrontTheme,
+  fadeUp,
+  fadeUpTransition,
+} from "./design";
 import type {
   CustomerNotification,
   CustomerOrder,
@@ -46,9 +52,11 @@ export function StoreShell({
 
   return (
     <StorefrontLocaleProvider store={store}>
-      <StoreShellInner store={store} primaryColor={primaryColor} topBar={topBar}>
-        {children}
-      </StoreShellInner>
+      <StorefrontThemeProvider>
+        <StoreShellInner store={store} primaryColor={primaryColor} topBar={topBar}>
+          {children}
+        </StoreShellInner>
+      </StorefrontThemeProvider>
     </StorefrontLocaleProvider>
   );
 }

@@ -3,7 +3,8 @@
 import { Suspense, useEffect, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { LoaderCircle } from "lucide-react";
-import TmaAppShell from "@/modules/storefront/tma/TmaAppShell";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { publicApi, setCustomerSessionToken, getCustomerSessionToken } from "@/lib/api";
 import {
   forceTelegramMiniApp,
   hasTelegramInitData,
@@ -13,35 +14,39 @@ import {
 } from "@/modules/storefront/tma/useTelegramWebApp";
 import ShopPage from "./ShopPageClient";
 
+/**
+ * One storefront UI for web + Telegram.
+ * Telegram only auto-signs-in and caches the session — no separate Mini App shell.
+ */
 function ShopRouter() {
   const params = useParams();
   const searchParams = useSearchParams();
   const slug = params.slug as string;
   const forceTg = searchParams.get("tg") === "1";
-  const [mode, setMode] = useState<"checking" | "tma" | "web">("checking");
+  const queryClient = useQueryClient();
+  const [ready, setReady] = useState(false);
+
+  const silentLogin = useMutation({
+    mutationFn: async (payload: { slug: string; initData: string }) =>
+      (await publicApi.post("/store/telegram/session", payload)).data as {
+        sessionToken: string;
+      },
+    onSuccess: async (data) => {
+      setCustomerSessionToken(data.sessionToken);
+      await queryClient.invalidateQueries({ queryKey: ["customer-session"] });
+    },
+  });
 
   useEffect(() => {
     let cancelled = false;
 
-    const pickTma = () => {
-      if (cancelled) return;
-      const wa = window.Telegram?.WebApp;
-      if (wa) applyTelegramFullscreen(wa);
-      setMode("tma");
-    };
-
-    const pickWeb = () => {
-      if (!cancelled) setMode("web");
-    };
-
-    const run = async () => {
-      // Regular browser (no ?tg=1): always web storefront with token checkout
-      if (!forceTg && !forceTelegramMiniApp() && !isTelegramUserAgent()) {
-        pickWeb();
+    const boot = async () => {
+      const wantTg = forceTg || forceTelegramMiniApp() || isTelegramUserAgent();
+      if (!wantTg) {
+        if (!cancelled) setReady(true);
         return;
       }
 
-      // Mini App path: bot Open (?tg=1) or Telegram in-app browser
       try {
         await loadTelegramScript();
       } catch {
@@ -49,56 +54,48 @@ function ShopRouter() {
       }
       if (cancelled) return;
 
-      if (hasTelegramInitData()) {
-        pickTma();
+      const wa = window.Telegram?.WebApp;
+      if (wa) applyTelegramFullscreen(wa);
+
+      // Already have a customer session — keep web UI
+      if (getCustomerSessionToken()) {
+        if (!cancelled) setReady(true);
         return;
       }
 
-      // Wait briefly for initData — never fall back to blocking Retry forever in browser
       let tries = 0;
-      const t = window.setInterval(() => {
-        if (cancelled) {
-          window.clearInterval(t);
-          return;
+      while (!cancelled && tries < 40) {
+        if (hasTelegramInitData()) {
+          const initData = window.Telegram?.WebApp?.initData || "";
+          if (initData) {
+            try {
+              await silentLogin.mutateAsync({ slug, initData });
+            } catch {
+              /* show web shop anyway */
+            }
+          }
+          break;
         }
         tries += 1;
-        if (hasTelegramInitData()) {
-          window.clearInterval(t);
-          pickTma();
-          return;
-        }
-        if (forceTg) {
-          // Still in Mini App intent — keep TMA shell (shows Retry with initData help)
-          if (tries >= 40) {
-            window.clearInterval(t);
-            pickTma();
-          }
-          return;
-        }
-        // Telegram UA but no initData → open web storefront (token flow)
-        if (tries >= 25) {
-          window.clearInterval(t);
-          pickWeb();
-        }
-      }, 100);
+        await new Promise((r) => window.setTimeout(r, 100));
+      }
+
+      if (!cancelled) setReady(true);
     };
 
-    void run();
+    void boot();
     return () => {
       cancelled = true;
     };
-  }, [searchParams, forceTg]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slug, forceTg]);
 
-  if (mode === "checking") {
+  if (!ready) {
     return (
       <div className="flex min-h-[100dvh] items-center justify-center bg-zinc-50 dark:bg-zinc-950">
         <LoaderCircle className="animate-spin text-zinc-500" />
       </div>
     );
-  }
-
-  if (mode === "tma") {
-    return <TmaAppShell slug={slug} />;
   }
 
   return <ShopPage />;

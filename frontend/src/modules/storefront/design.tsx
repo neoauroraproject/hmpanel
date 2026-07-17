@@ -1,6 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import { Moon, Sun } from "lucide-react";
 import { motion, type Transition } from "framer-motion";
 import { clsx } from "clsx";
@@ -27,24 +35,101 @@ export const staggerItem = {
 
 const THEME_KEY = "hmpanel-storefront-theme";
 
-export function useStorefrontTheme() {
-  const [theme, setThemeState] = useState<"light" | "dark">("light");
+type StorefrontTheme = "light" | "dark";
+
+type ThemeContextValue = {
+  theme: StorefrontTheme;
+  setTheme: (next: StorefrontTheme) => void;
+  toggle: () => void;
+  isDark: boolean;
+};
+
+const StorefrontThemeContext = createContext<ThemeContextValue | null>(null);
+
+function applyTheme(theme: StorefrontTheme) {
+  if (typeof document === "undefined") return;
+  const root = document.documentElement;
+  root.classList.toggle("dark", theme === "dark");
+  root.classList.toggle("light", theme === "light");
+  root.style.colorScheme = theme;
+}
+
+function readSavedTheme(): StorefrontTheme {
+  if (typeof window === "undefined") return "light";
+  try {
+    const saved = localStorage.getItem(THEME_KEY) as StorefrontTheme | null;
+    if (saved === "light" || saved === "dark") return saved;
+  } catch {
+    /* ignore */
+  }
+  return "light";
+}
+
+/** Shared theme so logo/header and toggle stay in sync. */
+export function StorefrontThemeProvider({ children }: { children: ReactNode }) {
+  const [theme, setThemeState] = useState<StorefrontTheme>("light");
+  const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
+    const initial = readSavedTheme();
+    setThemeState(initial);
+    applyTheme(initial);
+    setHydrated(true);
+  }, []);
+
+  const setTheme = useCallback((next: StorefrontTheme) => {
+    setThemeState(next);
+    applyTheme(next);
     try {
-      const saved = localStorage.getItem(THEME_KEY) as "light" | "dark" | null;
-      if (saved === "light" || saved === "dark") {
-        setThemeState(saved);
-        applyTheme(saved);
-        return;
-      }
+      localStorage.setItem(THEME_KEY, next);
     } catch {
       /* ignore */
     }
-    applyTheme("light");
   }, []);
 
-  const setTheme = (next: "light" | "dark") => {
+  const toggle = useCallback(() => {
+    setThemeState((prev) => {
+      const next: StorefrontTheme = prev === "light" ? "dark" : "light";
+      applyTheme(next);
+      try {
+        localStorage.setItem(THEME_KEY, next);
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, []);
+
+  const value = useMemo(
+    () => ({ theme, setTheme, toggle, isDark: theme === "dark" }),
+    [theme, setTheme, toggle],
+  );
+
+  if (!hydrated) {
+    return (
+      <StorefrontThemeContext.Provider value={value}>
+        <div className="min-h-[100dvh] bg-[#F5F5F7]" />
+      </StorefrontThemeContext.Provider>
+    );
+  }
+
+  return (
+    <StorefrontThemeContext.Provider value={value}>{children}</StorefrontThemeContext.Provider>
+  );
+}
+
+export function useStorefrontTheme() {
+  const ctx = useContext(StorefrontThemeContext);
+  if (ctx) return ctx;
+
+  // Rare fallback if a page forgot the provider
+  const [theme, setThemeState] = useState<StorefrontTheme>("light");
+  useEffect(() => {
+    const initial = readSavedTheme();
+    setThemeState(initial);
+    applyTheme(initial);
+  }, []);
+  const setTheme = (next: StorefrontTheme) => {
     setThemeState(next);
     applyTheme(next);
     try {
@@ -53,17 +138,12 @@ export function useStorefrontTheme() {
       /* ignore */
     }
   };
-
-  const toggle = () => setTheme(theme === "light" ? "dark" : "light");
-
-  return { theme, setTheme, toggle, isDark: theme === "dark" };
-}
-
-function applyTheme(theme: "light" | "dark") {
-  const root = document.documentElement;
-  root.classList.toggle("dark", theme === "dark");
-  root.classList.toggle("light", theme === "light");
-  root.style.colorScheme = theme;
+  return {
+    theme,
+    setTheme,
+    toggle: () => setTheme(theme === "light" ? "dark" : "light"),
+    isDark: theme === "dark",
+  };
 }
 
 export function StorefrontThemeToggle({ className = "" }: { className?: string }) {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { publicApi } from "@/lib/api";
+import { publicApi, getCustomerSessionToken } from "@/lib/api";
 import { useParams } from "next/navigation";
 import {
   AlertCircle,
@@ -24,6 +24,16 @@ import { copyToClipboard } from "@/lib/clipboard";
 import { StoreShell } from "@/modules/storefront/ui";
 import { StorefrontLocaleProvider, useStorefrontLocale } from "@/modules/storefront/locale";
 import { portalPathForSlug, shopPathForSlug } from "@/modules/storefront/store-slug";
+
+function portalHref(storeSlug?: string | null, customerToken?: string | null) {
+  const hasSession =
+    typeof window !== "undefined" && !!getCustomerSessionToken();
+  if (hasSession) return portalPathForSlug(storeSlug, "dashboard");
+  if (customerToken) {
+    return `${portalPathForSlug(storeSlug, "login")}?token=${encodeURIComponent(customerToken)}`;
+  }
+  return portalPathForSlug(storeSlug, "login");
+}
 
 type StatusKey =
   | "PENDING_PAYMENT"
@@ -241,7 +251,7 @@ function TrackError({
           {t("تلاش مجدد", "Retry")}
         </button>
         <Link
-          href={portalPathForSlug(storeSlug, "login")}
+          href={portalHref(storeSlug)}
           className="rounded-xl border border-zinc-300 bg-white px-4 py-2 text-sm font-semibold"
         >
           {t("پورتال مشتری", "Customer portal")}
@@ -307,11 +317,7 @@ function TrackBody({ data, isFetching }: { data: any; isFetching: boolean }) {
           {t("بازگشت به فروشگاه", "Back to store")}
         </Link>
         <Link
-          href={
-            data.customerToken
-              ? `${portalPathForSlug(data.storeSlug, "login")}?token=${encodeURIComponent(data.customerToken)}`
-              : portalPathForSlug(data.storeSlug, "login")
-          }
+          href={portalHref(data.storeSlug, data.customerToken)}
           className="inline-flex h-11 items-center justify-center rounded-2xl bg-[color:var(--store-primary,#2563eb)] px-4 text-sm font-semibold text-white"
         >
           {t("پورتال مشتری", "Customer portal")}
@@ -462,7 +468,7 @@ function TrackBody({ data, isFetching }: { data: any; isFetching: boolean }) {
       {(isFailed || isRejected) && (
         <div className="flex flex-wrap justify-center gap-3 text-center">
           <Link
-            href={portalPathForSlug(data.storeSlug, "login")}
+            href={portalHref(data.storeSlug, data.customerToken)}
             className="text-sm font-medium text-zinc-700 underline-offset-2 hover:underline dark:text-zinc-200"
           >
             {t("بازگشت به پورتال", "Back to customer portal")}

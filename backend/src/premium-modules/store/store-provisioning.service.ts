@@ -68,9 +68,31 @@ export class StoreProvisioningService {
   }
 
   async resolveRenewClientByToken(adminId: string, tokenOrUrl: string) {
-    let token = tokenOrUrl.trim();
-    const urlMatch = token.match(/\/s\/([^/?#]+)/);
-    if (urlMatch) token = urlMatch[1];
+    let token = String(tokenOrUrl || '').trim();
+    const pathPatterns = [
+      /\/s\/([^/?#]+)/i,
+      /\/sub\/([^/?#]+)/i,
+      /\/subscribe\/([^/?#]+)/i,
+    ];
+    for (const re of pathPatterns) {
+      const match = token.match(re);
+      if (match?.[1]) {
+        token = decodeURIComponent(match[1]).trim();
+        break;
+      }
+    }
+    if (/^https?:\/\//i.test(token)) {
+      try {
+        const u = new URL(token);
+        const segments = u.pathname.split('/').filter(Boolean);
+        const last = segments[segments.length - 1];
+        if (last) token = decodeURIComponent(last).trim();
+      } catch {
+        /* keep token as-is */
+      }
+    }
+    token = token.replace(/^[@#]/, '').trim();
+    if (!token) throw new BadRequestException('Invalid subscription link or token');
 
     const client = await this.prisma.client.findFirst({
       where: {
