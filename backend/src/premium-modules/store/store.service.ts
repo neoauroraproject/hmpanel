@@ -1070,11 +1070,17 @@ export class StoreService {
     return out;
   }
 
-  private async resolveCustomerServices(customerOrders: Array<{ clientId: string | null; renewClientId: string | null }>) {
+  private async resolveCustomerServices(
+    customerOrders: Array<{ clientId: string | null; renewClientId: string | null }>,
+    linkedClientIds: string[] = [],
+  ) {
     const clientIds = new Set<string>();
     for (const order of customerOrders) {
       if (order.clientId) clientIds.add(order.clientId);
       if (order.renewClientId) clientIds.add(order.renewClientId);
+    }
+    for (const id of linkedClientIds) {
+      if (id) clientIds.add(id);
     }
 
     if (!clientIds.size) return [];
@@ -1097,6 +1103,56 @@ export class StoreService {
     });
 
     return services.map((service) => this.serializeService(service));
+  }
+
+  private getLinkedClientIds(metadata: unknown): string[] {
+    const meta = (metadata || {}) as { linkedClientIds?: string[] };
+    return Array.isArray(meta.linkedClientIds)
+      ? meta.linkedClientIds.filter((id) => typeof id === 'string' && id.trim())
+      : [];
+  }
+
+  private async linkClientToCustomer(customerId: string, clientId: string) {
+    const customer = await this.prisma.storeCustomer.findUnique({
+      where: { id: customerId },
+    });
+    if (!customer) throw new NotFoundException('Customer not found');
+
+    const linked = this.getLinkedClientIds(customer.metadata);
+    if (linked.includes(clientId)) return;
+
+    const meta = (customer.metadata || {}) as Record<string, unknown>;
+    await this.prisma.storeCustomer.update({
+      where: { id: customerId },
+      data: {
+        metadata: {
+          ...meta,
+          linkedClientIds: [...linked, clientId],
+        },
+      },
+    });
+  }
+
+  /** Resolve + attach an existing subscription (by /s/ link) to the logged-in customer. */
+  async claimServiceBySubscriptionLink(
+    sessionToken: string,
+    subscriptionLink: string,
+  ) {
+    this.rateLimit.check('claim-service', sessionToken);
+    const customer = await this.customerAuth.validateSession(sessionToken);
+    const link = String(subscriptionLink || '').trim();
+    if (!link) throw new BadRequestException('subscriptionLink is required');
+
+    const client = await this.provisioning.resolveRenewClientByToken(
+      customer.adminId,
+      link,
+    );
+    await this.linkClientToCustomer(customer.id, client.id);
+
+    return {
+      service: this.serializeService(client),
+      dashboard: await this.buildCustomerDashboard(customer.token),
+    };
   }
 
   private async listCompatibleRenewProducts(
@@ -1127,7 +1183,10 @@ export class StoreService {
         where: { adminId: customer.adminId },
       }),
       this.buildPublicBranding(customer.adminId),
-      this.resolveCustomerServices(customer.orders),
+      this.resolveCustomerServices(
+        customer.orders,
+        this.getLinkedClientIds(customer.metadata),
+      ),
       this.listCompatibleRenewProducts(customer.adminId, customer.orders),
       this.prisma.storeProduct.findMany({
         where: {
@@ -1523,7 +1582,20 @@ export class StoreService {
     });
     if (!store) throw new NotFoundException('Store not found');
 
-    const client = await this.provisioning.resolveRenewClient(customer.adminId, payload.clientId);
+    let clientId = payload.clientId?.trim();
+    if (!clientId && payload.subscriptionLink?.trim()) {
+      const resolved = await this.provisioning.resolveRenewClientByToken(
+        customer.adminId,
+        payload.subscriptionLink.trim(),
+      );
+      clientId = resolved.id;
+      await this.linkClientToCustomer(customer.id, resolved.id);
+    }
+    if (!clientId) {
+      throw new BadRequestException('clientId or subscriptionLink is required');
+    }
+
+    const client = await this.provisioning.resolveRenewClient(customer.adminId, clientId);
     const product = await this.prisma.storeProduct.findFirst({
       where: { id: payload.productId, adminId: customer.adminId, renewable: true, visible: true },
       include: { category: true },

@@ -9,16 +9,21 @@ import {
   MessageCircle,
   Package,
   Plus,
+  QrCode,
   RefreshCw,
   ShoppingBag,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
+import { QRCodeCanvas } from "qrcode.react";
 import { copyToClipboard } from "@/lib/clipboard";
 import { buildSubscriptionLink } from "../subscription";
 import { resolveThemeLogo } from "@/modules/shared/brand-logo";
 import type { CustomerOrder, CustomerService, StorefrontProduct } from "../types";
 import { TmaBottomNav, type TmaTab } from "./TmaBottomNav";
 import { TmaCheckoutSheet } from "./TmaCheckoutSheet";
+import { TmaLinkSubSheet } from "./TmaLinkSubSheet";
+import { TmaHomeTab } from "./TmaHomeTab";
+import { TmaAlertsTab } from "./TmaAlertsTab";
 import { useTelegramSession } from "./useTelegramSession";
 import { isTelegramMobilePlatform, useTelegramWebApp } from "./useTelegramWebApp";
 import { scrollTmaToTop } from "./scroll";
@@ -26,6 +31,7 @@ import { LanguageSwitcher, StorefrontLocaleProvider, useStorefrontLocale } from 
 import { API_BASE } from "@/lib/api";
 import { getConnectionRenderer } from "@/components/connection/RendererRegistry";
 import type { ClientOutputModel } from "@/components/connection/types";
+import { formatServiceExpiry, isExpiringSoon } from "./tma-service-utils";
 
 /** Soft white/blue surfaces for light; Telegram-native for dark. Layout stays Karta-like. */
 function cssVars(
@@ -230,6 +236,7 @@ function ServiceDetail({
   service,
   onRenew,
   labels,
+  t,
 }: {
   service: CustomerService;
   onRenew?: () => void;
@@ -244,9 +251,14 @@ function ServiceDetail({
     traffic: string;
     left: string;
     unlimited: string;
+    qr: string;
+    expiry: string;
   };
+  t: (fa: string, en: string) => string;
 }) {
   const [copied, setCopied] = useState(false);
+  const [showQr, setShowQr] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const key = service.subToken || service.subId || service.id;
   const { data: output } = useQuery({
     queryKey: ["tma-service-output", key],
@@ -256,11 +268,15 @@ function ServiceDetail({
       if (!res.ok) return null;
       return (await res.json()) as ClientOutputModel;
     },
-    enabled: !!key,
+    enabled: !!key && expanded,
     retry: false,
   });
 
   const link = buildSubscriptionLink(service.subId, service.subToken);
+  const qrValue =
+    (output?.payload?.qrText as string) ||
+    (output?.payload?.systemSubUrl as string) ||
+    link;
   const used = Number(service.up) + Number(service.down);
   const total = Number(service.total);
   const remaining = trafficLeft(service);
@@ -273,101 +289,129 @@ function ServiceDetail({
   const tone =
     service.status === "expired"
       ? "color-mix(in srgb, #f43f5e 16%, transparent)"
-      : "color-mix(in srgb, var(--tma-button) 14%, transparent)";
+      : isExpiringSoon(service)
+        ? "color-mix(in srgb, #f59e0b 18%, transparent)"
+        : "color-mix(in srgb, var(--tma-button) 14%, transparent)";
 
   const Renderer = output ? getConnectionRenderer(output.outputType) : null;
-  const useOutputPanel = output && output.outputType !== "subscription" && Renderer;
+  const useOutputPanel =
+    expanded && output && output.outputType !== "subscription" && Renderer;
 
   return (
     <SoftSurface className="p-4">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="truncate text-[15px] font-semibold">
-            {service.remark || service.email}
-          </div>
-          <div className="mt-1 text-[12px]" style={{ color: "var(--tma-hint)" }}>
-            {labels.traffic}:{" "}
-            {total > 0
-              ? `${gb(used)}/${gb(total)} GB`
-              : labels.unlimited}
-            {" · "}
-            {labels.left}: {remaining == null ? labels.unlimited : `${gb(remaining)} GB`}
-          </div>
-        </div>
-        <span
-          className="shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold tracking-wide"
-          style={{ background: tone, color: "var(--tma-button)" }}
-        >
-          {statusLabel}
-        </span>
-      </div>
-
-      {useOutputPanel ? (
-        <div className="mt-3">
-          <Renderer output={output} />
-        </div>
-      ) : (
-        <>
-          {link ? (
-            <div
-              className="mt-3 break-all rounded-xl px-3 py-2 font-mono text-[11px]"
-              dir="ltr"
-              style={{ background: "color-mix(in srgb, var(--tma-bg) 80%, transparent)" }}
-            >
-              {link}
+      <button
+        type="button"
+        className="w-full text-left"
+        onClick={() => setExpanded((v) => !v)}
+      >
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <div className="truncate text-[15px] font-semibold">
+              {service.remark || service.email}
             </div>
-          ) : null}
-          <div className="mt-3.5 flex flex-wrap gap-2">
-            {link ? (
-              <button
-                type="button"
-                onClick={async () => {
-                  await copyToClipboard(link);
-                  setCopied(true);
-                  window.setTimeout(() => setCopied(false), 1500);
-                }}
-                className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-xl text-[13px] font-semibold active:scale-[0.98]"
-                style={{
-                  background: "var(--tma-button)",
-                  color: "var(--tma-button-text)",
-                }}
-              >
-                <Copy size={14} /> {copied ? labels.copied : labels.copy}
-              </button>
-            ) : null}
-            {link ? (
-              <a
-                href={link}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border text-[13px] font-semibold active:scale-[0.98]"
-                style={{ borderColor: "var(--tma-card-border)" }}
-              >
-                {labels.open} <ExternalLink size={14} />
-              </a>
-            ) : null}
-            {onRenew && service.status !== "disabled" ? (
-              <button
-                type="button"
-                onClick={onRenew}
-                className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border text-[13px] font-semibold active:scale-[0.98]"
-                style={{ borderColor: "var(--tma-card-border)" }}
-              >
-                <RefreshCw size={14} /> {labels.renew}
-              </button>
-            ) : null}
+            <div className="mt-1 text-[12px]" style={{ color: "var(--tma-hint)" }}>
+              {labels.traffic}:{" "}
+              {total > 0
+                ? `${gb(used)}/${gb(total)} GB`
+                : labels.unlimited}
+              {" · "}
+              {labels.expiry}: {formatServiceExpiry(service, t)}
+            </div>
           </div>
-        </>
-      )}
-      {useOutputPanel && onRenew && service.status !== "disabled" ? (
-        <button
-          type="button"
-          onClick={onRenew}
-          className="mt-3 inline-flex h-11 w-full items-center justify-center gap-1.5 rounded-xl border text-[13px] font-semibold"
-          style={{ borderColor: "var(--tma-card-border)" }}
+          <span
+            className="shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold tracking-wide"
+            style={{ background: tone, color: "var(--tma-button)" }}
+          >
+            {statusLabel}
+          </span>
+        </div>
+      </button>
+
+      {expanded ? (
+        <div className="mt-3 animate-[fadeIn_0.22s_ease] space-y-3">
+          {useOutputPanel ? (
+            <Renderer output={output!} />
+          ) : (
+            <>
+              {link ? (
+                <div
+                  className="break-all rounded-xl px-3 py-2 font-mono text-[11px]"
+                  dir="ltr"
+                  style={{ background: "color-mix(in srgb, var(--tma-bg) 80%, transparent)" }}
+                >
+                  {link}
+                </div>
+              ) : null}
+              <div className="flex flex-wrap gap-2">
+                {link ? (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await copyToClipboard(link);
+                      setCopied(true);
+                      window.setTimeout(() => setCopied(false), 1500);
+                    }}
+                    className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-xl text-[13px] font-semibold active:scale-[0.98]"
+                    style={{
+                      background: "var(--tma-button)",
+                      color: "var(--tma-button-text)",
+                    }}
+                  >
+                    <Copy size={14} /> {copied ? labels.copied : labels.copy}
+                  </button>
+                ) : null}
+                {link ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowQr(true)}
+                    className="inline-flex h-11 items-center justify-center gap-1.5 rounded-xl border px-4 text-[13px] font-semibold active:scale-[0.98]"
+                    style={{ borderColor: "var(--tma-card-border)" }}
+                  >
+                    <QrCode size={14} /> {labels.qr}
+                  </button>
+                ) : null}
+                {link ? (
+                  <a
+                    href={link}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border text-[13px] font-semibold active:scale-[0.98]"
+                    style={{ borderColor: "var(--tma-card-border)" }}
+                  >
+                    {labels.open} <ExternalLink size={14} />
+                  </a>
+                ) : null}
+              </div>
+            </>
+          )}
+          {onRenew && service.status !== "disabled" ? (
+            <button
+              type="button"
+              onClick={onRenew}
+              className="inline-flex h-11 w-full items-center justify-center gap-1.5 rounded-xl border text-[13px] font-semibold active:scale-[0.98]"
+              style={{ borderColor: "var(--tma-card-border)" }}
+            >
+              <RefreshCw size={14} /> {labels.renew}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {showQr && qrValue ? (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/55 p-4"
+          onClick={() => setShowQr(false)}
         >
-          <RefreshCw size={14} /> {labels.renew}
-        </button>
+          <div
+            className="rounded-3xl bg-white p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-3 text-center text-sm font-semibold text-zinc-800">
+              {labels.qr}
+            </div>
+            <QRCodeCanvas value={qrValue} size={200} includeMargin />
+          </div>
+        </div>
       ) : null}
     </SoftSurface>
   );
@@ -439,11 +483,15 @@ export default function TmaAppShell({ slug }: { slug: string }) {
     silentLogin,
     cancelOrder,
     refetch,
+    markNotificationRead,
+    markAllNotificationsRead,
   } = useTelegramSession(slug);
 
-  const [tab, setTab] = useState<TmaTab>("shop");
+  const [tab, setTab] = useState<TmaTab>("home");
   const [checkout, setCheckout] = useState<"buy" | "renew" | null>(null);
   const [renewService, setRenewService] = useState<CustomerService | null>(null);
+  const [linkSubOpen, setLinkSubOpen] = useState(false);
+  const [linkSubMode, setLinkSubMode] = useState<"claim" | "renew">("claim");
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [selectedServiceId, setSelectedServiceId] = useState<string | null>(null);
   const [flash, setFlash] = useState("");
@@ -460,7 +508,7 @@ export default function TmaAppShell({ slug }: { slug: string }) {
     if (!data) return;
     if (data.activeServices?.length && !checkout) {
       setTab((prev) =>
-        prev === "shop" && !sessionStorage.getItem(`tma-tab-${slug}`) ? "services" : prev,
+        prev === "shop" && !sessionStorage.getItem(`tma-tab-${slug}`) ? "home" : prev,
       );
     }
   }, [data, checkout, slug]);
@@ -583,6 +631,12 @@ export default function TmaAppShell({ slug }: { slug: string }) {
         setFlash={setFlash}
         cancelOrder={cancelOrder}
         refetch={refetch}
+        markNotificationRead={markNotificationRead}
+        markAllNotificationsRead={markAllNotificationsRead}
+        linkSubOpen={linkSubOpen}
+        setLinkSubOpen={setLinkSubOpen}
+        linkSubMode={linkSubMode}
+        setLinkSubMode={setLinkSubMode}
         products={products}
         checkoutProducts={checkoutProducts}
       />
@@ -612,6 +666,12 @@ function TmaAppShellInner({
   setFlash,
   cancelOrder,
   refetch,
+  markNotificationRead,
+  markAllNotificationsRead,
+  linkSubOpen,
+  setLinkSubOpen,
+  linkSubMode,
+  setLinkSubMode,
   products,
   checkoutProducts,
 }: any) {
@@ -654,6 +714,29 @@ function TmaAppShellInner({
     traffic: t("ترافیک", "Traffic"),
     left: t("باقیمانده", "Left"),
     unlimited: t("نامحدود", "Unlimited"),
+    qr: t("کیوآر", "QR"),
+    expiry: t("انقضا", "Expiry"),
+  };
+
+  const unreadAlerts = (data.notifications || []).filter((n: any) => !n.isRead).length;
+
+  const openLinkSub = (mode: "claim" | "renew") => {
+    haptic("selection");
+    setLinkSubMode(mode);
+    setLinkSubOpen(true);
+  };
+
+  const handleServiceClaimed = (service: CustomerService) => {
+    haptic("success");
+    refetch();
+    if (linkSubMode === "renew") {
+      setRenewService(service);
+      setSelectedServiceId(service.id);
+      setCheckout("renew");
+    } else {
+      setTab("services");
+      setFlash(t("سرویس به حساب شما اضافه شد", "Service added to your account"));
+    }
   };
 
   const openBuy = () => {
@@ -670,8 +753,7 @@ function TmaAppShellInner({
         ? selectedService
         : activeServices[0] || services[0] || null;
     if (!target) {
-      setTab("shop");
-      openBuy();
+      openLinkSub("renew");
       return;
     }
     setRenewService(target);
@@ -707,7 +789,7 @@ function TmaAppShellInner({
             type="button"
             onClick={() => {
               haptic("selection");
-              setTab("profile");
+              setTab("home");
             }}
             className="relative shrink-0 active:scale-95"
             aria-label="Profile"
@@ -733,11 +815,14 @@ function TmaAppShellInner({
               {t(`سلام، ${displayName}`, `Hi, ${displayName}`)}
               {tab === "services" && activeServices.length && hasMetered
                 ? ` · ${gb(remainingBytes)} GB`
-                : ""}
+                : tab === "home"
+                  ? ` · ${activeServices.length} ${t("سرویس", "services")}`
+                  : ""}
             </div>
           </div>
 
           <div className="flex shrink-0 items-center gap-1.5">
+            <LanguageSwitcher className="!shadow-none !text-[11px]" />
             {supportUrl ? (
               <a
                 href={supportUrl}
@@ -776,6 +861,25 @@ function TmaAppShellInner({
       </header>
 
       <main className="mx-auto max-w-lg space-y-3 px-4 pb-[calc(6.5rem+env(safe-area-inset-bottom))] pt-2">
+        {tab === "home" ? (
+          <TmaHomeTab
+            services={services}
+            activeServices={activeServices}
+            orders={data.orders || []}
+            unreadAlerts={unreadAlerts}
+            t={t}
+            onOpenServices={() => setTab("services")}
+            onOpenAlerts={() => setTab("alerts")}
+            onOpenShop={() => setTab("shop")}
+            onLinkSub={() => openLinkSub("claim")}
+            onRenewService={(s) => {
+              setRenewService(s);
+              setSelectedServiceId(s.id);
+              setCheckout("renew");
+            }}
+          />
+        ) : null}
+
         {tab === "shop" ? (
           <div className="animate-[fadeIn_0.28s_ease] space-y-3">
             <SectionTitle title={t("پلن‌ها", "Plans")} />
@@ -811,11 +915,22 @@ function TmaAppShellInner({
               left={{ label: t("خرید", "Buy"), icon: Plus, onClick: openBuy }}
               right={{ label: t("تمدید", "Renew"), icon: ArrowUpRight, onClick: openRenew }}
             />
+            <button
+              type="button"
+              onClick={() => openLinkSub("claim")}
+              className="flex h-11 w-full items-center justify-center gap-2 rounded-[1.15rem] border text-[13px] font-semibold active:scale-[0.98]"
+              style={{
+                borderColor: "var(--tma-card-border)",
+                background: "var(--tma-secondary-bg)",
+              }}
+            >
+              {t("افزودن با لینک ساب قبلی", "Add with previous sub link")}
+            </button>
             {!services.length ? (
               <EmptyState
                 icon={Package}
                 title={t("هنوز سرویسی نیست", "No services yet")}
-                hint={t("از فروشگاه یک پلن بخرید.", "Buy a plan from Shop.")}
+                hint={t("از فروشگاه بخرید یا لینک ساب قبلی را اضافه کنید.", "Buy a plan or add a previous sub link.")}
               />
             ) : (
               <div className="space-y-2.5">
@@ -823,6 +938,7 @@ function TmaAppShellInner({
                   <ServiceDetail
                     key={service.id}
                     service={service}
+                    t={t}
                     onRenew={() => {
                       haptic("light");
                       setSelectedServiceId(service.id);
@@ -868,41 +984,30 @@ function TmaAppShellInner({
           </div>
         ) : null}
 
-        {tab === "profile" ? (
-          <div className="animate-[fadeIn_0.28s_ease] space-y-3">
-            <SectionTitle title={t("پروفایل", "Profile")} />
-            <SoftSurface className="overflow-hidden p-0">
-              <div
-                className="flex items-center gap-3 border-b px-4 py-4"
-                style={{ borderColor: "var(--tma-card-border)" }}
-              >
-                <div
-                  className="flex h-14 w-14 items-center justify-center rounded-full text-lg font-bold text-white"
-                  style={{ background: "var(--tma-button)" }}
-                >
-                  {avatarLetter}
-                </div>
-                <div className="min-w-0">
-                  <div className="truncate text-[16px] font-semibold">
-                    {data.profile?.name ||
-                      [user?.first_name, user?.last_name].filter(Boolean).join(" ") ||
-                      t("مشتری", "Customer")}
-                  </div>
-                  <div className="truncate text-[13px]" style={{ color: "var(--tma-hint)" }}>
-                    {user?.username ? `@${user.username}` : data.profile?.telegram || "Telegram"}
-                  </div>
-                </div>
-              </div>
-              <div className="flex items-center justify-between px-4 py-3">
-                <span className="text-[13px] font-medium">{t("زبان", "Language")}</span>
-                <LanguageSwitcher className="!shadow-none" />
-              </div>
-            </SoftSurface>
-          </div>
+        {tab === "alerts" ? (
+          <TmaAlertsTab
+            items={data.notifications || []}
+            t={t}
+            onMarkRead={(id) => markNotificationRead.mutate(id)}
+            onMarkAllRead={() => markAllNotificationsRead.mutate()}
+            markingAll={markAllNotificationsRead.isPending}
+          />
         ) : null}
       </main>
 
-      <TmaBottomNav tab={tab} accent={primary || undefined} onChange={setTab} />
+      <TmaBottomNav
+        tab={tab}
+        accent={primary || undefined}
+        unreadAlerts={unreadAlerts}
+        onChange={setTab}
+      />
+
+      <TmaLinkSubSheet
+        open={linkSubOpen}
+        mode={linkSubMode}
+        onClose={() => setLinkSubOpen(false)}
+        onClaimed={handleServiceClaimed}
+      />
 
       <TmaCheckoutSheet
         open={!!checkout}

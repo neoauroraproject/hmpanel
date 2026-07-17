@@ -61,6 +61,28 @@ export function useTelegramSession(slug: string) {
     },
   });
 
+  const markAllNotificationsRead = useMutation({
+    mutationFn: async () =>
+      (await publicApi.post("/store/customer/notifications/read-all")).data,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["customer-session", "tma", slug] });
+    },
+  });
+
+  const claimService = useMutation({
+    mutationFn: async (subscriptionLink: string) =>
+      (
+        await publicApi.post("/store/customer/services/claim", {
+          subscriptionLink,
+        })
+      ).data as { service: CustomerDashboard["services"][0]; dashboard: CustomerDashboard },
+    onSuccess: async (data) => {
+      queryClient.setQueryData(["customer-session", "tma", slug], data.dashboard);
+      await queryClient.invalidateQueries({ queryKey: ["customer-session"] });
+      haptic("success");
+    },
+  });
+
   const cancelOrder = useMutation({
     mutationFn: async (orderId: string) =>
       (await publicApi.post(`/store/customer/orders/${orderId}/cancel`)).data,
@@ -89,6 +111,8 @@ export function useTelegramSession(slug: string) {
     data: sessionQuery.data || silentLogin.data?.dashboard,
     silentLogin,
     markNotificationRead,
+    markAllNotificationsRead,
+    claimService,
     cancelOrder,
     user,
     haptic,

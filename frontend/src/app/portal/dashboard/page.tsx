@@ -8,6 +8,7 @@ import {
   Bell,
   ChevronLeft,
   Copy,
+  Link2,
   LoaderCircle,
   LogOut,
   Package,
@@ -19,7 +20,7 @@ import {
 import { copyToClipboard } from "@/lib/clipboard";
 import { publicApi } from "@/lib/api";
 import { useCustomerSession } from "@/modules/storefront/session";
-import { buildSubscriptionLink } from "@/modules/storefront/subscription";
+import { buildSubscriptionLink, parseSubscriptionToken } from "@/modules/storefront/subscription";
 import { compressReceiptImage } from "@/modules/storefront/receipt-image";
 import type { CustomerDashboard, CustomerService, StorefrontProduct } from "@/modules/storefront/types";
 import { StoreShell, ServiceCard } from "@/modules/storefront/ui";
@@ -60,7 +61,7 @@ function CustomerDashboardInner() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const gate = usePortalTelegramGate();
-  const { data, isLoading, error, logout, markNotificationRead, markAllNotificationsRead, cancelOrder } =
+  const { data, isLoading, error, logout, markNotificationRead, markAllNotificationsRead, cancelOrder, claimService } =
     useCustomerSession();
   const { t, isFa } = useStorefrontLocale();
 
@@ -292,6 +293,7 @@ function CustomerDashboardInner() {
                 setShowToken={setShowToken}
                 copiedToken={copiedToken}
                 setCopiedToken={setCopiedToken}
+                claimService={claimService}
                 onRenew={(service) => {
                   setRenewingService(service);
                   setSelectedProduct(renewProducts[0] || null);
@@ -363,6 +365,7 @@ function HomeTab({
   setShowToken,
   copiedToken,
   setCopiedToken,
+  claimService,
   onRenew,
 }: {
   data: CustomerDashboard;
@@ -370,10 +373,33 @@ function HomeTab({
   setShowToken: (v: boolean) => void;
   copiedToken: boolean;
   setCopiedToken: (v: boolean) => void;
+  claimService: ReturnType<typeof useCustomerSession>["claimService"];
   onRenew: (service: CustomerService) => void;
 }) {
   const { t, isFa } = useStorefrontLocale();
   const services = data.services || [];
+  const [linkInput, setLinkInput] = useState("");
+  const [linkError, setLinkError] = useState("");
+
+  const submitLink = async (mode: "claim" | "renew") => {
+    setLinkError("");
+    const token = parseSubscriptionToken(linkInput);
+    if (!token) {
+      setLinkError(t("لینک ساب معتبر نیست", "Invalid subscription link"));
+      return;
+    }
+    try {
+      const result = await claimService.mutateAsync(linkInput.trim() || token);
+      setLinkInput("");
+      if (mode === "renew" && result.service) onRenew(result.service);
+    } catch (err: any) {
+      setLinkError(
+        err?.response?.data?.message ||
+          err?.message ||
+          t("سرویس یافت نشد", "Service not found"),
+      );
+    }
+  };
 
   return (
     <div className="space-y-6 lg:space-y-8">
@@ -409,6 +435,57 @@ function HomeTab({
             >
               <Copy size={13} /> {copiedToken ? t("کپی شد", "Copied") : t("کپی", "Copy")}
             </button>
+          </div>
+        </div>
+      </Surface>
+
+      <Surface>
+        <div className="flex items-start gap-3">
+          <div
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
+            style={{ background: "color-mix(in srgb, var(--store-primary) 12%, transparent)" }}
+          >
+            <Link2 size={18} style={{ color: "var(--store-primary)" }} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-bold">{t("افزودن یا تمدید با لینک ساب", "Add or renew with sub link")}</div>
+            <p className="mt-1 text-xs text-zinc-500">
+              {t(
+                "لینک سابسکریپشن قبلی را بچسبانید تا به حساب شما اضافه شود.",
+                "Paste your previous subscription link to attach it to your account.",
+              )}
+            </p>
+            <textarea
+              value={linkInput}
+              onChange={(e) => {
+                setLinkInput(e.target.value);
+                setLinkError("");
+              }}
+              placeholder={t("https://…/s/abc123", "https://…/s/abc123")}
+              dir="ltr"
+              rows={2}
+              className="mt-3 w-full resize-none rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 font-mono text-[12px] outline-none focus:border-[color:var(--store-primary)] dark:border-zinc-700 dark:bg-zinc-900"
+            />
+            {linkError ? <p className="mt-2 text-xs text-red-500">{linkError}</p> : null}
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={claimService.isPending || !linkInput.trim()}
+                onClick={() => void submitLink("claim")}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-[color:var(--store-primary)] px-4 py-2.5 text-xs font-semibold text-white disabled:opacity-50"
+              >
+                {claimService.isPending ? <LoaderCircle size={14} className="animate-spin" /> : null}
+                {t("افزودن سرویس", "Add service")}
+              </button>
+              <button
+                type="button"
+                disabled={claimService.isPending || !linkInput.trim()}
+                onClick={() => void submitLink("renew")}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-zinc-200 px-4 py-2.5 text-xs font-semibold dark:border-zinc-700"
+              >
+                {t("تمدید", "Renew")}
+              </button>
+            </div>
           </div>
         </div>
       </Surface>

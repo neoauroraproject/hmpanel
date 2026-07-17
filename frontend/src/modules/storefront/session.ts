@@ -60,6 +60,19 @@ export function useCustomerSession() {
     },
   });
 
+  const claimService = useMutation({
+    mutationFn: async (subscriptionLink: string) =>
+      (
+        await publicApi.post("/store/customer/services/claim", {
+          subscriptionLink,
+        })
+      ).data as { service: CustomerDashboard["services"][0]; dashboard: CustomerDashboard },
+    onSuccess: async (data) => {
+      queryClient.setQueryData(["customer-session"], data.dashboard);
+      await queryClient.invalidateQueries({ queryKey: ["customer-session"] });
+    },
+  });
+
   return {
     ...sessionQuery,
     login,
@@ -67,5 +80,6 @@ export function useCustomerSession() {
     markNotificationRead,
     markAllNotificationsRead,
     cancelOrder,
+    claimService,
   };
 }

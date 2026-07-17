@@ -7,6 +7,7 @@ import {
   Inject,
   forwardRef,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PanelCapabilitiesService } from './panel-capabilities.service';
 import { buildConnectionExtrasEnvelope } from '../clients/output/connection-extras';
@@ -1276,7 +1277,7 @@ export class PanelsService implements OnModuleInit {
             protocol: unifiedClient._protocol,
             client: unifiedClient._raw || unifiedClient,
             inbound: unifiedClient._inboundMeta,
-          });
+          }) as unknown as Prisma.InputJsonValue;
 
           // If client doesn't exist locally at all:
           if (!dbClient) {

@@ -10,6 +10,22 @@ export function buildSubscriptionLink(subId?: string | null, fallback?: string |
   return `${window.location.origin}/s/${key}`;
 }
 
+/** Extract token from pasted sub URL or raw token. */
+export function parseSubscriptionToken(input: string): string {
+  const raw = String(input || "").trim();
+  if (!raw) return "";
+  const match = raw.match(/\/s\/([^/?#]+)/i);
+  if (match?.[1]) return decodeURIComponent(match[1]);
+  try {
+    const u = new URL(raw);
+    const pathMatch = u.pathname.match(/\/s\/([^/?#]+)/i);
+    if (pathMatch?.[1]) return decodeURIComponent(pathMatch[1]);
+  } catch {
+    /* not a URL */
+  }
+  return raw;
+}
+
 export function buildPortalBridgeLink(token?: string | null, storeSlug?: string | null) {
   const base = portalPathForSlug(storeSlug, "login");
   if (!token) return base;
