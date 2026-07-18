@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import { clsx } from "clsx";
 import {
   LayoutDashboard,
@@ -28,6 +29,7 @@ import { ThemeToggle } from "./ThemeToggle";
 import { usePluginRegistry } from "@/store/pluginRegistry";
 import { usePremiumModules } from "@/hooks/usePremiumModules";
 import { useLicenseActivation } from "@/hooks/useLicenseActivation";
+import { api } from "@/lib/api";
 
 const CORE_NAV: {
   href: string;
@@ -69,6 +71,19 @@ export function MobileNav() {
 
   const { data: premiumModules = [] } = usePremiumModules({ enabled: isPremium });
 
+  const storeModuleEnabled = premiumModules.some(
+    (m) => m.id === "store" && m.enabled && m.status !== "disabled" && m.status !== "future",
+  );
+  const { data: storeDash } = useQuery<{ newOrders?: number }>({
+    queryKey: ["store-dashboard"],
+    queryFn: async () => (await api.get("/premium-modules/store/dashboard")).data,
+    enabled: isPremium && storeModuleEnabled,
+    refetchInterval: 20_000,
+    staleTime: 10_000,
+    retry: false,
+  });
+  const storeHasNewOrders = (storeDash?.newOrders ?? 0) > 0;
+
   const coreItems = CORE_NAV.filter(
     (n) => !n.roles || (admin && n.roles.includes(admin.role)),
   );
@@ -76,9 +91,16 @@ export function MobileNav() {
   const premiumMenus = isPremium
     ? [
         ...(admin?.role === "SUPER_ADMIN"
-          ? [{ title: "Premium Settings", href: "/settings/premium", icon: Diamond }]
+          ? [{ title: "Premium Settings", href: "/settings/premium", icon: Diamond, moduleId: undefined as string | undefined }]
           : []),
-        ...(admin?.role === "SUPER_ADMIN" ? dynamicMenus : []),
+        ...(admin?.role === "SUPER_ADMIN"
+          ? dynamicMenus.map((m) => ({
+              title: m.title,
+              href: m.href,
+              icon: m.icon,
+              moduleId: m.moduleId as string | undefined,
+            }))
+          : []),
         ...premiumModules
           .filter((m) => {
             if (m.status === "disabled" || m.status === "future" || m.id === "job-center") {
@@ -92,6 +114,7 @@ export function MobileNav() {
             title: m.name,
             href: m.frontendPath,
             icon: PREMIUM_MENU_ICONS[m.id] || Diamond,
+            moduleId: m.id as string | undefined,
           })),
       ].filter((menu, i, arr) => arr.findIndex((x) => x.href === menu.href) === i)
     : [];
@@ -108,10 +131,13 @@ export function MobileNav() {
         <button
           type="button"
           onClick={() => setIsOpen(true)}
-          className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900"
+          className="relative rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900"
           aria-label="Open menu"
         >
           <Menu size={24} />
+          {storeHasNewOrders ? (
+            <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-rose-500" aria-hidden />
+          ) : null}
         </button>
       </div>
 
@@ -162,6 +188,7 @@ export function MobileNav() {
                     {premiumMenus.map((menu) => {
                       const Icon = menu.icon || Diamond;
                       const active = pathname.startsWith(menu.href);
+                      const showDot = menu.moduleId === "store" && storeHasNewOrders;
                       return (
                         <Link
                           key={menu.href}
@@ -175,7 +202,14 @@ export function MobileNav() {
                           )}
                         >
                           <Icon size={18} />
-                          {menu.title}
+                          <span className="flex-1 truncate">{menu.title}</span>
+                          {showDot ? (
+                            <span
+                              className="h-2 w-2 shrink-0 rounded-full bg-rose-500"
+                              title="New store orders"
+                              aria-label="New store orders"
+                            />
+                          ) : null}
                         </Link>
                       );
                     })}

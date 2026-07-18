@@ -537,6 +537,9 @@ model StoreProfile {
   telegramWebhookSecret String?
   telegramWelcomeText String?
   telegramAdminChatId String?
+  /// When true, paid orders auto-provision after autoDeliverDelayMinutes but stay tagged for admin confirm.
+  autoDeliverEnabled   Boolean  @default(false)
+  autoDeliverDelayMinutes Int   @default(10)
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
@@ -766,6 +769,14 @@ model StoreOrder {
   clientId       String?
   isRenewal      Boolean          @default(false)
   renewClientId  String?
+  /// Schedule auto-provision (when store auto-deliver is on).
+  autoDeliverAt   DateTime?
+  /// True after the system auto-provisioned; admin must still confirm or reject.
+  autoDelivered   Boolean          @default(false)
+  /// Needs admin final confirm (shown as tag in orders UI).
+  pendingReview  Boolean          @default(false)
+  /// Snapshot before renewal so reject can reverse traffic/expiry.
+  renewSnapshot  Json?
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
 

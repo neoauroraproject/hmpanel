@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import { clsx } from "clsx";
 import {
   LayoutDashboard,
@@ -30,6 +31,7 @@ import { ThemeToggle } from "./ThemeToggle";
 import { usePluginRegistry } from "@/store/pluginRegistry";
 import { usePremiumModules } from "@/hooks/usePremiumModules";
 import { useLicenseActivation } from "@/hooks/useLicenseActivation";
+import { api } from "@/lib/api";
 
 const CORE_NAV: {
   href: string;
@@ -71,6 +73,19 @@ export function Sidebar() {
 
   const { data: premiumModules = [] } = usePremiumModules({ enabled: isPremium });
 
+  const storeModuleEnabled = premiumModules.some(
+    (m) => m.id === "store" && m.enabled && m.status !== "disabled" && m.status !== "future",
+  );
+  const { data: storeDash } = useQuery<{ newOrders?: number }>({
+    queryKey: ["store-dashboard"],
+    queryFn: async () => (await api.get("/premium-modules/store/dashboard")).data,
+    enabled: isPremium && storeModuleEnabled,
+    refetchInterval: 20_000,
+    staleTime: 10_000,
+    retry: false,
+  });
+  const storeHasNewOrders = (storeDash?.newOrders ?? 0) > 0;
+
   const coreItems = CORE_NAV.filter(
     (n) => !n.roles || (admin && n.roles.includes(admin.role))
   );
@@ -78,9 +93,16 @@ export function Sidebar() {
   const premiumMenus = isPremium
     ? [
         ...(admin?.role === "SUPER_ADMIN"
-          ? [{ title: "Premium Settings", href: "/settings/premium", icon: Diamond }]
+          ? [{ title: "Premium Settings", href: "/settings/premium", icon: Diamond, moduleId: undefined as string | undefined }]
           : []),
-        ...(admin?.role === "SUPER_ADMIN" ? dynamicMenus : []),
+        ...(admin?.role === "SUPER_ADMIN"
+          ? dynamicMenus.map((m) => ({
+              title: m.title,
+              href: m.href,
+              icon: m.icon,
+              moduleId: m.moduleId as string | undefined,
+            }))
+          : []),
         ...premiumModules
           .filter((m) => {
             if (m.status === "disabled" || m.status === "future" || m.id === "job-center") {
@@ -94,6 +116,7 @@ export function Sidebar() {
             title: m.name,
             href: m.frontendPath,
             icon: PREMIUM_MENU_ICONS[m.id] || Diamond,
+            moduleId: m.id as string | undefined,
           })),
       ].filter((menu, i, arr) => arr.findIndex((x) => x.href === menu.href) === i)
     : [];
@@ -142,19 +165,27 @@ export function Sidebar() {
                 const title = menu.title;
                 const Icon = menu.icon || Diamond;
                 const active = pathname.startsWith(href);
+                const showDot = menu.moduleId === "store" && storeHasNewOrders;
                 return (
                   <Link
                     key={href}
                     href={href}
                     className={clsx(
-                      "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
+                      "relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
                       active
                         ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
                         : "text-zinc-500 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-900/50 hover:text-zinc-700 dark:hover:text-zinc-200",
                     )}
                   >
                     <Icon size={18} />
-                    {title}
+                    <span className="flex-1 truncate">{title}</span>
+                    {showDot ? (
+                      <span
+                        className="h-2 w-2 shrink-0 rounded-full bg-rose-500"
+                        title="New store orders"
+                        aria-label="New store orders"
+                      />
+                    ) : null}
                   </Link>
                 );
               })}
