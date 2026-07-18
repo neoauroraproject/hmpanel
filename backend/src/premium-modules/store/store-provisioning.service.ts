@@ -68,6 +68,52 @@ export class StoreProvisioningService {
   }
 
   async resolveRenewClientByToken(adminId: string, tokenOrUrl: string) {
+    const token = this.extractSubscriptionToken(tokenOrUrl);
+    if (!token) throw new BadRequestException('Invalid subscription link or token');
+
+    // Match by subId / subToken first (3x-ui /sub/{subId} and panel /s/{token}).
+    // Do NOT require adminId in the DB query — synced clients are often orphaned (adminId null).
+    let candidates = await this.prisma.client.findMany({
+      where: {
+        OR: [
+          { subId: token },
+          { subToken: token },
+          { email: token },
+          { id: token },
+          { uuid: token },
+        ],
+      },
+      take: 20,
+    });
+
+    if (!candidates.length) {
+      // Case-insensitive fallback for subId / email
+      candidates = await this.prisma.client.findMany({
+        where: {
+          OR: [
+            { subId: { equals: token, mode: 'insensitive' } },
+            { email: { equals: token, mode: 'insensitive' } },
+          ],
+        },
+        take: 20,
+      });
+    }
+
+    if (!candidates.length) {
+      throw new BadRequestException('Invalid subscription link or token');
+    }
+
+    const owned = await this.pickClientOwnedByAdmin(adminId, candidates);
+    if (!owned) {
+      throw new BadRequestException(
+        'This subscription was not found under your store account',
+      );
+    }
+    return owned;
+  }
+
+  /** Pull subId/token from /s/, /sub/, or trailing URL path. */
+  private extractSubscriptionToken(tokenOrUrl: string): string {
     let token = String(tokenOrUrl || '').trim();
     const pathPatterns = [
       /\/s\/([^/?#]+)/i,
@@ -88,26 +134,60 @@ export class StoreProvisioningService {
         const last = segments[segments.length - 1];
         if (last) token = decodeURIComponent(last).trim();
       } catch {
-        /* keep token as-is */
+        /* keep */
       }
     }
-    token = token.replace(/^[@#]/, '').trim();
-    if (!token) throw new BadRequestException('Invalid subscription link or token');
+    return token.replace(/^[@#]/, '').trim();
+  }
 
-    const client = await this.prisma.client.findFirst({
-      where: {
-        adminId,
-        OR: [
-          { subToken: token },
-          { subId: token },
-          { email: token },
-          { id: token },
-          { uuid: token },
-        ],
-      },
+  /**
+   * Prefer clients this store admin owns; allow orphaned clients on panels in their scope.
+   */
+  private async pickClientOwnedByAdmin(
+    adminId: string,
+    candidates: Array<{
+      id: string;
+      adminId: string | null;
+      panelId: string;
+      subId: string | null;
+      subToken: string | null;
+      email: string;
+      uuid: string;
+      [key: string]: unknown;
+    }>,
+  ) {
+    const direct = candidates.find((c) => c.adminId === adminId);
+    if (direct) return direct;
+
+    const admin = await this.prisma.admin.findUnique({
+      where: { id: adminId },
+      select: { role: true },
     });
-    if (!client) throw new BadRequestException('Invalid subscription link or token');
-    return client;
+    const isSuper = admin?.role === 'SUPER_ADMIN';
+    if (isSuper) return candidates[0] || null;
+
+    const accessibleInbounds = await this.prisma.inbound.findMany({
+      where: { adminAccess: { some: { adminId } } },
+      select: { panelId: true },
+    });
+    // Also include panels referenced by this admin's provisioning profiles / products
+    const profilePanels = await this.prisma.provisioningProfile.findMany({
+      where: { adminId },
+      select: { panelId: true },
+    });
+    const panelIds = new Set([
+      ...accessibleInbounds.map((p) => p.panelId),
+      ...profilePanels.map((p) => p.panelId),
+    ]);
+
+    // Orphan (or same-admin) clients sitting on this seller's panels
+    const scoped = candidates.find(
+      (c) =>
+        (!c.adminId || c.adminId === adminId) && panelIds.has(c.panelId),
+    );
+    if (scoped) return scoped;
+
+    return null;
   }
 
   private async ensurePanelSynced(panelId: string, inboundIds: string[]) {

@@ -1133,7 +1133,7 @@ export class StoreService {
     });
   }
 
-  /** Resolve + attach an existing subscription (by /s/ link) to the logged-in customer. */
+  /** Resolve + attach an existing subscription (by /s/ or /sub/ link) to the logged-in customer. */
   async claimServiceBySubscriptionLink(
     sessionToken: string,
     subscriptionLink: string,
@@ -1147,6 +1147,16 @@ export class StoreService {
       customer.adminId,
       link,
     );
+
+    // Attribute orphaned synced clients to this store admin so future lookups stay scoped
+    if (!client.adminId) {
+      await this.prisma.client.update({
+        where: { id: client.id },
+        data: { adminId: customer.adminId },
+      });
+      (client as { adminId: string | null }).adminId = customer.adminId;
+    }
+
     await this.linkClientToCustomer(customer.id, client.id);
 
     return {

@@ -15,9 +15,6 @@ import {
 } from "lucide-react";
 import { formatBytes, formatDate, formatExpiry } from "@/lib/format";
 import { copyToClipboard } from "@/lib/clipboard";
-import {
-  resolveThemeLogo,
-} from "@/modules/shared/brand-logo";
 import { LanguageSwitcher, StorefrontLocaleProvider, useStorefrontLocale } from "./locale";
 import {
   StorefrontThemeProvider,
@@ -33,11 +30,6 @@ import type {
   StorefrontProduct,
   StorefrontStore,
 } from "./types";
-
-function useIsDarkSurface() {
-  const { isDark } = useStorefrontTheme();
-  return isDark;
-}
 
 export function StoreShell({
   store,
@@ -73,14 +65,9 @@ function StoreShellInner({
   children: React.ReactNode;
 }) {
   const { isFa } = useStorefrontLocale();
-  useStorefrontTheme();
-  const isDark = useIsDarkSurface();
-  const logo =
-    resolveThemeLogo({
-      logoLight: store?.logoUrl || store?.branding?.logo,
-      logoDark: store?.logoDarkUrl || store?.branding?.logoDark,
-      preferDark: isDark,
-    }) || null;
+  useStorefrontTheme(); // keep provider consumers subscribed
+  const logoLight = store?.logoUrl || store?.branding?.logo || null;
+  const logoDark = store?.logoDarkUrl || store?.branding?.logoDark || null;
   const title = store?.branding?.name || store?.title || "Store";
 
   return (
@@ -105,9 +92,30 @@ function StoreShellInner({
       <header className="sticky top-0 z-40 px-3 pt-[max(0.75rem,env(safe-area-inset-top,0px))] sm:px-4">
         <div className="mx-auto flex max-w-5xl items-center gap-3 rounded-[1.5rem] border border-black/[0.05] bg-white/80 px-3 py-2.5 shadow-[0_8px_30px_-18px_rgba(15,23,42,0.35)] backdrop-blur-2xl dark:border-white/[0.08] dark:bg-zinc-950/75 lg:px-4">
           <div className="flex min-w-0 flex-1 items-center gap-3">
-            {logo ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={logo} alt="" className="h-11 w-11 shrink-0 rounded-[1.05rem] object-cover shadow-sm" />
+            {logoLight || logoDark ? (
+              <span className="relative h-11 w-11 shrink-0">
+                {/* CSS-driven swap so logo follows `html.dark` instantly (no refresh) */}
+                {logoLight ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={logoLight}
+                    alt=""
+                    className={`absolute inset-0 h-11 w-11 rounded-[1.05rem] object-cover shadow-sm transition-opacity duration-300 ${
+                      logoDark ? "opacity-100 dark:opacity-0" : "opacity-100"
+                    }`}
+                  />
+                ) : null}
+                {logoDark ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={logoDark}
+                    alt=""
+                    className={`absolute inset-0 h-11 w-11 rounded-[1.05rem] object-cover shadow-sm transition-opacity duration-300 ${
+                      logoLight ? "opacity-0 dark:opacity-100" : "opacity-100"
+                    }`}
+                  />
+                ) : null}
+              </span>
             ) : (
               <div
                 className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[1.05rem] text-base font-black text-white shadow-sm"
@@ -146,13 +154,9 @@ export function WelcomeHero({
   onLogin: () => void;
   onTrack?: () => void;
 }) {
-  const preferDark = useIsDarkSurface();
   const { t, isFa } = useStorefrontLocale();
-  const logo = resolveThemeLogo({
-    logoLight: store?.logoUrl || store?.branding?.logo,
-    logoDark: store?.logoDarkUrl || store?.branding?.logoDark,
-    preferDark,
-  });
+  const logoLight = store?.logoUrl || store?.branding?.logo || null;
+  const logoDark = store?.logoDarkUrl || store?.branding?.logoDark || null;
 
   return (
     <motion.section
@@ -160,13 +164,29 @@ export function WelcomeHero({
       transition={fadeUpTransition}
       className="mx-auto flex max-w-2xl flex-col items-center py-6 text-center sm:py-10"
     >
-      {logo ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={logo}
-          alt={store?.title || store?.branding?.name || "Store logo"}
-          className="mb-5 h-[4.5rem] w-auto max-w-[9rem] object-contain drop-shadow-sm sm:h-24 sm:max-w-[11rem]"
-        />
+      {logoLight || logoDark ? (
+        <span className="relative mb-5 h-[4.5rem] w-[4.5rem] sm:h-24 sm:w-24">
+          {logoLight ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={logoLight}
+              alt={store?.title || store?.branding?.name || "Store logo"}
+              className={`absolute inset-0 mx-auto h-full w-auto max-w-[9rem] object-contain drop-shadow-sm transition-opacity duration-300 sm:max-w-[11rem] ${
+                logoDark ? "opacity-100 dark:opacity-0" : "opacity-100"
+              }`}
+            />
+          ) : null}
+          {logoDark ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={logoDark}
+              alt={store?.title || store?.branding?.name || "Store logo"}
+              className={`absolute inset-0 mx-auto h-full w-auto max-w-[9rem] object-contain drop-shadow-sm transition-opacity duration-300 sm:max-w-[11rem] ${
+                logoLight ? "opacity-0 dark:opacity-100" : "opacity-100"
+              }`}
+            />
+          ) : null}
+        </span>
       ) : (
         <div className="mb-5 flex h-[4.5rem] w-[4.5rem] items-center justify-center rounded-[1.5rem] bg-[color:var(--store-primary)] text-white shadow-[0_16px_40px_-18px_var(--store-primary)] sm:h-24 sm:w-24">
           <ShieldCheck size={36} />
