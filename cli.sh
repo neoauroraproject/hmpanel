@@ -1990,8 +1990,15 @@ ssl_write_http_vhost() {
   if [[ ! -f "$tmpl_http" ]]; then
     return 1
   fi
-  VHOST_DOMAIN="$vhost_domain" VHOST_SAFE="$safe_domain" \
-    envsubst '$VHOST_DOMAIN $VHOST_SAFE' < "$tmpl_http" > "$conf_out"
+  if command -v envsubst &>/dev/null; then
+    VHOST_DOMAIN="$vhost_domain" VHOST_SAFE="$safe_domain" \
+      envsubst '$VHOST_DOMAIN $VHOST_SAFE' < "$tmpl_http" > "$conf_out"
+  else
+    # Domain names are DNS-safe (no sed metacharacters beyond . -)
+    sed -e "s|\${VHOST_DOMAIN}|${vhost_domain}|g" \
+        -e "s|\${VHOST_SAFE}|${safe_domain}|g" \
+      "$tmpl_http" > "$conf_out"
+  fi
 }
 
 ssl_write_ssl_vhost() {
@@ -2003,8 +2010,14 @@ ssl_write_ssl_vhost() {
   if [[ ! -f "$tmpl_ssl" ]]; then
     return 1
   fi
-  VHOST_DOMAIN="$vhost_domain" VHOST_SAFE="$safe_domain" \
-    envsubst '$VHOST_DOMAIN $VHOST_SAFE' < "$tmpl_ssl" > "$conf_out"
+  if command -v envsubst &>/dev/null; then
+    VHOST_DOMAIN="$vhost_domain" VHOST_SAFE="$safe_domain" \
+      envsubst '$VHOST_DOMAIN $VHOST_SAFE' < "$tmpl_ssl" > "$conf_out"
+  else
+    sed -e "s|\${VHOST_DOMAIN}|${vhost_domain}|g" \
+        -e "s|\${VHOST_SAFE}|${safe_domain}|g" \
+      "$tmpl_ssl" > "$conf_out"
+  fi
 }
 
 ssl_add_vhost() {
@@ -2030,6 +2043,7 @@ ssl_add_vhost() {
   ssl_ensure_vhost_templates
 
   stream_progress "Adding vhost for $vhost_domain..."
+  ssl_ensure_vhost_templates
 
   if [[ "$mode_or_email" == "selfsigned" ]]; then
     stream_progress "Generating self-signed certificate..."
