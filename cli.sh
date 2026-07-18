@@ -1837,12 +1837,23 @@ cmd_version() {
 
 # Older installs may lack these files on disk (compose mounts them when present).
 # Seed defaults so `hm ssl add-vhost` never fails with TEMPLATE_MISSING.
+# Some broken installs accidentally created these paths as directories — replace them.
 ssl_ensure_vhost_templates() {
   local nginx_dir="${INSTALL_DIR}/nginx"
   mkdir -p "$nginx_dir" "${nginx_dir}/conf.d" "${nginx_dir}/acme/.well-known/acme-challenge" "${nginx_dir}/ssl/domains"
 
   local tmpl_http="${nginx_dir}/vhost-domain.http.template"
   local tmpl_ssl="${nginx_dir}/vhost-domain.ssl.template"
+
+  # Path must be a regular file. If it is a directory/symlink/etc, remove and reseed.
+  if [[ -e "$tmpl_http" && ! -f "$tmpl_http" ]]; then
+    stream_progress "Replacing non-file vhost-domain.http.template (was directory/other)..."
+    rm -rf "$tmpl_http"
+  fi
+  if [[ -e "$tmpl_ssl" && ! -f "$tmpl_ssl" ]]; then
+    stream_progress "Replacing non-file vhost-domain.ssl.template (was directory/other)..."
+    rm -rf "$tmpl_ssl"
+  fi
 
   if [[ ! -f "$tmpl_http" ]]; then
     stream_progress "Seeding missing vhost-domain.http.template..."
