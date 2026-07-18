@@ -15,6 +15,7 @@ import { usePremiumModules } from "@/hooks/usePremiumModules";
 import { api } from "@/lib/api";
 import { isPublicAppPath } from "@/lib/public-paths";
 import { useAuth } from "@/store/auth";
+import * as ToastModule from "@/components/toast";
 
 declare global {
   interface Window {
@@ -29,9 +30,9 @@ declare global {
 
 /**
  * Premium pages are plugins that render inside the panel's own React tree, so they must
- * reuse the host's React, react-query client (shared data cache) and Next router instead
- * of bundling their own. The premium runtime marks these external and resolves them from
- * this map at load time.
+ * reuse the host's React, react-query client (shared data cache), Next router, and toast
+ * store instead of bundling their own. The premium runtime marks these external and
+ * resolves them from this map at load time.
  */
 function exposeSharedModules() {
   if (typeof window === "undefined") return;
@@ -44,6 +45,9 @@ function exposeSharedModules() {
     "@tanstack/react-query": ReactQuery,
     "next/navigation": NextNavigation,
     "next/link": NextLink,
+    // Stable key + import path aliases so premium-runtime never gets a second zustand toast store.
+    "hmpanel/toast": ToastModule,
+    "@/components/toast": ToastModule,
   };
   window.React = React;
   window.ReactDOM = ReactDOM;

@@ -198,6 +198,20 @@ export class PremiumAssetsController {
     res.sendFile(file);
   }
 
+  @Get('frontend/premium-monitoring.js')
+  serveMonitoring(@Res() res: Response) {
+    const file = path.join(
+      this.bundleService.getPremiumRoot(),
+      'frontend',
+      'premium-monitoring.js',
+    );
+    if (!fs.existsSync(file)) {
+      throw new NotFoundException('Premium monitoring chunk not installed');
+    }
+    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+    res.sendFile(file);
+  }
+
   @Get('frontend/premium-runtime.css')
   serveRuntimeCss(@Res() res: Response) {
     const file = path.join(
