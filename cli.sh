@@ -781,10 +781,14 @@ ssl_issue() {
         if [[ "$issue_success" == true ]]; then
           "$acme_bin" --home "${INSTALL_DIR}/acme.sh" --install-cert -d "$PANEL_DOMAIN" \
             --fullchain-file "${SSL_DIR}/fullchain.pem" \
-            --key-file "${SSL_DIR}/privkey.pem" >/dev/null 2>&1
-          cert_obtained=true
-          provider="$ca"
-          stream_progress "Certificate issued successfully via $ca"
+            --key-file "${SSL_DIR}/privkey.pem" >/dev/null 2>&1 || true
+          if [[ -f "${SSL_DIR}/fullchain.pem" && -f "${SSL_DIR}/privkey.pem" ]]; then
+            cert_obtained=true
+            provider="$ca"
+            stream_progress "Certificate issued successfully via $ca"
+          else
+            stream_progress "acme.sh ($ca) issued but cert files missing..."
+          fi
         else
           stream_progress "acme.sh ($ca) failed or timed out..."
         fi
@@ -798,19 +802,23 @@ ssl_issue() {
     local certbot_exit=1
     if command -v certbot &>/dev/null; then
       if command -v timeout &>/dev/null; then
-        timeout 120 certbot certonly --standalone --non-interactive --agree-tos -m "admin@$PANEL_DOMAIN" -d "$PANEL_DOMAIN" >/dev/null 2>&1
-        certbot_exit=$?
+        if timeout 120 certbot certonly --standalone --non-interactive --agree-tos -m "admin@$PANEL_DOMAIN" -d "$PANEL_DOMAIN" >/dev/null 2>&1; then
+          certbot_exit=0
+        fi
       else
-        certbot certonly --standalone --non-interactive --agree-tos -m "admin@$PANEL_DOMAIN" -d "$PANEL_DOMAIN" >/dev/null 2>&1
-        certbot_exit=$?
+        if certbot certonly --standalone --non-interactive --agree-tos -m "admin@$PANEL_DOMAIN" -d "$PANEL_DOMAIN" >/dev/null 2>&1; then
+          certbot_exit=0
+        fi
       fi
     else
       if command -v timeout &>/dev/null; then
-        timeout 180 docker run --rm -p 80:80 -v "${SSL_DIR}:/etc/letsencrypt" certbot/certbot certonly --standalone --non-interactive --agree-tos -m "admin@$PANEL_DOMAIN" -d "$PANEL_DOMAIN" >/dev/null 2>&1
-        certbot_exit=$?
+        if timeout 180 docker run --rm -p 80:80 -v "${SSL_DIR}:/etc/letsencrypt" certbot/certbot certonly --standalone --non-interactive --agree-tos -m "admin@$PANEL_DOMAIN" -d "$PANEL_DOMAIN" >/dev/null 2>&1; then
+          certbot_exit=0
+        fi
       else
-        docker run --rm -p 80:80 -v "${SSL_DIR}:/etc/letsencrypt" certbot/certbot certonly --standalone --non-interactive --agree-tos -m "admin@$PANEL_DOMAIN" -d "$PANEL_DOMAIN" >/dev/null 2>&1
-        certbot_exit=$?
+        if docker run --rm -p 80:80 -v "${SSL_DIR}:/etc/letsencrypt" certbot/certbot certonly --standalone --non-interactive --agree-tos -m "admin@$PANEL_DOMAIN" -d "$PANEL_DOMAIN" >/dev/null 2>&1; then
+          certbot_exit=0
+        fi
       fi
     fi
 
@@ -2020,7 +2028,7 @@ ssl_add_vhost() {
           if [[ "$issue_success" == true ]]; then
             "$acme_bin" --home "${INSTALL_DIR}/acme.sh" --install-cert -d "$vhost_domain" \
               --fullchain-file "${SSL_DIR}/fullchain.pem" \
-              --key-file "${SSL_DIR}/privkey.pem" >>"$acme_log" 2>&1
+              --key-file "${SSL_DIR}/privkey.pem" >>"$acme_log" 2>&1 || true
             if [[ -f "${SSL_DIR}/fullchain.pem" && -f "${SSL_DIR}/privkey.pem" ]]; then
               cert_obtained=true
               stream_progress "Certificate issued via acme.sh webroot ($ca)"
@@ -2041,30 +2049,34 @@ ssl_add_vhost() {
       local certbot_exit=1
       if command -v certbot &>/dev/null; then
         if command -v timeout &>/dev/null; then
-          timeout 120 certbot certonly --webroot -w "$ACME_WEBROOT" --non-interactive --agree-tos \
-            -m "$email" -d "$vhost_domain" >>"$acme_log" 2>&1
-          certbot_exit=$?
+          if timeout 120 certbot certonly --webroot -w "$ACME_WEBROOT" --non-interactive --agree-tos \
+            -m "$email" -d "$vhost_domain" >>"$acme_log" 2>&1; then
+            certbot_exit=0
+          fi
         else
-          certbot certonly --webroot -w "$ACME_WEBROOT" --non-interactive --agree-tos \
-            -m "$email" -d "$vhost_domain" >>"$acme_log" 2>&1
-          certbot_exit=$?
+          if certbot certonly --webroot -w "$ACME_WEBROOT" --non-interactive --agree-tos \
+            -m "$email" -d "$vhost_domain" >>"$acme_log" 2>&1; then
+            certbot_exit=0
+          fi
         fi
       else
         # Docker certbot with shared webroot (nginx stays up — no -p 80:80)
         if command -v timeout &>/dev/null; then
-          timeout 180 docker run --rm \
+          if timeout 180 docker run --rm \
             -v "${ACME_WEBROOT}:/var/www/acme" \
             -v "${SSL_DIR}:/etc/letsencrypt" \
             certbot/certbot certonly --webroot -w /var/www/acme --non-interactive --agree-tos \
-            -m "$email" -d "$vhost_domain" >>"$acme_log" 2>&1
-          certbot_exit=$?
+            -m "$email" -d "$vhost_domain" >>"$acme_log" 2>&1; then
+            certbot_exit=0
+          fi
         else
-          docker run --rm \
+          if docker run --rm \
             -v "${ACME_WEBROOT}:/var/www/acme" \
             -v "${SSL_DIR}:/etc/letsencrypt" \
             certbot/certbot certonly --webroot -w /var/www/acme --non-interactive --agree-tos \
-            -m "$email" -d "$vhost_domain" >>"$acme_log" 2>&1
-          certbot_exit=$?
+            -m "$email" -d "$vhost_domain" >>"$acme_log" 2>&1; then
+            certbot_exit=0
+          fi
         fi
       fi
 
@@ -2113,7 +2125,7 @@ ssl_add_vhost() {
           if [[ "$issue_success" == true ]]; then
             "$acme_bin" --home "${INSTALL_DIR}/acme.sh" --install-cert -d "$vhost_domain" \
               --fullchain-file "${SSL_DIR}/fullchain.pem" \
-              --key-file "${SSL_DIR}/privkey.pem" >>"$acme_log" 2>&1
+              --key-file "${SSL_DIR}/privkey.pem" >>"$acme_log" 2>&1 || true
             if [[ -f "${SSL_DIR}/fullchain.pem" && -f "${SSL_DIR}/privkey.pem" ]]; then
               cert_obtained=true
               stream_progress "Certificate issued via acme.sh standalone ($ca)"
