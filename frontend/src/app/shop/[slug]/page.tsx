@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { LoaderCircle } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { publicApi, setCustomerSessionToken, getCustomerSessionToken } from "@/lib/api";
@@ -11,15 +11,18 @@ import {
   isTelegramUserAgent,
   loadTelegramScript,
   applyTelegramFullscreen,
+  applyTelegramSafeArea,
 } from "@/modules/storefront/tma/useTelegramWebApp";
+import { portalPathForSlug } from "@/modules/storefront/store-slug";
 import ShopPage from "./ShopPageClient";
 
 /**
  * One storefront UI for web + Telegram.
- * Telegram only auto-signs-in and caches the session — no separate Mini App shell.
+ * Telegram only auto-signs-in and applies safe-area — no separate Mini App shell.
  */
 function ShopRouter() {
   const params = useParams();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const slug = params.slug as string;
   const forceTg = searchParams.get("tg") === "1";
@@ -55,29 +58,40 @@ function ShopRouter() {
       if (cancelled) return;
 
       const wa = window.Telegram?.WebApp;
-      if (wa) applyTelegramFullscreen(wa);
-
-      // Already have a customer session — keep web UI
-      if (getCustomerSessionToken()) {
-        if (!cancelled) setReady(true);
-        return;
+      if (wa) {
+        applyTelegramFullscreen(wa);
+        applyTelegramSafeArea(wa);
+        window.setTimeout(() => {
+          if (!cancelled) applyTelegramSafeArea(wa);
+        }, 300);
+        window.setTimeout(() => {
+          if (!cancelled) applyTelegramSafeArea(wa);
+        }, 1000);
       }
 
-      let tries = 0;
-      while (!cancelled && tries < 40) {
-        if (hasTelegramInitData()) {
-          const initData = window.Telegram?.WebApp?.initData || "";
-          if (initData) {
-            try {
-              await silentLogin.mutateAsync({ slug, initData });
-            } catch {
-              /* show web shop anyway */
+      if (!getCustomerSessionToken()) {
+        let tries = 0;
+        while (!cancelled && tries < 40) {
+          if (hasTelegramInitData()) {
+            const initData = window.Telegram?.WebApp?.initData || "";
+            if (initData) {
+              try {
+                await silentLogin.mutateAsync({ slug, initData });
+              } catch {
+                /* show web shop anyway */
+              }
             }
+            break;
           }
-          break;
+          tries += 1;
+          await new Promise((r) => window.setTimeout(r, 100));
         }
-        tries += 1;
-        await new Promise((r) => window.setTimeout(r, 100));
+      }
+
+      // Same destination as web: customer portal dashboard when session exists
+      if (!cancelled && getCustomerSessionToken()) {
+        router.replace(portalPathForSlug(slug, "dashboard"));
+        return;
       }
 
       if (!cancelled) setReady(true);

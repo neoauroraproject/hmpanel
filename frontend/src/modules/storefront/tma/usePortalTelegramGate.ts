@@ -5,6 +5,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { publicApi, setCustomerSessionToken, getCustomerSessionToken } from "@/lib/api";
 import {
   applyTelegramFullscreen,
+  applyTelegramSafeArea,
   forceTelegramMiniApp,
   isTelegramContext,
   loadTelegramScript,
@@ -73,6 +74,9 @@ export function usePortalTelegramGate(opts?: { redirectSlug?: string | null }) {
       }
       if (cancelled) return;
       applyTelegramFullscreen(window.Telegram?.WebApp);
+      applyTelegramSafeArea(window.Telegram?.WebApp);
+      window.setTimeout(() => applyTelegramSafeArea(window.Telegram?.WebApp), 300);
+      window.setTimeout(() => applyTelegramSafeArea(window.Telegram?.WebApp), 1000);
 
       // Resolve slug
       const params = new URLSearchParams(window.location.search);

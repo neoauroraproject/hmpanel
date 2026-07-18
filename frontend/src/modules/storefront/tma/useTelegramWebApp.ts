@@ -191,7 +191,11 @@ export function applyTelegramSafeArea(wa?: TelegramWebApp | null) {
   // Fullscreen mobile Mini Apps need a floor so UI clears status bar / TG chrome.
   // Desktop Mini App stays compact — do not force large top padding.
   const mobile = isTelegramMobilePlatform(wa || window.Telegram?.WebApp || null);
-  const topPad = Math.max(top, mobile && (isTelegramUserAgent() || forceTelegramMiniApp()) ? 72 : 0);
+  // iOS fullscreen + Telegram header (~44–56) + breathing room for store header card
+  const topPad = Math.max(
+    top,
+    mobile && (isTelegramUserAgent() || forceTelegramMiniApp()) ? 88 : 0,
+  );
   document.documentElement.style.setProperty("--tg-safe-top", `${topPad}px`);
   document.documentElement.style.setProperty("--tg-safe-bottom", `${bottom}px`);
 }

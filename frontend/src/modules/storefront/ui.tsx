@@ -78,6 +78,10 @@ function StoreShellInner({
       style={{
         ["--store-primary" as string]: primaryColor,
         ...(isFa ? { fontFamily: '"Vazirmatn", Tahoma, sans-serif' } : null),
+        // Telegram Mini App / iOS notch: keep header below TG chrome
+        paddingTop:
+          "max(0.75rem, env(safe-area-inset-top, 0px), var(--tg-safe-top, 0px))",
+        paddingBottom: "max(0px, env(safe-area-inset-bottom, 0px), var(--tg-safe-bottom, 0px))",
       }}
     >
       {/* Soft brand wash */}
@@ -89,7 +93,7 @@ function StoreShellInner({
         }}
       />
 
-      <header className="sticky top-0 z-40 px-3 pt-[max(0.75rem,env(safe-area-inset-top,0px))] sm:px-4">
+      <header className="sticky top-0 z-40 px-3 pt-1 sm:px-4">
         <div className="mx-auto flex max-w-5xl items-center gap-3 rounded-[1.5rem] border border-black/[0.05] bg-white/80 px-3 py-2.5 shadow-[0_8px_30px_-18px_rgba(15,23,42,0.35)] backdrop-blur-2xl dark:border-white/[0.08] dark:bg-zinc-950/75 lg:px-4">
           <div className="flex min-w-0 flex-1 items-center gap-3">
             {logoLight || logoDark ? (
