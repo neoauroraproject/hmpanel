@@ -156,6 +156,15 @@ verify_port_80() {
 
 
 LOCKFILE="/tmp/hmpanel_ssl.lock"
+# Set to 1 before `docker stop hmpanel-nginx` during ACME; EXIT trap always restores it.
+NGINX_STOPPED_FOR_SSL=0
+
+ssl_restore_nginx_if_stopped() {
+  if [[ "${NGINX_STOPPED_FOR_SSL:-0}" == "1" ]]; then
+    docker start hmpanel-nginx >/dev/null 2>&1 || true
+    NGINX_STOPPED_FOR_SSL=0
+  fi
+}
 
 acquire_ssl_lock() {
   if [[ -f "$LOCKFILE" ]]; then
@@ -172,8 +181,8 @@ acquire_ssl_lock() {
     fi
   fi
   echo "$$" > "$LOCKFILE"
-  # Set trap to clean up on exit
-  trap 'rm -f "$LOCKFILE"' EXIT
+  # Always clear lock + restore nginx if a prior ACME step stopped it (timeout/kill/crash).
+  trap 'rm -f "$LOCKFILE"; ssl_restore_nginx_if_stopped' EXIT
 }
 
 reload_nginx() {
@@ -696,6 +705,7 @@ ssl_issue() {
   fi
 
   stream_progress "Preparing environment..."
+  NGINX_STOPPED_FOR_SSL=1
   docker stop hmpanel-nginx >/dev/null 2>&1 || true
 
   local cert_obtained=false
@@ -821,6 +831,7 @@ ssl_issue() {
   fi
 
   docker start hmpanel-nginx >/dev/null 2>&1 || true
+  NGINX_STOPPED_FOR_SSL=0
 
   if [[ "$cert_obtained" == true ]]; then
     update_env "SSL_PROVIDER" "$provider"
@@ -859,6 +870,7 @@ ssl_selfsigned() {
   fi
   local SSL_DIR="${INSTALL_DIR}/nginx/ssl"
   
+  NGINX_STOPPED_FOR_SSL=1
   docker stop hmpanel-nginx >/dev/null 2>&1 || true
 
   openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
@@ -871,6 +883,7 @@ ssl_selfsigned() {
   fi
 
   docker start hmpanel-nginx >/dev/null 2>&1 || true
+  NGINX_STOPPED_FOR_SSL=0
 
   update_env "SSL_PROVIDER" "self-signed"
   reload_nginx
@@ -1813,6 +1826,30 @@ cmd_version() {
 # ─────────────────────────────────────────────────────────────────
 # Premium custom-domain vhosts (extra server_name + cert)
 # ─────────────────────────────────────────────────────────────────
+ssl_write_http_vhost() {
+  local vhost_domain="$1"
+  local safe_domain="$2"
+  local conf_out="$3"
+  local tmpl_http="${INSTALL_DIR}/nginx/vhost-domain.http.template"
+  if [[ ! -f "$tmpl_http" ]]; then
+    return 1
+  fi
+  VHOST_DOMAIN="$vhost_domain" VHOST_SAFE="$safe_domain" \
+    envsubst '$VHOST_DOMAIN $VHOST_SAFE' < "$tmpl_http" > "$conf_out"
+}
+
+ssl_write_ssl_vhost() {
+  local vhost_domain="$1"
+  local safe_domain="$2"
+  local conf_out="$3"
+  local tmpl_ssl="${INSTALL_DIR}/nginx/vhost-domain.ssl.template"
+  if [[ ! -f "$tmpl_ssl" ]]; then
+    return 1
+  fi
+  VHOST_DOMAIN="$vhost_domain" VHOST_SAFE="$safe_domain" \
+    envsubst '$VHOST_DOMAIN $VHOST_SAFE' < "$tmpl_ssl" > "$conf_out"
+}
+
 ssl_add_vhost() {
   acquire_ssl_lock
   local vhost_domain="${1:-}"
@@ -1829,8 +1866,10 @@ ssl_add_vhost() {
   local safe_domain
   safe_domain=$(echo "$vhost_domain" | tr -c 'A-Za-z0-9.-' '_')
   local SSL_DIR="${INSTALL_DIR}/nginx/ssl/domains/${safe_domain}"
+  local ACME_WEBROOT="${INSTALL_DIR}/nginx/acme"
   local CONF_DIR="${INSTALL_DIR}/nginx/conf.d"
-  mkdir -p "$SSL_DIR" "$CONF_DIR"
+  local conf_out="${CONF_DIR}/${safe_domain}.conf"
+  mkdir -p "$SSL_DIR" "$CONF_DIR" "${ACME_WEBROOT}/.well-known/acme-challenge"
 
   stream_progress "Adding vhost for $vhost_domain..."
 
@@ -1865,7 +1904,7 @@ ssl_add_vhost() {
     fi
     chmod 600 "${SSL_DIR}/privkey.pem" 2>/dev/null || true
   else
-    # Let's Encrypt / ZeroSSL — same stack as panel ssl_issue()
+    # Let's Encrypt / ZeroSSL via webroot (nginx stays up — avoids panel downtime)
     local missing_deps=()
     for dep in git curl socat; do
       if ! command -v "$dep" &>/dev/null; then
@@ -1894,7 +1933,15 @@ ssl_add_vhost() {
       echo "Port 80 busy"; exit 1
     fi
 
-    docker stop hmpanel-nginx >/dev/null 2>&1 || true
+    # Temporary HTTP vhost so Host: matches and ACME challenges are served from webroot
+    if ! ssl_write_http_vhost "$vhost_domain" "$safe_domain" "$conf_out"; then
+      if [[ "$JSON_OUTPUT" == "true" ]]; then output_json false "TEMPLATE_MISSING"; exit 34; fi
+      echo "Missing nginx HTTP vhost template"; exit 1
+    fi
+    # Ensure nginx is running and picks up the HTTP vhost (do NOT stop it for webroot)
+    docker start hmpanel-nginx >/dev/null 2>&1 || true
+    reload_nginx
+
     local cert_obtained=false
     local last_ssl_error=""
     local acme_log="/tmp/hm-ssl-vhost-${safe_domain}.log"
@@ -1916,7 +1963,6 @@ ssl_add_vhost() {
       email="admin@${vhost_domain}"
     fi
 
-    # Install acme.sh when missing (same as panel ssl_issue)
     if [[ -z "$acme_bin" ]]; then
       stream_progress "Installing acme.sh for custom domain..."
       rm -rf /tmp/acme.sh
@@ -1952,20 +1998,22 @@ ssl_add_vhost() {
       fi
     fi
 
+    # Prefer webroot — panel stays reachable
     if [[ -n "$acme_bin" ]]; then
       "$acme_bin" --home "${INSTALL_DIR}/acme.sh" --register-account -m "$email" >>"$acme_log" 2>&1 || true
       for ca in "letsencrypt" "zerossl"; do
         if [[ "$cert_obtained" == false ]]; then
-          stream_progress "Trying acme.sh ($ca) for $vhost_domain..."
+          stream_progress "Trying acme.sh webroot ($ca) for $vhost_domain..."
           "$acme_bin" --home "${INSTALL_DIR}/acme.sh" --set-default-ca --server "$ca" >>"$acme_log" 2>&1 || true
           local issue_success=false
-          # Match panel ssl_issue timeouts / flags (standalone HTTP-01)
           if command -v timeout &>/dev/null; then
-            if timeout 90 "$acme_bin" --home "${INSTALL_DIR}/acme.sh" --issue -d "$vhost_domain" --standalone --force >>"$acme_log" 2>&1; then
+            if timeout 120 "$acme_bin" --home "${INSTALL_DIR}/acme.sh" --issue -d "$vhost_domain" \
+              -w "$ACME_WEBROOT" --force >>"$acme_log" 2>&1; then
               issue_success=true
             fi
           else
-            if "$acme_bin" --home "${INSTALL_DIR}/acme.sh" --issue -d "$vhost_domain" --standalone --force >>"$acme_log" 2>&1; then
+            if "$acme_bin" --home "${INSTALL_DIR}/acme.sh" --issue -d "$vhost_domain" \
+              -w "$ACME_WEBROOT" --force >>"$acme_log" 2>&1; then
               issue_success=true
             fi
           fi
@@ -1975,40 +2023,47 @@ ssl_add_vhost() {
               --key-file "${SSL_DIR}/privkey.pem" >>"$acme_log" 2>&1
             if [[ -f "${SSL_DIR}/fullchain.pem" && -f "${SSL_DIR}/privkey.pem" ]]; then
               cert_obtained=true
-              stream_progress "Certificate issued via acme.sh ($ca)"
+              stream_progress "Certificate issued via acme.sh webroot ($ca)"
             else
               last_ssl_error="acme_install_cert_missing"
               stream_progress "acme.sh issued but cert files missing"
             fi
           else
-            last_ssl_error="acme_${ca}_failed"
-            stream_progress "acme.sh ($ca) failed for $vhost_domain"
+            last_ssl_error="acme_webroot_${ca}_failed"
+            stream_progress "acme.sh webroot ($ca) failed for $vhost_domain"
           fi
         fi
       done
     fi
 
     if [[ "$cert_obtained" == false ]]; then
-      stream_progress "Trying certbot for $vhost_domain..."
+      stream_progress "Trying certbot webroot for $vhost_domain..."
       local certbot_exit=1
       if command -v certbot &>/dev/null; then
         if command -v timeout &>/dev/null; then
-          timeout 120 certbot certonly --standalone --non-interactive --agree-tos -m "$email" -d "$vhost_domain" >>"$acme_log" 2>&1
+          timeout 120 certbot certonly --webroot -w "$ACME_WEBROOT" --non-interactive --agree-tos \
+            -m "$email" -d "$vhost_domain" >>"$acme_log" 2>&1
           certbot_exit=$?
         else
-          certbot certonly --standalone --non-interactive --agree-tos -m "$email" -d "$vhost_domain" >>"$acme_log" 2>&1
+          certbot certonly --webroot -w "$ACME_WEBROOT" --non-interactive --agree-tos \
+            -m "$email" -d "$vhost_domain" >>"$acme_log" 2>&1
           certbot_exit=$?
         fi
       else
+        # Docker certbot with shared webroot (nginx stays up — no -p 80:80)
         if command -v timeout &>/dev/null; then
-          timeout 180 docker run --rm -p 80:80 \
+          timeout 180 docker run --rm \
+            -v "${ACME_WEBROOT}:/var/www/acme" \
             -v "${SSL_DIR}:/etc/letsencrypt" \
-            certbot/certbot certonly --standalone --non-interactive --agree-tos -m "$email" -d "$vhost_domain" >>"$acme_log" 2>&1
+            certbot/certbot certonly --webroot -w /var/www/acme --non-interactive --agree-tos \
+            -m "$email" -d "$vhost_domain" >>"$acme_log" 2>&1
           certbot_exit=$?
         else
-          docker run --rm -p 80:80 \
+          docker run --rm \
+            -v "${ACME_WEBROOT}:/var/www/acme" \
             -v "${SSL_DIR}:/etc/letsencrypt" \
-            certbot/certbot certonly --standalone --non-interactive --agree-tos -m "$email" -d "$vhost_domain" >>"$acme_log" 2>&1
+            certbot/certbot certonly --webroot -w /var/www/acme --non-interactive --agree-tos \
+            -m "$email" -d "$vhost_domain" >>"$acme_log" 2>&1
           certbot_exit=$?
         fi
       fi
@@ -2024,13 +2079,60 @@ ssl_add_vhost() {
           cp -f "${SSL_DIR}/live/${vhost_domain}/privkey.pem" "${SSL_DIR}/privkey.pem"
           cert_obtained=true
         fi
+        if [[ "$cert_obtained" == true ]]; then
+          stream_progress "Certificate issued via certbot webroot"
+        else
+          last_ssl_error="certbot_webroot_cert_missing"
+        fi
       else
-        last_ssl_error="certbot_failed"
+        last_ssl_error="certbot_webroot_failed"
       fi
     fi
 
-    if [[ "$cert_obtained" == false ]]; then
+    # Last resort: standalone (briefly stops nginx). EXIT trap restores it if we die mid-way.
+    if [[ "$cert_obtained" == false && -n "$acme_bin" ]]; then
+      stream_progress "Webroot failed — trying standalone (nginx will pause briefly)..."
+      NGINX_STOPPED_FOR_SSL=1
+      docker stop hmpanel-nginx >/dev/null 2>&1 || true
+      for ca in "letsencrypt" "zerossl"; do
+        if [[ "$cert_obtained" == false ]]; then
+          stream_progress "Trying acme.sh standalone ($ca) for $vhost_domain..."
+          "$acme_bin" --home "${INSTALL_DIR}/acme.sh" --set-default-ca --server "$ca" >>"$acme_log" 2>&1 || true
+          local issue_success=false
+          if command -v timeout &>/dev/null; then
+            if timeout 90 "$acme_bin" --home "${INSTALL_DIR}/acme.sh" --issue -d "$vhost_domain" \
+              --standalone --force >>"$acme_log" 2>&1; then
+              issue_success=true
+            fi
+          else
+            if "$acme_bin" --home "${INSTALL_DIR}/acme.sh" --issue -d "$vhost_domain" \
+              --standalone --force >>"$acme_log" 2>&1; then
+              issue_success=true
+            fi
+          fi
+          if [[ "$issue_success" == true ]]; then
+            "$acme_bin" --home "${INSTALL_DIR}/acme.sh" --install-cert -d "$vhost_domain" \
+              --fullchain-file "${SSL_DIR}/fullchain.pem" \
+              --key-file "${SSL_DIR}/privkey.pem" >>"$acme_log" 2>&1
+            if [[ -f "${SSL_DIR}/fullchain.pem" && -f "${SSL_DIR}/privkey.pem" ]]; then
+              cert_obtained=true
+              stream_progress "Certificate issued via acme.sh standalone ($ca)"
+            else
+              last_ssl_error="acme_standalone_cert_missing"
+            fi
+          else
+            last_ssl_error="acme_standalone_${ca}_failed"
+          fi
+        fi
+      done
       docker start hmpanel-nginx >/dev/null 2>&1 || true
+      NGINX_STOPPED_FOR_SSL=0
+    fi
+
+    if [[ "$cert_obtained" == false ]]; then
+      ssl_restore_nginx_if_stopped
+      rm -f "$conf_out"
+      reload_nginx
       local hint
       hint=$(tail -n 8 "$acme_log" 2>/dev/null | tr '\n' ' ' | sed 's/"/\\"/g' | cut -c1-400)
       if [[ "$JSON_OUTPUT" == "true" ]]; then
@@ -2042,26 +2144,22 @@ ssl_add_vhost() {
   fi
 
   if [[ ! -f "${SSL_DIR}/fullchain.pem" || ! -f "${SSL_DIR}/privkey.pem" ]]; then
-    docker start hmpanel-nginx >/dev/null 2>&1 || true
+    ssl_restore_nginx_if_stopped
     if [[ "$JSON_OUTPUT" == "true" ]]; then output_json false "CERTIFICATE_MISSING"; exit 33; fi
     echo "Certificate files missing after issue"; exit 1
   fi
 
-  # Write nginx vhost config (HTTPS required — HTTP-only fallback is not success)
-  local tmpl_ssl="${INSTALL_DIR}/nginx/vhost-domain.ssl.template"
-  local conf_out="${CONF_DIR}/${safe_domain}.conf"
-  if [[ ! -f "$tmpl_ssl" ]]; then
-    docker start hmpanel-nginx >/dev/null 2>&1 || true
+  # Write HTTPS vhost (required — HTTP-only is not success)
+  if ! ssl_write_ssl_vhost "$vhost_domain" "$safe_domain" "$conf_out"; then
+    ssl_restore_nginx_if_stopped
     if [[ "$JSON_OUTPUT" == "true" ]]; then output_json false "TEMPLATE_MISSING"; exit 34; fi
-    echo "Missing nginx template: $tmpl_ssl"; exit 1
+    echo "Missing nginx SSL vhost template"; exit 1
   fi
-  VHOST_DOMAIN="$vhost_domain" VHOST_SAFE="$safe_domain" \
-    envsubst '$VHOST_DOMAIN $VHOST_SAFE' < "$tmpl_ssl" > "$conf_out"
 
+  ssl_restore_nginx_if_stopped
   docker start hmpanel-nginx >/dev/null 2>&1 || true
   reload_nginx
   if ! docker exec hmpanel-nginx nginx -t >/dev/null 2>&1; then
-    # Bad vhost — remove it and surface failure
     rm -f "$conf_out"
     docker exec hmpanel-nginx nginx -s reload >/dev/null 2>&1 || true
     if [[ "$JSON_OUTPUT" == "true" ]]; then output_json false "NGINX_CONFIG_INVALID"; exit 35; fi

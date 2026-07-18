@@ -472,6 +472,8 @@ step_1_configuration() {
 
   mkdir -p \
     "${INSTALL_DIR}/nginx/ssl" \
+    "${INSTALL_DIR}/nginx/acme/.well-known/acme-challenge" \
+    "${INSTALL_DIR}/nginx/conf.d" \
     "${INSTALL_DIR}/uploads" \
     "${INSTALL_DIR}/backups" \
     "${INSTALL_DIR}/logs"

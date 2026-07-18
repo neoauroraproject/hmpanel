@@ -79,6 +79,7 @@ services:
       - ./nginx/nginx.conf.http.template:/etc/nginx/nginx.conf.http.template:ro
       - ./nginx/nginx.conf.ssl.template:/etc/nginx/nginx.conf.ssl.template:ro
       - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./nginx/acme:/var/www/acme
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
       - ./nginx/generate_config.sh:/etc/nginx/generate_config.sh:ro
       - ./nginx/vhost-domain.ssl.template:/etc/nginx/vhost-domain.ssl.template:ro

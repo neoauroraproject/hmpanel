@@ -1,10 +1,16 @@
 # Extra HTTP server for a Premium custom domain (${VHOST_DOMAIN}) when SSL is not ready.
+# Also used as a temporary ACME webroot vhost during `hm ssl add-vhost`.
 
 server {
     listen 80;
     server_name ${VHOST_DOMAIN};
 
     client_max_body_size 50M;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/acme;
+        try_files $uri =404;
+    }
 
     location /api/ {
         proxy_pass http://backend/;
