@@ -50,8 +50,8 @@ export default function PanelsPage() {
 
   const remove = useMutation({
     mutationFn: async (id: string) => api.delete(`/panels/${id}`),
-    onSuccess: () => { toast("Panel deleted"); invalidate(); },
-    onError: () => toast("Delete failed", "error"),
+    onSuccess: () => { toast(t("panels.deleted")); invalidate(); },
+    onError: () => toast(t("panels.deleteFailed"), "error"),
   });
   const sync = useMutation({
     mutationFn: async (id: string) => {
@@ -67,24 +67,24 @@ export default function PanelsPage() {
       }, 2000);
       const r = data.data;
       if (r.discrepancyMsg && r.discrepancyMsg !== "Perfect Match") {
-        toast(`Sync OK: ${r.discrepancyMsg}`);
+        toast(t("panels.syncOk", { msg: r.discrepancyMsg }));
       } else {
-        toast(`Synced ${r.syncedClients} clients perfectly`);
+        toast(t("panels.syncPerfect", { count: r.syncedClients }));
       }
     },
     onError: (err, id) => {
       setSyncStatus(prev => ({ ...prev, [id]: undefined }));
-      toast("Sync failed (panel offline?)", "error");
+      toast(t("panels.syncFailed"), "error");
     },
   });
   const restart = useMutation({
     mutationFn: async (id: string) => api.post(`/panels/${id}/restart-xray`),
-    onSuccess: () => toast("Xray restart issued"),
-    onError: () => toast("Restart failed", "error"),
+    onSuccess: () => toast(t("panels.restartIssued")),
+    onError: () => toast(t("panels.restartFailed"), "error"),
   });
 
   if (isLoading) return <Spinner />;
-  if (error) return <ErrorBox message="Failed to load panels" />;
+  if (error) return <ErrorBox message={t("panels.loadFailed")} />;
   const panels = data ?? [];
 
   return (
@@ -108,14 +108,14 @@ export default function PanelsPage() {
         <table className="w-full text-sm block md:table">
           <thead className="hidden md:table-header-group">
             <tr className="border-b border-zinc-200 dark:border-zinc-800 text-start text-xs uppercase tracking-wide text-zinc-500 bg-white dark:bg-zinc-900/50">
-              <th className="px-4 py-3 font-medium">Name</th>
-              <th className="px-4 py-3 font-medium">URL</th>
-              <th className="px-4 py-3 font-medium">Version</th>
-              <th className="px-4 py-3 font-medium">Status</th>
-              <th className="px-4 py-3 font-medium">Clients</th>
-              <th className="px-4 py-3 font-medium">Inbounds</th>
-              <th className="px-4 py-3 font-medium">Last Sync</th>
-              <th className="px-4 py-3 text-end font-medium">Actions</th>
+              <th className="px-4 py-3 font-medium">{t("panels.name")}</th>
+              <th className="px-4 py-3 font-medium">{t("panels.url")}</th>
+              <th className="px-4 py-3 font-medium">{t("panels.version")}</th>
+              <th className="px-4 py-3 font-medium">{t("panels.status")}</th>
+              <th className="px-4 py-3 font-medium">{t("panels.clients")}</th>
+              <th className="px-4 py-3 font-medium">{t("panels.inbounds")}</th>
+              <th className="px-4 py-3 font-medium">{t("panels.lastSync")}</th>
+              <th className="px-4 py-3 text-end font-medium">{t("common.actions")}</th>
             </tr>
           </thead>
           <tbody className="block md:table-row-group space-y-3 md:space-y-0 md:divide-y md:divide-zinc-800/50">
@@ -132,30 +132,30 @@ export default function PanelsPage() {
                   <div className="flex justify-between items-start md:block">
                     <div>
                       <div className="font-medium text-zinc-800 dark:text-zinc-100">{p.name}</div>
-                      <div className="text-xs text-zinc-500">{p.server?.name ?? 'Local Server'}</div>
+                      <div className="text-xs text-zinc-500">{p.server?.name ?? t("common.localServer")}</div>
                     </div>
                     <div className="md:hidden">
-                      <Badge tone={p.status === "online" ? "green" : "red"}>{p.status}</Badge>
+                      <Badge tone={p.status === "online" ? "green" : "red"}>{p.status === "online" ? t("common.online") : p.status === "offline" ? t("common.offline") : p.status}</Badge>
                     </div>
                   </div>
                 </td>
                 <td className="hidden md:table-cell px-4 py-3 text-zinc-500 dark:text-zinc-400">{p.url}</td>
                 <td className="block md:table-cell px-4 py-2 md:py-3 text-zinc-600 dark:text-zinc-300">
-                  <div className="md:hidden text-[10px] uppercase text-zinc-500 font-semibold mb-1 tracking-wider mt-2 border-t border-zinc-200 dark:border-zinc-800/50 pt-2">Version</div>
+                  <div className="md:hidden text-[10px] uppercase text-zinc-500 font-semibold mb-1 tracking-wider mt-2 border-t border-zinc-200 dark:border-zinc-800/50 pt-2">{t("panels.version")}</div>
                   {p.version ?? "—"}
                 </td>
-                <td className="hidden md:table-cell px-4 py-3"><Badge tone={p.status === "online" ? "green" : "red"}>{p.status}</Badge></td>
+                <td className="hidden md:table-cell px-4 py-3"><Badge tone={p.status === "online" ? "green" : "red"}>{p.status === "online" ? t("common.online") : p.status === "offline" ? t("common.offline") : p.status}</Badge></td>
                 <td className="block md:table-cell px-4 py-2 md:py-3 text-zinc-600 dark:text-zinc-300">
-                  <div className="md:hidden text-[10px] uppercase text-zinc-500 font-semibold mb-1 tracking-wider">Clients</div>
+                  <div className="md:hidden text-[10px] uppercase text-zinc-500 font-semibold mb-1 tracking-wider">{t("panels.clients")}</div>
                   {p.clientCount ?? 0}
                 </td>
                 <td className="block md:table-cell px-4 py-2 md:py-3 text-zinc-600 dark:text-zinc-300">
-                  <div className="md:hidden text-[10px] uppercase text-zinc-500 font-semibold mb-1 tracking-wider">Inbounds</div>
+                  <div className="md:hidden text-[10px] uppercase text-zinc-500 font-semibold mb-1 tracking-wider">{t("panels.inbounds")}</div>
                   {p.inboundCount ?? 0}
                 </td>
                 <td className="block md:table-cell px-4 py-2 md:py-3 text-zinc-500 dark:text-zinc-400">
-                  <div className="md:hidden text-[10px] uppercase text-zinc-500 font-semibold mb-1 tracking-wider">Last Sync</div>
-                  {p.lastSync ? formatDateTime(p.lastSync) : "never"}
+                  <div className="md:hidden text-[10px] uppercase text-zinc-500 font-semibold mb-1 tracking-wider">{t("panels.lastSync")}</div>
+                  {p.lastSync ? formatDateTime(p.lastSync) : t("common.neverLower")}
                   {p.syncState && (
                     <div className="text-xs mt-1">
                       <span className={p.syncState.status === "success" ? "text-emerald-400" : "text-red-400"}>
@@ -167,40 +167,40 @@ export default function PanelsPage() {
                 </td>
                 <td className="block md:table-cell px-4 py-3 border-t border-zinc-200 dark:border-zinc-800/50 md:border-0 mt-2 md:mt-0">
                   <div className="flex flex-wrap items-center justify-start md:justify-end gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity w-full">
-                    <IconBtn title="Test Connection" onClick={async () => {
+                    <IconBtn title={t("common.testConnection")} onClick={async () => {
                       try {
                         const { data: r } = await api.post("/panels/test-connection", { url: p.url, panelId: p.id });
-                        if (r.ok) toast(`OK · v${r.version} · ${r.pingMs}ms`);
-                        else toast(r.errorType || "Connection failed", "error");
-                      } catch { toast("Connection failed", "error"); }
+                        if (r.ok) toast(t("panels.testOk", { version: r.version, ping: r.pingMs }));
+                        else toast(r.errorType || t("common.connectionFailed"), "error");
+                      } catch { toast(t("common.connectionFailed"), "error"); }
                     }}><PlugZap size={15} /></IconBtn>
                     
                     <motion.button 
                       whileHover={{ scale: syncStatus[p.id] ? 1 : 1.1 }}
                       whileTap={{ scale: syncStatus[p.id] ? 1 : 0.9 }}
-                      title="Run Sync" 
+                      title={t("panels.runSync")} 
                       onClick={() => !syncStatus[p.id] && sync.mutate(p.id)}
                       disabled={!!syncStatus[p.id]}
                       className={`rounded-md border border-zinc-300 dark:border-zinc-700 px-2 py-1.5 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center justify-center min-w-[32px] min-h-[32px] transition-colors ${syncStatus[p.id] ? 'bg-zinc-100 dark:bg-zinc-800/50' : ''}`}
                     >
-                      {syncStatus[p.id] === 'Started' ? <span className="text-[10px] uppercase font-bold text-blue-400 tracking-wider">Started</span> : 
-                       syncStatus[p.id] === 'Running' ? <span className="text-[10px] uppercase font-bold text-amber-400 tracking-wider flex items-center gap-1"><Spinner /> Run</span> : 
-                       syncStatus[p.id] === 'Finished' ? <span className="text-[10px] uppercase font-bold text-emerald-400 tracking-wider">Finish</span> : 
+                      {syncStatus[p.id] === 'Started' ? <span className="text-[10px] uppercase font-bold text-blue-400 tracking-wider">{t("panels.syncStarted")}</span> : 
+                       syncStatus[p.id] === 'Running' ? <span className="text-[10px] uppercase font-bold text-amber-400 tracking-wider flex items-center gap-1"><Spinner /> {t("panels.syncRunning")}</span> : 
+                       syncStatus[p.id] === 'Finished' ? <span className="text-[10px] uppercase font-bold text-emerald-400 tracking-wider">{t("panels.syncFinished")}</span> : 
                        <RefreshCw size={15} />}
                     </motion.button>
-                    <IconBtn title="Restart Xray" onClick={() => restart.mutate(p.id)}><Power size={15} /></IconBtn>
-                    <IconBtn title="Inbounds" onClick={() => setInboundsFor(p)}><Network size={15} /></IconBtn>
-                    <IconBtn title="View Logs" onClick={() => setLogsFor(p)}><ScrollText size={15} /></IconBtn>
-                    <IconBtn title="Edit" onClick={() => setEditing(p)}><Pencil size={15} /></IconBtn>
-                    <IconBtn title="Delete" danger onClick={() => {
-                      if (confirm(`Delete panel "${p.name}"? This removes its inbounds and clients.`)) remove.mutate(p.id);
+                    <IconBtn title={t("panels.restartXray")} onClick={() => restart.mutate(p.id)}><Power size={15} /></IconBtn>
+                    <IconBtn title={t("panels.inbounds")} onClick={() => setInboundsFor(p)}><Network size={15} /></IconBtn>
+                    <IconBtn title={t("panels.viewLogs")} onClick={() => setLogsFor(p)}><ScrollText size={15} /></IconBtn>
+                    <IconBtn title={t("common.edit")} onClick={() => setEditing(p)}><Pencil size={15} /></IconBtn>
+                    <IconBtn title={t("common.delete")} danger onClick={() => {
+                      if (confirm(t("panels.deleteConfirm", { name: p.name }))) remove.mutate(p.id);
                     }}><Trash2 size={15} /></IconBtn>
                   </div>
                 </td>
               </motion.tr>
             ))}
             {panels.length === 0 && (
-              <tr><td colSpan={8} className="px-4 py-10 text-center text-zinc-500">No panels registered.</td></tr>
+              <tr><td colSpan={8} className="px-4 py-10 text-center text-zinc-500">{t("panels.noPanels")}</td></tr>
             )}
           </tbody>
         </table>
@@ -267,6 +267,7 @@ function ChecklistItem({ label, status }: { label: string, status: boolean | nul
 }
 
 function PanelWizard({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+  const t = useT();
   const toast = useToast((s) => s.push);
   const [form, setForm] = useState<PanelForm>({ name: "", url: "https://", subUrl: "", apiToken: "" });
   const [test, setTest] = useState<any | null>(null);
@@ -276,55 +277,55 @@ function PanelWizard({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
     mutationFn: async () => (await api.post("/panels/test-connection", { url: form.url, apiToken: form.apiToken })).data,
     onSuccess: (d) => { 
       setTest(d); 
-      if (!d.ok) toast(d.errorType || "Validation failed", "error"); 
+      if (!d.ok) toast(d.errorType || t("common.validationFailed"), "error"); 
     },
     onError: () => { 
-      setTest({ ok: false, errorType: "Network Error", message: "Failed to communicate with panel or backend." }); 
-      toast("Connection failed", "error"); 
+      setTest({ ok: false, errorType: t("common.networkError"), message: t("common.connectionFailed") }); 
+      toast(t("common.connectionFailed"), "error"); 
     },
   });
   
   const create = useMutation({
     mutationFn: async () => (await api.post("/panels", form)).data,
     onSuccess: (data) => { 
-      toast("Panel added and sync executed");
+      toast(t("panels.panelAdded"));
       setSyncReport(data.syncReport);
       onSaved(); 
     },
-    onError: () => toast("Failed to add panel", "error"),
+    onError: () => toast(t("panels.addPanelFailed"), "error"),
   });
 
   const isStrictlyValid = test?.ok === true;
 
   if (syncReport) {
     return (
-      <Modal title="Synchronization Report" onClose={onClose} hideClose>
+      <Modal title={t("panels.syncReportTitle")} onClose={onClose} hideClose>
         <div className="space-y-6 text-center py-6">
           <div className="mx-auto w-16 h-16 rounded-full bg-emerald-500/10 flex items-center justify-center mb-4 border border-emerald-500/20">
             {syncReport.success ? <CheckCircle2 size={32} className="text-emerald-500" /> : <XCircle size={32} className="text-red-500" />}
           </div>
           
           <div>
-            <h3 className="text-xl font-bold text-zinc-800 dark:text-zinc-100">{syncReport.success ? "Sync Completed" : "Sync Failed"}</h3>
-            <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">Panel registered successfully. Initial synchronization {syncReport.success ? "finished." : "encountered errors."}</p>
+            <h3 className="text-xl font-bold text-zinc-800 dark:text-zinc-100">{syncReport.success ? t("panels.syncCompleted") : t("panels.syncFailedTitle")}</h3>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">{syncReport.success ? t("panels.syncReportHintOk") : t("panels.syncReportHintFail")}</p>
           </div>
 
           {syncReport.success ? (
             <div className="grid grid-cols-2 gap-4 text-start">
               <div className="bg-zinc-50 dark:bg-zinc-950 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800">
-                <div className="text-xs text-zinc-500 mb-1">Synced Inbounds</div>
+                <div className="text-xs text-zinc-500 mb-1">{t("panels.syncedInbounds")}</div>
                 <div className="text-lg font-medium text-zinc-700 dark:text-zinc-200">{syncReport.syncedInbounds}</div>
               </div>
               <div className="bg-zinc-50 dark:bg-zinc-950 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800">
-                <div className="text-xs text-zinc-500 mb-1">Synced Clients</div>
+                <div className="text-xs text-zinc-500 mb-1">{t("panels.syncedClients")}</div>
                 <div className="text-lg font-medium text-zinc-700 dark:text-zinc-200">{syncReport.syncedClients}</div>
               </div>
               <div className="bg-zinc-50 dark:bg-zinc-950 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800">
-                <div className="text-xs text-zinc-500 mb-1">Panel Version</div>
+                <div className="text-xs text-zinc-500 mb-1">{t("panels.panelVersion")}</div>
                 <div className="text-lg font-medium text-zinc-700 dark:text-zinc-200">v{syncReport.version}</div>
               </div>
               <div className="bg-zinc-50 dark:bg-zinc-950 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800">
-                <div className="text-xs text-zinc-500 mb-1">Duration</div>
+                <div className="text-xs text-zinc-500 mb-1">{t("panels.duration")}</div>
                 <div className="text-lg font-medium text-zinc-700 dark:text-zinc-200">{syncReport.syncDurationMs}ms</div>
               </div>
             </div>
@@ -336,7 +337,7 @@ function PanelWizard({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
 
           <div className="pt-4">
             <button onClick={onClose} className="w-full rounded-lg bg-zinc-100 dark:bg-zinc-800 px-4 py-2.5 text-sm font-medium text-zinc-700 dark:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors">
-              Close Workflow
+              {t("common.closeWorkflow")}
             </button>
           </div>
         </div>
@@ -345,21 +346,20 @@ function PanelWizard({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
   }
 
   return (
-    <Modal title="Add Panel" onClose={onClose}>
+    <Modal title={t("panels.addPanelTitle")} onClose={onClose}>
       <div className="space-y-4">
-        <Field label="Panel Name" value={form.name} placeholder="e.g. FRA Panel D" onChange={(e) => setForm({ ...form, name: e.target.value })} />
+        <Field label={t("panels.panelName")} value={form.name} placeholder={t("panels.panelNamePlaceholder")} onChange={(e) => setForm({ ...form, name: e.target.value })} />
         <div>
-          <Field label="Panel URL" value={form.url} placeholder="https://domain.com:2053/custompath/panel/" onChange={(e) => { setForm({ ...form, url: e.target.value }); setTest(null); }} />
-          <div className="text-[10px] text-zinc-500 mt-1 ps-1">Examples: https://domain:2053 or https://ip:2053/custompath/panel/</div>
+          <Field label={t("panels.panelUrl")} value={form.url} placeholder={t("panels.panelUrlPlaceholder")} onChange={(e) => { setForm({ ...form, url: e.target.value }); setTest(null); }} />
+          <div className="text-[10px] text-zinc-500 mt-1 ps-1">{t("panels.panelUrlHint")}</div>
         </div>
         <div>
-          <Field label="Subscription Domain / URL *" value={form.subUrl} placeholder="https://sub.domain.com:2096/sub/" onChange={(e) => { setForm({ ...form, subUrl: e.target.value }); }} />
+          <Field label={t("panels.subUrl")} value={form.subUrl} placeholder={t("panels.subUrlPlaceholder")} onChange={(e) => { setForm({ ...form, subUrl: e.target.value }); }} />
           <div className="text-[10px] text-zinc-500 mt-1 ps-1 leading-tight">
-            Required. Example: <b>https://domain.com:2096/sub/</b><br/>
-            Include the correct path (like <b>/sub/</b> or your custom path) at the end.
+            {t("panels.subUrlHint")}
           </div>
         </div>
-        <Field label="API Token" value={form.apiToken} placeholder="Required Bearer Token" onChange={(e) => { setForm({ ...form, apiToken: e.target.value }); setTest(null); }} />
+        <Field label={t("panels.apiToken")} value={form.apiToken} placeholder={t("panels.apiTokenPlaceholder")} onChange={(e) => { setForm({ ...form, apiToken: e.target.value }); setTest(null); }} />
 
         <div className="space-y-3">
           <div className="flex items-center gap-3">
@@ -370,7 +370,7 @@ function PanelWizard({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
               disabled={testConn.isPending || !form.url || !form.apiToken}
               className="flex items-center gap-2 rounded-lg border border-zinc-300 dark:border-zinc-700 px-3 py-2 text-sm text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-50 transition-colors"
             >
-              <PlugZap size={15} /> {testConn.isPending ? "Validating API…" : "Test Connection"}
+              <PlugZap size={15} /> {testConn.isPending ? t("common.validatingApi") : t("common.testConnection")}
             </motion.button>
           </div>
 
@@ -392,22 +392,22 @@ function PanelWizard({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
                     className="col-span-2 text-xs grid grid-cols-2 gap-x-4 gap-y-2 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800/60 rounded-xl p-4 font-mono text-zinc-500 dark:text-zinc-400"
                   >
                     {testConn.isPending ? (
-                      <div className="col-span-2 flex items-center gap-2 justify-center py-2 text-blue-400"><Spinner /> Contacting remote API...</div>
+                      <div className="col-span-2 flex items-center gap-2 justify-center py-2 text-blue-400"><Spinner /> {t("panels.contactingApi")}</div>
                     ) : test?.ok ? (
                       <>
-                        <div className="flex justify-between items-center"><span className="text-zinc-600">Host:</span> <span className="text-emerald-400">{test.parsedHost}</span></div>
-                        <div className="flex justify-between items-center"><span className="text-zinc-600">Port:</span> <span className="text-emerald-400">{test.parsedPort}</span></div>
-                        <div className="flex justify-between items-center"><span className="text-zinc-600">Base Path:</span> <span className="text-blue-400">{test.webBasePath || '/'}</span></div>
-                        <div className="flex justify-between items-center"><span className="text-zinc-600">API URL:</span> <span className="text-amber-400 truncate max-w-[120px]" title={test.debugLog?.endpoint}>{test.debugLog?.endpoint || '—'}</span></div>
+                        <div className="flex justify-between items-center"><span className="text-zinc-600">{t("common.host")}:</span> <span className="text-emerald-400">{test.parsedHost}</span></div>
+                        <div className="flex justify-between items-center"><span className="text-zinc-600">{t("common.port")}:</span> <span className="text-emerald-400">{test.parsedPort}</span></div>
+                        <div className="flex justify-between items-center"><span className="text-zinc-600">{t("panels.basePath")}:</span> <span className="text-blue-400">{test.webBasePath || '/'}</span></div>
+                        <div className="flex justify-between items-center"><span className="text-zinc-600">{t("panels.apiUrl")}:</span> <span className="text-amber-400 truncate max-w-[120px]" title={test.debugLog?.endpoint}>{test.debugLog?.endpoint || '—'}</span></div>
                         <div className="col-span-2 border-t border-zinc-200 dark:border-zinc-800/60 my-1 pt-2 grid grid-cols-2 gap-x-4 gap-y-2">
-                           <div className="flex justify-between items-center"><span className="text-zinc-600">Panel Version:</span> <span className="text-zinc-800 dark:text-zinc-100 font-bold">v{test.version}</span></div>
-                           <div className="flex justify-between items-center"><span className="text-zinc-600">Xray Core:</span> <span className="text-zinc-800 dark:text-zinc-100 font-bold">v{test.xrayVersion}</span></div>
+                           <div className="flex justify-between items-center"><span className="text-zinc-600">{t("panels.panelVersion")}:</span> <span className="text-zinc-800 dark:text-zinc-100 font-bold">v{test.version}</span></div>
+                           <div className="flex justify-between items-center"><span className="text-zinc-600">{t("panels.xrayCore")}:</span> <span className="text-zinc-800 dark:text-zinc-100 font-bold">v{test.xrayVersion}</span></div>
                         </div>
                       </>
                     ) : test ? (
-                      <div className="col-span-2 text-center text-red-400 py-2">Connection Diagnostics Failed</div>
+                      <div className="col-span-2 text-center text-red-400 py-2">{t("panels.diagFailed")}</div>
                     ) : (
-                      <div className="col-span-2 text-center text-zinc-600 py-2">Awaiting connection test...</div>
+                      <div className="col-span-2 text-center text-zinc-600 py-2">{t("panels.awaitingTest")}</div>
                     )}
                   </motion.div>
 
@@ -415,20 +415,20 @@ function PanelWizard({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
                   <div className="col-span-2 flex flex-col gap-3">
                     {test && !isStrictlyValid && (
                       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-red-500/10 border border-red-500/20 rounded-xl p-3 text-xs">
-                        <div className="font-bold text-red-500 mb-1 flex items-center gap-2"><AlertTriangle size={15} /> {test.errorType || "Validation Failed"}</div>
-                        <div className="text-red-400/80 leading-relaxed">{test.message || "Ensure the backend service is up-to-date and returning the correct validation checklist."}</div>
+                        <div className="font-bold text-red-500 mb-1 flex items-center gap-2"><AlertTriangle size={15} /> {test.errorType || t("common.validationFailed")}</div>
+                        <div className="text-red-400/80 leading-relaxed">{test.message || t("panels.validationChecklistHint")}</div>
                       </motion.div>
                     )}
                     
                     {test && isStrictlyValid && (
                       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-emerald-500/5 border border-emerald-500/10 rounded-xl p-3 text-xs flex justify-between items-center">
                         <div>
-                          <div className="font-bold text-emerald-500 flex items-center gap-1.5 mb-1"><CheckCircle2 size={14} /> Ready ({test.pingMs}ms)</div>
-                          <div className="text-emerald-400/70 text-[10px]">Panel {test.version} · Xray {test.xrayVersion}</div>
+                          <div className="font-bold text-emerald-500 flex items-center gap-1.5 mb-1"><CheckCircle2 size={14} /> {t("panels.readyPing", { ping: test.pingMs })}</div>
+                          <div className="text-emerald-400/70 text-[10px]">{t("panels.panelVersion")} {test.version} · {t("panels.xrayCore")} {test.xrayVersion}</div>
                         </div>
                         <div className="text-end">
-                          <div className="text-emerald-300 font-medium">{test.inboundCount} Inbounds</div>
-                          <div className="text-emerald-300 font-medium">{test.clientCount} Clients</div>
+                          <div className="text-emerald-300 font-medium">{t("panels.inboundsCount", { count: test.inboundCount })}</div>
+                          <div className="text-emerald-300 font-medium">{t("panels.clientsCount", { count: test.clientCount })}</div>
                         </div>
                       </motion.div>
                     )}
@@ -437,29 +437,29 @@ function PanelWizard({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
                     {test && (
                       <details className="group border border-zinc-200 dark:border-zinc-800/60 bg-zinc-50 dark:bg-zinc-950 rounded-xl overflow-hidden text-[10px]">
                         <summary className="cursor-pointer px-3 py-2 text-zinc-500 dark:text-zinc-400 font-medium hover:bg-zinc-50 dark:hover:bg-zinc-900 transition-colors flex items-center justify-between outline-none">
-                          <span className="flex items-center gap-2"><PlugZap size={12} className="text-zinc-500" /> URL Parser Engine & Telemetry</span>
+                          <span className="flex items-center gap-2"><PlugZap size={12} className="text-zinc-500" /> {t("panels.urlParserTitle")}</span>
                           <span className="text-zinc-600 group-open:rotate-180 transition-transform">▼</span>
                         </summary>
                         <div className="p-3 border-t border-zinc-200 dark:border-zinc-800/60 font-mono space-y-2 bg-black/40">
                           <div className="grid grid-cols-2 gap-2 text-zinc-600 dark:text-zinc-300">
-                            <div><span className="text-zinc-600 block mb-0.5">Host / Port</span>{test.parsedHost} <span className="text-emerald-400">:{test.parsedPort}</span></div>
-                            <div><span className="text-zinc-600 block mb-0.5">Base Path</span><span className="text-blue-400">{test.webBasePath || '/'}</span></div>
+                            <div><span className="text-zinc-600 block mb-0.5">{t("common.host")} / {t("common.port")}</span>{test.parsedHost} <span className="text-emerald-400">:{test.parsedPort}</span></div>
+                            <div><span className="text-zinc-600 block mb-0.5">{t("panels.basePath")}</span><span className="text-blue-400">{test.webBasePath || '/'}</span></div>
                           </div>
                           
                           {test.debugLog && (
                             <div className="mt-2 pt-2 border-t border-zinc-200 dark:border-zinc-800/50">
-                              <div className="flex gap-2"><span className="text-zinc-600 min-w-[50px]">URL:</span> <span className="text-amber-400 break-all">{test.debugLog.method} {test.debugLog.endpoint}</span></div>
-                              <div className="flex gap-2"><span className="text-zinc-600 min-w-[50px]">Code:</span> <span className={test.debugLog.responseStatus >= 200 && test.debugLog.responseStatus < 300 ? "text-emerald-500 font-bold" : "text-red-500 font-bold"}>{test.debugLog.responseStatus || "TCP Error"}</span></div>
+                              <div className="flex gap-2"><span className="text-zinc-600 min-w-[50px]">{t("panels.apiUrl")}:</span> <span className="text-amber-400 break-all">{test.debugLog.method} {test.debugLog.endpoint}</span></div>
+                              <div className="flex gap-2"><span className="text-zinc-600 min-w-[50px]">{t("common.status")}:</span> <span className={test.debugLog.responseStatus >= 200 && test.debugLog.responseStatus < 300 ? "text-emerald-500 font-bold" : "text-red-500 font-bold"}>{test.debugLog.responseStatus || t("panels.tcpError")}</span></div>
                             </div>
                           )}
                           {test.capabilities && (
                             <div className="mt-2 pt-2 border-t border-zinc-200 dark:border-zinc-800/50">
-                              <div className="text-zinc-500 mb-1 font-semibold uppercase text-[9px] tracking-wider">Detected Capabilities</div>
+                              <div className="text-zinc-500 mb-1 font-semibold uppercase text-[9px] tracking-wider">{t("panels.detectedCapabilities")}</div>
                               <div className="grid grid-cols-2 gap-x-2 gap-y-1">
-                                <div className="flex gap-1 items-center"><span className={test.capabilities.clientsApi ? "text-emerald-400" : "text-zinc-600"}>{test.capabilities.clientsApi ? "✓" : "✗"}</span> <span className="text-zinc-400">Clients API</span></div>
-                                <div className="flex gap-1 items-center"><span className={test.capabilities.pagination ? "text-emerald-400" : "text-zinc-600"}>{test.capabilities.pagination ? "✓" : "✗"}</span> <span className="text-zinc-400">Pagination</span></div>
-                                <div className="flex gap-1 items-center"><span className={test.capabilities.slimInbounds ? "text-emerald-400" : "text-zinc-600"}>{test.capabilities.slimInbounds ? "✓" : "✗"}</span> <span className="text-zinc-400">Slim Inbounds</span></div>
-                                <div className="flex gap-1 items-center"><span className={test.capabilities.observatory ? "text-emerald-400" : "text-zinc-600"}>{test.capabilities.observatory ? "✓" : "✗"}</span> <span className="text-zinc-400">Observatory</span></div>
+                                <div className="flex gap-1 items-center"><span className={test.capabilities.clientsApi ? "text-emerald-400" : "text-zinc-600"}>{test.capabilities.clientsApi ? "✓" : "✗"}</span> <span className="text-zinc-400">{t("panels.clientsApi")}</span></div>
+                                <div className="flex gap-1 items-center"><span className={test.capabilities.pagination ? "text-emerald-400" : "text-zinc-600"}>{test.capabilities.pagination ? "✓" : "✗"}</span> <span className="text-zinc-400">{t("panels.pagination")}</span></div>
+                                <div className="flex gap-1 items-center"><span className={test.capabilities.slimInbounds ? "text-emerald-400" : "text-zinc-600"}>{test.capabilities.slimInbounds ? "✓" : "✗"}</span> <span className="text-zinc-400">{t("panels.slimInbounds")}</span></div>
+                                <div className="flex gap-1 items-center"><span className={test.capabilities.observatory ? "text-emerald-400" : "text-zinc-600"}>{test.capabilities.observatory ? "✓" : "✗"}</span> <span className="text-zinc-400">{t("panels.observatory")}</span></div>
                               </div>
                             </div>
                           )}
@@ -475,7 +475,7 @@ function PanelWizard({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
         </div>
 
         <div className="flex justify-end gap-2 border-t border-zinc-200 dark:border-zinc-800 pt-4 mt-4">
-          <button onClick={onClose} className="rounded-lg px-4 py-2 text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors">Cancel</button>
+          <button onClick={onClose} className="rounded-lg px-4 py-2 text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors">{t("common.cancel")}</button>
           <motion.button 
             whileHover={{ scale: create.isPending || !form.name || !form.url || !form.subUrl || !form.apiToken || !isStrictlyValid ? 1 : 1.05 }}
             whileTap={{ scale: create.isPending || !form.name || !form.url || !form.subUrl || !form.apiToken || !isStrictlyValid ? 1 : 0.95 }}
@@ -484,7 +484,7 @@ function PanelWizard({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
             className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50 transition-colors shadow-lg shadow-blue-900/20"
           >
             {create.isPending ? <Spinner /> : <FileText size={16} />}
-            {create.isPending ? "Syncing…" : "Save & Synchronize"}
+            {create.isPending ? t("panels.syncing") : t("panels.saveAndSync")}
           </motion.button>
         </div>
       </div>
@@ -501,6 +501,7 @@ function AlertTriangle({ size, className }: { size: number, className?: string }
 }
 
 function EditPanel({ panel, onClose, onSaved }: { panel: any; onClose: () => void; onSaved: () => void }) {
+  const t = useT();
   const toast = useToast((s) => s.push);
   const [form, setForm] = useState({ name: panel.name, url: panel.url, subUrl: panel.subUrl || "", status: panel.status, apiToken: "" });
   const update = useMutation({
@@ -509,32 +510,31 @@ function EditPanel({ panel, onClose, onSaved }: { panel: any; onClose: () => voi
       if (form.apiToken) payload.apiToken = form.apiToken;
       return (await api.patch(`/panels/${panel.id}`, payload)).data;
     },
-    onSuccess: () => { toast("Panel updated"); onSaved(); },
-    onError: () => toast("Update failed", "error"),
+    onSuccess: () => { toast(t("panels.panelUpdated")); onSaved(); },
+    onError: () => toast(t("common.updateFailed"), "error"),
   });
   return (
-    <Modal title={`Edit ${panel.name}`} onClose={onClose}>
+    <Modal title={t("common.editTitle", { name: panel.name })} onClose={onClose}>
       <div className="space-y-4">
-        <Field label="Panel Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-        <Field label="Panel URL" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} />
+        <Field label={t("panels.panelName")} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+        <Field label={t("panels.panelUrl")} value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} />
         <div>
-          <Field label="Subscription Domain / URL *" value={form.subUrl} placeholder="e.g. https://sub.domain.com:2096/sub/" onChange={(e) => setForm({ ...form, subUrl: e.target.value })} />
+          <Field label={t("panels.subUrl")} value={form.subUrl} placeholder={t("panels.subUrlPlaceholder")} onChange={(e) => setForm({ ...form, subUrl: e.target.value })} />
           <div className="text-[10px] text-zinc-500 mt-1 ps-1 leading-tight">
-            Required. Example: <b>https://domain.com:2096/sub/</b><br/>
-            Include the correct path (like <b>/sub/</b> or your custom path) at the end.
+            {t("panels.subUrlHint")}
           </div>
         </div>
-        <Field label="API Token" type="password" value={form.apiToken} placeholder="Leave blank to keep current token" onChange={(e) => setForm({ ...form, apiToken: e.target.value })} />
+        <Field label={t("panels.apiToken")} type="password" value={form.apiToken} placeholder={t("panels.apiTokenKeep")} onChange={(e) => setForm({ ...form, apiToken: e.target.value })} />
         <div>
-          <label className="mb-1 block text-sm text-zinc-500 dark:text-zinc-400">Status</label>
+          <label className="mb-1 block text-sm text-zinc-500 dark:text-zinc-400">{t("panels.status")}</label>
           <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}
             className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors">
-            <option value="online">online</option>
-            <option value="offline">offline</option>
+            <option value="online">{t("common.online")}</option>
+            <option value="offline">{t("common.offline")}</option>
           </select>
         </div>
         <div className="flex justify-end gap-2 border-t border-zinc-200 dark:border-zinc-800 pt-4 mt-4">
-          <button onClick={onClose} className="rounded-lg px-4 py-2 text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200">Cancel</button>
+          <button onClick={onClose} className="rounded-lg px-4 py-2 text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200">{t("common.cancel")}</button>
           <motion.button 
             whileHover={{ scale: update.isPending || !form.subUrl ? 1 : 1.05 }}
             whileTap={{ scale: update.isPending || !form.subUrl ? 1 : 0.95 }}
@@ -542,7 +542,7 @@ function EditPanel({ panel, onClose, onSaved }: { panel: any; onClose: () => voi
             disabled={update.isPending || !form.subUrl}
             className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50 transition-colors"
           >
-            {update.isPending ? "Saving…" : "Save changes"}
+            {update.isPending ? t("common.savingChanges") : t("common.saveChanges")}
           </motion.button>
         </div>
       </div>
@@ -551,12 +551,13 @@ function EditPanel({ panel, onClose, onSaved }: { panel: any; onClose: () => voi
 }
 
 function LogsModal({ panel, onClose }: { panel: any; onClose: () => void }) {
+  const t = useT();
   const { data, isLoading } = useQuery({
     queryKey: ["logs", panel.id],
     queryFn: async () => (await api.get<{ lines: string[] }>(`/panels/${panel.id}/logs`)).data,
   });
   return (
-    <Modal title={`Logs — ${panel.name}`} onClose={onClose}>
+    <Modal title={t("common.logsTitle", { name: panel.name })} onClose={onClose}>
       {isLoading ? (
         <Spinner />
       ) : (
@@ -568,6 +569,7 @@ function LogsModal({ panel, onClose }: { panel: any; onClose: () => void }) {
   );
 }
 function InboundsModal({ panel, onClose }: { panel: any; onClose: () => void }) {
+  const t = useT();
   const toast = useToast((s) => s.push);
   const qc = useQueryClient();
 
@@ -586,28 +588,28 @@ function InboundsModal({ panel, onClose }: { panel: any; onClose: () => void }) 
       return api.patch(`/inbounds/${id}`, { remark });
     },
     onSuccess: () => {
-      toast("Inbound updated");
+      toast(t("panels.inboundUpdated"));
       setEditingId(null);
       qc.invalidateQueries({ queryKey: ["inbounds"] });
     },
-    onError: () => toast("Update failed", "error"),
+    onError: () => toast(t("common.updateFailed"), "error"),
   });
 
   return (
-    <Modal title={`Inbounds — ${panel.name}`} onClose={onClose}>
+    <Modal title={t("common.inboundsTitle", { name: panel.name })} onClose={onClose}>
       {isLoading ? (
         <Spinner />
       ) : (
         <div className="space-y-4">
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">Custom names (remarks) help identify inbounds when adding new clients.</p>
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">{t("panels.inboundsHint")}</p>
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-start">
               <thead className="bg-white dark:bg-zinc-900 text-zinc-500 text-xs uppercase">
                 <tr>
-                  <th className="px-3 py-2 font-medium rounded-ss-lg">Tag</th>
-                  <th className="px-3 py-2 font-medium">Protocol</th>
-                  <th className="px-3 py-2 font-medium">Port</th>
-                  <th className="px-3 py-2 font-medium">Remark</th>
+                  <th className="px-3 py-2 font-medium rounded-ss-lg">{t("panels.colTag")}</th>
+                  <th className="px-3 py-2 font-medium">{t("common.protocol")}</th>
+                  <th className="px-3 py-2 font-medium">{t("common.port")}</th>
+                  <th className="px-3 py-2 font-medium">{t("panels.colRemark")}</th>
                   <th className="px-3 py-2 font-medium rounded-se-lg"></th>
                 </tr>
               </thead>
@@ -624,14 +626,14 @@ function InboundsModal({ panel, onClose }: { panel: any; onClose: () => void }) 
                           value={remark}
                           onChange={(e) => setRemark(e.target.value)}
                           className="w-full rounded bg-zinc-50 dark:bg-zinc-950 px-2 py-1 text-sm text-zinc-800 dark:text-zinc-100 border border-blue-500 outline-none"
-                          placeholder="e.g. VIP Server 1"
+                          placeholder={t("common.remarkPlaceholder")}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') update.mutate({ id: ib.id, remark });
                             if (e.key === 'Escape') setEditingId(null);
                           }}
                         />
                       ) : (
-                        ib.remark || <span className="text-zinc-600 italic">None</span>
+                        ib.remark || <span className="text-zinc-600 italic">{t("common.none")}</span>
                       )}
                     </td>
                     <td className="px-3 py-2 text-end">
@@ -652,7 +654,7 @@ function InboundsModal({ panel, onClose }: { panel: any; onClose: () => void }) 
                 ))}
                 {inbounds.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="px-3 py-6 text-center text-zinc-500">No inbounds found.</td>
+                    <td colSpan={5} className="px-3 py-6 text-center text-zinc-500">{t("common.noInbounds")}</td>
                   </tr>
                 )}
               </tbody>

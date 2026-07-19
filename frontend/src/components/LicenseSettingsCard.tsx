@@ -5,10 +5,12 @@ import { useState, useEffect, useRef } from "react";
 import { Card } from "@/components/ui";
 import { useLicenseActivation } from "@/hooks/useLicenseActivation";
 import { formatLicenseExpiry } from "@/lib/format";
+import { useT } from "@/i18n";
 
 const SUPPORT_URL = "https://t.me/hmraysupport";
 
 export function LicenseSettingsCard() {
+  const t = useT();
   const [key, setKey] = useState("");
   const { licenseQuery, activate, deactivate, recheck, updateBundle, reloadPlugins } = useLicenseActivation();
   const state = licenseQuery.data;
@@ -32,24 +34,24 @@ export function LicenseSettingsCard() {
     state?.mode !== "disabled";
 
   const statusLabel = isPremium
-    ? "Premium Edition"
+    ? t("settings.licenseStatusPremium")
     : state?.status === "grace"
-      ? "Grace period"
-      : "Community Edition";
+      ? t("settings.licenseStatusGrace")
+      : t("settings.licenseStatusCommunity");
 
   const expiryLabel = state?.expiresAt ? formatLicenseExpiry(state.expiresAt) : null;
 
   const expiryBanner =
     isPremium && expiryLabel ? (
       <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-sm p-3 mb-4">
-        License valid until <strong>{expiryLabel}</strong>
+        {t("settings.licenseValidUntil", { date: expiryLabel })}
       </div>
     ) : null;
 
   const modeBanner =
     state?.mode === "read_only" ? (
       <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 text-sm p-3 mb-4">
-        Premium is in read-only mode. Renew or reconnect to restore full access.
+        {t("settings.licenseReadOnlyBanner")}
       </div>
     ) : null;
 
@@ -62,12 +64,12 @@ export function LicenseSettingsCard() {
           </div>
           <div>
             <h3 className="text-lg font-bold text-zinc-800 dark:text-zinc-100">
-              {isPremium ? "Premium Edition" : "Premium License"}
+              {isPremium ? t("settings.licenseTitlePremium") : t("settings.licenseTitle")}
             </h3>
             <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
               {isPremium
-                ? "Your panel is running with premium modules"
-                : "Activate HMPanel Premium with your license key"}
+                ? t("settings.licenseSubtitlePremium")
+                : t("settings.licenseSubtitleCommunity")}
             </p>
           </div>
         </div>
@@ -87,27 +89,27 @@ export function LicenseSettingsCard() {
 
       <div className="grid grid-cols-2 gap-3 text-sm mb-4">
         <div>
-          <span className="text-zinc-500">Status</span>
+          <span className="text-zinc-500">{t("settings.licenseStatusLabel")}</span>
           <p className="font-medium capitalize">{state?.status || "—"}</p>
         </div>
         <div>
-          <span className="text-zinc-500">Mode</span>
+          <span className="text-zinc-500">{t("settings.licenseModeLabel")}</span>
           <p className="font-medium capitalize">{state?.mode || "—"}</p>
         </div>
         <div>
-          <span className="text-zinc-500">Expires</span>
-          <p className="font-medium">{expiryLabel || "Never"}</p>
+          <span className="text-zinc-500">{t("settings.licenseExpiresLabel")}</span>
+          <p className="font-medium">{expiryLabel || t("common.never")}</p>
         </div>
         <div>
-          <span className="text-zinc-500">Bundle</span>
+          <span className="text-zinc-500">{t("settings.licenseBundleLabel")}</span>
           <p className="font-medium">
             {state?.bundle?.installed
-              ? state.bundle.version || "installed"
-              : "Not installed"}
+              ? state.bundle.version || t("common.installed")
+              : t("common.notInstalled")}
           </p>
           {state?.bundle?.installed && state.bundle.pluginsLoaded === false && (
             <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
-              Modules not loaded
+              {t("settings.licenseModulesNotLoaded")}
               {state.bundle.lastLoadError ? `: ${state.bundle.lastLoadError}` : ""}
             </p>
           )}
@@ -121,19 +123,19 @@ export function LicenseSettingsCard() {
         className="inline-flex items-center gap-1.5 text-sm text-blue-500 hover:text-blue-400 mb-4"
       >
         <ExternalLink size={14} />
-        Purchase or renew license — Telegram support
+        {t("settings.licenseSupportLink")}
       </a>
 
       {!isPremium ? (
         <div className="space-y-3">
           <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-            License key
+            {t("settings.licenseKeyLabel")}
           </label>
           <input
             type="text"
             value={key}
             onChange={(e) => setKey(e.target.value)}
-            placeholder="HM-XXXX-XXXX-XXXX"
+            placeholder={t("settings.licenseKeyPlaceholder")}
             className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-zinc-800 dark:text-zinc-100 outline-none focus:border-emerald-500"
           />
           <button
@@ -143,7 +145,7 @@ export function LicenseSettingsCard() {
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white font-medium hover:bg-emerald-700 disabled:opacity-50"
           >
             <Power size={16} />
-            {activate.isPending ? "Activating…" : "Activate Premium"}
+            {activate.isPending ? t("settings.licenseActivating") : t("settings.licenseActivate")}
           </button>
         </div>
       ) : (
@@ -155,7 +157,7 @@ export function LicenseSettingsCard() {
             className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800"
           >
             <RefreshCw size={14} className={updateBundle.isPending ? "animate-spin" : ""} />
-            Update premium bundle
+            {t("settings.licenseUpdateBundle")}
           </button>
           <button
             type="button"
@@ -164,7 +166,7 @@ export function LicenseSettingsCard() {
             className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800"
           >
             <RefreshCw size={14} className={recheck.isPending ? "animate-spin" : ""} />
-            Re-check license
+            {t("settings.licenseRecheck")}
           </button>
           <button
             type="button"
@@ -173,14 +175,14 @@ export function LicenseSettingsCard() {
             className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-red-500/40 text-red-500 text-sm hover:bg-red-500/10"
           >
             <PowerOff size={14} />
-            Deactivate
+            {t("settings.licenseDeactivate")}
           </button>
         </div>
       )}
 
       {state?.lastHeartbeatAt && (
         <p className="text-xs text-zinc-500 mt-4">
-          Last heartbeat: {new Date(state.lastHeartbeatAt).toLocaleString()}
+          {t("settings.licenseLastHeartbeat", { date: new Date(state.lastHeartbeatAt).toLocaleString() })}
         </p>
       )}
     </Card>

@@ -6,6 +6,7 @@ import { Shield, RefreshCw, X, CheckCircle, AlertCircle, Loader2, Globe, Lock, U
 import { api } from "@/lib/api";
 import { useAuth } from "@/store/auth";
 import { motion, AnimatePresence } from "framer-motion";
+import { useT } from "@/i18n";
 
 interface SslStatus {
   mode: string;
@@ -23,6 +24,7 @@ interface SslStatus {
 }
 
 export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+  const t = useT();
   const token = useAuth((s) => s.token);
   const isSuccessRef = React.useRef(false);
   const isExecutingRef = React.useRef(false);
@@ -79,7 +81,7 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
           }
         } else if (data.type === "error") {
           setWorkflowState("error");
-          setWorkflowError(data.error?.message || data.error?.reason || "Unknown error occurred.");
+          setWorkflowError(data.error?.message || data.error?.reason || t("settings.sslUnknownError"));
           eventSource.close();
         }
       } catch (e) {
@@ -87,7 +89,7 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
       }
     };
     eventSource.onopen = () => {
-      setLogs(["Starting workflow..."]);
+      setLogs([t("settings.sslStartingWorkflow")]);
     };
     eventSource.onerror = () => {
       // Do not close. Allow browser to auto-reconnect when Nginx is restarting.
@@ -100,7 +102,7 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
     isExecutingRef.current = true;
     setView("progress");
     setWorkflowState("running");
-    setLogs(["Starting workflow..."]);
+    setLogs([t("settings.sslStartingWorkflow")]);
     isSuccessRef.current = false;
     const es = startStream();
     try {
@@ -109,12 +111,12 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
     } catch (err: unknown) {
       if (isSuccessRef.current) return;
       
-      let message = "Failed to execute action.";
+      let message = t("settings.sslFailedToExecute");
       if (err instanceof Error) {
         if (err.message === "Network Error") {
           // Nginx restart drops connection
           if (form.domain && (actionFn.toString().includes("change-domain") || actionFn.toString().includes("issue"))) {
-            setLogs(prev => [...prev, "Connection lost due to Nginx applying changes.", `Redirecting to new domain (${form.domain}) in 10 seconds...`]);
+            setLogs(prev => [...prev, t("settings.sslConnectionLostRedirect"), t("settings.sslRedirectingIn", { domain: form.domain })]);
             setTimeout(() => {
               window.location.href = `https://${form.domain}${window.location.pathname}`;
             }, 10000);
@@ -180,8 +182,8 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
                 {sslInfo?.isHttpsEnabled ? <Lock size={24} /> : <Shield size={24} />}
               </div>
               <div>
-                <h2 className="text-xl font-bold text-zinc-900 dark:text-white">SSL & Domain Manager</h2>
-                <p className="text-sm text-zinc-500 dark:text-zinc-400">Manage security lifecycle</p>
+                <h2 className="text-xl font-bold text-zinc-900 dark:text-white">{t("settings.sslModalTitle")}</h2>
+                <p className="text-sm text-zinc-500 dark:text-zinc-400">{t("settings.sslModalSubtitle")}</p>
               </div>
             </div>
             {workflowState !== 'running' && (
@@ -195,7 +197,7 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
             {isLoading ? (
               <div className="flex flex-col items-center justify-center py-20 text-zinc-400">
                 <Loader2 className="w-10 h-10 animate-spin mb-4" />
-                <p>Loading SSL State...</p>
+                <p>{t("settings.sslLoadingState")}</p>
               </div>
             ) : view === "progress" ? (
               <motion.div variants={slideVariants} initial="enter" animate="center" exit="exit" className="space-y-6">
@@ -209,10 +211,10 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
                     {workflowState === "error" && <AlertCircle className="w-16 h-16 text-red-500 relative z-10" />}
                   </div>
                   <h3 className="text-2xl font-bold mb-2 text-zinc-900 dark:text-white">
-                    {workflowState === "running" ? "Applying Configuration..." : workflowState === "success" ? "Operation Successful" : "Configuration Failed"}
+                    {workflowState === "running" ? t("settings.sslApplying") : workflowState === "success" ? t("settings.sslOperationSuccess") : t("settings.sslConfigFailed")}
                   </h3>
                   <p className="text-zinc-500 max-w-sm">
-                    {workflowState === "running" ? "Please wait while we update your system. This may take a few moments." : workflowState === "success" ? "Your platform's security configuration has been updated." : "We encountered an issue while applying your changes. No worries, we've safely rolled back."}
+                    {workflowState === "running" ? t("settings.sslApplyingHint") : workflowState === "success" ? t("settings.sslSuccessHint") : t("settings.sslErrorHint")}
                   </p>
                 </div>
                 
@@ -244,7 +246,7 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
                     onClick={() => { setView("status"); refetch(); }}
                     className="w-full py-3.5 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-900 dark:text-white font-medium rounded-xl transition-colors"
                   >
-                    Return to Overview
+                    {t("settings.sslReturnToOverview")}
                   </button>
                 )}
               </motion.div>
@@ -258,40 +260,40 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
                 {wizardStep === 1 ? (
                   <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-6">
                     <div>
-                      <h3 className="text-xl font-bold mb-2">Configure Domain Name</h3>
-                      <p className="text-zinc-500 text-sm">Enter the fully qualified domain name that points to this server's public IP address.</p>
+                      <h3 className="text-xl font-bold mb-2">{t("settings.sslConfigureDomainTitle")}</h3>
+                      <p className="text-zinc-500 text-sm">{t("settings.sslConfigureDomainHint")}</p>
                     </div>
                     
                     <div className="space-y-3">
-                      <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Public Domain</label>
+                      <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("settings.sslPublicDomain")}</label>
                       <div className="relative">
                         <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-400" />
                         <input
                           type="text"
                           value={form.domain}
                           onChange={e => setForm({...form, domain: e.target.value.toLowerCase()})}
-                          placeholder="e.g. panel.example.com"
+                          placeholder={t("settings.sslDomainPlaceholder")}
                           className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl pl-10 pr-4 py-3 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
                         />
                       </div>
                     </div>
 
                     <div className="pt-4 flex gap-3">
-                      <button onClick={() => setView("status")} className="px-6 py-3 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-xl font-medium transition-colors">Cancel</button>
+                      <button onClick={() => setView("status")} className="px-6 py-3 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-xl font-medium transition-colors">{t("common.cancel")}</button>
                       <button 
                         onClick={() => setWizardStep(2)} 
                         disabled={!form.domain || form.domain.length < 4 || !form.domain.includes('.')} 
                         className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:hover:bg-indigo-600 text-white rounded-xl font-medium transition-colors shadow-lg shadow-indigo-500/20"
                       >
-                        Continue
+                        {t("settings.sslContinue")}
                       </button>
                     </div>
                   </motion.div>
                 ) : (
                   <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-6">
                     <div>
-                      <h3 className="text-xl font-bold mb-2">Certificate Details</h3>
-                      <p className="text-zinc-500 text-sm">Choose how you want to secure {form.domain}.</p>
+                      <h3 className="text-xl font-bold mb-2">{t("settings.sslCertDetailsTitle")}</h3>
+                      <p className="text-zinc-500 text-sm">{t("settings.sslCertDetailsHint", { domain: form.domain })}</p>
                     </div>
 
                     <div className="grid grid-cols-1 gap-4">
@@ -303,8 +305,8 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
                               <Shield className="h-5 w-5" />
                             </div>
                             <div className="flex flex-col">
-                              <span className={`font-semibold ${!form.selfSigned ? 'text-indigo-900 dark:text-indigo-100' : 'text-zinc-900 dark:text-white'}`}>Let's Encrypt</span>
-                              <span className="text-sm text-zinc-500">Free, automated, recommended</span>
+                              <span className={`font-semibold ${!form.selfSigned ? 'text-indigo-900 dark:text-indigo-100' : 'text-zinc-900 dark:text-white'}`}>{t("settings.sslLetsEncrypt")}</span>
+                              <span className="text-sm text-zinc-500">{t("settings.sslLetsEncryptHint")}</span>
                             </div>
                           </div>
                           {!form.selfSigned && <CheckCircle className="h-5 w-5 text-indigo-500" />}
@@ -319,8 +321,8 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
                               <Lock className="h-5 w-5" />
                             </div>
                             <div className="flex flex-col">
-                              <span className={`font-semibold ${form.selfSigned ? 'text-indigo-900 dark:text-indigo-100' : 'text-zinc-900 dark:text-white'}`}>Self-Signed</span>
-                              <span className="text-sm text-zinc-500">For internal testing only</span>
+                              <span className={`font-semibold ${form.selfSigned ? 'text-indigo-900 dark:text-indigo-100' : 'text-zinc-900 dark:text-white'}`}>{t("settings.sslSelfSigned")}</span>
+                              <span className="text-sm text-zinc-500">{t("settings.sslSelfSignedHint")}</span>
                             </div>
                           </div>
                           {form.selfSigned && <CheckCircle className="h-5 w-5 text-indigo-500" />}
@@ -330,26 +332,26 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
 
                     {!form.selfSigned && (
                       <div className="space-y-3 pt-2">
-                        <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Administrator Email</label>
+                        <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("settings.sslAdminEmail")}</label>
                         <input
                           type="email"
                           value={form.email}
                           onChange={e => setForm({...form, email: e.target.value})}
-                          placeholder="admin@example.com"
+                          placeholder={t("settings.sslEmailPlaceholder")}
                           className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
                         />
-                        <p className="text-xs text-zinc-500">Used for urgent renewal and security notices.</p>
+                        <p className="text-xs text-zinc-500">{t("settings.sslAdminEmailHint")}</p>
                       </div>
                     )}
 
                     <div className="pt-4 flex gap-3">
-                      <button onClick={() => setWizardStep(1)} className="px-6 py-3 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-xl font-medium transition-colors">Back</button>
+                      <button onClick={() => setWizardStep(1)} className="px-6 py-3 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-xl font-medium transition-colors">{t("common.back")}</button>
                       <button 
                         onClick={view === "issue" ? handleIssue : handleChangeDomain} 
                         disabled={!form.selfSigned && !form.email}
                         className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl font-medium transition-colors shadow-lg shadow-indigo-500/20"
                       >
-                        Issue Certificate
+                        {t("settings.sslIssueCertificate")}
                       </button>
                     </div>
                   </motion.div>
@@ -364,16 +366,16 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
                     <div className="w-20 h-20 bg-zinc-100 dark:bg-zinc-800 rounded-full flex items-center justify-center mb-6">
                       <Server className="w-10 h-10 text-zinc-400" />
                     </div>
-                    <h3 className="text-2xl font-bold mb-2">HTTP (IP Mode)</h3>
+                    <h3 className="text-2xl font-bold mb-2">{t("settings.sslHttpModeTitle")}</h3>
                     <p className="text-zinc-500 max-w-sm mx-auto mb-8">
-                      Your panel is currently accessed via IP Address. To enable secure HTTPS access, you must configure a domain name.
+                      {t("settings.sslHttpModeHint")}
                     </p>
                     <button 
                       onClick={() => { setForm({ domain: "", email: "", selfSigned: false }); setView("issue"); }}
                       className="px-8 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-indigo-500/20 hover:scale-[1.02] active:scale-95 flex items-center gap-2"
                     >
                       <Globe className="w-5 h-5" />
-                      Configure Domain
+                      {t("settings.sslConfigureDomainBtn")}
                     </button>
                   </div>
                 )}
@@ -384,17 +386,17 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
                     <div className="bg-gradient-to-br from-zinc-50 to-white dark:from-zinc-900/50 dark:to-zinc-900 border border-zinc-200 dark:border-zinc-800/80 rounded-2xl p-6 shadow-sm">
                       <div className="flex items-center justify-between mb-6">
                         <div>
-                          <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400 mb-1">Current Access Domain</p>
+                          <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400 mb-1">{t("settings.sslCurrentAccessDomain")}</p>
                           <h3 className="text-2xl font-bold text-zinc-900 dark:text-white flex items-center gap-3">
                             {sslInfo.domain}
                             {sslInfo.isHttpsEnabled && (
                               <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-1 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg">
-                                <Lock className="w-3 h-3" /> Secure
+                                <Lock className="w-3 h-3" /> {t("settings.sslSecure")}
                               </span>
                             )}
                             {!sslInfo.isHttpsEnabled && (
                               <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-1 bg-amber-500/10 text-amber-600 dark:text-amber-400 rounded-lg">
-                                <Unlock className="w-3 h-3" /> Insecure
+                                <Unlock className="w-3 h-3" /> {t("settings.sslInsecure")}
                               </span>
                             )}
                           </h3>
@@ -403,15 +405,15 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
 
                       <div className="grid grid-cols-2 gap-4">
                         <div className="bg-white dark:bg-zinc-950 p-4 rounded-xl border border-zinc-100 dark:border-zinc-800">
-                          <p className="text-xs text-zinc-500 mb-1">Certificate Status</p>
+                          <p className="text-xs text-zinc-500 mb-1">{t("settings.sslCertStatus")}</p>
                           <p className="font-semibold text-zinc-900 dark:text-zinc-100">
-                            {sslInfo.certificate.exists ? 'Valid & Present' : 'Missing'}
+                            {sslInfo.certificate.exists ? t("settings.sslCertValid") : t("settings.sslCertMissing")}
                           </p>
                         </div>
                         <div className="bg-white dark:bg-zinc-950 p-4 rounded-xl border border-zinc-100 dark:border-zinc-800">
-                          <p className="text-xs text-zinc-500 mb-1">Expiration</p>
+                          <p className="text-xs text-zinc-500 mb-1">{t("settings.sslExpiration")}</p>
                           <p className={`font-semibold ${sslInfo.certificate.daysRemaining && sslInfo.certificate.daysRemaining < 15 ? 'text-amber-500' : 'text-zinc-900 dark:text-zinc-100'}`}>
-                            {sslInfo.certificate.daysRemaining ? `${sslInfo.certificate.daysRemaining} Days Remaining` : 'N/A'}
+                            {sslInfo.certificate.daysRemaining ? t("settings.sslDaysRemaining", { count: sslInfo.certificate.daysRemaining }) : t("settings.sslNotApplicable")}
                           </p>
                         </div>
                       </div>
@@ -425,9 +427,9 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
                             <Shield className="w-6 h-6" />
                           </div>
                           <div>
-                            <h4 className="font-bold text-indigo-900 dark:text-indigo-100 text-lg">Manual Certificate Detected</h4>
+                            <h4 className="font-bold text-indigo-900 dark:text-indigo-100 text-lg">{t("settings.sslManualDetectedTitle")}</h4>
                             <p className="text-indigo-700 dark:text-indigo-300 text-sm mt-1">
-                              A valid SSL certificate was found on the server filesystem. You can enable HTTPS mode instantly.
+                              {t("settings.sslManualDetectedHint")}
                             </p>
                           </div>
                         </div>
@@ -435,7 +437,7 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
                           onClick={handleEnable}
                           className="w-full sm:w-auto shrink-0 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-indigo-500/20"
                         >
-                          Enable HTTPS
+                          {t("settings.sslEnableHttps")}
                         </button>
                       </div>
                     )}
@@ -446,7 +448,7 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
                           onClick={() => { setForm({ domain: sslInfo.domain, email: "admin@" + sslInfo.domain, selfSigned: false }); setView("change"); }}
                           className="flex items-center justify-center gap-2 py-3.5 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-900 dark:text-white rounded-xl font-medium transition-colors"
                         >
-                          Change Domain
+                          {t("settings.sslChangeDomain")}
                         </button>
                         
                         <button 
@@ -455,14 +457,14 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
                           className="flex items-center justify-center gap-2 py-3.5 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 disabled:opacity-50 text-zinc-900 dark:text-white rounded-xl font-medium transition-colors"
                         >
                           <RefreshCw className="w-4 h-4" />
-                          Renew Certificate
+                          {t("settings.sslRenewCertificate")}
                         </button>
 
                         <button 
                           onClick={handleRepair}
                           className="flex items-center justify-center gap-2 py-3.5 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 rounded-xl font-medium transition-colors"
                         >
-                          Repair Config
+                          {t("settings.sslRepairConfig")}
                         </button>
 
                         <button 
@@ -470,7 +472,7 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
                           disabled={!sslInfo.isHttpsEnabled}
                           className="flex items-center justify-center gap-2 py-3.5 border border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 disabled:opacity-50 rounded-xl font-medium transition-colors"
                         >
-                          Disable HTTPS
+                          {t("settings.sslDisableHttps")}
                         </button>
                       </div>
                     )}

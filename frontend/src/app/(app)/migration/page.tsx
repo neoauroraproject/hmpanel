@@ -23,7 +23,7 @@ export default function MigrationPage() {
   // Mutations
   const upload = useMutation({
     mutationFn: async () => {
-      if (!file) throw new Error("Please select a file.");
+      if (!file) throw new Error(t("migration.selectFileError"));
       const formData = new FormData();
       formData.append("file", file);
       return (await api.post("/migration/upload", formData, {
@@ -89,11 +89,11 @@ export default function MigrationPage() {
         {/* Wizard Progress Sidebar */}
         <div className="lg:col-span-1 space-y-2">
           {[
-            { num: 1, label: "Upload Backup" },
-            { num: 2, label: "Validate Schema" },
-            { num: 3, label: "Preview Entities" },
-            { num: 4, label: "Import Architecture" },
-            { num: 5, label: "Post-Import Sync" },
+            { num: 1, label: t("migration.stepUpload") },
+            { num: 2, label: t("migration.stepValidate") },
+            { num: 3, label: t("migration.stepPreview") },
+            { num: 4, label: t("migration.stepImport") },
+            { num: 5, label: t("migration.stepSync") },
           ].map((s) => {
             const status = getStepStatus(s.num);
             return (
@@ -134,14 +134,14 @@ export default function MigrationPage() {
             {step === 1 && (
               <div className="flex-1 flex flex-col items-center justify-center text-center">
                 <Database size={48} className="text-zinc-600 mb-4" />
-                <h3 className="text-xl font-bold text-zinc-800 dark:text-zinc-100 mb-2">Select Legacy Backup</h3>
+                <h3 className="text-xl font-bold text-zinc-800 dark:text-zinc-100 mb-2">{t("migration.selectLegacyTitle")}</h3>
                 <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-6 max-w-md">
-                  Upload your `backupp.db` SQLite file. This engine will directly analyze its structures without applying assumptions.
+                  {t("migration.selectLegacyHint")}
                 </p>
                 <label className="cursor-pointer bg-zinc-50 dark:bg-zinc-950 border-2 border-dashed border-zinc-300 dark:border-zinc-700 hover:border-blue-500 transition-colors rounded-xl px-12 py-8 flex flex-col items-center justify-center group w-full max-w-md">
                   <Import size={24} className="text-zinc-500 group-hover:text-blue-500 mb-2 transition-colors" />
                   <span className="text-sm font-medium text-zinc-600 dark:text-zinc-300">
-                    {file ? file.name : "Click to select .db file"}
+                    {file ? file.name : t("migration.selectDbFile")}
                   </span>
                   <input
                     type="file"
@@ -156,9 +156,9 @@ export default function MigrationPage() {
             {step === 2 && (
               <div className="flex-1 flex flex-col items-center justify-center text-center">
                 <Activity size={48} className="text-blue-500 mb-4 animate-pulse" />
-                <h3 className="text-xl font-bold text-zinc-800 dark:text-zinc-100 mb-2">Backup Validated Successfully</h3>
+                <h3 className="text-xl font-bold text-zinc-800 dark:text-zinc-100 mb-2">{t("migration.validatedTitle")}</h3>
                 <p className="text-sm text-zinc-500 dark:text-zinc-400 max-w-md mb-6">
-                  The uploaded file is a valid SQLite database containing the required `panels`, `admins`, and `sanaei_users` tables. Proceed to preview the extracted mapping.
+                  {t("migration.validatedHint")}
                 </p>
               </div>
             )}
@@ -167,24 +167,24 @@ export default function MigrationPage() {
               <div className="flex-1">
                 <h3 className="text-lg font-bold text-zinc-800 dark:text-zinc-100 mb-4 flex items-center gap-2">
                   <Database size={18} className="text-emerald-500" />
-                  Schema Discovery Report
+                  {t("migration.previewTitle")}
                 </h3>
                 <div className="grid grid-cols-3 gap-4 mb-6">
                   <div className="p-4 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800">
-                    <div className="text-xs text-zinc-500 uppercase tracking-widest font-semibold mb-1 flex items-center gap-1"><Server size={12}/> Panels Found</div>
+                    <div className="text-xs text-zinc-500 uppercase tracking-widest font-semibold mb-1 flex items-center gap-1"><Server size={12}/> {t("migration.panelsFound")}</div>
                     <div className="text-3xl font-black text-zinc-800 dark:text-zinc-100">{previewData.panels}</div>
                   </div>
                   <div className="p-4 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800">
-                    <div className="text-xs text-zinc-500 uppercase tracking-widest font-semibold mb-1 flex items-center gap-1"><Users size={12}/> Admins Found</div>
+                    <div className="text-xs text-zinc-500 uppercase tracking-widest font-semibold mb-1 flex items-center gap-1"><Users size={12}/> {t("migration.adminsFound")}</div>
                     <div className="text-3xl font-black text-zinc-800 dark:text-zinc-100">{previewData.admins}</div>
                   </div>
                   <div className="p-4 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800">
-                    <div className="text-xs text-zinc-500 uppercase tracking-widest font-semibold mb-1 flex items-center gap-1"><Users size={12}/> Clients to Map</div>
+                    <div className="text-xs text-zinc-500 uppercase tracking-widest font-semibold mb-1 flex items-center gap-1"><Users size={12}/> {t("migration.clientsToMap")}</div>
                     <div className="text-3xl font-black text-zinc-800 dark:text-zinc-100">{previewData.users}</div>
                   </div>
                 </div>
                 <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                  Clicking next will actively import these Panels and Admins into your new database, and hold the client ownership map in memory for the final sync phase.
+                  {t("migration.previewHint")}
                 </p>
               </div>
             )}
@@ -192,20 +192,23 @@ export default function MigrationPage() {
             {step === 4 && importReport && (
               <div className="flex-1 flex flex-col items-center justify-center text-center">
                 <CheckCircle2 size={48} className="text-emerald-500 mb-4" />
-                <h3 className="text-xl font-bold text-zinc-800 dark:text-zinc-100 mb-2">Core Import Complete</h3>
+                <h3 className="text-xl font-bold text-zinc-800 dark:text-zinc-100 mb-2">{t("migration.importCompleteTitle")}</h3>
                 <p className="text-sm text-zinc-500 dark:text-zinc-400 max-w-md mb-6">
-                  Imported {importReport.importedPanels} Panels and {importReport.importedAdmins} Admins.
-                  Memory mapping loaded for {importReport.legacyClientsToMap} legacy clients.
+                  {t("migration.importCompleteHint", {
+                    panels: importReport.importedPanels,
+                    admins: importReport.importedAdmins,
+                    clients: importReport.legacyClientsToMap,
+                  })}
                 </p>
                 <div className="p-4 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400 text-sm max-w-md text-left mb-4">
-                  <strong>Next Phase: Post-Import Sync</strong><br/>
-                  The engine will now connect directly to the imported 3x-ui panels to fetch live clients and re-apply ownership boundaries.
+                  <strong>{t("migration.nextPhaseTitle")}</strong><br/>
+                  {t("migration.nextPhaseHint")}
                 </div>
 
                 <div className="max-w-md w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg p-4 flex items-center justify-between">
                   <div className="text-left">
-                    <div className="font-semibold text-zinc-800 dark:text-zinc-100 text-sm">Create Native 3x-ui Groups</div>
-                    <div className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">Automatically assign imported clients to their admin's group.</div>
+                    <div className="font-semibold text-zinc-800 dark:text-zinc-100 text-sm">{t("migration.createGroupsTitle")}</div>
+                    <div className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">{t("migration.createGroupsHint")}</div>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input
@@ -224,35 +227,35 @@ export default function MigrationPage() {
               <div className="flex-1">
                 <h3 className="text-xl font-bold text-emerald-400 mb-4 flex items-center gap-2">
                   <CheckCircle2 size={24} />
-                  Migration Finished
+                  {t("migration.finishedTitle")}
                 </h3>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                   <div className="p-4 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg">
-                    <div className="text-xs text-zinc-500">Admins Imported</div>
+                    <div className="text-xs text-zinc-500">{t("migration.adminsImported")}</div>
                     <div className="text-2xl font-black text-zinc-800 dark:text-zinc-100">{importReport?.importedAdmins}</div>
                   </div>
                   <div className="p-4 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg">
-                    <div className="text-xs text-zinc-500">Clients Synced</div>
+                    <div className="text-xs text-zinc-500">{t("migration.clientsSynced")}</div>
                     <div className="text-2xl font-black text-zinc-800 dark:text-zinc-100">{syncReport.clientsImported}</div>
                   </div>
                   <div className="p-4 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg">
-                    <div className="text-xs text-emerald-500">Groups Created</div>
+                    <div className="text-xs text-emerald-500">{t("migration.groupsCreated")}</div>
                     <div className="text-2xl font-black text-emerald-400">{syncReport.groupsCreated || 0}</div>
                   </div>
                   <div className="p-4 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg">
-                    <div className="text-xs text-blue-500">Clients Grouped</div>
+                    <div className="text-xs text-blue-500">{t("migration.clientsGrouped")}</div>
                     <div className="text-2xl font-black text-blue-400">{syncReport.clientsAssignedToGroups || 0}</div>
                   </div>
                   <div className="p-4 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg">
-                    <div className="text-xs text-emerald-500">Clients Matched</div>
+                    <div className="text-xs text-emerald-500">{t("migration.clientsMatched")}</div>
                     <div className="text-2xl font-black text-emerald-400">{syncReport.clientsMatched}</div>
                   </div>
                   <div className="p-4 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg">
-                    <div className="text-xs text-amber-500">Missing/Orphaned</div>
+                    <div className="text-xs text-amber-500">{t("migration.missingOrphaned")}</div>
                     <div className="text-2xl font-black text-amber-400">{syncReport.clientsMissing}</div>
                   </div>
                   <div className="p-4 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg col-span-2">
-                    <div className="text-xs text-red-500">Failed Assignments</div>
+                    <div className="text-xs text-red-500">{t("migration.failedAssignments")}</div>
                     <div className="text-2xl font-black text-red-400">{syncReport.failedAssignments || 0}</div>
                   </div>
                 </div>
@@ -260,7 +263,9 @@ export default function MigrationPage() {
                 <div className="h-32 overflow-y-auto bg-black border border-zinc-200 dark:border-zinc-800 p-3 rounded-lg font-mono text-xs">
                   {syncReport.panelReports.map((pr: any, i: number) => (
                     <div key={i} className={pr.success ? "text-emerald-400" : "text-red-400"}>
-                      [{pr.panelName}] {pr.success ? `Success: Synced ${pr.syncedClients} clients` : `Error: ${pr.error}`}
+                      {pr.success
+                        ? t("migration.panelReportSuccess", { panel: pr.panelName, count: pr.syncedClients })
+                        : t("migration.panelReportError", { panel: pr.panelName, error: pr.error })}
                     </div>
                   ))}
                 </div>
@@ -276,7 +281,7 @@ export default function MigrationPage() {
                   className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-6 py-2 rounded-lg font-medium text-sm flex items-center gap-2 transition-colors"
                 >
                   {(upload.isPending || preview.isPending || runImport.isPending || runSync.isPending) && <Spinner />}
-                  {step === 1 ? "Upload & Validate" : step === 2 ? "Generate Preview" : step === 3 ? "Execute Import" : "Run Live Sync"}
+                  {step === 1 ? t("migration.btnUploadValidate") : step === 2 ? t("migration.btnGeneratePreview") : step === 3 ? t("migration.btnExecuteImport") : t("migration.btnRunSync")}
                 </button>
               </div>
             )}
@@ -288,13 +293,13 @@ export default function MigrationPage() {
                   download="migration-report.json"
                   className="bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-600 text-zinc-800 dark:text-zinc-100 px-6 py-2 rounded-lg font-medium text-sm transition-colors"
                 >
-                  Download JSON Report
+                  {t("migration.downloadReport")}
                 </a>
                 <button
                   onClick={() => window.location.href = '/dashboard'}
                   className="bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-2 rounded-lg font-medium text-sm transition-colors"
                 >
-                  Go to Dashboard
+                  {t("migration.goDashboard")}
                 </button>
               </div>
             )}

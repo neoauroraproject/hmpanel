@@ -35,18 +35,27 @@ import { useT } from "@/i18n";
 
 const CORE_NAV: {
   href: string;
-  labelKey: string;
   icon: typeof Users;
   roles?: Role[];
 }[] = [
-  { href: "/dashboard", labelKey: "nav.dashboard", icon: LayoutDashboard },
-  { href: "/admins", labelKey: "nav.admins", icon: UserCog, roles: ["SUPER_ADMIN"] },
-  { href: "/clients", labelKey: "nav.clients", icon: Users },
-  { href: "/panels", labelKey: "nav.panels", icon: Server, roles: ["SUPER_ADMIN"] },
-  { href: "/migration", labelKey: "nav.migration", icon: Import, roles: ["SUPER_ADMIN"] },
-  { href: "/traffic", labelKey: "nav.traffic", icon: Wallet },
-  { href: "/settings", labelKey: "nav.settings", icon: Settings, roles: ["SUPER_ADMIN"] },
+  { href: "/dashboard", icon: LayoutDashboard },
+  { href: "/admins", icon: UserCog, roles: ["SUPER_ADMIN"] },
+  { href: "/clients", icon: Users },
+  { href: "/panels", icon: Server, roles: ["SUPER_ADMIN"] },
+  { href: "/migration", icon: Import, roles: ["SUPER_ADMIN"] },
+  { href: "/traffic", icon: Wallet },
+  { href: "/settings", icon: Settings, roles: ["SUPER_ADMIN"] },
 ];
+
+const NAV_LABEL_KEYS: Record<string, string> = {
+  "/dashboard": "nav.dashboard",
+  "/admins": "nav.admins",
+  "/clients": "nav.clients",
+  "/panels": "nav.panels",
+  "/migration": "nav.migration",
+  "/traffic": "nav.traffic",
+  "/settings": "nav.settings",
+};
 
 const PREMIUM_MENU_ICONS: Record<string, typeof Diamond> = {
   branding: Diamond,
@@ -55,15 +64,6 @@ const PREMIUM_MENU_ICONS: Record<string, typeof Diamond> = {
   store: Store,
   "monitoring-pro": Activity,
   "backup-center": DatabaseBackup,
-};
-
-const PREMIUM_TITLE_KEYS: Record<string, string> = {
-  branding: "nav.branding",
-  "custom-domains": "nav.customDomains",
-  "client-templates": "nav.clientTemplates",
-  store: "nav.store",
-  "monitoring-pro": "nav.monitoringPro",
-  "backup-center": "nav.backupCenter",
 };
 
 export function MobileNav() {
@@ -114,10 +114,7 @@ export function MobileNav() {
           : []),
         ...(admin?.role === "SUPER_ADMIN"
           ? dynamicMenus.map((m) => ({
-              title:
-                m.moduleId && PREMIUM_TITLE_KEYS[m.moduleId]
-                  ? t(PREMIUM_TITLE_KEYS[m.moduleId])
-                  : m.title,
+              title: m.title,
               href: m.href,
               icon: m.icon,
               moduleId: m.moduleId as string | undefined,
@@ -133,7 +130,7 @@ export function MobileNav() {
             return m.kind === "BUSINESS";
           })
           .map((m) => ({
-            title: PREMIUM_TITLE_KEYS[m.id] ? t(PREMIUM_TITLE_KEYS[m.id]) : m.name,
+            title: m.name,
             href: m.frontendPath,
             icon: PREMIUM_MENU_ICONS[m.id] || Diamond,
             moduleId: m.id as string | undefined,
@@ -154,7 +151,7 @@ export function MobileNav() {
           type="button"
           onClick={() => setIsOpen(true)}
           className="relative rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900"
-          aria-label={t("nav.openMenu")}
+          aria-label={t("nav.menu")}
         >
           <Menu size={24} />
           {storeHasNewOrders ? (
@@ -172,7 +169,7 @@ export function MobileNav() {
                 type="button"
                 onClick={() => setIsOpen(false)}
                 className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900"
-                aria-label={t("nav.closeMenu")}
+                aria-label={t("common.close")}
               >
                 <X size={20} />
               </button>
@@ -180,8 +177,9 @@ export function MobileNav() {
 
             <div className="flex-1 overflow-y-auto py-4">
               <nav className="space-y-1 px-3">
-                {coreItems.map(({ href, labelKey, icon: Icon }) => {
+                {coreItems.map(({ href, icon: Icon }) => {
                   const active = pathname.startsWith(href);
+                  const label = t(NAV_LABEL_KEYS[href] ?? href);
                   return (
                     <Link
                       key={href}
@@ -195,7 +193,7 @@ export function MobileNav() {
                       )}
                     >
                       <Icon size={18} />
-                      {t(labelKey)}
+                      {label}
                     </Link>
                   );
                 })}
@@ -203,7 +201,7 @@ export function MobileNav() {
 
               {premiumMenus.length > 0 ? (
                 <>
-                  <div className="px-5 pt-4 pb-1 text-[10px] font-semibold tracking-wider text-emerald-600/80 uppercase dark:text-emerald-400/80">
+                  <div className="px-5 pb-1 pt-4 text-[10px] font-semibold uppercase tracking-wider text-emerald-600/80 dark:text-emerald-400/80">
                     {t("app.premium")}
                   </div>
                   <nav className="space-y-1 px-3 pb-2">
@@ -241,11 +239,18 @@ export function MobileNav() {
             </div>
 
             <div className="mt-auto border-t border-zinc-200 p-3 dark:border-zinc-800">
-              <div className="mb-3 space-y-2 px-2">
+              <div className="mb-3 px-2">
                 <div className="text-sm font-medium text-zinc-700 dark:text-zinc-200">
                   {admin?.username}
                 </div>
+                <div className="text-xs text-zinc-500">
+                  {admin?.role === "SUPER_ADMIN" ? t("nav.superAdmin") : t("nav.reseller")}
+                </div>
+              </div>
+              <div className="mb-3 px-2">
                 <LocaleSwitcher className="w-full justify-stretch [&>button]:flex-1" />
+              </div>
+              <div className="mb-4 flex items-center justify-between px-2">
                 <ThemeToggle />
               </div>
               <button

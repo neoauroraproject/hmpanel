@@ -96,7 +96,7 @@ export default function TrafficPage() {
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <Card>
                 <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
-                  <ArrowUpRight size={16} className="text-emerald-500" /> Total Credits
+                  <ArrowUpRight size={16} className="text-emerald-500" /> {t("traffic.totalCredits")}
                 </div>
                 <div className="mt-2 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
                   {formatBytes(ledger.data.totals.credit)}
@@ -104,7 +104,7 @@ export default function TrafficPage() {
               </Card>
               <Card>
                 <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
-                  <ArrowDownRight size={16} className="text-amber-500" /> Total Debits
+                  <ArrowDownRight size={16} className="text-amber-500" /> {t("traffic.totalDebits")}
                 </div>
                 <div className="mt-2 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
                   {formatBytes(ledger.data.totals.debit)}
@@ -112,7 +112,7 @@ export default function TrafficPage() {
               </Card>
               <Card>
                 <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
-                  <Activity size={16} className="text-blue-500" /> Net Volume
+                  <Activity size={16} className="text-blue-500" /> {t("traffic.netVolume")}
                 </div>
                 <div className="mt-2 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
                   {formatBytes(BigInt(ledger.data.totals.credit) - BigInt(ledger.data.totals.debit))}
@@ -126,7 +126,7 @@ export default function TrafficPage() {
               <Search className="absolute start-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
               <input
                 type="text"
-                placeholder="Search description or client..."
+                placeholder={t("traffic.searchPlaceholder")}
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 className="w-full ps-9 pe-4 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 outline-none focus:border-blue-500 dark:focus:border-blue-500"
@@ -142,10 +142,10 @@ export default function TrafficPage() {
                 }}
                 className="w-full sm:w-auto rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-sm text-zinc-700 dark:text-zinc-200 outline-none focus:border-blue-500"
               >
-                <option value="">All Types</option>
-                <option value="CREDIT">Credits Only</option>
-                <option value="DEBIT">Debits Only</option>
-                <option value="USAGE_CHARGE">Usage Charges</option>
+                <option value="">{t("traffic.allTypes")}</option>
+                <option value="CREDIT">{t("traffic.creditsOnly")}</option>
+                <option value="DEBIT">{t("traffic.debitsOnly")}</option>
+                <option value="USAGE_CHARGE">{t("traffic.usageCharges")}</option>
               </select>
             </div>
           </div>
@@ -153,19 +153,19 @@ export default function TrafficPage() {
           {ledger.isLoading ? (
             <Spinner />
           ) : ledger.error ? (
-            <ErrorBox message="Failed to load ledger" />
+            <ErrorBox message={t("traffic.loadFailed")} />
           ) : (
             <Card className="overflow-hidden p-0 bg-transparent md:bg-zinc-50 dark:bg-zinc-950 border-0 md:border md:border-zinc-200 dark:border-zinc-800">
               <div className="min-w-0">
                 <table className="w-full text-sm block md:table">
                   <thead className="hidden md:table-header-group">
                     <tr className="border-b border-zinc-200 dark:border-zinc-800 text-start text-xs uppercase tracking-wide text-zinc-500">
-                      <th className="px-4 py-3 font-medium">Type</th>
-                      <th className="px-4 py-3 font-medium">Amount</th>
-                      <th className="px-4 py-3 font-medium">Balance</th>
-                      <th className="px-4 py-3 font-medium">Description</th>
-                      <th className="px-4 py-3 font-medium">Client</th>
-                      <th className="px-4 py-3 font-medium">Date</th>
+                      <th className="px-4 py-3 font-medium">{t("traffic.colType")}</th>
+                      <th className="px-4 py-3 font-medium">{t("traffic.colAmount")}</th>
+                      <th className="px-4 py-3 font-medium">{t("traffic.colBalance")}</th>
+                      <th className="px-4 py-3 font-medium">{t("traffic.colDescription")}</th>
+                      <th className="px-4 py-3 font-medium">{t("traffic.colClient")}</th>
+                      <th className="px-4 py-3 font-medium">{t("traffic.colDate")}</th>
                     </tr>
                   </thead>
                   <tbody className="block md:table-row-group space-y-3 md:space-y-0">
@@ -185,7 +185,7 @@ export default function TrafficPage() {
                             </div>
                           </td>
                           <td className="block md:table-cell px-4 py-2 md:py-3">
-                            <div className="md:hidden text-[10px] uppercase text-zinc-500 font-semibold mb-1 tracking-wider">Amount</div>
+                            <div className="md:hidden text-[10px] uppercase text-zinc-500 font-semibold mb-1 tracking-wider">{t("traffic.colAmount")}</div>
                             <span
                               className={`flex items-center gap-1 font-medium ${credit ? "text-emerald-500 dark:text-emerald-400" : "text-amber-500 dark:text-amber-400"}`}
                             >
@@ -194,7 +194,7 @@ export default function TrafficPage() {
                             </span>
                           </td>
                           <td className="block md:table-cell px-4 py-2 md:py-3 text-zinc-500 dark:text-zinc-400 text-xs">
-                            <div className="md:hidden text-[10px] uppercase text-zinc-500 font-semibold mb-1 tracking-wider">Balance</div>
+                            <div className="md:hidden text-[10px] uppercase text-zinc-500 font-semibold mb-1 tracking-wider">{t("traffic.colBalance")}</div>
                             {tx.balanceBefore != null && tx.balanceAfter != null ? (
                               <div className="flex flex-col">
                                 <span className="text-zinc-400">{formatBytes(tx.balanceBefore)} &rarr;</span>
@@ -205,11 +205,11 @@ export default function TrafficPage() {
                             )}
                           </td>
                           <td className="block md:table-cell px-4 py-2 md:py-3 text-zinc-700 dark:text-zinc-300">
-                            <div className="md:hidden text-[10px] uppercase text-zinc-500 font-semibold mb-1 tracking-wider">Description</div>
+                            <div className="md:hidden text-[10px] uppercase text-zinc-500 font-semibold mb-1 tracking-wider">{t("traffic.colDescription")}</div>
                             {tx.description}
                           </td>
                           <td className="block md:table-cell px-4 py-2 md:py-3 text-zinc-500 dark:text-zinc-400">
-                            <div className="md:hidden text-[10px] uppercase text-zinc-500 font-semibold mb-1 tracking-wider">Client</div>
+                            <div className="md:hidden text-[10px] uppercase text-zinc-500 font-semibold mb-1 tracking-wider">{t("traffic.colClient")}</div>
                             {tx.client?.email ?? "—"}
                           </td>
                           <td className="hidden md:table-cell px-4 py-3 text-zinc-500 dark:text-zinc-400">
@@ -221,7 +221,7 @@ export default function TrafficPage() {
                     {(ledger.data?.data.length ?? 0) === 0 && (
                       <tr className="block md:table-row">
                         <td colSpan={6} className="block md:table-cell px-4 py-10 text-center text-zinc-500">
-                          No transactions found matching your criteria.
+                          {t("traffic.noTransactions")}
                         </td>
                       </tr>
                     )}
@@ -234,11 +234,11 @@ export default function TrafficPage() {
                 <div className="flex items-center justify-between border-t border-zinc-200 dark:border-zinc-800 px-4 py-3 sm:px-6">
                   <div className="hidden sm:block">
                     <p className="text-sm text-zinc-700 dark:text-zinc-300">
-                      Showing <span className="font-medium">{(page - 1) * 15 + 1}</span> to{" "}
-                      <span className="font-medium">
-                        {Math.min(page * 15, ledger.data.total)}
-                      </span>{" "}
-                      of <span className="font-medium">{ledger.data.total}</span> results
+                      {t("common.paginationResults", {
+                        from: (page - 1) * 15 + 1,
+                        to: Math.min(page * 15, ledger.data.total),
+                        total: ledger.data.total,
+                      })}
                     </p>
                   </div>
                   <div className="flex flex-1 justify-between sm:justify-end gap-2">
@@ -248,7 +248,7 @@ export default function TrafficPage() {
                       className="relative inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100 ring-1 ring-inset ring-zinc-300 dark:ring-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 disabled:opacity-50"
                     >
                       <ChevronLeft size={16} />
-                      <span className="sr-only">Previous</span>
+                      <span className="sr-only">{t("common.srPrevious")}</span>
                     </button>
                     <button
                       onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
@@ -256,7 +256,7 @@ export default function TrafficPage() {
                       className="relative inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100 ring-1 ring-inset ring-zinc-300 dark:ring-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 disabled:opacity-50"
                     >
                       <ChevronRight size={16} />
-                      <span className="sr-only">Next</span>
+                      <span className="sr-only">{t("common.srNext")}</span>
                     </button>
                   </div>
                 </div>

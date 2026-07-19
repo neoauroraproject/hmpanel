@@ -50,6 +50,13 @@ interface PanelRow {
   status: string;
 }
 
+function adminStatusLabel(status: string, t: (key: string, params?: Record<string, string | number>) => string) {
+  if (status === "active") return t("admins.statusActive");
+  if (status === "suspended") return t("admins.statusSuspended");
+  if (status === "disabled") return t("admins.statusDisabled");
+  return status;
+}
+
 export default function AdminsPage() {
   const t = useT();
   const qc = useQueryClient();
@@ -62,8 +69,8 @@ export default function AdminsPage() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
   useEffect(() => {
-    const t = setTimeout(() => setDebouncedSearch(search), 300);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(timer);
   }, [search]);
 
   const { data, isLoading, error } = useQuery({
@@ -86,10 +93,10 @@ export default function AdminsPage() {
       return (await api.patch(`/admins/${id}`, payload)).data;
     },
     onSuccess: () => {
-      toast("Admin action successful");
+      toast(t("admins.actionSuccess"));
       qc.invalidateQueries({ queryKey: ["admins"] });
     },
-    onError: () => toast("Action failed", "error"),
+    onError: () => toast(t("admins.actionFailed"), "error"),
   });
 
   const handleQuickAction = (admin: Admin, type: 'traffic' | 'expiry' | 'clients', amount: number) => {
@@ -118,7 +125,7 @@ export default function AdminsPage() {
   };
 
   if (isLoading) return <Spinner />;
-  if (error) return <ErrorBox message="Failed to load admins" />;
+  if (error) return <ErrorBox message={t("admins.loadFailed")} />;
 
   const admins = data?.data ?? [];
 
@@ -169,7 +176,7 @@ export default function AdminsPage() {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search admins..."
+            placeholder={t("admins.searchPlaceholder")}
             className="w-full bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-lg ps-9 pe-4 py-2 text-sm text-zinc-800 dark:text-zinc-100 focus:outline-none focus:border-blue-500"
           />
         </div>
@@ -179,12 +186,12 @@ export default function AdminsPage() {
         <table className="w-full text-sm block md:table">
           <thead className="hidden md:table-header-group">
             <tr className="border-b border-zinc-200 dark:border-zinc-800 text-start text-xs uppercase tracking-wide text-zinc-500 bg-white dark:bg-zinc-900/50">
-              <th className="px-4 py-3 font-medium">Admin</th>
-              <th className="px-4 py-3 font-medium">Status</th>
-              <th className="px-4 py-3 font-medium">Traffic (Left / Total)</th>
-              <th className="px-4 py-3 font-medium">Clients (Left / Total)</th>
-              <th className="px-4 py-3 font-medium">Expiry</th>
-              <th className="px-4 py-3 font-medium text-end">Actions</th>
+              <th className="px-4 py-3 font-medium">{t("admins.colAdmin")}</th>
+              <th className="px-4 py-3 font-medium">{t("common.status")}</th>
+              <th className="px-4 py-3 font-medium">{t("admins.colTraffic")}</th>
+              <th className="px-4 py-3 font-medium">{t("admins.colClients")}</th>
+              <th className="px-4 py-3 font-medium">{t("admins.colExpiry")}</th>
+              <th className="px-4 py-3 font-medium text-end">{t("common.actions")}</th>
             </tr>
           </thead>
           <tbody className="block md:table-row-group space-y-3 md:space-y-0 md:divide-y md:divide-zinc-800/50">
@@ -207,69 +214,69 @@ export default function AdminsPage() {
                       <div className="font-semibold text-zinc-800 dark:text-zinc-100 flex items-center gap-2">
                         {a.username}
                       </div>
-                      <div className="text-xs text-zinc-500">{a.role === "SUPER_ADMIN" ? "Super Admin" : "Reseller"}</div>
+                      <div className="text-xs text-zinc-500">{a.role === "SUPER_ADMIN" ? t("nav.superAdmin") : t("nav.reseller")}</div>
                     </div>
                     <div className="md:hidden">
                       <Badge tone={a.status === "active" ? "green" : a.status === "suspended" ? "amber" : "red"}>
-                        {a.status}
+                        {adminStatusLabel(a.status, t)}
                       </Badge>
                     </div>
                   </div>
                 </td>
                 <td className="hidden md:table-cell px-4 py-3">
                   <Badge tone={a.status === "active" ? "green" : a.status === "suspended" ? "amber" : "red"}>
-                    {a.status}
+                    {adminStatusLabel(a.status, t)}
                   </Badge>
                 </td>
                 <td className="block md:table-cell px-4 py-2 md:py-3 border-t border-zinc-200 dark:border-zinc-800/50 md:border-0 mt-2 md:mt-0">
-                  <div className="md:hidden text-[10px] uppercase text-zinc-500 font-semibold mb-1 tracking-wider">Traffic Status</div>
+                  <div className="md:hidden text-[10px] uppercase text-zinc-500 font-semibold mb-1 tracking-wider">{t("admins.trafficStatus")}</div>
                   {a.role === "SUPER_ADMIN" ? <span className="text-zinc-600">—</span> : a.unlimitedTraffic ? (
                     <div className="text-xs">
-                      <div className="font-medium text-emerald-400">Unlimited Traffic</div>
-                      <div className="text-zinc-500 mt-0.5">No traffic limits</div>
+                      <div className="font-medium text-emerald-400">{t("admins.unlimitedTrafficLabel")}</div>
+                      <div className="text-zinc-500 mt-0.5">{t("admins.noTrafficLimits")}</div>
                     </div>
                   ) : (
                     <div className="text-xs">
                       {a.balance === 0 && a.trafficMode !== 'USAGE' ? (
                         <>
-                          <div className="font-medium text-blue-400">Unlimited</div>
-                          <div className="text-zinc-500 mt-0.5">Used: {formatBytes(a.usedTraffic || 0)}</div>
+                          <div className="font-medium text-blue-400">{t("common.unlimited")}</div>
+                          <div className="text-zinc-500 mt-0.5">{t("admins.usedTraffic", { amount: formatBytes(a.usedTraffic || 0) })}</div>
                         </>
                       ) : (
                         <>
                           <div className="font-medium text-blue-400">
-                            {a.balance === 0 ? <span className="text-red-400">Exhausted</span> : `${formatBytes(a.balance)} left`}
+                            {a.balance === 0 ? <span className="text-red-400">{t("admins.exhausted")}</span> : t("admins.leftTraffic", { amount: formatBytes(a.balance) })}
                           </div>
-                          <div className="text-zinc-500">out of {formatBytes(a.totalAssigned || 0)}</div>
-                          <div className="text-zinc-500 mt-0.5">Used: {formatBytes(a.usedTraffic || 0)}</div>
+                          <div className="text-zinc-500">{t("admins.outOfTraffic", { total: formatBytes(a.totalAssigned || 0) })}</div>
+                          <div className="text-zinc-500 mt-0.5">{t("admins.usedTraffic", { amount: formatBytes(a.usedTraffic || 0) })}</div>
                         </>
                       )}
                     </div>
                   )}
                 </td>
                 <td className="block md:table-cell px-4 py-2 md:py-3 text-zinc-600 dark:text-zinc-300">
-                  <div className="md:hidden text-[10px] uppercase text-zinc-500 font-semibold mb-1 tracking-wider">Clients Limit</div>
+                  <div className="md:hidden text-[10px] uppercase text-zinc-500 font-semibold mb-1 tracking-wider">{t("admins.clientsLimit")}</div>
                   {a.role === "SUPER_ADMIN" ? <span className="text-zinc-600">—</span> : (
                     <div className="text-xs">
                       <div className="font-medium text-purple-400">
-                        {a.maxClients === 0 ? "Unlimited" : `${Math.max(0, a.maxClients - (a._count?.clients ?? 0))} left`}
+                        {a.maxClients === 0 ? t("common.unlimited") : t("admins.leftCount", { count: Math.max(0, a.maxClients - (a._count?.clients ?? 0)) })}
                       </div>
-                      <div className="text-zinc-500">out of {a.maxClients === 0 ? "∞" : a.maxClients}</div>
+                      <div className="text-zinc-500">{t("admins.outOfTraffic", { total: a.maxClients === 0 ? "∞" : a.maxClients })}</div>
                     </div>
                   )}
                 </td>
                 <td className="block md:table-cell px-4 py-2 md:py-3 text-zinc-600 dark:text-zinc-300">
-                  <div className="md:hidden text-[10px] uppercase text-zinc-500 font-semibold mb-1 tracking-wider">Expiry</div>
+                  <div className="md:hidden text-[10px] uppercase text-zinc-500 font-semibold mb-1 tracking-wider">{t("admins.colExpiry")}</div>
                   {a.role === "SUPER_ADMIN" ? <span className="text-zinc-600">—</span> : (
                     <div className="text-xs">
                       <div className={`font-medium ${a.expiryTime === 0 ? 'text-emerald-400' : a.expiryTime > Date.now() ? 'text-emerald-400' : 'text-red-400'}`}>
                         {a.expiryTime === 0 
-                          ? "Never" 
+                          ? t("common.never") 
                           : a.expiryTime > Date.now() 
-                            ? `${Math.ceil((a.expiryTime - Date.now()) / (1000 * 60 * 60 * 24))} Days Remaining` 
-                            : `Expired ${Math.floor((Date.now() - a.expiryTime) / (1000 * 60 * 60 * 24))} days ago`}
+                            ? t("admins.daysRemaining", { count: Math.ceil((a.expiryTime - Date.now()) / (1000 * 60 * 60 * 24)) }) 
+                            : t("admins.expiredDaysAgo", { count: Math.floor((Date.now() - a.expiryTime) / (1000 * 60 * 60 * 24)) })}
                       </div>
-                      <div className="text-zinc-500">{a.expiryTime === 0 ? "Unlimited" : formatDate(new Date(a.expiryTime).toISOString())}</div>
+                      <div className="text-zinc-500">{a.expiryTime === 0 ? t("common.unlimited") : formatDate(new Date(a.expiryTime).toISOString())}</div>
                     </div>
                   )}
                 </td>
@@ -282,7 +289,7 @@ export default function AdminsPage() {
                         whileTap={{ scale: 0.95 }} 
                         onClick={() => toggleStatus(a)} 
                         className={`p-2 rounded-lg transition-colors ${a.status === 'active' ? 'text-emerald-400 hover:bg-emerald-400/10' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}
-                        title={a.status === 'active' ? "Disable Admin" : "Enable Admin"}
+                        title={a.status === 'active' ? t("admins.disableAdmin") : t("admins.enableAdmin")}
                       >
                         <Power size={16} />
                       </motion.button>
@@ -293,7 +300,7 @@ export default function AdminsPage() {
                       whileTap={{ scale: 0.95 }}
                       onClick={() => setEditAdmin(a)}
                       className="p-2 text-amber-400 hover:bg-amber-400/10 rounded-lg transition-colors"
-                      title="Edit Admin"
+                      title={t("admins.editAdminTitle")}
                     >
                       <Edit2 size={16} />
                     </motion.button>
@@ -303,12 +310,12 @@ export default function AdminsPage() {
                       whileTap={{ scale: 0.95 }}
                       disabled={(a._count?.clients ?? 0) > 0}
                       onClick={() => {
-                        if (confirm(`Delete admin ${a.username}?`)) {
+                        if (confirm(t("admins.deleteConfirm", { username: a.username }))) {
                           quickAction.mutate({ id: a.id, payload: { delete: true } }); 
                         }
                       }}
                       className={`p-2 rounded-lg transition-colors ${(a._count?.clients ?? 0) > 0 ? "text-zinc-600 cursor-not-allowed" : "text-red-400 hover:bg-red-400/10"}`}
-                      title={(a._count?.clients ?? 0) > 0 ? "Cannot delete admin with active clients" : "Delete Admin"}
+                      title={(a._count?.clients ?? 0) > 0 ? t("admins.cannotDeleteWithClients") : t("admins.deleteAdmin")}
                     >
                       <Trash2 size={16} />
                     </motion.button>
@@ -319,7 +326,7 @@ export default function AdminsPage() {
             );
             })}
             {admins.length === 0 && (
-              <tr><td colSpan={7} className="px-4 py-10 text-center text-zinc-500">No admins found.</td></tr>
+              <tr><td colSpan={7} className="px-4 py-10 text-center text-zinc-500">{t("admins.noAdmins")}</td></tr>
             )}
           </tbody>
         </table>
@@ -351,6 +358,7 @@ export default function AdminsPage() {
 }
 
 function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+  const t = useT();
   const toast = useToast((s) => s.push);
   const [openSection, setOpenSection] = useState("basic");
   const [showPassword, setShowPassword] = useState(false);
@@ -413,17 +421,17 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
       return (await api.post("/admins", payload)).data;
     },
     onSuccess: () => {
-      toast("Admin created successfully");
+      toast(t("admins.adminCreated"));
       onSaved();
     },
-    onError: () => toast("Failed to create admin", "error"),
+    onError: () => toast(t("admins.createFailed"), "error"),
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.username || !form.password) return toast("Username and Password are required", "error");
-    if (form.password.length < 8) return toast("Password must be at least 8 characters", "error");
-    if (!form.selectedPanel) return toast("Panel selection is required", "error");
+    if (!form.username || !form.password) return toast(t("admins.usernamePasswordRequired"), "error");
+    if (form.password.length < 8) return toast(t("admins.passwordMinLength"), "error");
+    if (!form.selectedPanel) return toast(t("admins.panelRequired"), "error");
     create.mutate();
   };
 
@@ -434,7 +442,7 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
       <motion.div {...MOTION_CONFIG.modalContent} className="w-full max-w-3xl max-h-[90vh] flex flex-col rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-2xl overflow-hidden">
         <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between bg-zinc-50 dark:bg-zinc-950/30">
           <h2 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50 flex items-center gap-2">
-            <Shield size={20} className="text-blue-500" /> Add Admin (Reseller)
+            <Shield size={20} className="text-blue-500" /> {t("admins.addResellerTitle")}
           </h2>
           <button onClick={onClose} className="text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"><X size={20} /></button>
         </div>
@@ -446,7 +454,7 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
             {/* Section A: Basic Info */}
             <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 overflow-hidden">
               <button type="button" onClick={() => setOpenSection(openSection === 'basic' ? '' : 'basic')} className="w-full flex items-center justify-between p-4 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800/80 transition-colors">
-                <div className="flex items-center gap-2 font-medium text-zinc-800 dark:text-zinc-100"><Shield size={16} className="text-blue-400"/> Basic Information</div>
+                <div className="flex items-center gap-2 font-medium text-zinc-800 dark:text-zinc-100"><Shield size={16} className="text-blue-400"/> {t("admins.basicInformation")}</div>
                 <ChevronDown size={18} className={`text-zinc-500 transition-transform ${openSection === 'basic' ? 'rotate-180' : ''}`} />
               </button>
               <AnimatePresence initial={false}>
@@ -454,23 +462,23 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
                   <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
                     <div className="p-4 grid grid-cols-2 gap-4 border-t border-zinc-200 dark:border-zinc-800">
                       <div>
-                        <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">Username</label>
+                        <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.username")}</label>
                         <input type="text" required value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
                       </div>
                       <div className="relative">
-                        <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">Password</label>
+                        <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.password")}</label>
                         <input type={showPassword ? "text" : "password"} required value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 ps-3 pe-10 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
                         <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute end-3 top-[28px] text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300">
                           {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                         </button>
                       </div>
                       <div className="col-span-2">
-                        <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">Select Panel Node</label>
+                        <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.selectPanelNode")}</label>
                         <select required value={form.selectedPanel} onChange={(e) => setForm({ ...form, selectedPanel: e.target.value, selectedInbounds: [] })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors">
-                          <option value="" disabled>Choose a panel...</option>
+                          <option value="" disabled>{t("common.choosePanel")}</option>
                           {(panels ?? []).map(p => (
                             <option key={p.id} value={p.id} disabled={p.status !== 'online'}>
-                              {p.name} ({p.status === 'online' ? `v${p.version}` : 'Offline'})
+                              {p.name} ({p.status === 'online' ? `v${p.version}` : t("common.offline")})
                             </option>
                           ))}
                         </select>
@@ -484,7 +492,7 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
             {/* Section B: Permissions */}
             <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 overflow-hidden">
               <button type="button" onClick={() => setOpenSection(openSection === 'permissions' ? '' : 'permissions')} className="w-full flex items-center justify-between p-4 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800/80 transition-colors">
-                <div className="flex items-center gap-2 font-medium text-zinc-800 dark:text-zinc-100"><Server size={16} className="text-purple-400"/> Permissions</div>
+                <div className="flex items-center gap-2 font-medium text-zinc-800 dark:text-zinc-100"><Server size={16} className="text-purple-400"/> {t("admins.permissions")}</div>
                 <ChevronDown size={18} className={`text-zinc-500 transition-transform ${openSection === 'permissions' ? 'rotate-180' : ''}`} />
               </button>
               <AnimatePresence initial={false}>
@@ -492,16 +500,16 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
                   <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
                     <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 space-y-4">
                       <div>
-                        <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">Max Clients <span className="text-zinc-500 text-xs">(0 = Unlimited)</span></label>
+                        <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.maxClients")} <span className="text-zinc-500 text-xs">{t("admins.maxClientsHint")}</span></label>
                         <input type="number" min={0} placeholder="0" value={form.maxClients} onChange={(e) => setForm({ ...form, maxClients: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
                       </div>
                         {form.selectedPanel ? (
                           <div className="mt-4">
                             <label className="mb-2 flex text-sm font-medium text-zinc-800 dark:text-zinc-100 justify-between">
-                              <span>Allowed Inbounds</span>
-                              <button type="button" onClick={() => setForm(f => ({...f, selectedInbounds: inbounds?.map((i: any) => i.id) || []}))} className="text-xs text-blue-500 hover:underline">Select All</button>
+                              <span>{t("admins.allowedInbounds")}</span>
+                              <button type="button" onClick={() => setForm(f => ({...f, selectedInbounds: inbounds?.map((i: any) => i.id) || []}))} className="text-xs text-blue-500 hover:underline">{t("common.selectAll")}</button>
                             </label>
-                            {inboundsLoading ? <div className="text-xs text-zinc-500">Loading inbounds...</div> : (
+                            {inboundsLoading ? <div className="text-xs text-zinc-500">{t("common.loadingInbounds")}</div> : (
                               <div className="space-y-2 max-h-48 overflow-y-auto pe-2 custom-scrollbar">
                                 {(inbounds ?? []).map((i: any) => (
                                   <label key={i.id} className="flex items-center gap-3 p-2 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer">
@@ -513,11 +521,11 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
                                       className="w-4 h-4 rounded text-blue-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-blue-500" />
                                     <div className="flex flex-col">
                                       <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{i.remark || i.tag}</span>
-                                      <span className="text-xs text-zinc-500">{i.protocol} - Port {i.port}</span>
+                                      <span className="text-xs text-zinc-500">{t("admins.inboundProtocolLine", { protocol: i.protocol, port: i.port })}</span>
                                     </div>
                                   </label>
                                 ))}
-                                {inbounds?.length === 0 && <div className="text-xs text-zinc-500 p-2 text-center border rounded-lg border-dashed border-zinc-300 dark:border-zinc-700">No inbounds found on this panel.</div>}
+                                {inbounds?.length === 0 && <div className="text-xs text-zinc-500 p-2 text-center border rounded-lg border-dashed border-zinc-300 dark:border-zinc-700">{t("common.noInboundsOnPanel")}</div>}
                               </div>
                             )}
                           </div>
@@ -525,8 +533,8 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
                           <div className="mt-4 p-3 rounded-lg border border-amber-500/20 bg-amber-500/10 text-sm text-amber-600 dark:text-amber-400 flex items-start gap-2">
                             <AlertCircle size={18} className="shrink-0 mt-0.5" />
                             <div>
-                              <strong>No Panel Selected</strong>
-                              <p className="text-xs opacity-80 mt-1">Please select a panel from the Basic Information section to view and select allowed inbounds.</p>
+                              <strong>{t("admins.noPanelSelected")}</strong>
+                              <p className="text-xs opacity-80 mt-1">{t("admins.noPanelSelectedHint")}</p>
                             </div>
                           </div>
                         )}
@@ -539,7 +547,7 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
             {/* Section C: Limits */}
             <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 overflow-hidden">
               <button type="button" onClick={() => setOpenSection(openSection === 'limits' ? '' : 'limits')} className="w-full flex items-center justify-between p-4 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800/80 transition-colors">
-                <div className="flex items-center gap-2 font-medium text-zinc-800 dark:text-zinc-100"><Database size={16} className="text-emerald-400"/> Limits</div>
+                <div className="flex items-center gap-2 font-medium text-zinc-800 dark:text-zinc-100"><Database size={16} className="text-emerald-400"/> {t("admins.limits")}</div>
                 <ChevronDown size={18} className={`text-zinc-500 transition-transform ${openSection === 'limits' ? 'rotate-180' : ''}`} />
               </button>
               <AnimatePresence initial={false}>
@@ -561,23 +569,23 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
                             className="w-4 h-4 rounded text-blue-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-blue-500"
                           />
                           <div className="flex flex-col">
-                            <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Unlimited Traffic</span>
-                            <span className="text-xs text-zinc-500">No traffic limits, refunds disabled. Can only create unlimited clients.</span>
+                            <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{t("admins.unlimitedTrafficLabel")}</span>
+                            <span className="text-xs text-zinc-500">{t("admins.unlimitedTrafficHint")}</span>
                           </div>
                         </label>
                       </div>
                       <div>
-                        <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">Traffic Limit (GB) <span className="text-zinc-500 text-xs">0 = None</span></label>
+                        <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.trafficLimitGb")} <span className="text-zinc-500 text-xs">{t("admins.noneValue")}</span></label>
                         {form.unlimitedTraffic ? (
                           <div className="w-full rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-500 font-semibold flex items-center gap-2">
-                            <Infinity size={18} /> Unlimited
+                            <Infinity size={18} /> {t("common.unlimited")}
                           </div>
                         ) : (
                           <input type="number" min={0} placeholder="0" value={form.balanceGb} onChange={(e) => setForm({ ...form, balanceGb: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
                         )}
                       </div>
                       <div>
-                        <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">Expiry Days <span className="text-zinc-500 text-xs">0 = Unlimited</span></label>
+                        <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.expiryDays")} <span className="text-zinc-500 text-xs">{t("admins.unlimitedHint")}</span></label>
                         <input type="number" min={0} placeholder="0" value={form.expiryDays} onChange={(e) => setForm({ ...form, expiryDays: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
                       </div>
                     </div>
@@ -589,36 +597,36 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
             {/* Section D: Status */}
             <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 overflow-hidden">
               <button type="button" onClick={() => setOpenSection(openSection === 'status' ? '' : 'status')} className="w-full flex items-center justify-between p-4 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800/80 transition-colors">
-                <div className="flex items-center gap-2 font-medium text-zinc-800 dark:text-zinc-100"><Activity size={16} className="text-rose-400"/> Status</div>
+                <div className="flex items-center gap-2 font-medium text-zinc-800 dark:text-zinc-100"><Activity size={16} className="text-rose-400"/> {t("admins.statusSection")}</div>
                 <ChevronDown size={18} className={`text-zinc-500 transition-transform ${openSection === 'status' ? 'rotate-180' : ''}`} />
               </button>
               <AnimatePresence initial={false}>
                 {openSection === 'status' && (
                   <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
                     <div className="p-4 border-t border-zinc-200 dark:border-zinc-800">
-                      <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">Account Status</label>
+                      <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.accountStatus")}</label>
                       <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors mb-4">
-                        <option value="active">Active</option>
-                        <option value="disabled">Disabled</option>
+                        <option value="active">{t("admins.statusActive")}</option>
+                        <option value="disabled">{t("admins.statusDisabled")}</option>
                       </select>
-                      <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">Traffic Accounting Mode</label>
+                      <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.trafficAccountingMode")}</label>
                       <select value={form.trafficMode} onChange={(e) => setForm({ ...form, trafficMode: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors">
-                        <option value="ALLOCATION">Allocation Based (Deduct on Creation)</option>
-                        <option value="USAGE">Usage Based (Charge Real Consumption)</option>
+                        <option value="ALLOCATION">{t("admins.allocationMode")}</option>
+                        <option value="USAGE">{t("admins.usageMode")}</option>
                       </select>
                       <div className="mt-4 space-y-3 pt-4 border-t border-zinc-200 dark:border-zinc-800">
                         <label className="flex items-center gap-3 p-2 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer">
                           <input type="checkbox" checked={form.refundOnDelete} onChange={(e) => setForm({ ...form, refundOnDelete: e.target.checked })} className="w-4 h-4 rounded text-blue-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-blue-500" />
                           <div className="flex flex-col">
-                            <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Refund on Delete</span>
-                            <span className="text-xs text-zinc-500">Refund traffic when client is deleted</span>
+                            <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{t("admins.refundOnDelete")}</span>
+                            <span className="text-xs text-zinc-500">{t("admins.refundOnDeleteHint")}</span>
                           </div>
                         </label>
                         <label className="flex items-center gap-3 p-2 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer">
                           <input type="checkbox" checked={form.refundOnEdit} onChange={(e) => setForm({ ...form, refundOnEdit: e.target.checked })} className="w-4 h-4 rounded text-blue-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-blue-500" />
                           <div className="flex flex-col">
-                            <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Refund on Edit</span>
-                            <span className="text-xs text-zinc-500">Refund traffic difference when client limits are reduced</span>
+                            <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{t("admins.refundOnEdit")}</span>
+                            <span className="text-xs text-zinc-500">{t("admins.refundOnEditHint")}</span>
                           </div>
                         </label>
                       </div>
@@ -632,9 +640,9 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
           </motion.div>
 
           <div className="flex justify-end gap-3 pt-6 mt-6 border-t border-zinc-200 dark:border-zinc-800">
-            <button type="button" onClick={onClose} className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">Cancel</button>
+            <button type="button" onClick={onClose} className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">{t("common.cancel")}</button>
             <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} type="submit" disabled={create.isPending || !form.selectedPanel} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50 transition-colors shadow-lg shadow-blue-900/20">
-              {create.isPending ? "Creating…" : "Create Admin"}
+              {create.isPending ? t("common.creating") : t("admins.createAdmin")}
             </motion.button>
           </div>
         </form>
@@ -645,6 +653,7 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
 }
 
 function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClose: () => void; onSaved: () => void }) {
+  const t = useT();
   const qc = useQueryClient();
   const toast = useToast((s) => s.push);
 
@@ -746,11 +755,11 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
       return res.data;
     },
     onSuccess: () => {
-      toast("Admin updated");
+      toast(t("admins.adminUpdated"));
       qc.invalidateQueries({ queryKey: ["admin", adminId] });
       onSaved();
     },
-    onError: () => toast("Failed to update admin", "error"),
+    onError: () => toast(t("admins.updateFailed"), "error"),
   });
 
   const fixMigration = useMutation({
@@ -760,11 +769,11 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
       })
     ).data,
     onSuccess: () => {
-      toast("Migration fix applied — balance synced from pool");
+      toast(t("admins.migrationFixApplied"));
       qc.invalidateQueries({ queryKey: ["admin", adminId] });
       qc.invalidateQueries({ queryKey: ["admins"] });
     },
-    onError: () => toast("Failed to apply migration fix", "error"),
+    onError: () => toast(t("admins.migrationFixFailed"), "error"),
   });
 
   if (isLoading) return (
@@ -778,15 +787,15 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
   if (!admin) return null;
 
   const remaining = admin.unlimitedTraffic
-    ? "Unlimited"
+    ? t("common.unlimited")
     : admin.balance > 0
       ? formatBytes(admin.balance)
-      : admin.trafficMode === 'USAGE' ? formatBytes(0) : "Exhausted";
+      : admin.trafficMode === 'USAGE' ? formatBytes(0) : t("admins.exhausted");
   const expiryDaysLabel = admin.expiryTime === 0
-    ? "Unlimited"
+    ? t("common.unlimited")
     : admin.expiryTime > Date.now()
-      ? `${Math.ceil((admin.expiryTime - Date.now()) / (1000 * 60 * 60 * 24))} days`
-      : `Expired ${Math.floor((Date.now() - admin.expiryTime) / (1000 * 60 * 60 * 24))} days ago`;
+      ? t("common.days", { count: Math.ceil((admin.expiryTime - Date.now()) / (1000 * 60 * 60 * 24)) })
+      : t("admins.expiredDaysAgo", { count: Math.floor((Date.now() - admin.expiryTime) / (1000 * 60 * 60 * 24)) });
   // Detect migrated admins: have no adminInbounds set
   const isMigrated = !admin.adminInbounds || admin.adminInbounds.length === 0;
 
@@ -797,7 +806,7 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
         <div className="w-full md:w-2/3 p-6 overflow-y-visible md:overflow-y-auto space-y-8 order-1 md:order-2">
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-semibold text-zinc-800 dark:text-zinc-100 flex items-center gap-2">
-              <Settings2 size={18} className="text-zinc-500 dark:text-zinc-400" /> Edit Admin
+              <Settings2 size={18} className="text-zinc-500 dark:text-zinc-400" /> {t("admins.editAdminHeading")}
             </h3>
             <button onClick={onClose} className="text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"><X size={20} /></button>
           </div>
@@ -806,7 +815,7 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
               {/* Section A: Limits & Status */}
               <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 overflow-hidden">
                 <button type="button" onClick={() => setOpenSection(openSection === 'limits' ? '' : 'limits')} className="w-full flex items-center justify-between p-4 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800/80 transition-colors">
-                  <div className="flex items-center gap-2 font-medium text-zinc-800 dark:text-zinc-100"><Database size={16} className="text-emerald-400"/> Limits & Status</div>
+                  <div className="flex items-center gap-2 font-medium text-zinc-800 dark:text-zinc-100"><Database size={16} className="text-emerald-400"/> {t("admins.limitsAndStatus")}</div>
                   <ChevronDown size={18} className={`text-zinc-500 transition-transform ${openSection === 'limits' ? 'rotate-180' : ''}`} />
                 </button>
                 <AnimatePresence initial={false}>
@@ -830,56 +839,56 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
                                 className="w-4 h-4 rounded text-blue-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-blue-500"
                               />
                               <div className="flex flex-col">
-                                <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Unlimited Traffic</span>
-                                <span className="text-xs text-zinc-500">Disables traffic limits and refunds. Can only create unlimited clients.</span>
+                                <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{t("admins.unlimitedTrafficLabel")}</span>
+                                <span className="text-xs text-zinc-500">{t("admins.unlimitedTrafficEditHint")}</span>
                               </div>
                             </label>
                           </div>
                           <div className="grid grid-cols-2 gap-4">
                             <div>
-                              <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">Set Available Traffic (GB)</label>
+                              <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.setAvailableTraffic")}</label>
                               {form.unlimitedTraffic ? (
                                 <div className="w-full rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-emerald-500 font-semibold flex items-center gap-2">
-                                  <Infinity size={18} /> Unlimited
+                                  <Infinity size={18} /> {t("common.unlimited")}
                                 </div>
                               ) : (
-                                <input type="number" placeholder="Leave empty for no change" value={form.balanceGb} onChange={(e) => setForm({ ...form, balanceGb: e.target.value, trafficDeltaGb: "" })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors placeholder:text-zinc-600" />
+                                <input type="number" placeholder={t("admins.leaveEmptyNoChange")} value={form.balanceGb} onChange={(e) => setForm({ ...form, balanceGb: e.target.value, trafficDeltaGb: "" })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors placeholder:text-zinc-600" />
                               )}
-                              {!form.unlimitedTraffic && <p className="text-[10px] text-zinc-500 mt-1">Sets absolute available traffic</p>}
+                              {!form.unlimitedTraffic && <p className="text-[10px] text-zinc-500 mt-1">{t("admins.setsAbsoluteTraffic")}</p>}
                             </div>
                             <div>
-                              <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">Adjust Traffic (+/- GB)</label>
+                              <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.adjustTraffic")}</label>
                               {form.unlimitedTraffic ? (
                                 <div className="w-full rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-emerald-500 font-semibold flex items-center gap-2">
-                                  <Infinity size={18} /> Unlimited
+                                  <Infinity size={18} /> {t("common.unlimited")}
                                 </div>
                               ) : (
                                 <>
-                                  <input type="number" placeholder="e.g. 50 or -25" value={form.trafficDeltaGb} onChange={(e) => setForm({ ...form, trafficDeltaGb: e.target.value, balanceGb: "" })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors placeholder:text-zinc-600" />
-                                  <p className="text-[10px] text-zinc-500 mt-1">Adds or subtracts from current available</p>
+                                  <input type="number" placeholder={t("admins.adjustTrafficPlaceholder")} value={form.trafficDeltaGb} onChange={(e) => setForm({ ...form, trafficDeltaGb: e.target.value, balanceGb: "" })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors placeholder:text-zinc-600" />
+                                  <p className="text-[10px] text-zinc-500 mt-1">{t("admins.adjustTrafficHint")}</p>
                                 </>
                               )}
                             </div>
                             <div className="col-span-2">
-                              <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">Add Expiry (Days)</label>
-                              <input type="number" placeholder="Leave empty for no change" value={form.expiryDays} onChange={(e) => setForm({ ...form, expiryDays: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors placeholder:text-zinc-600" />
+                              <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.addExpiryDays")}</label>
+                              <input type="number" placeholder={t("admins.leaveEmptyNoChange")} value={form.expiryDays} onChange={(e) => setForm({ ...form, expiryDays: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors placeholder:text-zinc-600" />
                             </div>
                           </div>
                           
                           {admin && !admin.unlimitedTraffic && !form.unlimitedTraffic && (
                             <div className="bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 mt-2">
-                              <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-3">Current Traffic</h3>
+                              <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-3">{t("admins.currentTraffic")}</h3>
                               <div className="grid grid-cols-3 gap-4">
                                 <div className="flex flex-col">
-                                  <span className="text-[10px] text-zinc-500 mb-0.5">Total Allocated</span>
+                                  <span className="text-[10px] text-zinc-500 mb-0.5">{t("admins.totalAllocated")}</span>
                                   <span className="text-sm font-medium text-emerald-400">{(admin.totalAssigned || 0) / (1024 * 1024 * 1024) > 0 ? ((admin.totalAssigned || 0) / (1024 * 1024 * 1024)).toFixed(2) : "0"} GB</span>
                                 </div>
                                 <div className="flex flex-col">
-                                  <span className="text-[10px] text-zinc-500 mb-0.5">Available</span>
+                                  <span className="text-[10px] text-zinc-500 mb-0.5">{t("admins.availableTraffic")}</span>
                                   <span className="text-sm font-medium text-blue-400">{admin.balance ? (admin.balance / (1024 * 1024 * 1024)).toFixed(2) : "0"} GB</span>
                                 </div>
                                 <div className="flex flex-col text-end">
-                                  <span className="text-[10px] text-zinc-500 mb-0.5">Used</span>
+                                  <span className="text-[10px] text-zinc-500 mb-0.5">{t("admins.usedTrafficLabel")}</span>
                                   <span className="text-sm font-medium text-amber-400">{admin.usedTraffic ? (admin.usedTraffic / (1024 * 1024 * 1024)).toFixed(2) : "0"} GB</span>
                                 </div>
                               </div>
@@ -887,32 +896,32 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
                           )}
                           
                           <div>
-                            <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">Status</label>
+                            <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("common.status")}</label>
                             <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors mb-4">
-                              <option value="active">Active</option>
-                              <option value="suspended">Suspended</option>
-                              <option value="disabled">Disabled</option>
+                              <option value="active">{t("admins.statusActive")}</option>
+                              <option value="suspended">{t("admins.statusSuspended")}</option>
+                              <option value="disabled">{t("admins.statusDisabled")}</option>
                             </select>
                             
-                            <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">Traffic Accounting Mode</label>
+                            <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.trafficAccountingMode")}</label>
                             <select value={form.trafficMode} onChange={(e) => setForm({ ...form, trafficMode: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors">
-                              <option value="ALLOCATION">Allocation Based (Deduct on Creation)</option>
-                              <option value="USAGE">Usage Based (Charge Real Consumption)</option>
+                              <option value="ALLOCATION">{t("admins.allocationMode")}</option>
+                              <option value="USAGE">{t("admins.usageMode")}</option>
                             </select>
                             
                             <div className="mt-4 space-y-3 pt-4 border-t border-zinc-200 dark:border-zinc-800">
                               <label className={`flex items-center gap-3 p-2 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer ${form.unlimitedTraffic ? 'opacity-50 pointer-events-none' : ''}`}>
                                 <input type="checkbox" checked={form.refundOnDelete} disabled={form.unlimitedTraffic} onChange={(e) => setForm({ ...form, refundOnDelete: e.target.checked })} className="w-4 h-4 rounded text-blue-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-blue-500" />
                                 <div className="flex flex-col">
-                                  <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Refund on Delete</span>
-                                  <span className="text-xs text-zinc-500">Refund traffic when client is deleted</span>
+                                  <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{t("admins.refundOnDelete")}</span>
+                                  <span className="text-xs text-zinc-500">{t("admins.refundOnDeleteHint")}</span>
                                 </div>
                               </label>
                               <label className={`flex items-center gap-3 p-2 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer ${form.unlimitedTraffic ? 'opacity-50 pointer-events-none' : ''}`}>
                                 <input type="checkbox" checked={form.refundOnEdit} disabled={form.unlimitedTraffic} onChange={(e) => setForm({ ...form, refundOnEdit: e.target.checked })} className="w-4 h-4 rounded text-blue-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-blue-500" />
                                 <div className="flex flex-col">
-                                  <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Refund on Edit</span>
-                                  <span className="text-xs text-zinc-500">Refund traffic difference when client limits are reduced</span>
+                                  <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{t("admins.refundOnEdit")}</span>
+                                  <span className="text-xs text-zinc-500">{t("admins.refundOnEditHint")}</span>
                                 </div>
                               </label>
                             </div>
@@ -927,7 +936,7 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
               {/* Section B: Basic Info */}
               <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 overflow-hidden">
                 <button type="button" onClick={() => setOpenSection(openSection === 'basic' ? '' : 'basic')} className="w-full flex items-center justify-between p-4 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800/80 transition-colors">
-                  <div className="flex items-center gap-2 font-medium text-zinc-800 dark:text-zinc-100"><Shield size={16} className="text-blue-400"/> Basic Information</div>
+                  <div className="flex items-center gap-2 font-medium text-zinc-800 dark:text-zinc-100"><Shield size={16} className="text-blue-400"/> {t("admins.basicInformation")}</div>
                   <ChevronDown size={18} className={`text-zinc-500 transition-transform ${openSection === 'basic' ? 'rotate-180' : ''}`} />
                 </button>
                 <AnimatePresence initial={false}>
@@ -935,28 +944,28 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
                     <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
                       <div className="p-4 grid grid-cols-2 gap-4 border-t border-zinc-200 dark:border-zinc-800">
                         <div>
-                          <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">Username</label>
+                          <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.username")}</label>
                           <input type="text" readOnly value={admin.username} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/30 px-3 py-2 text-sm text-zinc-500 outline-none opacity-60 cursor-not-allowed" />
                         </div>
                         <div className="relative">
-                          <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">Password</label>
-                          <input type={showPassword ? "text" : "password"} placeholder="Leave blank to keep unchanged" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 ps-3 pe-10 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
+                          <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.password")}</label>
+                          <input type={showPassword ? "text" : "password"} placeholder={t("admins.passwordKeepBlank")} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 ps-3 pe-10 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
                           <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute end-3 top-[28px] text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300">
                             {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                           </button>
                         </div>
                         <div className="col-span-2">
-                          <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">Active Panel Node</label>
+                          <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.activePanelNode")}</label>
                           {isMigrated && !form.selectedPanel && (
                             <div className="mb-2 text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg p-2">
-                              ⚠️ No panel assigned yet. Select a panel below to configure inbounds.
+                              ⚠️ {t("admins.noPanelAssigned")}
                             </div>
                           )}
                           <select value={form.selectedPanel} onChange={(e) => setForm({ ...form, selectedPanel: e.target.value, selectedInbounds: [] })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors">
-                            <option value="">Choose a panel...</option>
+                            <option value="">{t("common.choosePanel")}</option>
                             {(panels ?? []).map(p => (
                               <option key={p.id} value={p.id}>
-                                {p.name} ({p.status === 'online' ? `v${p.version}` : 'Offline'})
+                                {p.name} ({p.status === 'online' ? `v${p.version}` : t("common.offline")})
                               </option>
                             ))}
                           </select>
@@ -970,7 +979,7 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
               {/* Section B: Permissions */}
               <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 overflow-hidden">
                 <button type="button" onClick={() => setOpenSection(openSection === 'permissions' ? '' : 'permissions')} className="w-full flex items-center justify-between p-4 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800/80 transition-colors">
-                  <div className="flex items-center gap-2 font-medium text-zinc-800 dark:text-zinc-100"><Server size={16} className="text-purple-400"/> Permissions</div>
+                  <div className="flex items-center gap-2 font-medium text-zinc-800 dark:text-zinc-100"><Server size={16} className="text-purple-400"/> {t("admins.permissions")}</div>
                   <ChevronDown size={18} className={`text-zinc-500 transition-transform ${openSection === 'permissions' ? 'rotate-180' : ''}`} />
                 </button>
                 <AnimatePresence initial={false}>
@@ -978,16 +987,16 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
                     <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
                       <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 space-y-4">
                         <div>
-                          <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">Max Clients <span className="text-zinc-500 text-xs">(0 = Unlimited)</span></label>
+                          <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.maxClients")} <span className="text-zinc-500 text-xs">{t("admins.maxClientsHint")}</span></label>
                           <input type="number" min={0} value={form.maxClients} onChange={(e) => setForm({ ...form, maxClients: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
                         </div>
                           {form.selectedPanel ? (
                             <div className="mt-4">
                               <label className="mb-2 flex text-sm font-medium text-zinc-800 dark:text-zinc-100 justify-between">
-                                <span>Allowed Inbounds</span>
-                                <button type="button" onClick={() => setForm(f => ({...f, selectedInbounds: inbounds?.map((i: any) => i.id) || []}))} className="text-xs text-blue-500 hover:underline">Select All</button>
+                                <span>{t("admins.allowedInbounds")}</span>
+                                <button type="button" onClick={() => setForm(f => ({...f, selectedInbounds: inbounds?.map((i: any) => i.id) || []}))} className="text-xs text-blue-500 hover:underline">{t("common.selectAll")}</button>
                               </label>
-                              {inboundsLoading ? <div className="text-xs text-zinc-500">Loading inbounds...</div> : (
+                              {inboundsLoading ? <div className="text-xs text-zinc-500">{t("common.loadingInbounds")}</div> : (
                                 <div className="space-y-2 max-h-48 overflow-y-auto pe-2 custom-scrollbar">
                                   {(inbounds ?? []).map((i: any) => (
                                     <label key={i.id} className="flex items-center gap-3 p-2 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer">
@@ -999,11 +1008,11 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
                                         className="w-4 h-4 rounded text-blue-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-blue-500" />
                                       <div className="flex flex-col">
                                         <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{i.remark || i.tag}</span>
-                                        <span className="text-xs text-zinc-500">{i.protocol} - Port {i.port}</span>
+                                        <span className="text-xs text-zinc-500">{t("admins.inboundProtocolLine", { protocol: i.protocol, port: i.port })}</span>
                                       </div>
                                     </label>
                                   ))}
-                                  {inbounds?.length === 0 && <div className="text-xs text-zinc-500 p-2 text-center border rounded-lg border-dashed border-zinc-300 dark:border-zinc-700">No inbounds found on this panel.</div>}
+                                  {inbounds?.length === 0 && <div className="text-xs text-zinc-500 p-2 text-center border rounded-lg border-dashed border-zinc-300 dark:border-zinc-700">{t("common.noInboundsOnPanel")}</div>}
                                 </div>
                               )}
                             </div>
@@ -1011,8 +1020,8 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
                             <div className="mt-4 p-3 rounded-lg border border-amber-500/20 bg-amber-500/10 text-sm text-amber-600 dark:text-amber-400 flex items-start gap-2">
                               <AlertCircle size={18} className="shrink-0 mt-0.5" />
                               <div>
-                                <strong>No Panel Selected</strong>
-                                <p className="text-xs opacity-80 mt-1">Please select a panel from the Basic Information section to view and select allowed inbounds.</p>
+                                <strong>{t("admins.noPanelSelected")}</strong>
+                                <p className="text-xs opacity-80 mt-1">{t("admins.noPanelSelectedHint")}</p>
                               </div>
                             </div>
                           )}
@@ -1024,7 +1033,7 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
 
               <div className="flex justify-end pt-4">
                 <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => directEdit.mutate()} disabled={directEdit.isPending} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50 transition-colors shadow-lg shadow-blue-900/20">
-                  {directEdit.isPending ? "Saving..." : "Save Changes"}
+                  {directEdit.isPending ? t("common.saving") : t("common.saveChanges")}
                 </motion.button>
               </div>
           </div>
@@ -1035,33 +1044,33 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
           <div className="flex justify-between items-start mb-6">
             <div>
               <h2 className="text-xl font-bold text-zinc-800 dark:text-zinc-100">{admin.username}</h2>
-              <div className="text-sm text-zinc-500 mt-1">Status: {admin.status}</div>
+              <div className="text-sm text-zinc-500 mt-1">{t("common.status")}: {adminStatusLabel(admin.status, t)}</div>
             </div>
-            <Badge tone={admin.status === "active" ? "green" : "red"}>{admin.status}</Badge>
+            <Badge tone={admin.status === "active" ? "green" : "red"}>{adminStatusLabel(admin.status, t)}</Badge>
           </div>
 
           <div className="space-y-4 flex-1">
-            <SummaryStat icon={<Users size={16} />} label="Current Clients" value={`${admin._count?.clients ?? 0}`} />
+            <SummaryStat icon={<Users size={16} />} label={t("admins.currentClients")} value={`${admin._count?.clients ?? 0}`} />
             {!admin.unlimitedTraffic && (
               <>
-                <SummaryStat icon={<Activity size={16} />} label="Used Traffic" value={formatBytes(admin.usedTraffic || 0)} />
-                <SummaryStat icon={<Database size={16} />} label="Available Traffic" value={remaining} highlight={admin.balance === 0 && admin.trafficMode !== 'USAGE'} />
+                <SummaryStat icon={<Activity size={16} />} label={t("admins.usedTrafficLabel")} value={formatBytes(admin.usedTraffic || 0)} />
+                <SummaryStat icon={<Database size={16} />} label={t("admins.availableTraffic")} value={remaining} highlight={admin.balance === 0 && admin.trafficMode !== 'USAGE'} />
               </>
             )}
             {admin.unlimitedTraffic && (
-              <SummaryStat icon={<Infinity size={16} />} label="Traffic" value="Unlimited" />
+              <SummaryStat icon={<Infinity size={16} />} label={t("nav.traffic")} value={t("common.unlimited")} />
             )}
-            <SummaryStat icon={<Shield size={16} />} label="Assigned Inbounds" value={admin.adminInbounds?.length?.toString() ?? "0"} />
-            <SummaryStat icon={<Clock size={16} />} label="Days Remaining" value={expiryDaysLabel} highlight={admin.expiryTime > 0 && admin.expiryTime < Date.now()} />
+            <SummaryStat icon={<Shield size={16} />} label={t("admins.assignedInbounds")} value={admin.adminInbounds?.length?.toString() ?? "0"} />
+            <SummaryStat icon={<Clock size={16} />} label={t("admins.daysRemainingLabel")} value={expiryDaysLabel} highlight={admin.expiryTime > 0 && admin.expiryTime < Date.now()} />
             {isMigrated && (
               <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 p-3 text-xs text-amber-400">
-                ⚠️ This admin was migrated. Please set a Panel Node and Inbound to complete configuration.
+                ⚠️ {t("admins.migratedWarning")}
               </div>
             )}
           </div>
           
           <div className="mt-6 pt-6 border-t border-zinc-200 dark:border-zinc-800/50 space-y-3">
-            <div className="text-xs text-zinc-500">Created At: {formatDate(admin.createdAt)}</div>
+            <div className="text-xs text-zinc-500">{t("admins.createdAt", { date: formatDate(admin.createdAt) })}</div>
             {isMigrated && (
               <motion.button
                 whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
@@ -1069,7 +1078,7 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
                 disabled={fixMigration.isPending}
                 className="w-full rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 hover:bg-amber-500/20 px-3 py-2 text-xs font-medium transition-colors"
               >
-                {fixMigration.isPending ? "Fixing..." : "🔧 Fix Migration (Sync Balance)"}
+                {fixMigration.isPending ? t("admins.fixing") : `🔧 ${t("admins.fixMigration")}`}
               </motion.button>
             )}
           </div>

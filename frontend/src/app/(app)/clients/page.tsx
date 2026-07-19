@@ -24,6 +24,27 @@ import { PluginSlot } from "@/components/PluginSlot";
 
 const GB = 1024 ** 3;
 
+function bulkActionLabel(
+  t: (key: string, params?: Record<string, string | number>) => string,
+  action: string,
+): string {
+  const keys: Record<string, string> = {
+    enable: "clients.enable",
+    disable: "clients.disable",
+    delete: "common.delete",
+    cleanup: "common.delete",
+    resetUsage: "clients.resetUsage",
+    resetTraffic: "clients.resetTraffic",
+    addTraffic: "clients.addTraffic",
+    addDays: "clients.addDays",
+    assignGroup: "clients.assignGroup",
+    assignInbounds: "clients.assignInbounds",
+    exportSubs: "clients.exportSubs",
+  };
+  const key = keys[action];
+  return key ? t(key) : action;
+}
+
 interface InboundRow {
   id: string;
   tag: string;
@@ -42,13 +63,14 @@ interface PanelRow {
 }
 
 function CopyBtn({ text }: { text: string }) {
+  const t = useT();
   const [copied, setCopied] = useState(false);
   const toast = useToast((s) => s.push);
   const handleCopy = async () => {
     try {
       await copyToClipboard(text);
       setCopied(true);
-      toast("Copied to clipboard", "success");
+      toast(t("common.copiedToClipboard"), "success");
       setTimeout(() => setCopied(false), 2000);
     } catch {}
   };
@@ -59,7 +81,7 @@ function CopyBtn({ text }: { text: string }) {
         handleCopy();
       }}
       className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"
-      title="Copy to clipboard"
+      title={t("common.copyToClipboard")}
     >
       {copied ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
     </button>
@@ -67,6 +89,7 @@ function CopyBtn({ text }: { text: string }) {
 }
 
 function UsageBar({ up, down, total }: { up: string; down: string; total: string }) {
+  const t = useT();
   const used = Number(up) + Number(down);
   const cap = Number(total);
   const pct = cap > 0 ? Math.min(100, (used / cap) * 100) : 0;
@@ -74,7 +97,7 @@ function UsageBar({ up, down, total }: { up: string; down: string; total: string
     <div className="w-full max-w-[160px]">
       <div className="mb-1 flex justify-between text-[11px] text-zinc-500 dark:text-zinc-400">
         <span>{formatBytes(used)}</span>
-        <span>/ {cap > 0 ? formatBytes(cap) : "Unlimited"}</span>
+        <span>/ {cap > 0 ? formatBytes(cap) : t("common.unlimited")}</span>
       </div>
       <div className="h-1.5 w-full rounded-full bg-zinc-100 dark:bg-zinc-800 overflow-hidden">
         <div
@@ -241,7 +264,7 @@ export default function ClientsPage() {
     mutationFn: async (c: Client) =>
       api.patch(`/clients/${c.id}`, { enable: !c.enable }),
     onSuccess: () => {
-      toast("Client status updated");
+      toast(t("clients.statusUpdated"));
       setTimeout(() => {
         qc.invalidateQueries({ queryKey: ["clients"] });
         qc.invalidateQueries({ queryKey: ["reseller-overview"] });
@@ -255,7 +278,7 @@ export default function ClientsPage() {
           context.previous
         );
       }
-      toast("Action failed", "error");
+      toast(t("common.actionFailed"), "error");
     },
   });
 
@@ -276,7 +299,7 @@ export default function ClientsPage() {
           action: vars.action,
         });
       } else {
-        toast(`Bulk ${vars.action} completed. Affected: ${d.affected} client(s).`, "success");
+        toast(t("clients.bulkActionCompleted", { action: bulkActionLabel(t, vars.action), count: d.affected }), "success");
       }
       setSelectedClients({});
       setBulkValueModal(null);
@@ -289,7 +312,7 @@ export default function ClientsPage() {
       }, 1500);
     },
     onError: (err: any) => {
-      toast(err.response?.data?.message || "Bulk action failed", "error");
+      toast(err.response?.data?.message || t("clients.bulkActionFailed"), "error");
     },
   });
 
@@ -306,7 +329,7 @@ export default function ClientsPage() {
           action: vars.action,
         });
       } else {
-        toast(`Bulk ${vars.action} completed. Affected: ${d.affected} client(s).`, "success");
+        toast(t("clients.bulkActionCompleted", { action: bulkActionLabel(t, vars.action), count: d.affected }), "success");
       }
       setSelectedClients({});
       setTimeout(() => {
@@ -316,7 +339,7 @@ export default function ClientsPage() {
       }, 1500);
     },
     onError: (err: any) => {
-      toast(err.response?.data?.message || "Bulk action failed", "error");
+      toast(err.response?.data?.message || t("clients.bulkActionFailed"), "error");
     },
   });
 
@@ -334,15 +357,15 @@ export default function ClientsPage() {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      toast(`Exported ${data.count} subscription links`, "success");
+      toast(t("clients.exportedLinks", { count: data.count }), "success");
     },
     onError: (err: any) => {
-      toast(err.response?.data?.message || "Export failed", "error");
+      toast(err.response?.data?.message || t("clients.exportFailed"), "error");
     },
   });
 
   if (isLoading) return <Spinner />;
-  if (error) return <ErrorBox message="Failed to load clients" />;
+  if (error) return <ErrorBox message={t("clients.loadFailed")} />;
 
   const clients = data?.data ?? [];
   const totalItems = data?.total ?? 0;
@@ -392,16 +415,16 @@ export default function ClientsPage() {
     } else if (action === "addTraffic") {
       setBulkValueModal({
         action,
-        title: "Bulk Add Traffic",
-        label: "Traffic amount to add (GB)",
-        placeholder: "e.g. 10",
+        title: t("clients.bulkAddTrafficTitle"),
+        label: t("clients.bulkAddTrafficLabel"),
+        placeholder: t("clients.bulkAddTrafficPlaceholder"),
       });
     } else if (action === "addDays") {
       setBulkValueModal({
         action,
-        title: "Bulk Add Days",
-        label: "Number of days to extend",
-        placeholder: "e.g. 30",
+        title: t("clients.bulkAddDaysTitle"),
+        label: t("clients.bulkAddDaysLabel"),
+        placeholder: t("clients.bulkAddDaysPlaceholder"),
       });
     } else if (action === "assignGroup") {
       setGroupAssignModalOpen(true);
@@ -414,7 +437,7 @@ export default function ClientsPage() {
     if (!bulkValueModal) return;
     const numVal = Number(bulkInputValue);
     if (isNaN(numVal) || numVal <= 0) {
-      toast("Please enter a valid positive number", "error");
+      toast(t("clients.invalidPositiveNumber"), "error");
       return;
     }
     bulkMutation.mutate({
@@ -447,6 +470,19 @@ export default function ClientsPage() {
   // Traffic Impact calculations for Delete Confirmation
   const totalAllocatedTraffic = Object.values(selectedClients).reduce((sum, c) => sum + Number(c.total), 0);
 
+  const filterChips = useMemo(
+    () => [
+      { id: "", label: t("clients.filterAll") },
+      { id: "online", label: t("clients.filterOnline") },
+      { id: "traffic-low", label: t("clients.filterLowTraffic") },
+      { id: "expiring-soon", label: t("clients.filterExpiringSoon") },
+      { id: "disabled", label: t("clients.filterDisabled") },
+      { id: "expired", label: t("clients.filterExpired") },
+      { id: "depleted", label: t("clients.filterNoTraffic") },
+    ],
+    [t],
+  );
+
   return (
     <div className="space-y-6 pb-20">
       <PageHeader
@@ -475,16 +511,16 @@ export default function ClientsPage() {
       {overviewData && overviewData.admin && (
         <div className="mb-4">
           <div className="md:hidden flex justify-between items-center mb-2">
-            <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">Overview Statistics</span>
+            <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">{t("clients.overviewStats")}</span>
           </div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 pb-4 border-b border-zinc-200 dark:border-zinc-800 transition-all block md:grid">
             <div className="bg-white dark:bg-zinc-900/50 rounded-2xl p-4 border border-zinc-200 dark:border-zinc-800 flex items-center gap-4">
               <div className="p-3 bg-emerald-500/10 text-emerald-400 rounded-xl"><Activity size={20} /></div>
               <div>
-                <div className="text-xs text-zinc-500 font-medium">Online Clients</div>
+                <div className="text-xs text-zinc-500 font-medium">{t("clients.onlineClients")}</div>
                 <div className="text-xl font-bold text-zinc-900 dark:text-white">
                   {isSuperAdmin 
-                    ? <>{onlineClients.length} <span className="text-sm font-normal text-zinc-500">(Global)</span></>
+                    ? <>{onlineClients.length} <span className="text-sm font-normal text-zinc-500">({t("clients.global")})</span></>
                     : onlineClients.filter(c => c && overviewData?.clientEmails?.map((e: string) => e.trim().toLowerCase()).includes(c.toLowerCase())).length} 
                 </div>
               </div>
@@ -492,7 +528,7 @@ export default function ClientsPage() {
             <div className="bg-white dark:bg-zinc-900/50 rounded-2xl p-4 border border-zinc-200 dark:border-zinc-800 flex items-center gap-4">
               <div className="p-3 bg-blue-500/10 text-blue-400 rounded-xl"><HardDrive size={20} /></div>
               <div>
-                <div className="text-xs text-zinc-500 font-medium">Available Traffic</div>
+                <div className="text-xs text-zinc-500 font-medium">{t("clients.availableTraffic")}</div>
                 <div className="text-xl font-bold text-zinc-900 dark:text-white">
                   {overviewData.admin.unlimitedTraffic
                     ? <span className="text-emerald-500">∞</span>
@@ -500,15 +536,15 @@ export default function ClientsPage() {
                 </div>
                 <div className="text-[10px] text-zinc-400 mt-1">
                   {overviewData.admin.unlimitedTraffic
-                    ? "Unlimited"
-                    : `out of ${formatBytes(overviewData.admin.allTimeTraffic || 0)}`}
+                    ? t("common.unlimited")
+                    : t("clients.outOf", { total: formatBytes(overviewData.admin.allTimeTraffic || 0) })}
                 </div>
               </div>
             </div>
             <div className="bg-white dark:bg-zinc-900/50 rounded-2xl p-4 border border-zinc-200 dark:border-zinc-800 flex items-center gap-4">
               <div className="p-3 bg-purple-500/10 text-purple-400 rounded-xl"><Users size={20} /></div>
               <div>
-                <div className="text-xs text-zinc-500 font-medium">Client Capacity</div>
+                <div className="text-xs text-zinc-500 font-medium">{t("clients.clientCapacity")}</div>
                 <div className="text-xl font-bold text-zinc-900 dark:text-white">
                   {overviewData.admin.clientCapacity === 0 
                     ? `${overviewData.clientEmails?.length ?? 0} / ∞` 
@@ -519,13 +555,13 @@ export default function ClientsPage() {
             <div className="bg-white dark:bg-zinc-900/50 rounded-2xl p-4 border border-zinc-200 dark:border-zinc-800 flex items-center gap-4">
               <div className="p-3 bg-amber-500/10 text-amber-400 rounded-xl"><CalendarDays size={20} /></div>
               <div>
-                <div className="text-xs text-zinc-500 font-medium">Subscription Expiry</div>
+                <div className="text-xs text-zinc-500 font-medium">{t("clients.subscriptionExpiry")}</div>
                 <div className="text-xl font-bold text-zinc-900 dark:text-white">
                   {overviewData.admin.expiryTime > 0 
                     ? (overviewData.admin.expiryTime < Date.now() 
-                        ? "Expired" 
-                        : `${Math.ceil((overviewData.admin.expiryTime - Date.now()) / (1000 * 60 * 60 * 24))} Days`) 
-                    : "Never"}
+                        ? t("common.expired")
+                        : t("clients.daysRemaining", { count: Math.ceil((overviewData.admin.expiryTime - Date.now()) / (1000 * 60 * 60 * 24)) })) 
+                    : t("common.never")}
                 </div>
               </div>
             </div>
@@ -548,7 +584,7 @@ export default function ClientsPage() {
               setSearch(e.target.value);
               setPage(1);
             }}
-            placeholder="Search clients by name, email or UUID..."
+            placeholder={t("clients.searchExtendedPlaceholder")}
             className="w-full bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-lg ps-9 pe-4 py-2 text-base md:text-sm text-zinc-800 dark:text-zinc-100 focus:outline-none focus:border-blue-500"
           />
         </div>
@@ -557,17 +593,9 @@ export default function ClientsPage() {
       <div>
         <div className="flex overflow-x-auto hide-scrollbar items-center gap-2 pb-2 -mx-4 px-4 sm:mx-0 sm:px-0">
           <div className="hidden sm:flex items-center gap-2 me-2 text-sm text-zinc-500 dark:text-zinc-400 font-medium">
-            <Filter size={16} /> Filters:
+            <Filter size={16} /> {t("clients.filtersLabel")}
           </div>
-          {[
-            { id: '', label: 'All' },
-            { id: 'online', label: 'Online' },
-            { id: 'traffic-low', label: 'Low Traffic' },
-            { id: 'expiring-soon', label: 'Expiring Soon' },
-            { id: 'disabled', label: 'Disabled' },
-            { id: 'expired', label: 'Expired' },
-            { id: 'depleted', label: 'No Traffic' }
-          ].map(f => (
+          {filterChips.map(f => (
             <button
               key={f.id}
               onClick={() => { setStatus(f.id); setPage(1); }}
@@ -587,7 +615,7 @@ export default function ClientsPage() {
           onClick={() => setFilterDrawerOpen(!filterDrawerOpen)}
           className="flex items-center gap-2 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-4 py-2 text-sm font-medium text-zinc-600 dark:text-zinc-300"
         >
-          <Filter size={16} /> {filterDrawerOpen ? "Hide Filters" : "Advanced Filters"}
+          <Filter size={16} /> {filterDrawerOpen ? t("clients.hideFilters") : t("clients.advancedFilters")}
         </button>
       </div>
 
@@ -605,8 +633,8 @@ export default function ClientsPage() {
                 }}
                 className="w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-sm text-zinc-600 dark:text-zinc-300 outline-none focus:border-blue-500"
               >
-                <option value="">All Admins</option>
-                <option value="orphaned">No Admin (Direct Panels)</option>
+                <option value="">{t("clients.allAdmins")}</option>
+                <option value="orphaned">{t("clients.noAdminDirect")}</option>
                 {adminsList?.data.map((a) => (
                   <option key={a.id} value={a.id}>
                     {a.username}
@@ -627,7 +655,7 @@ export default function ClientsPage() {
                 }}
                 className="w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-sm text-zinc-600 dark:text-zinc-300 outline-none focus:border-blue-500"
               >
-                <option value="">All Panels</option>
+                <option value="">{t("clients.allPanels")}</option>
                 {panelsList?.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
@@ -647,7 +675,7 @@ export default function ClientsPage() {
               }}
               className="w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-sm text-zinc-600 dark:text-zinc-300 outline-none focus:border-blue-500"
             >
-              <option value="">All Inbounds</option>
+              <option value="">{t("clients.allInbounds")}</option>
               {inboundsList?.map((i) => (
                 <option key={i.id} value={i.id}>
                   {i.remark ? `${i.remark} — ` : ''}{i.tag} ({i.protocol})
@@ -664,7 +692,7 @@ export default function ClientsPage() {
               onClick={resetFilters}
               className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
             >
-              Reset Filters
+              {t("clients.resetFilters")}
             </button>
           </div>
         )}
@@ -688,11 +716,11 @@ export default function ClientsPage() {
                     )}
                   </button>
                 </th>
-                <th className="px-4 py-3 font-medium">Username</th>
-                <th className="px-4 py-3 font-medium">Owner</th>
-                <th className="px-4 py-3 font-medium">Traffic</th>
-                <th className="px-4 py-3 font-medium">Expiry</th>
-                <th className="px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3 font-medium">{t("clients.colUsername")}</th>
+                <th className="px-4 py-3 font-medium">{t("clients.colOwner")}</th>
+                <th className="px-4 py-3 font-medium">{t("clients.colTraffic")}</th>
+                <th className="px-4 py-3 font-medium">{t("clients.colExpiry")}</th>
+                <th className="px-4 py-3 font-medium">{t("clients.colStatus")}</th>
                 <th className="px-4 py-3 font-medium"></th>
               </tr>
             </thead>
@@ -747,13 +775,13 @@ export default function ClientsPage() {
                             <div className="font-semibold text-zinc-800 dark:text-zinc-100">{c.remark || c.email}</div>
                             {isOnline && (
                               <div className="flex items-center gap-1">
-                                <span className="relative flex h-2.5 w-2.5" title="Online">
+                                <span className="relative flex h-2.5 w-2.5" title={t("common.online")}>
                                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                                   <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]"></span>
                                 </span>
                                 {ipCount > 0 && (
-                                  <span className="text-[10px] font-bold text-emerald-500 bg-emerald-500/10 px-1.5 py-0.5 rounded-md" title={`${ipCount} IP(s) connected`}>
-                                    {ipCount} IP
+                                  <span className="text-[10px] font-bold text-emerald-500 bg-emerald-500/10 px-1.5 py-0.5 rounded-md" title={t("clients.ipsConnected", { count: ipCount })}>
+                                    {t("clients.ipShort", { count: ipCount })}
                                   </span>
                                 )}
                               </div>
@@ -768,11 +796,11 @@ export default function ClientsPage() {
                               const outOfTraffic = cap > 0 && used >= cap;
                               const expired = isExpired(c.expiryTime);
                               
-                              if (!c.enable) return <Badge tone="gray">Disabled</Badge>;
-                              if (outOfTraffic) return <Badge tone="red">No Traffic</Badge>;
-                              if (expired) return <Badge tone="red">Expired</Badge>;
-                              if (isOnline) return <Badge tone="green">Online</Badge>;
-                              return <Badge tone="blue">Active</Badge>;
+                              if (!c.enable) return <Badge tone="gray">{t("common.disabled")}</Badge>;
+                              if (outOfTraffic) return <Badge tone="red">{t("clients.noTraffic")}</Badge>;
+                              if (expired) return <Badge tone="red">{t("common.expired")}</Badge>;
+                              if (isOnline) return <Badge tone="green">{t("common.online")}</Badge>;
+                              return <Badge tone="blue">{t("common.active")}</Badge>;
                             })()}
                           </div>
                         </div>
@@ -781,7 +809,7 @@ export default function ClientsPage() {
                         )}
                       </td>
                       <td className="hidden md:table-cell px-4 py-3 text-zinc-600 dark:text-zinc-300">
-                        {c.admin?.username || <Badge tone="gray">Direct Panel</Badge>}
+                        {c.admin?.username || <Badge tone="gray">{t("clients.directPanel")}</Badge>}
                       </td>
                       <td className="hidden md:table-cell px-4 py-3">
                         <UsageBar up={c.up} down={c.down} total={c.total} />
@@ -806,35 +834,35 @@ export default function ClientsPage() {
                           
                           if (!c.enable) {
                             return (
-                              <div className="flex items-center gap-2" title="Disabled">
+                              <div className="flex items-center gap-2" title={t("common.disabled")}>
                                 <span className="h-2 w-2 rounded-full bg-zinc-500"></span>
-                                <span className="text-xs text-zinc-500 dark:text-zinc-400">Disabled</span>
+                                <span className="text-xs text-zinc-500 dark:text-zinc-400">{t("common.disabled")}</span>
                               </div>
                             );
                           }
                           if (outOfTraffic || expired) {
                             return (
-                              <div className="flex items-center gap-2" title={outOfTraffic ? "Out of Traffic" : "Expired"}>
+                              <div className="flex items-center gap-2" title={outOfTraffic ? t("clients.outOfTraffic") : t("common.expired")}>
                                 <span className="h-2 w-2 rounded-full bg-red-500"></span>
-                                <span className="text-xs text-red-400">{outOfTraffic ? "No Traffic" : "Expired"}</span>
+                                <span className="text-xs text-red-400">{outOfTraffic ? t("clients.noTraffic") : t("common.expired")}</span>
                               </div>
                             );
                           }
                           if (isOnline) {
                             return (
-                              <div className="flex items-center gap-2" title="Online">
+                              <div className="flex items-center gap-2" title={t("common.online")}>
                                 <span className="relative flex h-2 w-2">
                                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                                   <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                                 </span>
-                                <span className="text-xs text-emerald-400">Online {ipCount > 0 ? `(${ipCount})` : ''}</span>
+                                <span className="text-xs text-emerald-400">{t("common.online")}{ipCount > 0 ? ` (${ipCount})` : ""}</span>
                               </div>
                             );
                           }
                           return (
-                            <div className="flex items-center gap-2" title="Active">
+                            <div className="flex items-center gap-2" title={t("common.active")}>
                               <span className="h-2 w-2 rounded-full bg-blue-500"></span>
-                              <span className="text-xs text-blue-400">Active</span>
+                              <span className="text-xs text-blue-400">{t("common.active")}</span>
                             </div>
                           );
                         })()}
@@ -848,7 +876,7 @@ export default function ClientsPage() {
                               toggle.mutate(c);
                             }}
                             className={`p-2 rounded-lg transition-colors ${c.enable ? "text-emerald-400 hover:bg-emerald-400/10" : "text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"}`}
-                            title={c.enable ? "Disable Client" : "Enable Client"}
+                            title={c.enable ? t("clients.disableClient") : t("clients.enableClient")}
                           >
                             <Power size={16} />
                           </motion.button>
@@ -860,7 +888,7 @@ export default function ClientsPage() {
                               setConnectionDetailsClient(c);
                             }}
                             className="p-2 text-blue-400 hover:bg-blue-400/10 rounded-lg transition-colors"
-                            title="Subscription & QR"
+                            title={t("clients.subscriptionQr")}
                           >
                             <QrCode size={16} />
                           </motion.button>
@@ -872,7 +900,7 @@ export default function ClientsPage() {
                               setEditing(c);
                             }}
                             className="p-2 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors"
-                            title="Edit Client"
+                            title={t("clients.editClient")}
                           >
                             <Edit2 size={16} />
                           </motion.button>
@@ -881,12 +909,12 @@ export default function ClientsPage() {
                             whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
                             onClick={(e) => {
                               e.stopPropagation();
-                              if (confirm(`Delete client ${c.email}?`)) {
+                              if (confirm(t("clients.deleteClientConfirm", { email: c.email }))) {
                                 bulkMutation.mutate({ ids: [c.id], action: 'delete' });
                               }
                             }}
                             className="p-2 text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
-                            title="Delete Client"
+                            title={t("clients.deleteClient")}
                           >
                             <Trash2 size={16} />
                           </motion.button>
@@ -911,7 +939,7 @@ export default function ClientsPage() {
                                 }}
                                 className={`flex flex-1 justify-center items-center gap-2 px-3 py-2 rounded-lg transition-colors border ${c.enable ? "text-emerald-500 border-emerald-500/20 bg-emerald-500/10" : "text-zinc-500 border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800"}`}
                               >
-                                <Power size={16} /> <span className="text-sm font-medium">{c.enable ? "Disable" : "Enable"}</span>
+                                <Power size={16} /> <span className="text-sm font-medium">{c.enable ? t("clients.disable") : t("clients.enable")}</span>
                               </motion.button>
                               
                               <motion.button
@@ -922,7 +950,7 @@ export default function ClientsPage() {
                                 }}
                                 className="flex flex-1 justify-center items-center gap-2 px-3 py-2 text-blue-500 border border-blue-500/20 bg-blue-500/10 rounded-lg transition-colors"
                               >
-                                <QrCode size={16} /> <span className="text-sm font-medium">QR / Link</span>
+                                <QrCode size={16} /> <span className="text-sm font-medium">{t("clients.qrLink")}</span>
                               </motion.button>
                               
                               <motion.button
@@ -933,20 +961,20 @@ export default function ClientsPage() {
                                 }}
                                 className="flex flex-1 justify-center items-center gap-2 px-3 py-2 text-zinc-600 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 rounded-lg transition-colors"
                               >
-                                <Edit2 size={16} /> <span className="text-sm font-medium">Edit</span>
+                                <Edit2 size={16} /> <span className="text-sm font-medium">{t("common.edit")}</span>
                               </motion.button>
 
                               <motion.button
                                 whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  if (confirm(`Delete client ${c.email}?`)) {
+                                  if (confirm(t("clients.deleteClientConfirm", { email: c.email }))) {
                                     bulkMutation.mutate({ ids: [c.id], action: 'delete' });
                                   }
                                 }}
                                 className="flex flex-1 justify-center items-center gap-2 px-3 py-2 text-red-500 border border-red-500/20 bg-red-500/10 rounded-lg transition-colors"
                               >
-                                <Trash2 size={16} /> <span className="text-sm font-medium">Delete</span>
+                                <Trash2 size={16} /> <span className="text-sm font-medium">{t("common.delete")}</span>
                               </motion.button>
                             </div>
                           </motion.td>
@@ -964,15 +992,15 @@ export default function ClientsPage() {
                         <td colSpan={7} className="px-4 py-4">
                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
                             <div className="space-y-1">
-                              <div className="text-xs text-zinc-500 uppercase font-semibold">Connection Details</div>
+                              <div className="text-xs text-zinc-500 uppercase font-semibold">{t("clients.connectionDetails")}</div>
                               <div className="flex justify-between items-center bg-zinc-50 dark:bg-zinc-950 p-2 rounded border border-zinc-200 dark:border-zinc-800">
-                                <span className="text-zinc-600 dark:text-zinc-400">Panel</span>
-                                <span className="font-medium text-zinc-900 dark:text-zinc-100">{c.inbound?.panel?.name || 'Unknown'}</span>
+                                <span className="text-zinc-600 dark:text-zinc-400">{t("clients.panelLabel")}</span>
+                                <span className="font-medium text-zinc-900 dark:text-zinc-100">{c.inbound?.panel?.name || t("common.unknown")}</span>
                               </div>
                               <div className="flex justify-between items-center bg-zinc-50 dark:bg-zinc-950 p-2 rounded border border-zinc-200 dark:border-zinc-800">
-                                <span className="text-zinc-600 dark:text-zinc-400">Inbound</span>
+                                <span className="text-zinc-600 dark:text-zinc-400">{t("clients.inboundLabel")}</span>
                                 <span className="font-medium text-zinc-900 dark:text-zinc-100 flex items-center gap-1">
-                                  {c.inbounds?.length ? c.inbounds.slice(0, 2).map((i: any) => i.tag).join(', ') : (c.inbound?.tag || 'Unknown')}
+                                  {c.inbounds?.length ? c.inbounds.slice(0, 2).map((i: any) => i.tag).join(', ') : (c.inbound?.tag || t("common.unknown"))}
                                   {c.inbounds && c.inbounds.length > 2 && (
                                     <span className="text-[10px] bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400 px-1.5 py-0.5 rounded font-bold">
                                       +{c.inbounds.length - 2}
@@ -981,11 +1009,11 @@ export default function ClientsPage() {
                                 </span>
                               </div>
                               <div className="flex justify-between items-center bg-zinc-50 dark:bg-zinc-950 p-2 rounded border border-zinc-200 dark:border-zinc-800">
-                                <span className="text-zinc-600 dark:text-zinc-400">Protocol</span>
+                                <span className="text-zinc-600 dark:text-zinc-400">{t("clients.protocolLabel")}</span>
                                 <span className="font-medium text-zinc-900 dark:text-zinc-100 uppercase flex items-center gap-1">
                                   {c.inbounds?.length 
                                     ? c.inbounds.slice(0, 2).map((i: any) => `${i.protocol}${i.streamSettings?.network ? ` ${i.streamSettings.network}` : ''}`).join(', ')
-                                    : `${c.inbound?.protocol || 'Unknown'}${(c.inbound as any)?.streamSettings?.network ? ` ${(c.inbound as any).streamSettings.network}` : ''}`
+                                    : `${c.inbound?.protocol || t("common.unknown")}${(c.inbound as any)?.streamSettings?.network ? ` ${(c.inbound as any).streamSettings.network}` : ''}`
                                   }
                                   {c.inbounds && c.inbounds.length > 2 && (
                                     <span className="text-[10px] bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400 px-1.5 py-0.5 rounded font-bold">
@@ -996,21 +1024,21 @@ export default function ClientsPage() {
                               </div>
                             </div>
                             <div className="space-y-1">
-                              <div className="text-xs text-zinc-500 uppercase font-semibold">Traffic Specifics</div>
+                              <div className="text-xs text-zinc-500 uppercase font-semibold">{t("clients.trafficSpecifics")}</div>
                               <div className="flex justify-between items-center bg-zinc-50 dark:bg-zinc-950 p-2 rounded border border-zinc-200 dark:border-zinc-800">
-                                <span className="text-zinc-600 dark:text-zinc-400">Upload</span>
+                                <span className="text-zinc-600 dark:text-zinc-400">{t("clients.uploadLabel")}</span>
                                 <span className="font-medium text-emerald-500">{formatBytes(c.up)}</span>
                               </div>
                               <div className="flex justify-between items-center bg-zinc-50 dark:bg-zinc-950 p-2 rounded border border-zinc-200 dark:border-zinc-800">
-                                <span className="text-zinc-600 dark:text-zinc-400">Download</span>
+                                <span className="text-zinc-600 dark:text-zinc-400">{t("clients.downloadLabel")}</span>
                                 <span className="font-medium text-blue-500">{formatBytes(c.down)}</span>
                               </div>
                             </div>
                             <div className="space-y-1 lg:col-span-2">
-                               <div className="text-xs text-zinc-500 uppercase font-semibold">Subscription Links</div>
+                               <div className="text-xs text-zinc-500 uppercase font-semibold">{t("clients.subscriptionLinks")}</div>
                                
                                <div className="flex items-center gap-2 bg-zinc-50 dark:bg-zinc-950 p-2 rounded border border-zinc-200 dark:border-zinc-800">
-                                 <span className="text-zinc-500 w-[70px] whitespace-nowrap">System Sub:</span>
+                                 <span className="text-zinc-500 w-[70px] whitespace-nowrap">{t("clients.systemSub")}</span>
                                  <a 
                                    href={typeof window !== 'undefined' ? `${window.location.origin}/s/${c.subId || c.email}` : '#'} 
                                    target="_blank" 
@@ -1023,7 +1051,7 @@ export default function ClientsPage() {
                                
                                {c.inbound?.panel?.url && (
                                  <div className="flex items-center gap-2 bg-zinc-50 dark:bg-zinc-950 p-2 rounded border border-zinc-200 dark:border-zinc-800">
-                                   <span className="text-zinc-500 w-[70px] whitespace-nowrap">Panel Sub:</span>
+                                   <span className="text-zinc-500 w-[70px] whitespace-nowrap">{t("clients.panelSub")}</span>
                                    {(() => {
                                      const sub = encodeURIComponent(c.subId || c.email || '');
                                      let link = '';
@@ -1063,7 +1091,7 @@ export default function ClientsPage() {
               {clients.length === 0 && (
                 <tr>
                   <td colSpan={7} className="px-4 py-12 text-center text-zinc-500">
-                    No clients found matching the selected filters.
+                    {t("clients.noClientsFound")}
                   </td>
                 </tr>
               )}
@@ -1075,7 +1103,7 @@ export default function ClientsPage() {
         {totalItems > 0 && (
           <div className="flex flex-col items-center justify-between gap-4 border-t border-zinc-200 dark:border-zinc-800 p-4 sm:flex-row bg-white dark:bg-zinc-900/10">
             <div className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
-              <span>Show</span>
+              <span>{t("common.show")}</span>
               <select
                 value={limit}
                 onChange={(e) => {
@@ -1089,9 +1117,13 @@ export default function ClientsPage() {
                 <option value={50}>50</option>
                 <option value={100}>100</option>
               </select>
-              <span>per page</span>
+              <span>{t("common.perPage")}</span>
               <span className="ms-4">
-                {(page - 1) * limit + 1} - {Math.min(page * limit, totalItems)} of {totalItems} clients
+                {t("common.paginationClients", {
+                  from: (page - 1) * limit + 1,
+                  to: Math.min(page * limit, totalItems),
+                  total: totalItems,
+                })}
               </span>
             </div>
 
@@ -1101,17 +1133,17 @@ export default function ClientsPage() {
                 disabled={page === 1}
                 className="rounded-lg border border-zinc-200 dark:border-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40"
               >
-                Previous
+                {t("common.previous")}
               </button>
               <span className="text-xs text-zinc-500 dark:text-zinc-400 px-2">
-                Page {page} of {totalPages || 1}
+                {t("common.pageOf", { page, total: totalPages || 1 })}
               </span>
               <button
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={page >= totalPages}
                 className="rounded-lg border border-zinc-200 dark:border-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40"
               >
-                Next
+                {t("common.next")}
               </button>
             </div>
           </div>
@@ -1131,7 +1163,7 @@ export default function ClientsPage() {
               <button 
                 onClick={() => setSelectedClients({})}
                 className="flex items-center gap-3 shrink-0 group cursor-pointer hover:opacity-80 transition-opacity outline-none"
-                title="Clear selection"
+                title={t("clients.clearSelection")}
               >
                 <div className="relative flex h-5 w-5 items-center justify-center rounded-full bg-blue-500 overflow-hidden">
                   <span className="absolute inset-0 flex items-center justify-center transition-transform duration-200 group-hover:-translate-y-full text-[11px] font-bold text-white">
@@ -1141,7 +1173,7 @@ export default function ClientsPage() {
                     <X size={12} strokeWidth={3} />
                   </span>
                 </div>
-                <span className="text-xs font-medium text-zinc-600 dark:text-zinc-300">Selected</span>
+                <span className="text-xs font-medium text-zinc-600 dark:text-zinc-300">{t("clients.selected")}</span>
               </button>
 
               {/* Desktop Actions */}
@@ -1150,60 +1182,60 @@ export default function ClientsPage() {
                   onClick={() => handleBulkAction("addTraffic")}
                   className="rounded-full border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 whitespace-nowrap"
                 >
-                  Add Traffic
+                  {t("clients.addTraffic")}
                 </button>
                 <button
                   onClick={() => handleBulkAction("resetTraffic")}
                   className="rounded-full border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 whitespace-nowrap"
                 >
-                  Reset Traffic
+                  {t("clients.resetTraffic")}
                 </button>
                 <button
                   onClick={() => handleBulkAction("addDays")}
                   className="rounded-full border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 whitespace-nowrap"
                 >
-                  Add Days
+                  {t("clients.addDays")}
                 </button>
                 <button
                   onClick={() => handleBulkAction("enable")}
                   className="rounded-full border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 whitespace-nowrap"
                 >
-                  Enable
+                  {t("clients.enable")}
                 </button>
                 <button
                   onClick={() => handleBulkAction("disable")}
                   className="rounded-full border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 whitespace-nowrap"
                 >
-                  Disable
+                  {t("clients.disable")}
                 </button>
                 <button
                   onClick={() => handleBulkAction("assignInbounds")}
                   className="rounded-full border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 whitespace-nowrap"
                 >
-                  Inbounds
+                  {t("clients.inbounds")}
                 </button>
                 <button
                   onClick={() => handleBulkAction("assignGroup")}
                   className="rounded-full border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 whitespace-nowrap"
                 >
-                  Group
+                  {t("clients.group")}
                 </button>
                 <button
                   onClick={() => handleBulkAction("exportSubs")}
                   className="rounded-full border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 whitespace-nowrap"
                 >
-                  Export Subs
+                  {t("clients.exportSubs")}
                 </button>
                 <button
                   onClick={() => handleBulkAction("delete")}
                   className="rounded-full border border-red-900/35 bg-red-950/20 px-3 py-1.5 text-xs font-medium text-red-400 hover:bg-red-950/40 whitespace-nowrap"
                 >
-                  Delete
+                  {t("common.delete")}
                 </button>
                 <button
                   onClick={() => setSelectedClients({})}
                   className="text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 p-1 ms-2 shrink-0"
-                  title="Cancel Selection"
+                  title={t("clients.cancelSelection")}
                 >
                   <X size={15} />
                 </button>
@@ -1214,63 +1246,63 @@ export default function ClientsPage() {
                 <button
                   onClick={() => handleBulkAction("addTraffic")}
                   className="rounded-full p-2 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-                  title="Add Traffic"
+                  title={t("clients.addTraffic")}
                 >
                   <Database size={18} />
                 </button>
                 <button
                   onClick={() => handleBulkAction("resetTraffic")}
                   className="rounded-full p-2 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-                  title="Reset Traffic"
+                  title={t("clients.resetTraffic")}
                 >
                   <RotateCcw size={18} />
                 </button>
                 <button
                   onClick={() => handleBulkAction("addDays")}
                   className="rounded-full p-2 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-                  title="Add Days"
+                  title={t("clients.addDays")}
                 >
                   <CalendarDays size={18} />
                 </button>
                 <button
                   onClick={() => handleBulkAction("enable")}
                   className="rounded-full p-2 text-emerald-500 hover:bg-emerald-500/10 transition-colors"
-                  title="Enable"
+                  title={t("clients.enable")}
                 >
                   <Play size={18} />
                 </button>
                 <button
                   onClick={() => handleBulkAction("disable")}
                   className="rounded-full p-2 text-amber-500 hover:bg-amber-500/10 transition-colors"
-                  title="Disable"
+                  title={t("clients.disable")}
                 >
                   <Square size={18} />
                 </button>
                 <button
                   onClick={() => handleBulkAction("assignInbounds")}
                   className="rounded-full p-2 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-                  title="Assign Inbounds"
+                  title={t("clients.assignInbounds")}
                 >
                   <Network size={18} />
                 </button>
                 <button
                   onClick={() => handleBulkAction("assignGroup")}
                   className="rounded-full p-2 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-                  title="Assign Group"
+                  title={t("clients.assignGroup")}
                 >
                   <FolderPlus size={18} />
                 </button>
                 <button
                   onClick={() => handleBulkAction("exportSubs")}
                   className="rounded-full p-2 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-                  title="Export Subscription Links"
+                  title={t("clients.exportSubscriptionLinks")}
                 >
                   <Download size={18} />
                 </button>
                 <button
                   onClick={() => handleBulkAction("delete")}
                   className="rounded-full p-2 text-red-500 hover:bg-red-500/10 transition-colors"
-                  title="Delete"
+                  title={t("common.delete")}
                 >
                   <Trash2 size={18} />
                 </button>
@@ -1278,7 +1310,7 @@ export default function ClientsPage() {
                 <button
                   onClick={() => setSelectedClients({})}
                   className="rounded-full p-2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"
-                  title="Clear Selection"
+                  title={t("clients.clearSelection")}
                 >
                   <X size={18} />
                 </button>
@@ -1352,16 +1384,18 @@ export default function ClientsPage() {
       {pendingBulkAction && (
         <div className="fixed inset-0 z-[100] flex items-start sm:items-center justify-center bg-black/60 pt-[10dvh] px-4 sm:pt-0 sm:p-4">
           <div className="w-full max-w-sm rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 shadow-2xl">
-            <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-50 mb-2 capitalize">Confirm {pendingBulkAction}</h3>
+            <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-50 mb-2">
+              {t("clients.confirmBulkTitle", { action: bulkActionLabel(t, pendingBulkAction) })}
+            </h3>
             <p className="text-sm text-zinc-500 mb-6">
-              Are you sure you want to {pendingBulkAction} {selectedCount} selected clients?
+              {t("clients.confirmBulkHint", { action: bulkActionLabel(t, pendingBulkAction), count: selectedCount })}
             </p>
             <div className="flex gap-2">
               <button
                 onClick={() => setPendingBulkAction(null)}
                 className="flex-1 rounded-xl bg-zinc-100 dark:bg-zinc-800 py-3 font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors"
               >
-                Cancel
+                {t("common.cancel")}
               </button>
               <button
                 onClick={() => {
@@ -1372,9 +1406,9 @@ export default function ClientsPage() {
                   }
                   setPendingBulkAction(null);
                 }}
-                className="flex-1 rounded-xl bg-blue-600 py-3 font-semibold text-white hover:bg-blue-500 transition-colors capitalize"
+                className="flex-1 rounded-xl bg-blue-600 py-3 font-semibold text-white hover:bg-blue-500 transition-colors"
               >
-                {pendingBulkAction}
+                {bulkActionLabel(t, pendingBulkAction)}
               </button>
             </div>
           </div>
@@ -1386,9 +1420,9 @@ export default function ClientsPage() {
         <div className="fixed inset-0 z-[100] flex items-start sm:items-center justify-center bg-black/60 pt-[10dvh] px-4 sm:pt-0 sm:p-4">
           <div className="w-full max-w-md rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-2xl overflow-hidden flex flex-col max-h-[80vh]">
             <div className="p-6 pb-4 border-b border-zinc-200 dark:border-zinc-800">
-              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-50 mb-1">Assign Additional Inbounds</h3>
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-50 mb-1">{t("clients.assignInboundsTitle")}</h3>
               <p className="text-sm text-zinc-500">
-                Select inbounds to add to the {selectedCount} selected clients. Existing inbounds will not be removed.
+                {t("clients.assignInboundsHint", { count: selectedCount })}
               </p>
             </div>
             <div className="p-4 overflow-y-auto space-y-2 flex-1">
@@ -1417,11 +1451,7 @@ export default function ClientsPage() {
                         <span className="text-[10px] uppercase font-bold text-zinc-400 bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded">{inbound.protocol}</span>
                       </div>
                       <div className="text-xs text-zinc-500 mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5">
-                        <span>Panel: {inbound.panel?.name || 'Unknown'}</span>
-                        <span>•</span>
-                        <span>Tag: {inbound.tag}</span>
-                        <span>•</span>
-                        <span>Port: {inbound.port}</span>
+                        <span>{t("clients.panelInboundLine", { panel: inbound.panel?.name || t("common.unknown"), tag: inbound.tag, port: inbound.port })}</span>
                       </div>
                     </div>
                   </button>
@@ -1436,7 +1466,7 @@ export default function ClientsPage() {
                 }}
                 className="flex-1 rounded-xl bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 py-2.5 font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors"
               >
-                Cancel
+                {t("common.cancel")}
               </button>
               <button
                 disabled={assignInboundIds.length === 0}
@@ -1451,7 +1481,7 @@ export default function ClientsPage() {
                 }}
                 className="flex-1 rounded-xl bg-blue-600 py-2.5 font-semibold text-white hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                Assign Inbounds
+                {t("clients.assignInboundsBtn")}
               </button>
             </div>
           </div>
@@ -1472,9 +1502,9 @@ export default function ClientsPage() {
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
               </svg>
-              <h3 className="text-zinc-900 dark:text-zinc-100 font-semibold text-lg">Processing...</h3>
+              <h3 className="text-zinc-900 dark:text-zinc-100 font-semibold text-lg">{t("clients.processingTitle")}</h3>
               <p className="text-zinc-500 dark:text-zinc-400 text-sm mt-2">
-                Please wait while the action completes. This may take a moment depending on the number of clients selected.
+                {t("clients.processingHint")}
               </p>
             </div>
           </motion.div>
@@ -1521,17 +1551,17 @@ export default function ClientsPage() {
       {deleteConfirmOpen && (
         <div className="fixed inset-0 z-[100] flex items-start sm:items-center justify-center bg-black/60 pt-[10dvh] px-4 sm:pt-0 sm:p-4">
           <div className="w-full max-w-sm rounded-2xl border border-red-500/20 bg-white dark:bg-zinc-900 p-6 shadow-2xl">
-            <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-50 mb-2">Confirm Bulk Deletion</h3>
+            <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-50 mb-2">{t("clients.confirmBulkDeleteTitle")}</h3>
             <p className="text-sm text-zinc-500 mb-4">
-              Are you sure you want to permanently delete these clients? This action cannot be undone.
+              {t("clients.confirmBulkDeleteHint")}
             </p>
             <div className="bg-red-500/5 border border-red-500/10 rounded-xl p-3.5 space-y-1.5 text-xs mb-6">
               <div className="flex justify-between">
-                <span className="text-zinc-500">Clients Selected:</span>
+                <span className="text-zinc-500">{t("clients.clientsSelected")}</span>
                 <span className="font-bold text-red-400">{selectedCount}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-zinc-500">Traffic Impact (Total Allocation):</span>
+                <span className="text-zinc-500">{t("clients.trafficImpact")}</span>
                 <span className="font-bold text-zinc-800 dark:text-zinc-200">{formatBytes(totalAllocatedTraffic)}</span>
               </div>
             </div>
@@ -1540,7 +1570,7 @@ export default function ClientsPage() {
                 onClick={() => setDeleteConfirmOpen(false)}
                 className="flex-1 rounded-xl bg-zinc-100 dark:bg-zinc-800 py-3 font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors"
               >
-                Cancel
+                {t("common.cancel")}
               </button>
               <button
                 onClick={() => {
@@ -1549,7 +1579,7 @@ export default function ClientsPage() {
                 }}
                 className="flex-1 rounded-xl bg-red-600 py-3 font-semibold text-white hover:bg-red-500 transition-colors"
               >
-                Delete Clients
+                {t("clients.deleteClients")}
               </button>
             </div>
           </div>
@@ -1560,16 +1590,16 @@ export default function ClientsPage() {
       {resetConfirmOpen && (
         <div className="fixed inset-0 z-[100] flex items-start sm:items-center justify-center bg-black/60 pt-[10dvh] px-4 sm:pt-0 sm:p-4">
           <div className="w-full max-w-sm rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 shadow-2xl">
-            <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-50 mb-2">Reset Traffic Counters</h3>
+            <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-50 mb-2">{t("clients.resetTrafficTitle")}</h3>
             <p className="text-sm text-zinc-500 mb-4">
-              Reset upload and download traffic counters to zero for the {selectedCount} selected clients?
+              {t("clients.resetTrafficHint", { count: selectedCount })}
             </p>
             <div className="flex gap-2">
               <button
                 onClick={() => setResetConfirmOpen(false)}
                 className="flex-1 rounded-xl bg-zinc-100 dark:bg-zinc-800 py-3 font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors"
               >
-                Cancel
+                {t("common.cancel")}
               </button>
               <button
                 onClick={() => {
@@ -1578,7 +1608,7 @@ export default function ClientsPage() {
                 }}
                 className="flex-1 rounded-xl bg-blue-600 py-3 font-semibold text-white hover:bg-blue-500 transition-colors"
               >
-                Confirm Reset
+                {t("clients.confirmReset")}
               </button>
             </div>
           </div>
@@ -1634,25 +1664,25 @@ export default function ClientsPage() {
               {bulkValueModal.action === "addTraffic" && bulkInputValue && (
                 <div className="bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 p-3 rounded-xl space-y-1.5 text-xs">
                   <div className="flex justify-between">
-                    <span className="text-zinc-500">Total Required:</span>
+                    <span className="text-zinc-500">{t("clients.totalRequired")}</span>
                     <span className="font-bold text-zinc-700 dark:text-zinc-300">{formatBytes(totalRequired)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-zinc-500">Remaining Balance:</span>
+                    <span className="text-zinc-500">{t("clients.remainingBalance")}</span>
                     <span className="font-bold text-zinc-700 dark:text-zinc-300">{formatBytes(availableTraffic)}</span>
                   </div>
                   {trafficMode === 'ALLOCATION' && (
                     <div className="flex justify-between border-t border-zinc-200 dark:border-zinc-800 pt-1 mt-1">
-                      <span className="text-zinc-500">Balance After:</span>
+                      <span className="text-zinc-500">{t("clients.balanceAfter")}</span>
                       <span className={`font-bold ${insufficientBalance ? 'text-red-400' : 'text-zinc-700 dark:text-zinc-300'}`}>
-                        {insufficientBalance ? "Negative Balance" : formatBytes(balanceAfter)}
+                        {insufficientBalance ? t("clients.negativeBalance") : formatBytes(balanceAfter)}
                       </span>
                     </div>
                   )}
                   {insufficientBalance && (
                     <div className="text-[10px] text-red-400 font-semibold bg-red-500/10 p-1.5 rounded mt-1.5 flex items-center gap-1">
                       <AlertTriangle size={12} />
-                      Operation blocked: Insufficient balance.
+                      {t("clients.insufficientBalance")}
                     </div>
                   )}
                 </div>
@@ -1663,14 +1693,14 @@ export default function ClientsPage() {
                   onClick={() => setBulkValueModal(null)}
                   className="rounded-lg px-4 py-2 text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
                 >
-                  Cancel
+                  {t("common.cancel")}
                 </button>
                 <button
                   onClick={submitBulkValue}
                   disabled={bulkMutation.isPending || (bulkValueModal.action === "addTraffic" && insufficientBalance)}
                   className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
                 >
-                  {bulkMutation.isPending ? "Applying…" : "Confirm"}
+                  {bulkMutation.isPending ? t("common.applying") : t("common.confirm")}
                 </button>
               </div>
             </div>
@@ -1706,6 +1736,7 @@ function AddClientModal({
   onClose: () => void;
   onSaved: (client?: any) => void;
 }) {
+  const t = useT();
   const toast = useToast((s) => s.push);
   
   const derivedPanels = useMemo(() => {
@@ -1801,18 +1832,18 @@ function AddClientModal({
       return res.data;
     },
     onSuccess: (data) => {
-      toast("Client created successfully", "success");
+      toast(t("clients.createSuccess"), "success");
       setCreatedClient(data);
     },
     onError: (err: any) => {
-      toast(err?.response?.data?.message || "Failed to create client", "error");
+      toast(err?.response?.data?.message || t("clients.createFailed"), "error");
     },
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (form.inboundIds.length === 0) {
-      toast("Please select at least one inbound", "error");
+      toast(t("clients.selectInboundRequired"), "error");
       return;
     }
     create.mutate();
@@ -1836,22 +1867,22 @@ function AddClientModal({
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/10">
             <CheckCircle2 size={32} className="text-emerald-500" />
           </div>
-          <h2 className="mb-2 text-xl font-bold text-zinc-900 dark:text-zinc-50">Client Created!</h2>
+          <h2 className="mb-2 text-xl font-bold text-zinc-900 dark:text-zinc-50">{t("clients.createdTitle")}</h2>
           <p className="mb-6 text-sm text-zinc-500 dark:text-zinc-400">
-            The client <strong>{createdClient.email}</strong> was created successfully and is ready to use.
+            {t("clients.createdHint", { email: createdClient.email })}
           </p>
           <div className="flex flex-col gap-3">
             <button
               onClick={() => onSaved(createdClient)}
               className="rounded-xl bg-blue-600 px-4 py-3 font-medium text-white hover:bg-blue-500 shadow-lg shadow-blue-500/20 transition-all"
             >
-              View Connection Details
+              {t("clients.viewConnectionDetails")}
             </button>
             <button
               onClick={() => onSaved()}
               className="rounded-xl bg-zinc-100 dark:bg-zinc-800 px-4 py-3 font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors"
             >
-              Close
+              {t("common.close")}
             </button>
           </div>
         </motion.div>
@@ -1875,7 +1906,7 @@ function AddClientModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Add Client</h2>
+          <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">{t("clients.addClientTitle")}</h2>
           <button onClick={onClose} className="text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300">
             <X size={18} />
           </button>
@@ -1884,13 +1915,13 @@ function AddClientModal({
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Basic Info Section */}
           <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/50 p-4 space-y-4">
-            <h3 className="font-medium text-zinc-700 dark:text-zinc-200 text-sm">Basic Info</h3>
+            <h3 className="font-medium text-zinc-700 dark:text-zinc-200 text-sm">{t("clients.basicInfo")}</h3>
             <div>
-              <label className="mb-1 block text-xs text-zinc-500">Username / Identifier</label>
+              <label className="mb-1 block text-xs text-zinc-500">{t("clients.usernameIdentifier")}</label>
               <input
                 type="text"
                 required
-                placeholder="e.g. client_123"
+                placeholder={t("clients.usernamePlaceholder")}
                 value={form.email}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
                 className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors"
@@ -1899,7 +1930,7 @@ function AddClientModal({
             
             {isSuperAdmin && derivedPanels.length > 0 && (
               <div>
-                <label className="mb-1 block text-xs text-zinc-500">Panel (Server)</label>
+                <label className="mb-1 block text-xs text-zinc-500">{t("clients.panelServer")}</label>
                 <select
                   value={selectedPanelId}
                   onChange={(e) => setSelectedPanelId(e.target.value)}
@@ -1913,13 +1944,13 @@ function AddClientModal({
             )}
 
             <div>
-              <label className="mb-1 block text-xs text-zinc-500 font-medium">Assigned Inbounds</label>
+              <label className="mb-1 block text-xs text-zinc-500 font-medium">{t("clients.assignedInbounds")}</label>
               <div className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 overflow-hidden">
                 <div className="max-h-[160px] overflow-y-auto divide-y divide-zinc-200 dark:divide-zinc-800">
                   {isLoadingInbounds ? (
-                    <div className="px-3 py-4 text-center text-sm text-zinc-500">Loading inbounds...</div>
+                    <div className="px-3 py-4 text-center text-sm text-zinc-500">{t("common.loadingInbounds")}</div>
                   ) : availableInbounds.length === 0 ? (
-                    <div className="px-3 py-4 text-center text-sm text-zinc-500">No Inbounds available</div>
+                    <div className="px-3 py-4 text-center text-sm text-zinc-500">{t("common.noInboundsAvailable")}</div>
                   ) : (
                     availableInbounds.map((i) => {
                       const isChecked = form.inboundIds.includes(i.id);
@@ -1951,7 +1982,7 @@ function AddClientModal({
                             </div>
                             {i.remark && (
                               <div className="text-[10px] text-zinc-400 dark:text-zinc-500 truncate mt-0.5">
-                                Tag: {i.tag}
+                                {t("common.tag")}: {i.tag}
                               </div>
                             )}
                           </div>
@@ -1969,25 +2000,25 @@ function AddClientModal({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Traffic Section */}
             <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/50 p-4">
-              <h3 className="mb-4 font-medium text-zinc-700 dark:text-zinc-200 text-sm">Traffic Limit</h3>
+              <h3 className="mb-4 font-medium text-zinc-700 dark:text-zinc-200 text-sm">{t("clients.trafficLimit")}</h3>
               <div>
-                <label className="mb-1 block text-xs text-zinc-500">Total (GB)</label>
+                <label className="mb-1 block text-xs text-zinc-500">{t("clients.totalGb")}</label>
                 <input
                   type="number"
                   min={0}
-                  placeholder="Blank for unlimited"
+                  placeholder={t("clients.blankUnlimited")}
                   value={form.totalGB}
                   onChange={(e) => setForm({ ...form, totalGB: e.target.value })}
                   className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors"
                 />
-                <p className="mt-1 text-[10px] text-zinc-500 dark:text-zinc-400">If Allocation Mode is active, this is deducted immediately.</p>
+                <p className="mt-1 text-[10px] text-zinc-500 dark:text-zinc-400">{t("clients.allocationDeductHint")}</p>
               </div>
               <div className="mt-4">
-                <label className="mb-1 block text-xs text-zinc-500">IP Limit</label>
+                <label className="mb-1 block text-xs text-zinc-500">{t("clients.ipLimit")}</label>
                 <input
                   type="number"
                   min={0}
-                  placeholder="0 for unlimited"
+                  placeholder={t("clients.ipLimitPlaceholder")}
                   value={form.limitIp}
                   onChange={(e) => setForm({ ...form, limitIp: e.target.value })}
                   className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors"
@@ -1997,13 +2028,13 @@ function AddClientModal({
 
             {/* Expiry Section */}
             <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/50 p-4">
-              <h3 className="mb-4 font-medium text-zinc-700 dark:text-zinc-200 text-sm">Duration</h3>
+              <h3 className="mb-4 font-medium text-zinc-700 dark:text-zinc-200 text-sm">{t("clients.duration")}</h3>
               <div>
-                <label className="mb-1 block text-xs text-zinc-500">Expiry (Days)</label>
+                <label className="mb-1 block text-xs text-zinc-500">{t("clients.expiryDays")}</label>
                 <input
                   type="number"
                   min={0}
-                  placeholder="Blank for never"
+                  placeholder={t("clients.blankNever")}
                   value={form.expiryDays}
                   onChange={(e) => setForm({ ...form, expiryDays: e.target.value })}
                   className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors"
@@ -2020,22 +2051,22 @@ function AddClientModal({
                 onClick={() => setShowAdvanced(!showAdvanced)}
                 className="flex w-full items-center justify-between p-4 text-sm font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-900/50"
               >
-                <span>Advanced Settings</span>
+                <span>{t("clients.advancedSettings")}</span>
                 {showAdvanced ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
               </button>
               {showAdvanced && (
                 <div className="p-4 pt-0 border-t border-zinc-200 dark:border-zinc-800/50 mt-1">
-                  <label className="mb-1 block text-xs text-zinc-500">Flow</label>
+                  <label className="mb-1 block text-xs text-zinc-500">{t("clients.flowLabel")}</label>
                   <select
                     value={form.flow || ""}
                     onChange={(e) => setForm({ ...form, flow: e.target.value })}
                     className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors"
                   >
-                    <option value="">None</option>
+                    <option value="">{t("common.none")}</option>
                     <option value="xtls-rprx-vision">xtls-rprx-vision</option>
                     <option value="xtls-rprx-vision-udp443">xtls-rprx-vision-udp443</option>
                   </select>
-                  <p className="mt-1 text-xs text-zinc-500">Only applicable for VLESS Reality.</p>
+                  <p className="mt-1 text-xs text-zinc-500">{t("clients.flowHint")}</p>
                 </div>
               )}
             </div>
@@ -2047,14 +2078,14 @@ function AddClientModal({
               onClick={onClose}
               className="rounded-lg px-4 py-2 text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
             >
-              Cancel
+              {t("common.cancel")}
             </button>
             <button
               type="submit"
               disabled={create.isPending}
               className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
             >
-              {create.isPending ? "Creating…" : "Create"}
+              {create.isPending ? t("common.creating") : t("common.create")}
             </button>
           </div>
         </form>
@@ -2074,6 +2105,7 @@ export function EditClientModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const t = useT();
   const qc = useQueryClient();
   const toast = useToast((s) => s.push);
   const sessionAdmin = useAuth((s) => s.admin);
@@ -2168,11 +2200,11 @@ export function EditClientModal({
       ).data;
     },
     onSuccess: () => {
-      toast("Client updated successfully");
+      toast(t("clients.updatedSuccess"));
       onSaved();
     },
     onError: (err: any) => {
-      const msg = err.response?.data?.message || "Failed to update client";
+      const msg = err.response?.data?.message || t("clients.updateFailed");
       toast(Array.isArray(msg) ? msg[0] : msg, "error");
     },
   });
@@ -2180,13 +2212,13 @@ export function EditClientModal({
   const resetUsage = useMutation({
     mutationFn: async () => (await api.post("/clients/bulk", { ids: [client.id], action: "resetUsage" })).data,
     onSuccess: () => {
-      toast("Traffic reset successfully");
+      toast(t("clients.trafficResetSuccess"));
       qc.invalidateQueries({ queryKey: ["clients"] });
       qc.invalidateQueries({ queryKey: ["reseller-overview"] });
       qc.invalidateQueries({ queryKey: ["overview"] });
       onClose();
     },
-    onError: () => toast("Failed to reset traffic", "error")
+    onError: () => toast(t("clients.trafficResetFailed"), "error")
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -2210,7 +2242,7 @@ export function EditClientModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Edit Client: {client.email}</h2>
+          <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">{t("clients.editClientTitle", { email: client.email })}</h2>
           <button onClick={onClose} className="text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300">
             <X size={18} />
           </button>
@@ -2220,42 +2252,41 @@ export function EditClientModal({
           {/* Traffic Section */}
           <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/50 p-4">
             <div className="mb-3 flex items-center justify-between">
-              <h3 className="font-medium text-zinc-700 dark:text-zinc-200 text-sm">Traffic Info</h3>
+              <h3 className="font-medium text-zinc-700 dark:text-zinc-200 text-sm">{t("clients.trafficInfo")}</h3>
               <button
                 type="button"
                 onClick={() => {
-                  const confirmMsg = `Are you sure you want to reset this client's usage?\n\nUsed Traffic: ${formatBytes(usedTraffic)}\nEquivalent traffic will be restored to their remaining balance, which will be deducted from your pool.`;
-                  if (confirm(confirmMsg)) {
+                  if (confirm(t("clients.resetUsageConfirm", { used: formatBytes(usedTraffic) }))) {
                     resetUsage.mutate();
                   }
                 }}
                 disabled={resetUsage.isPending || usedTraffic === 0}
                 className="text-xs text-red-400 hover:text-red-300 bg-red-400/10 hover:bg-red-400/20 px-2 py-1 rounded transition-colors disabled:opacity-50 font-medium"
               >
-                {resetUsage.isPending ? "Resetting..." : "Reset Usage"}
+                {resetUsage.isPending ? t("clients.resetting") : t("clients.resetUsage")}
               </button>
             </div>
             
             <div className="grid grid-cols-3 gap-4 text-sm mb-4">
               <div className="flex flex-col p-2 rounded-lg bg-blue-500/10 border border-blue-500/20">
-                <span className="text-blue-400/80 text-xs uppercase tracking-wider font-semibold mb-1">Allocated</span>
-                <span className="font-medium text-blue-400">{totalTraffic > 0 ? formatBytes(totalTraffic) : "Unlimited"}</span>
+                <span className="text-blue-400/80 text-xs uppercase tracking-wider font-semibold mb-1">{t("clients.allocated")}</span>
+                <span className="font-medium text-blue-400">{totalTraffic > 0 ? formatBytes(totalTraffic) : t("common.unlimited")}</span>
               </div>
               <div className="flex flex-col p-2 rounded-lg bg-orange-500/10 border border-orange-500/20">
-                <span className="text-orange-400/80 text-xs uppercase tracking-wider font-semibold mb-1">Used</span>
+                <span className="text-orange-400/80 text-xs uppercase tracking-wider font-semibold mb-1">{t("clients.used")}</span>
                 <span className="font-medium text-orange-400">{formatBytes(usedTraffic)}</span>
               </div>
               <div className="flex flex-col p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
-                <span className="text-emerald-400/80 text-xs uppercase tracking-wider font-semibold mb-1">Remaining</span>
-                <span className="font-medium text-emerald-400">{totalTraffic > 0 ? formatBytes(remainingTraffic) : "Unlimited"}</span>
+                <span className="text-emerald-400/80 text-xs uppercase tracking-wider font-semibold mb-1">{t("clients.remaining")}</span>
+                <span className="font-medium text-emerald-400">{totalTraffic > 0 ? formatBytes(remainingTraffic) : t("common.unlimited")}</span>
               </div>
             </div>
 
             <div className="space-y-3 pt-3 border-t border-zinc-200 dark:border-zinc-800/50">
               <div className="flex gap-2 p-1 bg-white dark:bg-zinc-900 rounded-lg border border-zinc-200 dark:border-zinc-800">
-                <button type="button" onClick={() => { setTrafficMode("set"); setTrafficInput(""); }} className={`flex-1 text-xs py-1.5 rounded-md transition-colors ${trafficMode === "set" ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100" : "text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300"}`}>Set Total</button>
-                <button type="button" onClick={() => { setTrafficMode("add"); setTrafficInput(""); }} className={`flex-1 text-xs py-1.5 rounded-md transition-colors ${trafficMode === "add" ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100" : "text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300"}`}>Add (+)</button>
-                <button type="button" onClick={() => { setTrafficMode("remove"); setTrafficInput(""); }} className={`flex-1 text-xs py-1.5 rounded-md transition-colors ${trafficMode === "remove" ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100" : "text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300"}`}>Remove (-)</button>
+                <button type="button" onClick={() => { setTrafficMode("set"); setTrafficInput(""); }} className={`flex-1 text-xs py-1.5 rounded-md transition-colors ${trafficMode === "set" ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100" : "text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300"}`}>{t("clients.setTotal")}</button>
+                <button type="button" onClick={() => { setTrafficMode("add"); setTrafficInput(""); }} className={`flex-1 text-xs py-1.5 rounded-md transition-colors ${trafficMode === "add" ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100" : "text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300"}`}>{t("clients.addPlus")}</button>
+                <button type="button" onClick={() => { setTrafficMode("remove"); setTrafficInput(""); }} className={`flex-1 text-xs py-1.5 rounded-md transition-colors ${trafficMode === "remove" ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100" : "text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300"}`}>{t("clients.removeMinus")}</button>
               </div>
               
               <div>
@@ -2263,7 +2294,7 @@ export function EditClientModal({
                   type="number"
                   min={0}
                   step={1}
-                  placeholder={trafficMode === "set" ? "New Total Allocation (GB)" : trafficMode === "add" ? "Traffic to Add (GB)" : "Traffic to Remove (GB)"}
+                  placeholder={trafficMode === "set" ? t("clients.newTotalPlaceholder") : trafficMode === "add" ? t("clients.trafficToAddPlaceholder") : t("clients.trafficToRemovePlaceholder")}
                   value={trafficInput}
                   onChange={(e) => setTrafficInput(e.target.value)}
                   className={`w-full rounded-lg border bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none transition-colors border-zinc-300 dark:border-zinc-700 focus:border-blue-500`}
@@ -2273,20 +2304,24 @@ export function EditClientModal({
               {trafficInput && (
                 <div className={`text-xs px-2 py-1.5 rounded flex justify-between items-center bg-zinc-100 dark:bg-zinc-800/50 text-zinc-500 dark:text-zinc-400`}>
                   <>
-                    <span>Preview:</span>
+                    <span>{t("clients.preview")}</span>
                     <span className="font-medium text-zinc-700 dark:text-zinc-200">
-                      {previewDiffBytes > 0 ? `+${formatBytes(previewDiffBytes)} to add` : previewDiffBytes < 0 ? `${formatBytes(Math.abs(previewDiffBytes))} to return` : "No change"}
+                      {previewDiffBytes > 0
+                        ? t("clients.previewAddTraffic", { amount: formatBytes(previewDiffBytes) })
+                        : previewDiffBytes < 0
+                          ? t("clients.previewReturnTraffic", { amount: formatBytes(Math.abs(previewDiffBytes)) })
+                          : t("clients.previewNoChange")}
                     </span>
                   </>
                 </div>
               )}
 
               <div className="mt-4">
-                <label className="mb-1 block text-xs text-zinc-500">IP Limit</label>
+                <label className="mb-1 block text-xs text-zinc-500">{t("clients.ipLimit")}</label>
                 <input
                   type="number"
                   min={0}
-                  placeholder="0 for unlimited"
+                  placeholder={t("clients.ipLimitPlaceholder")}
                   value={form.limitIp}
                   onChange={(e) => setForm({ ...form, limitIp: e.target.value })}
                   className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors"
@@ -2297,31 +2332,31 @@ export function EditClientModal({
 
           {/* Expiry Section */}
           <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/50 p-4">
-            <h3 className="mb-3 font-medium text-zinc-700 dark:text-zinc-200 text-sm">Expiry Info</h3>
+            <h3 className="mb-3 font-medium text-zinc-700 dark:text-zinc-200 text-sm">{t("clients.expiryInfo")}</h3>
             
             <div className="mb-3 text-sm">
               {isFirstUse ? (
                 <div className="flex justify-between items-center bg-blue-500/10 text-blue-400 px-3 py-2 rounded border border-blue-500/20">
-                  <span className="font-medium">First Use</span>
-                  <span>{Math.abs(expTime) / (24 * 60 * 60 * 1000)} Days</span>
+                  <span className="font-medium">{t("clients.firstUse")}</span>
+                  <span>{t("common.days", { count: Math.abs(expTime) / (24 * 60 * 60 * 1000) })}</span>
                 </div>
               ) : expTime > 0 ? (
                 <div className="flex justify-between items-center text-zinc-600 dark:text-zinc-300 px-1">
-                  <span className="text-zinc-500">Remaining</span>
-                  <span className="font-medium text-emerald-400">{Math.max(0, Math.ceil((expTime - Date.now()) / (24 * 60 * 60 * 1000)))} Days</span>
+                  <span className="text-zinc-500">{t("clients.expiryRemaining")}</span>
+                  <span className="font-medium text-emerald-400">{t("clients.daysRemainingShort", { count: Math.max(0, Math.ceil((expTime - Date.now()) / (24 * 60 * 60 * 1000))) })}</span>
                 </div>
               ) : (
                 <div className="flex justify-between items-center text-zinc-600 dark:text-zinc-300 px-1">
-                  <span className="text-zinc-500">Expiry</span>
-                  <span className="font-medium text-emerald-400">Unlimited</span>
+                  <span className="text-zinc-500">{t("clients.expiryLabel")}</span>
+                  <span className="font-medium text-emerald-400">{t("common.unlimited")}</span>
                 </div>
               )}
             </div>
 
             <div className="space-y-3 pt-3 border-t border-zinc-200 dark:border-zinc-800/50">
               <div className="flex gap-2 p-1 bg-white dark:bg-zinc-900 rounded-lg border border-zinc-200 dark:border-zinc-800">
-                <button type="button" onClick={() => { setExpiryMode("add"); setForm({ ...form, expiryDays: "" }); }} className={`flex-1 text-xs py-1.5 rounded-md transition-colors ${expiryMode === "add" ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100" : "text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300"}`}>Add Days (+)</button>
-                <button type="button" onClick={() => { setExpiryMode("remove"); setForm({ ...form, expiryDays: "" }); }} className={`flex-1 text-xs py-1.5 rounded-md transition-colors ${expiryMode === "remove" ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100" : "text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300"}`}>Remove Days (-)</button>
+                <button type="button" onClick={() => { setExpiryMode("add"); setForm({ ...form, expiryDays: "" }); }} className={`flex-1 text-xs py-1.5 rounded-md transition-colors ${expiryMode === "add" ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100" : "text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300"}`}>{t("clients.addDaysPlus")}</button>
+                <button type="button" onClick={() => { setExpiryMode("remove"); setForm({ ...form, expiryDays: "" }); }} className={`flex-1 text-xs py-1.5 rounded-md transition-colors ${expiryMode === "remove" ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100" : "text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300"}`}>{t("clients.removeDaysMinus")}</button>
               </div>
 
               <div className="flex gap-2">
@@ -2339,15 +2374,15 @@ export function EditClientModal({
               <input
                 type="number"
                 min={0}
-                placeholder={expiryMode === "add" ? "Days to add" : "Days to remove"}
+                placeholder={expiryMode === "add" ? t("clients.daysToAdd") : t("clients.daysToRemove")}
                 value={form.expiryDays}
                 onChange={(e) => setForm({ ...form, expiryDays: e.target.value })}
                 className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors"
               />
               {form.expiryDays && (
                 <div className={`text-xs px-2 py-1.5 rounded flex justify-between items-center ${expiryMode === "remove" ? "bg-amber-500/10 text-amber-500" : "bg-zinc-100 dark:bg-zinc-800/50 text-zinc-500 dark:text-zinc-400"}`}>
-                  <span>Preview:</span>
-                  <span className="font-medium">{expiryMode === "add" ? `+${form.expiryDays} days` : `-${form.expiryDays} days`}</span>
+                  <span>{t("clients.preview")}</span>
+                  <span className="font-medium">{expiryMode === "add" ? t("clients.previewDaysAdd", { days: form.expiryDays }) : t("clients.previewDaysRemove", { days: form.expiryDays })}</span>
                 </div>
               )}
             </div>
@@ -2361,22 +2396,22 @@ export function EditClientModal({
                 onClick={() => setShowAdvanced(!showAdvanced)}
                 className="flex w-full items-center justify-between p-4 text-sm font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-900/50"
               >
-                <span>Advanced Settings</span>
+                <span>{t("clients.advancedSettings")}</span>
                 {showAdvanced ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
               </button>
               {showAdvanced && (
                 <div className="p-4 pt-0 border-t border-zinc-200 dark:border-zinc-800/50 mt-1">
-                  <label className="mb-1 block text-xs text-zinc-500">Flow</label>
+                  <label className="mb-1 block text-xs text-zinc-500">{t("clients.flowLabel")}</label>
                   <select
                     value={form.flow || ""}
                     onChange={(e) => setForm({ ...form, flow: e.target.value })}
                     className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors"
                   >
-                    <option value="">None</option>
+                    <option value="">{t("common.none")}</option>
                     <option value="xtls-rprx-vision">xtls-rprx-vision</option>
                     <option value="xtls-rprx-vision-udp443">xtls-rprx-vision-udp443</option>
                   </select>
-                  <p className="mt-1 text-xs text-zinc-500">Only applicable for VLESS Reality.</p>
+                  <p className="mt-1 text-xs text-zinc-500">{t("clients.flowHint")}</p>
                 </div>
               )}
             </div>
@@ -2391,7 +2426,7 @@ export function EditClientModal({
               onClick={() => setShowInbounds(!showInbounds)}
               className="flex w-full items-center justify-between p-4 text-sm font-medium text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-900/50"
             >
-              <span>Assigned Inbounds ({form.inboundIds.length} Selected)</span>
+              <span>{t("clients.assignedInboundsCount", { count: form.inboundIds.length })}</span>
               {showInbounds ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
             </button>
             {showInbounds && (
@@ -2411,7 +2446,7 @@ export function EditClientModal({
                   ))}
                 </div>
                 {form.inboundIds.length === 0 && (
-                  <p className="mt-2 text-xs text-red-500">Please select at least one inbound.</p>
+                  <p className="mt-2 text-xs text-red-500">{t("clients.selectInboundError")}</p>
                 )}
               </div>
             )}
@@ -2423,14 +2458,14 @@ export function EditClientModal({
               onClick={onClose}
               className="rounded-lg px-4 py-2 text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
             >
-              Cancel
+              {t("common.cancel")}
             </button>
             <button
               type="submit"
               disabled={update.isPending || form.inboundIds.length === 0}
               className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {update.isPending ? "Saving…" : "Save Changes"}
+              {update.isPending ? t("common.saving") : t("common.saveChanges")}
             </button>
           </div>
         </form>
@@ -2446,24 +2481,25 @@ function BulkResultModal({
   result: { success: number; failed: number; errors: string[]; action: string };
   onClose: () => void;
 }) {
+  const t = useT();
   return (
     <div className="fixed inset-0 z-[100] flex items-start sm:items-center justify-center bg-black/60 pt-[10dvh] px-4 sm:pt-0 sm:p-4">
       <div className="w-full max-w-md rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 shadow-2xl">
-        <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-50 mb-2">Bulk Operation Summary</h3>
-        <p className="text-sm text-zinc-500 mb-4 capitalize">Action: {result.action}</p>
+        <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-50 mb-2">{t("clients.bulkResultTitle")}</h3>
+        <p className="text-sm text-zinc-500 mb-4">{t("clients.bulkResultAction", { action: bulkActionLabel(t, result.action) })}</p>
         <div className="grid grid-cols-2 gap-4 mb-4">
           <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-center">
-            <div className="text-xs text-zinc-500">Success</div>
+            <div className="text-xs text-zinc-500">{t("common.successCount")}</div>
             <div className="text-2xl font-bold text-emerald-500">{result.success}</div>
           </div>
           <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-center">
-            <div className="text-xs text-zinc-500">Failed</div>
+            <div className="text-xs text-zinc-500">{t("common.failedCount")}</div>
             <div className="text-2xl font-bold text-red-500">{result.failed}</div>
           </div>
         </div>
         {result.errors.length > 0 && (
           <div className="mb-4">
-            <label className="text-xs font-semibold text-zinc-500 uppercase">Errors:</label>
+            <label className="text-xs font-semibold text-zinc-500 uppercase">{t("common.errors")}:</label>
             <div className="mt-1 max-h-40 overflow-y-auto border border-zinc-200 dark:border-zinc-800 rounded-lg p-2 bg-zinc-50 dark:bg-zinc-950 font-mono text-xs text-red-400 space-y-1">
               {result.errors.map((e, idx) => (
                 <div key={idx}>{e}</div>
@@ -2475,7 +2511,7 @@ function BulkResultModal({
           onClick={onClose}
           className="w-full rounded-xl bg-zinc-100 dark:bg-zinc-800 py-3 font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors"
         >
-          Close
+          {t("common.close")}
         </button>
       </div>
     </div>
@@ -2491,6 +2527,7 @@ function BulkGroupAssignModal({
   onClose: () => void;
   onConfirm: (groupName: string) => void;
 }) {
+  const t = useT();
   const [groupName, setGroupName] = useState("");
   const { data: groups } = useQuery<string[]>({
     queryKey: ["xui-groups"],
@@ -2507,18 +2544,19 @@ function BulkGroupAssignModal({
     <div className="fixed inset-0 z-[100] flex items-start sm:items-center justify-center bg-black/60 pt-[10dvh] px-4 sm:pt-0 sm:p-4">
       <div className="w-full max-w-sm rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 shadow-2xl">
         <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">Assign Group ({selectedCount} Clients)</h3>
+          <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">{t("clients.assignGroupTitle")}</h3>
           <button onClick={onClose} className="text-zinc-500 hover:text-zinc-65535"><X size={16} /></button>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          <p className="text-sm text-zinc-500">{t("clients.assignGroupHint", { count: selectedCount })}</p>
           <div>
-            <label className="mb-1 block text-xs text-zinc-500">Group Name</label>
+            <label className="mb-1 block text-xs text-zinc-500">{t("clients.groupName")}</label>
             <input
               type="text"
               list="xui-existing-groups"
               required
-              placeholder="Select existing or type new group..."
+              placeholder={t("clients.groupNamePlaceholder")}
               value={groupName}
               onChange={(e) => setGroupName(e.target.value)}
               className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500"
@@ -2528,7 +2566,7 @@ function BulkGroupAssignModal({
                 <option key={g} value={g} />
               ))}
             </datalist>
-            <p className="mt-1 text-[10px] text-zinc-500">If the group name does not exist, 3x-ui will auto-create it natively.</p>
+            <p className="mt-1 text-[10px] text-zinc-500">{t("clients.assignGroupAutoCreateHint")}</p>
           </div>
 
           <div className="flex justify-end gap-2 border-t border-zinc-200 dark:border-zinc-800 pt-4">
@@ -2537,13 +2575,13 @@ function BulkGroupAssignModal({
               onClick={onClose}
               className="rounded-lg px-4 py-2 text-sm text-zinc-500 hover:text-zinc-700"
             >
-              Cancel
+              {t("common.cancel")}
             </button>
             <button
               type="submit"
               className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
             >
-              Assign Group
+              {t("clients.assignGroup")}
             </button>
           </div>
         </form>
@@ -2561,6 +2599,21 @@ function MobileActionsSheet({
   selectedCount: number;
   onAction: (action: string) => void;
 }) {
+  const t = useT();
+  const mobileActions = useMemo(
+    () => [
+      { id: "addTraffic", label: t("clients.addTraffic"), icon: HardDrive },
+      { id: "addDays", label: t("clients.addDays"), icon: CalendarDays },
+      { id: "enable", label: t("clients.enable"), icon: Play },
+      { id: "disable", label: t("clients.disable"), icon: Square },
+      { id: "exportSubs", label: t("clients.exportSubscriptionLinks"), icon: Download },
+      { id: "assignGroup", label: t("clients.assignGroup"), icon: Users },
+      { id: "resetTraffic", label: t("clients.resetTrafficTitle"), icon: RotateCcw },
+      { id: "delete", label: t("clients.deleteClients"), icon: Trash2, danger: true },
+    ],
+    [t],
+  );
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -2578,21 +2631,12 @@ function MobileActionsSheet({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex justify-between items-center pb-2 border-b border-zinc-200 dark:border-zinc-800">
-          <span className="font-bold text-zinc-800 dark:text-zinc-200">{selectedCount} Clients Selected</span>
+          <span className="font-bold text-zinc-800 dark:text-zinc-200">{selectedCount} {t("clients.selected")}</span>
           <button onClick={onClose} className="text-zinc-500 p-1"><X size={18} /></button>
         </div>
 
         <div className="grid grid-cols-1 gap-2">
-          {[
-            { id: "addTraffic", label: "Add Traffic", icon: HardDrive },
-            { id: "addDays", label: "Extend Expiry", icon: CalendarDays },
-            { id: "enable", label: "Enable Selected", icon: Play },
-            { id: "disable", label: "Disable Selected", icon: Square },
-            { id: "exportSubs", label: "Export Subscription Links", icon: Download },
-            { id: "assignGroup", label: "Assign Native Group", icon: Users },
-            { id: "resetTraffic", label: "Reset Traffic Counters", icon: RotateCcw },
-            { id: "delete", label: "Delete Permanently", icon: Trash2, danger: true },
-          ].map((a) => (
+          {mobileActions.map((a) => (
             <button
               key={a.id}
               onClick={() => {

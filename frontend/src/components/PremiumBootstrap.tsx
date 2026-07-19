@@ -147,6 +147,20 @@ export function PremiumBootstrap() {
     script.src = `/api/platform/premium-assets/frontend/premium-runtime.js`;
     script.async = true;
     script.onload = async () => {
+      // Re-expose after runtime load so late require() of hmpanel/i18n always hits host module.
+      exposeSharedModules();
+      // Premium catalogs may have been stashed before LocaleProvider merge hook existed — flush again.
+      const pending = (window as Window & {
+        HMPANEL_PREMIUM_I18N?: { en?: Record<string, unknown>; fa?: Record<string, unknown> };
+        __HMPANEL_MERGE_I18N?: (loc: "en" | "fa", partial: Record<string, unknown>) => void;
+      }).HMPANEL_PREMIUM_I18N;
+      const merge = (window as Window & {
+        __HMPANEL_MERGE_I18N?: (loc: "en" | "fa", partial: Record<string, unknown>) => void;
+      }).__HMPANEL_MERGE_I18N;
+      if (typeof merge === "function" && pending) {
+        if (pending.en) merge("en", pending.en);
+        if (pending.fa) merge("fa", pending.fa);
+      }
       if (window.HMPANEL_PREMIUM_REGISTER) {
         window.HMPANEL_PREMIUM_REGISTER(usePluginRegistry);
       }

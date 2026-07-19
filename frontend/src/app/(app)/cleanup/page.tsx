@@ -26,7 +26,7 @@ export default function CleanupPage() {
   const cleanupMutation = useMutation({
     mutationFn: async (ids: string[]) => (await api.post("/clients/bulk", { ids, action: "cleanup" })).data,
     onSuccess: (data) => {
-      toast(`Successfully cleaned up ${data.affected} clients.`);
+      toast(t("cleanup.cleanupSuccess", { count: data.affected }));
       setSelectedIds([]);
       setIsWarningOpen(false);
       qc.invalidateQueries({ queryKey: ["cleanup-candidates"] });
@@ -34,13 +34,13 @@ export default function CleanupPage() {
       qc.invalidateQueries({ queryKey: ["reseller-overview"] });
     },
     onError: () => {
-      toast("Failed to cleanup clients", "error");
+      toast(t("cleanup.cleanupFailed"), "error");
       setIsWarningOpen(false);
     },
   });
 
   if (isLoading) return <Spinner />;
-  if (error) return <ErrorBox message="Failed to load cleanup candidates" />;
+  if (error) return <ErrorBox message={t("cleanup.loadFailed")} />;
 
   const filtered = (clients || []).filter((c) =>
     c.email.toLowerCase().includes(search.toLowerCase()) ||
@@ -75,11 +75,11 @@ export default function CleanupPage() {
           <ShieldAlert className="text-red-500" size={24} />
         </div>
         <div>
-          <h3 className="font-bold text-red-600 dark:text-red-400">Strict Archival Policy</h3>
+          <h3 className="font-bold text-red-600 dark:text-red-400">{t("cleanup.policyTitle")}</h3>
           <p className="mt-1 text-sm text-red-600/80 dark:text-red-400/80">
-            Deleting clients from this page is a <strong>permanent archival action</strong>. It will remove the client from the 3x-ui Panel API and the local database. 
+            {t("cleanup.policyHint")}
             <br />
-            <strong>No traffic refunds will be issued</strong> to the Reseller's balance. This feature strictly targets abandoned clients.
+            <strong>{t("cleanup.policyNoRefund")}</strong>
           </p>
         </div>
       </div>
@@ -90,7 +90,7 @@ export default function CleanupPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
             <input
               type="text"
-              placeholder="Search username or remark..."
+              placeholder={t("cleanup.searchPlaceholder")}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 py-2 pl-9 pr-4 text-sm text-zinc-900 dark:text-zinc-100 outline-none transition-colors focus:border-blue-500"
@@ -103,7 +103,7 @@ export default function CleanupPage() {
                 className="flex flex-1 sm:flex-none items-center justify-center gap-2 rounded-lg bg-red-500 px-4 py-2 text-sm font-medium text-white hover:bg-red-600 transition-colors"
               >
                 <Trash2 size={16} />
-                Cleanup Selected ({selectedIds.length})
+                {t("cleanup.cleanupSelected", { count: selectedIds.length })}
               </button>
             )}
           </div>
@@ -121,17 +121,17 @@ export default function CleanupPage() {
                     className="rounded border-zinc-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                   />
                 </th>
-                <th className="px-4 py-3">Client</th>
-                <th className="px-4 py-3">Owner</th>
-                <th className="px-4 py-3">Panel & Inbound</th>
-                <th className="px-4 py-3">Traffic (Used / Total)</th>
-                <th className="px-4 py-3">Expired Since</th>
+                <th className="px-4 py-3">{t("cleanup.colClient")}</th>
+                <th className="px-4 py-3">{t("cleanup.colOwner")}</th>
+                <th className="px-4 py-3">{t("cleanup.colPanelInbound")}</th>
+                <th className="px-4 py-3">{t("cleanup.colTraffic")}</th>
+                <th className="px-4 py-3">{t("cleanup.colExpiredSince")}</th>
               </tr>
             </thead>
             <tbody className="block md:table-row-group divide-y divide-zinc-200 dark:divide-zinc-800 bg-white dark:bg-zinc-950">
               {/* Mobile Select All Header */}
               <div className="md:hidden p-4 bg-zinc-50 dark:bg-zinc-900/50 flex justify-between items-center border-b border-zinc-200 dark:border-zinc-800">
-                <span className="text-xs font-semibold text-zinc-500 uppercase tracking-widest">Select All Candidates</span>
+                <span className="text-xs font-semibold text-zinc-500 uppercase tracking-widest">{t("cleanup.selectAllCandidates")}</span>
                 <input
                   type="checkbox"
                   checked={filtered.length > 0 && selectedIds.length === filtered.length}
@@ -171,22 +171,22 @@ export default function CleanupPage() {
                       {c.remark && <div className="text-xs text-zinc-500 mt-0.5">{c.remark}</div>}
                     </td>
                     <td className="block md:table-cell px-0 md:px-4 py-1 md:py-4">
-                      <div className="md:hidden text-xs text-zinc-500 mb-1">Owner</div>
-                      <Badge tone={c.admin ? "blue" : "zinc"}>{c.admin ? c.admin.username : "Orphaned"}</Badge>
+                      <div className="md:hidden text-xs text-zinc-500 mb-1">{t("cleanup.colOwner")}</div>
+                      <Badge tone={c.admin ? "blue" : "zinc"}>{c.admin ? c.admin.username : t("cleanup.orphaned")}</Badge>
                     </td>
                     <td className="block md:table-cell px-0 md:px-4 py-1 md:py-4 text-xs">
-                      <div className="md:hidden text-xs text-zinc-500 mb-1">Panel</div>
+                      <div className="md:hidden text-xs text-zinc-500 mb-1">{t("cleanup.panelLabel")}</div>
                       <div className="font-medium text-zinc-700 dark:text-zinc-300">{c.inbound?.panel?.name}</div>
                       <div className="text-zinc-500 mt-0.5">{c.inbound?.tag}</div>
                     </td>
                     <td className="block md:table-cell px-0 md:px-4 py-1 md:py-4 text-xs font-mono">
-                      <div className="md:hidden text-xs text-zinc-500 mb-1 font-sans">Traffic</div>
+                      <div className="md:hidden text-xs text-zinc-500 mb-1 font-sans">{t("cleanup.colTraffic")}</div>
                       <span className="text-zinc-800 dark:text-zinc-200">{formatBytes(used)}</span>
                       <span className="text-zinc-400 mx-1">/</span>
                       <span className="text-zinc-500">{c.total == 0 ? "∞" : formatBytes(Number(c.total))}</span>
                     </td>
                     <td className="block md:table-cell px-0 md:px-4 py-1 md:py-4 pt-2 md:pt-4">
-                      <Badge tone="red">{expiredDays} Days Ago</Badge>
+                      <Badge tone="red">{t("cleanup.daysAgo", { count: expiredDays })}</Badge>
                     </td>
                   </tr>
                 );
@@ -196,7 +196,7 @@ export default function CleanupPage() {
                   <td colSpan={6} className="block md:table-cell px-4 py-12 text-center text-zinc-500">
                     <div className="flex flex-col items-center justify-center">
                       <ArchiveX size={32} className="mb-3 text-zinc-400 dark:text-zinc-600" />
-                      <p>No cleanup candidates found.</p>
+                      <p>{t("cleanup.noCandidates")}</p>
                     </div>
                   </td>
                 </tr>
@@ -215,13 +215,11 @@ export default function CleanupPage() {
           >
             <div className="flex items-center gap-3 text-red-500 mb-4">
               <AlertTriangle size={24} />
-              <h2 className="text-xl font-bold">Confirm Archival Cleanup</h2>
+              <h2 className="text-xl font-bold">{t("cleanup.confirmTitle")}</h2>
             </div>
             
             <p className="text-zinc-600 dark:text-zinc-300 mb-4 text-sm leading-relaxed">
-              You are about to permanently delete <strong>{selectedIds.length}</strong> client(s).
-              <br /><br />
-              This action will completely remove them from the target panels and local database. <strong>No traffic refunds will be returned</strong> to the owning resellers.
+              {t("cleanup.confirmHint", { count: selectedIds.length })}
             </p>
 
             <div className="mt-6 flex justify-end gap-3">
@@ -230,7 +228,7 @@ export default function CleanupPage() {
                 disabled={cleanupMutation.isPending}
                 className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
               >
-                Cancel
+                {t("common.cancel")}
               </button>
               <button
                 onClick={() => cleanupMutation.mutate(selectedIds)}
@@ -238,7 +236,7 @@ export default function CleanupPage() {
                 className="flex items-center gap-2 rounded-lg bg-red-500 px-4 py-2 text-sm font-medium text-white hover:bg-red-600 transition-colors disabled:opacity-50"
               >
                 {cleanupMutation.isPending ? <Spinner className="w-4 h-4" /> : <Trash2 size={16} />}
-                Confirm Deletion
+                {t("cleanup.confirmDeletion")}
               </button>
             </div>
           </motion.div>

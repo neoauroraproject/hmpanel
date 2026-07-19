@@ -4,6 +4,7 @@ import { api } from "@/lib/api";
 import { X, Check, AlertTriangle, Users, Loader2 } from "lucide-react";
 import { useToast } from "@/components/toast";
 import { motion } from "framer-motion";
+import { useT } from "@/i18n";
 
 interface BulkCreateModalProps {
   onClose: () => void;
@@ -11,6 +12,7 @@ interface BulkCreateModalProps {
 }
 
 export function BulkCreateModal({ onClose, inboundsList }: BulkCreateModalProps) {
+  const t = useT();
   const qc = useQueryClient();
   const toast = useToast((s) => s.push);
 
@@ -82,7 +84,7 @@ export function BulkCreateModal({ onClose, inboundsList }: BulkCreateModalProps)
         return;
       }
       if (endNumber - startNumber > 500) {
-        setValidation({ valid: false, conflicts: ["Cannot create more than 500 clients at once."] });
+        setValidation({ valid: false, conflicts: [t("clients.maxBulkError")] });
         return;
       }
 
@@ -99,7 +101,7 @@ export function BulkCreateModal({ onClose, inboundsList }: BulkCreateModalProps)
       } catch (err: any) {
         setValidation({
           valid: false,
-          conflicts: [err.response?.data?.message || "Validation failed"],
+          conflicts: [err.response?.data?.message || t("common.validationFailed")],
         });
       } finally {
         setIsValidating(false);
@@ -108,7 +110,7 @@ export function BulkCreateModal({ onClose, inboundsList }: BulkCreateModalProps)
 
     const timeoutId = setTimeout(validateParams, 500);
     return () => clearTimeout(timeoutId);
-  }, [form.prefix, form.separator, form.startNumber, form.endNumber, form.inboundIds]);
+  }, [form.prefix, form.separator, form.startNumber, form.endNumber, form.inboundIds, t]);
 
   const createMutation = useMutation({
     mutationFn: async () => {
@@ -134,12 +136,12 @@ export function BulkCreateModal({ onClose, inboundsList }: BulkCreateModalProps)
       return await api.post("/clients/bulk-create", payload);
     },
     onSuccess: () => {
-      toast("Bulk clients created successfully", "success");
+      toast(t("clients.bulkCreateSuccess"), "success");
       qc.invalidateQueries({ queryKey: ["clients"] });
       onClose();
     },
     onError: (err: any) => {
-      toast(err?.response?.data?.message || "Failed to create clients", "error");
+      toast(err?.response?.data?.message || t("clients.bulkCreateFailed"), "error");
     }
   });
 
@@ -173,8 +175,8 @@ export function BulkCreateModal({ onClose, inboundsList }: BulkCreateModalProps)
               <Users size={20} />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-50">Bulk Create Clients</h3>
-              <p className="text-xs text-zinc-500">Create multiple clients sequentially</p>
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-50">{t("clients.bulkCreateTitle")}</h3>
+              <p className="text-xs text-zinc-500">{t("clients.bulkCreateSubtitle")}</p>
             </div>
           </div>
           <button onClick={onClose} className="text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 p-2"><X size={20} /></button>
@@ -184,14 +186,14 @@ export function BulkCreateModal({ onClose, inboundsList }: BulkCreateModalProps)
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Naming Section */}
             <div className="space-y-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/50 p-4">
-              <h4 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">Naming Pattern</h4>
+              <h4 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">{t("clients.namingPattern")}</h4>
               
               <div>
-                <label className="mb-1 block text-xs font-medium text-zinc-500">Prefix</label>
+                <label className="mb-1 block text-xs font-medium text-zinc-500">{t("clients.prefix")}</label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. vip"
+                  placeholder={t("clients.prefixPlaceholder")}
                   value={form.prefix}
                   onChange={(e) => setForm({ ...form, prefix: e.target.value })}
                   className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500"
@@ -199,23 +201,23 @@ export function BulkCreateModal({ onClose, inboundsList }: BulkCreateModalProps)
               </div>
 
               <div>
-                <label className="mb-1 block text-xs font-medium text-zinc-500">Separator</label>
+                <label className="mb-1 block text-xs font-medium text-zinc-500">{t("clients.separator")}</label>
                 <select
                   value={form.separator}
                   onChange={(e) => setForm({ ...form, separator: e.target.value })}
                   className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500"
                 >
-                  <option value="-">Hyphen (-)</option>
-                  <option value="_">Underscore (_)</option>
-                  <option value="*">Asterisk (*)</option>
-                  <option value=".">Dot (.)</option>
-                  <option value="">None</option>
+                  <option value="-">{t("clients.sepHyphen")}</option>
+                  <option value="_">{t("clients.sepUnderscore")}</option>
+                  <option value="*">{t("clients.sepAsterisk")}</option>
+                  <option value=".">{t("clients.sepDot")}</option>
+                  <option value="">{t("clients.sepNone")}</option>
                 </select>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-zinc-500">Start Number</label>
+                  <label className="mb-1 block text-xs font-medium text-zinc-500">{t("clients.startNumber")}</label>
                   <input
                     type="number"
                     min="1"
@@ -226,7 +228,7 @@ export function BulkCreateModal({ onClose, inboundsList }: BulkCreateModalProps)
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-zinc-500">End Number</label>
+                  <label className="mb-1 block text-xs font-medium text-zinc-500">{t("clients.endNumber")}</label>
                   <input
                     type="number"
                     min="1"
@@ -240,7 +242,7 @@ export function BulkCreateModal({ onClose, inboundsList }: BulkCreateModalProps)
 
               {previewEmails.length > 0 && (
                 <div className="mt-2 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-3">
-                  <span className="text-xs text-zinc-500 mb-1 block">Preview ({count > 0 ? count : 0} clients):</span>
+                  <span className="text-xs text-zinc-500 mb-1 block">{t("clients.previewClients", { count: count > 0 ? count : 0 })}</span>
                   <div className="flex flex-wrap gap-1.5 max-h-[80px] overflow-y-auto">
                     {previewEmails.map((email, idx) => (
                       <span key={idx} className="inline-block bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded text-[11px] text-zinc-600 dark:text-zinc-300 font-mono">
@@ -254,14 +256,14 @@ export function BulkCreateModal({ onClose, inboundsList }: BulkCreateModalProps)
 
             {/* Config Section */}
             <div className="space-y-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/50 p-4">
-              <h4 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">Configuration</h4>
+              <h4 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">{t("clients.configuration")}</h4>
               
               <div>
-                <label className="mb-1 block text-xs font-medium text-zinc-500">Assigned Inbounds</label>
+                <label className="mb-1 block text-xs font-medium text-zinc-500">{t("clients.assignedInbounds")}</label>
                 <div className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 overflow-hidden">
                   <div className="max-h-[160px] overflow-y-auto divide-y divide-zinc-200 dark:divide-zinc-800">
                     {inboundsList?.length === 0 ? (
-                      <div className="px-3 py-4 text-center text-sm text-zinc-500">No Inbounds available</div>
+                      <div className="px-3 py-4 text-center text-sm text-zinc-500">{t("common.noInboundsAvailable")}</div>
                     ) : (
                       inboundsList?.map((i) => {
                         const isChecked = form.inboundIds.includes(i.id);
@@ -292,7 +294,11 @@ export function BulkCreateModal({ onClose, inboundsList }: BulkCreateModalProps)
                                 </span>
                               </div>
                               <div className="text-[10px] text-zinc-400 dark:text-zinc-500 truncate mt-0.5">
-                                Panel: {i.panel?.name || 'Unknown'}{i.remark ? ` | Tag: ${i.tag}` : ''}
+                                {t("clients.panelInboundLine", {
+                                  panel: i.panel?.name || t("common.unknown"),
+                                  tag: i.tag,
+                                  port: i.port,
+                                })}
                               </div>
                             </div>
                           </label>
@@ -305,22 +311,22 @@ export function BulkCreateModal({ onClose, inboundsList }: BulkCreateModalProps)
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-zinc-500">Traffic (GB)</label>
+                  <label className="mb-1 block text-xs font-medium text-zinc-500">{t("clients.totalGb")}</label>
                   <input
                     type="number"
                     min="0"
-                    placeholder="Unlimited"
+                    placeholder={t("common.unlimited")}
                     value={form.trafficGB}
                     onChange={(e) => setForm({ ...form, trafficGB: e.target.value })}
                     className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500"
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-zinc-500">Expiry (Days)</label>
+                  <label className="mb-1 block text-xs font-medium text-zinc-500">{t("clients.expiryDays")}</label>
                   <input
                     type="number"
                     min="0"
-                    placeholder="Unlimited"
+                    placeholder={t("common.unlimited")}
                     value={form.expiryDays}
                     onChange={(e) => setForm({ ...form, expiryDays: e.target.value })}
                     className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500"
@@ -329,11 +335,11 @@ export function BulkCreateModal({ onClose, inboundsList }: BulkCreateModalProps)
               </div>
 
               <div className="mt-2">
-                <label className="mb-1 block text-xs font-medium text-zinc-500">IP Limit</label>
+                <label className="mb-1 block text-xs font-medium text-zinc-500">{t("clients.ipLimit")}</label>
                 <input
                   type="number"
                   min="0"
-                  placeholder="0 for unlimited"
+                  placeholder={t("clients.ipLimitPlaceholder")}
                   value={form.limitIp}
                   onChange={(e) => setForm({ ...form, limitIp: e.target.value })}
                   className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500"
@@ -349,7 +355,7 @@ export function BulkCreateModal({ onClose, inboundsList }: BulkCreateModalProps)
                   className="h-4 w-4 rounded border-zinc-300 text-blue-600 focus:ring-blue-500"
                 />
                 <label htmlFor="bulk-enable" className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                  Enable Clients Immediately
+                  {t("clients.enableImmediately")}
                 </label>
               </div>
             </div>
@@ -360,18 +366,18 @@ export function BulkCreateModal({ onClose, inboundsList }: BulkCreateModalProps)
             {isValidating ? (
               <div className="flex items-center gap-2 text-zinc-500">
                 <Loader2 size={16} className="animate-spin" />
-                <span className="text-sm">Validating with 3x-ui...</span>
+                <span className="text-sm">{t("clients.validating3xui")}</span>
               </div>
             ) : validation?.valid ? (
               <div className="flex items-center gap-2 text-emerald-500">
                 <Check size={18} />
-                <span className="text-sm font-medium">Validation Passed - All generated emails are available.</span>
+                <span className="text-sm font-medium">{t("clients.validationPassed")}</span>
               </div>
             ) : validation?.conflicts && validation.conflicts.length > 0 ? (
               <div className="flex items-start gap-2 text-red-500">
                 <AlertTriangle size={18} className="mt-0.5 shrink-0" />
                 <div>
-                  <span className="text-sm font-medium">Validation Failed:</span>
+                  <span className="text-sm font-medium">{t("clients.validationFailedLabel")}</span>
                   <ul className="list-disc pl-5 mt-1 text-xs space-y-1">
                     {validation.conflicts.map((c, i) => (
                       <li key={i}>{c}</li>
@@ -382,7 +388,7 @@ export function BulkCreateModal({ onClose, inboundsList }: BulkCreateModalProps)
             ) : (
               <div className="flex items-center gap-2 text-zinc-500">
                 <AlertTriangle size={18} />
-                <span className="text-sm">Please fill in Prefix, Inbounds, Start, and End number to validate.</span>
+                <span className="text-sm">{t("clients.validationFillRequired")}</span>
               </div>
             )}
           </div>
@@ -393,7 +399,7 @@ export function BulkCreateModal({ onClose, inboundsList }: BulkCreateModalProps)
               onClick={onClose}
               className="rounded-lg px-6 py-2.5 text-sm font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
             >
-              Cancel
+              {t("common.cancel")}
             </button>
             <button
               type="submit"
@@ -401,7 +407,9 @@ export function BulkCreateModal({ onClose, inboundsList }: BulkCreateModalProps)
               className="rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-medium text-white shadow-lg shadow-blue-500/30 hover:bg-blue-500 disabled:opacity-50 disabled:shadow-none transition-all flex items-center gap-2"
             >
               {createMutation.isPending && <Loader2 size={16} className="animate-spin" />}
-              {createMutation.isPending ? "Creating..." : `Create ${count > 0 ? count : 0} Clients`}
+              {createMutation.isPending
+                ? t("common.creating")
+                : t("clients.createClientsBtn", { count: count > 0 ? count : 0 })}
             </button>
           </div>
         </form>
