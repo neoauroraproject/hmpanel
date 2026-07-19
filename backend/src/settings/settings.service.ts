@@ -20,7 +20,9 @@ export class SettingsService {
 
   async getAllSettings() {
     const settings = await this.prisma.systemSetting.findMany();
-    const result: Record<string, any> = {};
+    const result: Record<string, any> = {
+      display_timezone: 'Asia/Tehran',
+    };
     for (const s of settings) {
       try {
         result[s.key] = JSON.parse(s.value);
@@ -28,7 +30,15 @@ export class SettingsService {
         result[s.key] = s.value;
       }
     }
+    if (!result.display_timezone) {
+      result.display_timezone = 'Asia/Tehran';
+    }
     return result;
+  }
+
+  async getDisplayTimezone(): Promise<string> {
+    const tz = await this.getSetting('display_timezone', 'Asia/Tehran');
+    return typeof tz === 'string' && tz.trim() ? tz.trim() : 'Asia/Tehran';
   }
 
   async setSetting(key: string, value: any) {

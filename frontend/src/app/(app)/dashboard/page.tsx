@@ -21,6 +21,7 @@ import { formatBytes, formatDateTime } from "@/lib/format";
 import { Card, Spinner, ErrorBox, Badge } from "@/components/ui";
 import { useToast } from "@/components/toast";
 import { useAuth } from "@/store/auth";
+import { useT } from "@/i18n";
 import { io } from "socket.io-client";
 
 const GB = 1024 ** 3;
@@ -118,6 +119,7 @@ export default function DashboardPage() {
 }
 
 function SuperDashboard() {
+  const t = useT();
   const router = useRouter();
   const qc = useQueryClient();
   const toast = useToast((s) => s.push);
@@ -281,7 +283,7 @@ function SuperDashboard() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 mb-8">
         <Card className="border-zinc-200 dark:border-zinc-800/60 shadow-sm">
           <div className="mb-6 flex items-center justify-between">
-            <h2 className="font-semibold text-zinc-800 dark:text-zinc-100">New clients (30d)</h2>
+            <h2 className="font-semibold text-zinc-800 dark:text-zinc-100">{t("dashboard.newClients30d")}</h2>
             <div className="h-8 w-8 rounded-full bg-purple-500/10 flex items-center justify-center"><Users size={16} className="text-purple-500"/></div>
           </div>
           <ResponsiveContainer width="100%" height={180}>
@@ -302,13 +304,13 @@ function SuperDashboard() {
         <Card className="border-zinc-200 dark:border-zinc-800/60 shadow-sm">
           <div className="mb-2 flex items-center justify-between">
             <h2 className="font-semibold text-zinc-800 dark:text-zinc-100 flex items-center gap-2">
-              Usage by Admin
+              {t("dashboard.usageByAdmin")}
             </h2>
             <div className="flex gap-1 rounded-lg border border-zinc-200 dark:border-zinc-800 p-0.5">
               {(["allTime", "24h"] as const).map((r) => (
                 <button key={r} onClick={() => setPieRange(r)}
                   className={`rounded-md px-2 py-0.5 text-[10px] ${pieRange === r ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100" : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"}`}>
-                  {r === "allTime" ? "All Time" : "24h"}
+                  {r === "allTime" ? t("dashboard.allTime") : t("dashboard.last24h")}
                 </button>
               ))}
             </div>

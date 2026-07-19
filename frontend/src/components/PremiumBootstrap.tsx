@@ -16,6 +16,7 @@ import { api } from "@/lib/api";
 import { isPublicAppPath } from "@/lib/public-paths";
 import { useAuth } from "@/store/auth";
 import * as ToastModule from "@/components/toast";
+import * as I18nModule from "@/i18n";
 
 declare global {
   interface Window {
@@ -48,6 +49,9 @@ function exposeSharedModules() {
     // Stable key + import path aliases so premium-runtime never gets a second zustand toast store.
     "hmpanel/toast": ToastModule,
     "@/components/toast": ToastModule,
+    // Same LocaleProvider context as the host shell (useT / mergeMessages).
+    "hmpanel/i18n": I18nModule,
+    "@/i18n": I18nModule,
   };
   window.React = React;
   window.ReactDOM = ReactDOM;

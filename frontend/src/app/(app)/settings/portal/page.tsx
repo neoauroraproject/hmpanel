@@ -8,6 +8,7 @@ import { Card, PageHeader, Spinner, ErrorBox } from "@/components/ui";
 import { useToast } from "@/components/toast";
 import { motion } from "framer-motion";
 import { useAuth } from "@/store/auth";
+import { useT } from "@/i18n";
 
 const THEMES = [
   { id: "Dark", label: "Dark Mode" },
@@ -33,6 +34,7 @@ const defaultSettings = {
 };
 
 export default function ResellerSettingsPage() {
+  const t = useT();
   const qc = useQueryClient();
   const toast = useToast((s) => s.push);
   const { admin: user } = useAuth();
@@ -65,7 +67,7 @@ export default function ResellerSettingsPage() {
     if (status === 403) {
       return (
         <div className="space-y-8 max-w-5xl">
-          <PageHeader title="Branding & Subscription Portal" subtitle="Customize your customer-facing subscription pages and client connection details." />
+          <PageHeader title={t("settings.portal")} subtitle={t("settings.portalSubtitle")} />
           <Card className="p-12 flex flex-col items-center justify-center text-center">
             <div className="w-16 h-16 bg-zinc-100 dark:bg-zinc-800 rounded-full flex items-center justify-center mb-4">
               <Palette size={32} className="text-zinc-400" />
@@ -86,7 +88,7 @@ export default function ResellerSettingsPage() {
   if (!hasPermission) {
     return (
       <div className="space-y-8 max-w-5xl">
-        <PageHeader title="Branding & Subscription Portal" subtitle="Customize your customer-facing subscription pages and client connection details." />
+        <PageHeader title={t("settings.portal")} subtitle={t("settings.portalSubtitle")} />
         <Card className="p-12 flex flex-col items-center justify-center text-center">
           <div className="w-16 h-16 bg-zinc-100 dark:bg-zinc-800 rounded-full flex items-center justify-center mb-4">
             <Palette size={32} className="text-zinc-400" />
@@ -105,8 +107,8 @@ export default function ResellerSettingsPage() {
   return (
     <div className="space-y-8 max-w-5xl">
       <PageHeader
-        title="Branding & Subscription Portal"
-        subtitle="Customize your customer-facing subscription pages and client connection details."
+        title={t("settings.portal")}
+        subtitle={t("settings.portalSubtitle")}
       />
 
       <div className="flex justify-end">
@@ -114,7 +116,7 @@ export default function ResellerSettingsPage() {
           onClick={handleSave} disabled={updateSettings.isPending}
           className="flex items-center gap-2 rounded-lg bg-blue-600 px-6 py-2 font-medium text-white hover:bg-blue-500 disabled:opacity-50 transition-colors"
         >
-          {updateSettings.isPending ? <Spinner className="w-4 h-4" /> : <Save size={16} />} Save All Settings
+          {updateSettings.isPending ? <Spinner className="w-4 h-4" /> : <Save size={16} />} {t("settings.saveAll")}
         </button>
       </div>
 

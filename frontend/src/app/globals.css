@@ -25,6 +25,15 @@ body {
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
 }
 
+html.locale-fa body,
+html.locale-fa {
+  font-family: "Vazirmatn", var(--font-geist-sans), Tahoma, Arial, sans-serif;
+}
+
+html.locale-en body {
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
 /* Subtle scrollbars for the dark UI */
 ::-webkit-scrollbar {
   width: 10px;

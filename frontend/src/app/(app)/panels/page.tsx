@@ -10,7 +10,9 @@ import type { PanelRow } from "@/lib/types";
 import { formatDateTime } from "@/lib/format";
 import { Card, PageHeader, Badge, Spinner, ErrorBox } from "@/components/ui";
 import { useToast } from "@/components/toast";
+import { useT } from "@/i18n";
 import { motion, AnimatePresence } from "framer-motion";
+import { MOTION_CONFIG } from "@/lib/motion";
 
 interface PanelForm {
   name: string;
@@ -19,16 +21,8 @@ interface PanelForm {
   apiToken: string;
 }
 
-const MOTION_CONFIG = {
-  page: { initial: { opacity: 0, y: 10 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.2, ease: "easeOut" as any } },
-  modalOverlay: { initial: { opacity: 0 }, animate: { opacity: 1 }, exit: { opacity: 0 }, transition: { duration: 0.15 } },
-  modalContent: { initial: { opacity: 0, scale: 0.95, y: 10 }, animate: { opacity: 1, scale: 1, y: 0 }, exit: { opacity: 0, scale: 0.95, y: 10 }, transition: { duration: 0.2, ease: [0.16, 1, 0.3, 1] as any } },
-  row: { initial: { opacity: 0 }, animate: { opacity: 1 }, transition: { duration: 0.2 } },
-  staggerContainer: { animate: { transition: { staggerChildren: 0.05 } } },
-  staggerItem: { initial: { opacity: 0, x: -10 }, animate: { opacity: 1, x: 0 }, transition: { duration: 0.15 } }
-};
-
 export default function PanelsPage() {
+  const t = useT();
   const qc = useQueryClient();
   const toast = useToast((s) => s.push);
 
@@ -96,8 +90,8 @@ export default function PanelsPage() {
   return (
     <motion.div {...MOTION_CONFIG.page}>
       <PageHeader
-        title="Panels"
-        subtitle={`${panels.length} registered 3x-ui panel${panels.length === 1 ? "" : "s"}`}
+        title={t("panels.title")}
+        subtitle={t(panels.length === 1 ? "panels.subtitle" : "panels.subtitle_plural", { count: panels.length })}
         action={
           <motion.button 
             whileHover={{ scale: 1.02 }}
@@ -105,7 +99,7 @@ export default function PanelsPage() {
             onClick={() => setWizardOpen(true)} 
             className="flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500 shadow-sm"
           >
-            <Plus size={16} /> Add Panel
+            <Plus size={16} /> {t("panels.addPanel")}
           </motion.button>
         }
       />
@@ -113,7 +107,7 @@ export default function PanelsPage() {
       <Card className="overflow-x-auto p-0 shadow-lg border-transparent md:border-zinc-200 dark:border-zinc-800/50 bg-transparent md:bg-zinc-50 dark:bg-zinc-950">
         <table className="w-full text-sm block md:table">
           <thead className="hidden md:table-header-group">
-            <tr className="border-b border-zinc-200 dark:border-zinc-800 text-left text-xs uppercase tracking-wide text-zinc-500 bg-white dark:bg-zinc-900/50">
+            <tr className="border-b border-zinc-200 dark:border-zinc-800 text-start text-xs uppercase tracking-wide text-zinc-500 bg-white dark:bg-zinc-900/50">
               <th className="px-4 py-3 font-medium">Name</th>
               <th className="px-4 py-3 font-medium">URL</th>
               <th className="px-4 py-3 font-medium">Version</th>
@@ -121,7 +115,7 @@ export default function PanelsPage() {
               <th className="px-4 py-3 font-medium">Clients</th>
               <th className="px-4 py-3 font-medium">Inbounds</th>
               <th className="px-4 py-3 font-medium">Last Sync</th>
-              <th className="px-4 py-3 text-right font-medium">Actions</th>
+              <th className="px-4 py-3 text-end font-medium">Actions</th>
             </tr>
           </thead>
           <tbody className="block md:table-row-group space-y-3 md:space-y-0 md:divide-y md:divide-zinc-800/50">
@@ -316,7 +310,7 @@ function PanelWizard({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
           </div>
 
           {syncReport.success ? (
-            <div className="grid grid-cols-2 gap-4 text-left">
+            <div className="grid grid-cols-2 gap-4 text-start">
               <div className="bg-zinc-50 dark:bg-zinc-950 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800">
                 <div className="text-xs text-zinc-500 mb-1">Synced Inbounds</div>
                 <div className="text-lg font-medium text-zinc-700 dark:text-zinc-200">{syncReport.syncedInbounds}</div>
@@ -335,7 +329,7 @@ function PanelWizard({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
               </div>
             </div>
           ) : (
-            <div className="bg-red-500/10 border border-red-500/20 p-4 rounded-xl text-left text-sm text-red-400">
+            <div className="bg-red-500/10 border border-red-500/20 p-4 rounded-xl text-start text-sm text-red-400">
               {syncReport.error}
             </div>
           )}
@@ -356,11 +350,11 @@ function PanelWizard({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
         <Field label="Panel Name" value={form.name} placeholder="e.g. FRA Panel D" onChange={(e) => setForm({ ...form, name: e.target.value })} />
         <div>
           <Field label="Panel URL" value={form.url} placeholder="https://domain.com:2053/custompath/panel/" onChange={(e) => { setForm({ ...form, url: e.target.value }); setTest(null); }} />
-          <div className="text-[10px] text-zinc-500 mt-1 pl-1">Examples: https://domain:2053 or https://ip:2053/custompath/panel/</div>
+          <div className="text-[10px] text-zinc-500 mt-1 ps-1">Examples: https://domain:2053 or https://ip:2053/custompath/panel/</div>
         </div>
         <div>
           <Field label="Subscription Domain / URL *" value={form.subUrl} placeholder="https://sub.domain.com:2096/sub/" onChange={(e) => { setForm({ ...form, subUrl: e.target.value }); }} />
-          <div className="text-[10px] text-zinc-500 mt-1 pl-1 leading-tight">
+          <div className="text-[10px] text-zinc-500 mt-1 ps-1 leading-tight">
             Required. Example: <b>https://domain.com:2096/sub/</b><br/>
             Include the correct path (like <b>/sub/</b> or your custom path) at the end.
           </div>
@@ -432,7 +426,7 @@ function PanelWizard({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
                           <div className="font-bold text-emerald-500 flex items-center gap-1.5 mb-1"><CheckCircle2 size={14} /> Ready ({test.pingMs}ms)</div>
                           <div className="text-emerald-400/70 text-[10px]">Panel {test.version} · Xray {test.xrayVersion}</div>
                         </div>
-                        <div className="text-right">
+                        <div className="text-end">
                           <div className="text-emerald-300 font-medium">{test.inboundCount} Inbounds</div>
                           <div className="text-emerald-300 font-medium">{test.clientCount} Clients</div>
                         </div>
@@ -525,7 +519,7 @@ function EditPanel({ panel, onClose, onSaved }: { panel: any; onClose: () => voi
         <Field label="Panel URL" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} />
         <div>
           <Field label="Subscription Domain / URL *" value={form.subUrl} placeholder="e.g. https://sub.domain.com:2096/sub/" onChange={(e) => setForm({ ...form, subUrl: e.target.value })} />
-          <div className="text-[10px] text-zinc-500 mt-1 pl-1 leading-tight">
+          <div className="text-[10px] text-zinc-500 mt-1 ps-1 leading-tight">
             Required. Example: <b>https://domain.com:2096/sub/</b><br/>
             Include the correct path (like <b>/sub/</b> or your custom path) at the end.
           </div>
@@ -607,14 +601,14 @@ function InboundsModal({ panel, onClose }: { panel: any; onClose: () => void }) 
         <div className="space-y-4">
           <p className="text-sm text-zinc-500 dark:text-zinc-400">Custom names (remarks) help identify inbounds when adding new clients.</p>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left">
+            <table className="w-full text-sm text-start">
               <thead className="bg-white dark:bg-zinc-900 text-zinc-500 text-xs uppercase">
                 <tr>
-                  <th className="px-3 py-2 font-medium rounded-tl-lg">Tag</th>
+                  <th className="px-3 py-2 font-medium rounded-ss-lg">Tag</th>
                   <th className="px-3 py-2 font-medium">Protocol</th>
                   <th className="px-3 py-2 font-medium">Port</th>
                   <th className="px-3 py-2 font-medium">Remark</th>
-                  <th className="px-3 py-2 font-medium rounded-tr-lg"></th>
+                  <th className="px-3 py-2 font-medium rounded-se-lg"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800">
@@ -640,7 +634,7 @@ function InboundsModal({ panel, onClose }: { panel: any; onClose: () => void }) 
                         ib.remark || <span className="text-zinc-600 italic">None</span>
                       )}
                     </td>
-                    <td className="px-3 py-2 text-right">
+                    <td className="px-3 py-2 text-end">
                       {editingId === ib.id ? (
                         <div className="flex justify-end gap-2">
                           <button onClick={() => setEditingId(null)} className="text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300"><X size={14} /></button>

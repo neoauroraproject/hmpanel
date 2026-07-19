@@ -8,8 +8,10 @@ import { Card, PageHeader, Spinner, ErrorBox, Badge } from "@/components/ui";
 import { useToast } from "@/components/toast";
 import { formatBytes } from "@/lib/format";
 import { motion } from "framer-motion";
+import { useT } from "@/i18n";
 
 export default function CleanupPage() {
+  const t = useT();
   const qc = useQueryClient();
   const toast = useToast((s) => s.push);
   const [search, setSearch] = useState("");
@@ -64,8 +66,8 @@ export default function CleanupPage() {
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
       <PageHeader
-        title="Cleanup Candidates"
-        subtitle="Manage long-expired clients eligible for permanent archival"
+        title={t("cleanup.title")}
+        subtitle={t("cleanup.subtitle")}
       />
 
       <div className="mb-6 rounded-xl border border-red-500/20 bg-red-500/5 p-4 flex gap-4">

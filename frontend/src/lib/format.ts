@@ -1,3 +1,8 @@
+import {
+  DEFAULT_DISPLAY_TIMEZONE,
+  formatInTz,
+} from "@/lib/timezone";
+
 /** Format a byte count (number, string, or bigint) into a human-readable string. */
 export function formatBytes(value: string | number | bigint): string {
   const bytes = typeof value === "string" ? Number(value) : Number(value);
@@ -8,8 +13,20 @@ export function formatBytes(value: string | number | bigint): string {
   return `${n.toFixed(n >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
+let cachedDisplayTz: string = DEFAULT_DISPLAY_TIMEZONE;
+
+/** Called when settings load so UI dates follow panel timezone. */
+export function setDisplayTimezone(tz: string | null | undefined) {
+  cachedDisplayTz =
+    typeof tz === "string" && tz.trim() ? tz.trim() : DEFAULT_DISPLAY_TIMEZONE;
+}
+
+export function getDisplayTimezone() {
+  return cachedDisplayTz || DEFAULT_DISPLAY_TIMEZONE;
+}
+
 export function formatDate(iso: string | number | Date): string {
-  return new Date(iso).toLocaleDateString(undefined, {
+  return formatInTz(iso, getDisplayTimezone(), {
     year: "numeric",
     month: "short",
     day: "numeric",
@@ -17,11 +34,12 @@ export function formatDate(iso: string | number | Date): string {
 }
 
 export function formatDateTime(iso: string | number | Date): string {
-  return new Date(iso).toLocaleString(undefined, {
+  return formatInTz(iso, getDisplayTimezone(), {
     month: "short",
     day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+    hour12: false,
   });
 }
 
@@ -30,7 +48,7 @@ export function formatLicenseExpiry(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   const days = Math.ceil((d.getTime() - Date.now()) / 86_400_000);
-  const label = d.toLocaleDateString(undefined, {
+  const label = formatInTz(d, getDisplayTimezone(), {
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -45,9 +63,12 @@ export function formatLicenseExpiry(iso: string): string {
 export function formatExpiry(value: string): string {
   const ms = Number(value);
   if (!ms) return "Never";
-  const d = new Date(ms);
   const days = Math.ceil((ms - Date.now()) / 86_400_000);
-  const label = d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  const label = formatInTz(ms, getDisplayTimezone(), {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
   if (days < 0) return `${label} (expired)`;
   return `${label} (${days}d)`;
 }

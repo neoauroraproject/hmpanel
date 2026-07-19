@@ -10,6 +10,7 @@ import { formatBytes, formatExpiry, isExpired, formatDate } from "@/lib/format";
 import { Card, PageHeader, Badge, Spinner, ErrorBox } from "@/components/ui";
 import { useToast } from "@/components/toast";
 import { useAuth } from "@/store/auth";
+import { useT } from "@/i18n";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Search, Plus, ChevronDown, ChevronUp, Copy, Check, CheckCircle2,
@@ -88,6 +89,7 @@ function UsageBar({ up, down, total }: { up: string; down: string; total: string
 }
 
 export default function ClientsPage() {
+  const t = useT();
   const qc = useQueryClient();
   const toast = useToast((s) => s.push);
   const adminUser = useAuth((s) => s.admin);
@@ -448,8 +450,8 @@ export default function ClientsPage() {
   return (
     <div className="space-y-6 pb-20">
       <PageHeader
-        title="Clients"
-        subtitle={`${totalItems} client${totalItems === 1 ? "" : "s"} found`}
+        title={t("clients.title")}
+        subtitle={t(totalItems === 1 ? "clients.subtitle" : "clients.subtitle_plural", { count: totalItems })}
         action={
           <>
             <PluginSlot name="clients.actions" />
@@ -457,13 +459,13 @@ export default function ClientsPage() {
               onClick={() => setBulkCreateOpen(true)}
               className="flex items-center gap-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
             >
-              <Users size={16} /> Bulk Create
+              <Users size={16} /> {t("clients.bulkCreate")}
             </button>
             <button
               onClick={() => setAddOpen(true)}
               className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 transition-colors shadow-lg shadow-blue-500/20"
             >
-              <Plus size={16} /> Add Client
+              <Plus size={16} /> {t("clients.addClient")}
             </button>
           </>
         }
@@ -534,7 +536,7 @@ export default function ClientsPage() {
       {/* Search and Quick Filters */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="w-full sm:w-72 relative">
-          <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
+          <div className="absolute inset-y-0 start-3 flex items-center pointer-events-none">
             <svg className="h-4 w-4 text-zinc-500 dark:text-zinc-400" viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
             </svg>
@@ -547,14 +549,14 @@ export default function ClientsPage() {
               setPage(1);
             }}
             placeholder="Search clients by name, email or UUID..."
-            className="w-full bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-lg pl-9 pr-4 py-2 text-base md:text-sm text-zinc-800 dark:text-zinc-100 focus:outline-none focus:border-blue-500"
+            className="w-full bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-lg ps-9 pe-4 py-2 text-base md:text-sm text-zinc-800 dark:text-zinc-100 focus:outline-none focus:border-blue-500"
           />
         </div>
       </div>
 
       <div>
         <div className="flex overflow-x-auto hide-scrollbar items-center gap-2 pb-2 -mx-4 px-4 sm:mx-0 sm:px-0">
-          <div className="hidden sm:flex items-center gap-2 mr-2 text-sm text-zinc-500 dark:text-zinc-400 font-medium">
+          <div className="hidden sm:flex items-center gap-2 me-2 text-sm text-zinc-500 dark:text-zinc-400 font-medium">
             <Filter size={16} /> Filters:
           </div>
           {[
@@ -673,7 +675,7 @@ export default function ClientsPage() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm block md:table">
             <thead className="hidden md:table-header-group">
-              <tr className="border-b border-zinc-200 dark:border-zinc-800 text-left text-xs uppercase tracking-wide text-zinc-500 bg-white dark:bg-zinc-900/30 font-semibold">
+              <tr className="border-b border-zinc-200 dark:border-zinc-800 text-start text-xs uppercase tracking-wide text-zinc-500 bg-white dark:bg-zinc-900/30 font-semibold">
                 <th className="w-12 px-4 py-3 text-center">
                   <button
                     onClick={handleSelectAll}
@@ -787,7 +789,7 @@ export default function ClientsPage() {
                       <td className="block md:table-cell px-4 py-3 text-zinc-600 dark:text-zinc-300">
                         <div className="md:hidden flex items-center justify-between">
                           <UsageBar up={c.up} down={c.down} total={c.total} />
-                          <span className={`text-xs ml-2 whitespace-nowrap ${isExpired(c.expiryTime) ? "text-red-400 font-medium" : ""}`}>
+                          <span className={`text-xs ms-2 whitespace-nowrap ${isExpired(c.expiryTime) ? "text-red-400 font-medium" : ""}`}>
                             {formatExpiry(c.expiryTime)}
                           </span>
                         </div>
@@ -1088,7 +1090,7 @@ export default function ClientsPage() {
                 <option value={100}>100</option>
               </select>
               <span>per page</span>
-              <span className="ml-4">
+              <span className="ms-4">
                 {(page - 1) * limit + 1} - {Math.min(page * limit, totalItems)} of {totalItems} clients
               </span>
             </div>
@@ -1200,7 +1202,7 @@ export default function ClientsPage() {
                 </button>
                 <button
                   onClick={() => setSelectedClients({})}
-                  className="text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 p-1 ml-2 shrink-0"
+                  className="text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 p-1 ms-2 shrink-0"
                   title="Cancel Selection"
                 >
                   <X size={15} />
@@ -1400,7 +1402,7 @@ export default function ClientsPage() {
                       else setAssignInboundIds([...assignInboundIds, inbound.id]);
                     }}
                     className={clsx(
-                      "w-full text-left p-3 rounded-xl border transition-all flex items-start gap-3",
+                      "w-full text-start p-3 rounded-xl border transition-all flex items-start gap-3",
                       isSelected 
                         ? "border-blue-500 bg-blue-50 dark:bg-blue-500/10" 
                         : "border-zinc-200 dark:border-zinc-800 hover:border-blue-300 dark:hover:border-blue-500/50"

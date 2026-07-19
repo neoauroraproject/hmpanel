@@ -4,6 +4,7 @@ import { useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "./ThemeProvider";
 import { PremiumBootstrap } from "./PremiumBootstrap";
+import { LocaleProvider } from "@/i18n";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [client] = useState(
@@ -18,8 +19,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
       <QueryClientProvider client={client}>
-        <PremiumBootstrap />
-        {children}
+        <LocaleProvider>
+          <PremiumBootstrap />
+          {children}
+        </LocaleProvider>
       </QueryClientProvider>
     </ThemeProvider>
   );

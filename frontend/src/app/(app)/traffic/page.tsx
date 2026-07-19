@@ -8,6 +8,7 @@ import type { Admin, Paginated, Transaction } from "@/lib/types";
 import { formatBytes, formatDateTime } from "@/lib/format";
 import { Card, PageHeader, Badge, Spinner, ErrorBox } from "@/components/ui";
 import { useAuth } from "@/store/auth";
+import { useT } from "@/i18n";
 
 type LedgerResponse = Paginated<Transaction> & {
   totals: {
@@ -17,6 +18,7 @@ type LedgerResponse = Paginated<Transaction> & {
 };
 
 export default function TrafficPage() {
+  const t = useT();
   const admin = useAuth((s) => s.admin);
   const isSuper = admin?.role === "SUPER_ADMIN";
   const [adminId, setAdminId] = useState<string>("");
@@ -59,8 +61,8 @@ export default function TrafficPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Traffic Ledger"
-        subtitle="Credits (top-ups), debits (provisioning) and usage charges"
+        title={t("traffic.title")}
+        subtitle={t("traffic.subtitle")}
         action={
           isSuper ? (
             <select
@@ -71,7 +73,7 @@ export default function TrafficPage() {
               }}
               className="rounded-lg border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3 py-2 text-sm text-zinc-700 dark:text-zinc-200 outline-none focus:border-blue-500"
             >
-              <option value="">Select a reseller…</option>
+              <option value="">{t("traffic.selectReseller")}</option>
               {resellers.map((r) => (
                 <option key={r.id} value={r.id}>
                   {r.username} ({r.trafficMode})
@@ -85,7 +87,7 @@ export default function TrafficPage() {
       {isSuper && !adminId ? (
         <Card>
           <p className="text-sm text-zinc-500 dark:text-zinc-400">
-            Select a reseller above to view their transaction ledger.
+            {t("traffic.pickReseller")}
           </p>
         </Card>
       ) : (
@@ -121,13 +123,13 @@ export default function TrafficPage() {
 
           <div className="flex flex-col sm:flex-row gap-4 justify-between items-center bg-white dark:bg-zinc-900/40 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800">
             <form onSubmit={handleSearch} className="relative w-full sm:w-64">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
+              <Search className="absolute start-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
               <input
                 type="text"
                 placeholder="Search description or client..."
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 outline-none focus:border-blue-500 dark:focus:border-blue-500"
+                className="w-full ps-9 pe-4 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 outline-none focus:border-blue-500 dark:focus:border-blue-500"
               />
             </form>
             
@@ -153,11 +155,11 @@ export default function TrafficPage() {
           ) : ledger.error ? (
             <ErrorBox message="Failed to load ledger" />
           ) : (
-            <Card className="overflow-hidden p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-zinc-200 dark:border-zinc-800 text-left text-xs uppercase tracking-wide text-zinc-500">
+            <Card className="overflow-hidden p-0 bg-transparent md:bg-zinc-50 dark:bg-zinc-950 border-0 md:border md:border-zinc-200 dark:border-zinc-800">
+              <div className="min-w-0">
+                <table className="w-full text-sm block md:table">
+                  <thead className="hidden md:table-header-group">
+                    <tr className="border-b border-zinc-200 dark:border-zinc-800 text-start text-xs uppercase tracking-wide text-zinc-500">
                       <th className="px-4 py-3 font-medium">Type</th>
                       <th className="px-4 py-3 font-medium">Amount</th>
                       <th className="px-4 py-3 font-medium">Balance</th>
@@ -166,50 +168,59 @@ export default function TrafficPage() {
                       <th className="px-4 py-3 font-medium">Date</th>
                     </tr>
                   </thead>
-                  <tbody>
-                    {(ledger.data?.data ?? []).map((t) => {
-                      const credit = t.type === "CREDIT";
+                  <tbody className="block md:table-row-group space-y-3 md:space-y-0">
+                    {(ledger.data?.data ?? []).map((tx) => {
+                      const credit = tx.type === "CREDIT";
                       return (
                         <tr
-                          key={t.id}
-                          className="border-b border-zinc-100 dark:border-zinc-800/60 last:border-0 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
+                          key={tx.id}
+                          className="block md:table-row bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 md:border-b md:border-x-0 md:border-t-0 md:border-zinc-100 dark:md:border-zinc-800/60 rounded-xl md:rounded-none last:border-b-0 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
                         >
-                          <td className="px-4 py-3">
-                            <Badge tone={credit ? "green" : t.type === "DEBIT" ? "amber" : "purple"}>
-                              {t.type}
-                            </Badge>
+                          <td className="block md:table-cell px-4 py-3">
+                            <div className="flex items-center justify-between gap-2 md:block">
+                              <Badge tone={credit ? "green" : tx.type === "DEBIT" ? "amber" : "purple"}>
+                                {tx.type}
+                              </Badge>
+                              <span className="md:hidden text-xs text-zinc-500">{formatDateTime(tx.createdAt)}</span>
+                            </div>
                           </td>
-                          <td className="px-4 py-3">
+                          <td className="block md:table-cell px-4 py-2 md:py-3">
+                            <div className="md:hidden text-[10px] uppercase text-zinc-500 font-semibold mb-1 tracking-wider">Amount</div>
                             <span
                               className={`flex items-center gap-1 font-medium ${credit ? "text-emerald-500 dark:text-emerald-400" : "text-amber-500 dark:text-amber-400"}`}
                             >
                               {credit ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
-                              {formatBytes(t.amount)}
+                              {formatBytes(tx.amount)}
                             </span>
                           </td>
-                          <td className="px-4 py-3 text-zinc-500 dark:text-zinc-400 text-xs">
-                            {t.balanceBefore != null && t.balanceAfter != null ? (
+                          <td className="block md:table-cell px-4 py-2 md:py-3 text-zinc-500 dark:text-zinc-400 text-xs">
+                            <div className="md:hidden text-[10px] uppercase text-zinc-500 font-semibold mb-1 tracking-wider">Balance</div>
+                            {tx.balanceBefore != null && tx.balanceAfter != null ? (
                               <div className="flex flex-col">
-                                <span className="text-zinc-400">{formatBytes(t.balanceBefore)} &rarr;</span>
-                                <span className="font-medium text-zinc-700 dark:text-zinc-200">{formatBytes(t.balanceAfter)}</span>
+                                <span className="text-zinc-400">{formatBytes(tx.balanceBefore)} &rarr;</span>
+                                <span className="font-medium text-zinc-700 dark:text-zinc-200">{formatBytes(tx.balanceAfter)}</span>
                               </div>
                             ) : (
                               "—"
                             )}
                           </td>
-                          <td className="px-4 py-3 text-zinc-700 dark:text-zinc-300">{t.description}</td>
-                          <td className="px-4 py-3 text-zinc-500 dark:text-zinc-400">
-                            {t.client?.email ?? "—"}
+                          <td className="block md:table-cell px-4 py-2 md:py-3 text-zinc-700 dark:text-zinc-300">
+                            <div className="md:hidden text-[10px] uppercase text-zinc-500 font-semibold mb-1 tracking-wider">Description</div>
+                            {tx.description}
                           </td>
-                          <td className="px-4 py-3 text-zinc-500 dark:text-zinc-400">
-                            {formatDateTime(t.createdAt)}
+                          <td className="block md:table-cell px-4 py-2 md:py-3 text-zinc-500 dark:text-zinc-400">
+                            <div className="md:hidden text-[10px] uppercase text-zinc-500 font-semibold mb-1 tracking-wider">Client</div>
+                            {tx.client?.email ?? "—"}
+                          </td>
+                          <td className="hidden md:table-cell px-4 py-3 text-zinc-500 dark:text-zinc-400">
+                            {formatDateTime(tx.createdAt)}
                           </td>
                         </tr>
                       );
                     })}
                     {(ledger.data?.data.length ?? 0) === 0 && (
-                      <tr>
-                        <td colSpan={5} className="px-4 py-10 text-center text-zinc-500">
+                      <tr className="block md:table-row">
+                        <td colSpan={6} className="block md:table-cell px-4 py-10 text-center text-zinc-500">
                           No transactions found matching your criteria.
                         </td>
                       </tr>

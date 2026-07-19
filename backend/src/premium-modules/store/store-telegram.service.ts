@@ -18,10 +18,12 @@ import {
 import axios from 'axios';
 import * as QRCode from 'qrcode';
 import { PrismaService } from '../../prisma/prisma.service';
+import { SettingsService } from '../../settings/settings.service';
 import { StoreCustomerAuthService } from './store-customer-auth.service';
 import { StoreRateLimitService } from './store-rate-limit.service';
 import { generateCustomerToken } from './store.types';
 import { StoreService } from './store.service';
+import { formatDateTimeInTz } from '../../common/utils/timezone';
 
 type TelegramWebAppUser = {
   id: number;
@@ -37,6 +39,7 @@ export class StoreTelegramService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly settings: SettingsService,
     private readonly customerAuth: StoreCustomerAuthService,
     private readonly rateLimit: StoreRateLimitService,
     @Inject(forwardRef(() => StoreService))
@@ -778,11 +781,18 @@ export class StoreTelegramService {
 
       let servicesBlock = '';
       if (activeOrders.length) {
+        const tz = String(
+          (await this.settings.getSetting('display_timezone', 'Asia/Tehran')) || 'Asia/Tehran',
+        );
         servicesBlock =
           '\n\n📦 <b>سرویس‌های فعال شما</b>\n' +
-          activeOrders
-            .map((o) => this.formatConfigBlock(store, o.client, o.trackingCode))
-            .join('\n\n');
+          (
+            await Promise.all(
+              activeOrders.map((o) =>
+                this.formatConfigBlock(store, o.client, o.trackingCode, tz),
+              ),
+            )
+          ).join('\n\n');
       }
 
       await this.sendMessage(botToken, chatId, `${welcome}${servicesBlock}`, {
@@ -985,7 +995,7 @@ export class StoreTelegramService {
     });
   }
 
-  formatConfigBlock(
+  async formatConfigBlock(
     store: { domain?: { domain: string; status: string } | null },
     client?: {
       remark?: string | null;
@@ -997,6 +1007,7 @@ export class StoreTelegramService {
       down?: bigint | number | null;
     } | null,
     trackingCode?: string | null,
+    timeZone?: string,
   ) {
     const name = client?.remark || client?.email || 'Service';
     const lines = [`• <b>${name}</b>`];
@@ -1007,7 +1018,12 @@ export class StoreTelegramService {
     }
     const expiryMs = Number(client?.expiryTime || 0);
     if (expiryMs > 0) {
-      lines.push(`  ⏳ Expiry: ${new Date(expiryMs).toLocaleString()}`);
+      const tz =
+        timeZone ||
+        String(
+          (await this.settings.getSetting('display_timezone', 'Asia/Tehran')) || 'Asia/Tehran',
+        );
+      lines.push(`  ⏳ Expiry: ${formatDateTimeInTz(expiryMs, tz)}`);
     }
     const total = Number(client?.total || 0);
     if (total > 0) {

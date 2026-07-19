@@ -25,11 +25,15 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      lang="fa"
+      dir="rtl"
+      className={`${geistSans.variable} ${geistMono.variable} locale-fa h-full antialiased`}
       suppressHydrationWarning
     >
-      <body className="min-h-full">
+      <head>
+        <link rel="stylesheet" href="/fonts/vazirmatn/vazirmatn.css" />
+      </head>
+      <body className="min-h-full font-sans">
         <Providers>{children}</Providers>
       </body>
     </html>

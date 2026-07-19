@@ -4,8 +4,10 @@ import React, { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { usePluginRegistry } from "@/store/pluginRegistry";
 import { PageHeader, Card, ErrorBox, Spinner } from "@/components/ui";
+import { useT } from "@/i18n";
 
 export default function PremiumPluginPage() {
+  const t = useT();
   const params = useParams();
   const pluginPathSegments = params.plugin as string[];
   const pluginPath = `/${pluginPathSegments.join("/")}`;
@@ -24,17 +26,17 @@ export default function PremiumPluginPage() {
     if (waitMs < 12000) {
       return (
         <div className="space-y-6">
-          <PageHeader title="Premium Module" subtitle="Loading premium UI…" />
+          <PageHeader title={t("app.premium")} subtitle={t("premium.moduleLoading")} />
           <Spinner />
         </div>
       );
     }
     return (
       <div className="space-y-6">
-        <PageHeader title="Premium Module" subtitle="Activate premium or refresh the page." />
+        <PageHeader title={t("app.premium")} subtitle={t("premium.moduleMissing")} />
         <Card className="p-8 text-center text-zinc-500">
           <ErrorBox
-            message={`Premium module not loaded for ${fullPath}. Open Settings → Premium License, wait for modules to load, then refresh.`}
+            message={t("premium.moduleNotLoaded", { path: fullPath })}
           />
         </Card>
       </div>

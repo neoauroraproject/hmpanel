@@ -7,8 +7,10 @@ import { useAuth } from "@/store/auth";
 import { PageHeader, Card, Spinner, ErrorBox } from "@/components/ui";
 import Link from "next/link";
 import { Diamond, ChevronRight } from "lucide-react";
+import { useT } from "@/i18n";
 
 export default function PremiumSettingsPage() {
+  const t = useT();
   const admin = useAuth((s) => s.admin);
   const premiumRoute = usePluginRegistry((s) => s.routes["/settings/premium"]);
   const { licenseQuery } = useLicenseActivation();
@@ -30,7 +32,7 @@ export default function PremiumSettingsPage() {
   if (!isPremium) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Premium Settings" subtitle="Premium license required" />
+        <PageHeader title={t("premium.settingsTitle")} subtitle={t("premium.settingsSubtitle")} />
         <Card className="p-6 text-sm text-zinc-500">
           Activate your premium license under Global Settings → Premium License.
         </Card>
@@ -49,7 +51,7 @@ export default function PremiumSettingsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Premium Settings" subtitle="Manage premium modules" />
+      <PageHeader title={t("premium.settingsTitle")} subtitle={t("premium.settingsSubtitle")} />
       {isLoading ? (
         <Spinner />
       ) : (

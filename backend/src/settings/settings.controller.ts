@@ -23,6 +23,14 @@ export class SettingsController {
     return this.diagnosticService.getDiagnostics();
   }
 
+  @Get('display-timezone')
+  // Any authenticated JWT user (no SUPER_ADMIN) — used by UI clocks
+  @ApiOperation({ summary: 'Get display timezone for UI and notifications' })
+  async getDisplayTimezone() {
+    const timezone = await this.settingsService.getDisplayTimezone();
+    return { timezone };
+  }
+
   @Get()
   @Roles('SUPER_ADMIN')
   @ApiOperation({ summary: 'Get all system settings' })

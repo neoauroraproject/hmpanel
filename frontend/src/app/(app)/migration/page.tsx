@@ -6,8 +6,10 @@ import { api } from "@/lib/api";
 import { PageHeader, Card, Spinner } from "@/components/ui";
 import { Import, CheckCircle2, AlertCircle, Database, Server, Users, Activity } from "lucide-react";
 import { motion } from "framer-motion";
+import { useT } from "@/i18n";
 
 export default function MigrationPage() {
+  const t = useT();
   const [step, setStep] = useState<number>(1);
   const [file, setFile] = useState<File | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -79,8 +81,8 @@ export default function MigrationPage() {
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
       <PageHeader
-        title="Whale Panel Migration"
-        subtitle="Automated migration engine for legacy Whale SQLite backups."
+        title={t("migration.title")}
+        subtitle={t("migration.subtitle")}
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">

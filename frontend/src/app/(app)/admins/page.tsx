@@ -6,8 +6,10 @@ import { api } from "@/lib/api";
 import { formatBytes, formatDate } from "@/lib/format";
 import { Card, PageHeader, Badge, Spinner, ErrorBox } from "@/components/ui";
 import { useToast } from "@/components/toast";
+import { useT } from "@/i18n";
 import { Plus, Power, Edit2, Shield, Activity, HardDrive, Cpu, CreditCard, ChevronDown, Check, X, ShieldCheck, Download, Upload, Trash2, Eye, EyeOff, Server, Database, Save, ArrowRight, Store, Users, Clock, Settings2, Zap, Lock, AlertCircle, Infinity } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { MOTION_CONFIG } from "@/lib/motion";
 
 interface Admin {
   id: string;
@@ -48,14 +50,8 @@ interface PanelRow {
   status: string;
 }
 
-const MOTION_CONFIG = {
-  page: { initial: { opacity: 0, y: 10 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.2, ease: "easeOut" as any } },
-  modalOverlay: { initial: { opacity: 0 }, animate: { opacity: 1 }, exit: { opacity: 0 }, transition: { duration: 0.15 } },
-  modalContent: { initial: { opacity: 0, scale: 0.95, y: 10 }, animate: { opacity: 1, scale: 1, y: 0 }, exit: { opacity: 0, scale: 0.95, y: 10 }, transition: { duration: 0.2, ease: [0.16, 1, 0.3, 1] as any } },
-  row: { initial: { opacity: 0 }, animate: { opacity: 1 }, transition: { duration: 0.2 } },
-};
-
 export default function AdminsPage() {
+  const t = useT();
   const qc = useQueryClient();
   const toast = useToast((s) => s.push);
   const [addOpen, setAddOpen] = useState(false);
@@ -129,8 +125,8 @@ export default function AdminsPage() {
   return (
     <motion.div {...MOTION_CONFIG.page}>
       <PageHeader
-        title="Admins"
-        subtitle="Platform operators and resellers with quick operation actions"
+        title={t("admins.title")}
+        subtitle={t("admins.subtitle")}
         action={
           <motion.button
             whileHover={{ scale: 1.02 }}
@@ -138,7 +134,7 @@ export default function AdminsPage() {
             onClick={() => setAddOpen(true)}
             className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 shadow-sm"
           >
-            <Plus size={16} /> Add Admin
+            <Plus size={16} /> {t("admins.addAdmin")}
           </motion.button>
         }
       />
@@ -151,7 +147,7 @@ export default function AdminsPage() {
               activeTab === 'active' ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100' : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200'
             }`}
           >
-            Active Admins
+            {t("admins.activeAdmins")}
           </button>
           <button
             onClick={() => setActiveTab('disabled')}
@@ -159,12 +155,12 @@ export default function AdminsPage() {
               activeTab === 'disabled' ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100' : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200'
             }`}
           >
-            Disabled Admins
+            {t("admins.disabledAdmins")}
           </button>
         </div>
 
         <div className="w-full sm:w-64 relative">
-          <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
+          <div className="absolute inset-y-0 start-3 flex items-center pointer-events-none">
             <svg className="h-4 w-4 text-zinc-500 dark:text-zinc-400" viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
             </svg>
@@ -174,7 +170,7 @@ export default function AdminsPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search admins..."
-            className="w-full bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-lg pl-9 pr-4 py-2 text-sm text-zinc-800 dark:text-zinc-100 focus:outline-none focus:border-blue-500"
+            className="w-full bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-lg ps-9 pe-4 py-2 text-sm text-zinc-800 dark:text-zinc-100 focus:outline-none focus:border-blue-500"
           />
         </div>
       </div>
@@ -182,13 +178,13 @@ export default function AdminsPage() {
       <Card className="overflow-x-auto p-0 shadow-lg border-transparent md:border-zinc-200 dark:border-zinc-800/50 bg-transparent md:bg-zinc-50 dark:bg-zinc-950">
         <table className="w-full text-sm block md:table">
           <thead className="hidden md:table-header-group">
-            <tr className="border-b border-zinc-200 dark:border-zinc-800 text-left text-xs uppercase tracking-wide text-zinc-500 bg-white dark:bg-zinc-900/50">
+            <tr className="border-b border-zinc-200 dark:border-zinc-800 text-start text-xs uppercase tracking-wide text-zinc-500 bg-white dark:bg-zinc-900/50">
               <th className="px-4 py-3 font-medium">Admin</th>
               <th className="px-4 py-3 font-medium">Status</th>
               <th className="px-4 py-3 font-medium">Traffic (Left / Total)</th>
               <th className="px-4 py-3 font-medium">Clients (Left / Total)</th>
               <th className="px-4 py-3 font-medium">Expiry</th>
-              <th className="px-4 py-3 font-medium text-right">Actions</th>
+              <th className="px-4 py-3 font-medium text-end">Actions</th>
             </tr>
           </thead>
           <tbody className="block md:table-row-group space-y-3 md:space-y-0 md:divide-y md:divide-zinc-800/50">
@@ -278,7 +274,7 @@ export default function AdminsPage() {
                   )}
                 </td>
 
-                <td className="block md:table-cell px-4 py-3 border-t border-zinc-200 dark:border-zinc-800/50 md:border-0 mt-2 md:mt-0 transition-all duration-300 text-right" onClick={(e) => e.stopPropagation()}>
+                <td className="block md:table-cell px-4 py-3 border-t border-zinc-200 dark:border-zinc-800/50 md:border-0 mt-2 md:mt-0 transition-all duration-300 text-end" onClick={(e) => e.stopPropagation()}>
                   <div className="flex items-center justify-start md:justify-end gap-1.5 md:opacity-0 md:group-hover:opacity-100 transition-opacity flex-wrap w-full">
                     {a.role !== "SUPER_ADMIN" && (
                       <motion.button 
@@ -463,8 +459,8 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
                       </div>
                       <div className="relative">
                         <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">Password</label>
-                        <input type={showPassword ? "text" : "password"} required value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 pl-3 pr-10 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
-                        <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-[28px] text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300">
+                        <input type={showPassword ? "text" : "password"} required value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 ps-3 pe-10 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
+                        <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute end-3 top-[28px] text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300">
                           {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                         </button>
                       </div>
@@ -506,7 +502,7 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
                               <button type="button" onClick={() => setForm(f => ({...f, selectedInbounds: inbounds?.map((i: any) => i.id) || []}))} className="text-xs text-blue-500 hover:underline">Select All</button>
                             </label>
                             {inboundsLoading ? <div className="text-xs text-zinc-500">Loading inbounds...</div> : (
-                              <div className="space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+                              <div className="space-y-2 max-h-48 overflow-y-auto pe-2 custom-scrollbar">
                                 {(inbounds ?? []).map((i: any) => (
                                   <label key={i.id} className="flex items-center gap-3 p-2 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer">
                                     <input type="checkbox" checked={form.selectedInbounds.includes(i.id)} 
@@ -882,7 +878,7 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
                                   <span className="text-[10px] text-zinc-500 mb-0.5">Available</span>
                                   <span className="text-sm font-medium text-blue-400">{admin.balance ? (admin.balance / (1024 * 1024 * 1024)).toFixed(2) : "0"} GB</span>
                                 </div>
-                                <div className="flex flex-col text-right">
+                                <div className="flex flex-col text-end">
                                   <span className="text-[10px] text-zinc-500 mb-0.5">Used</span>
                                   <span className="text-sm font-medium text-amber-400">{admin.usedTraffic ? (admin.usedTraffic / (1024 * 1024 * 1024)).toFixed(2) : "0"} GB</span>
                                 </div>
@@ -944,8 +940,8 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
                         </div>
                         <div className="relative">
                           <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">Password</label>
-                          <input type={showPassword ? "text" : "password"} placeholder="Leave blank to keep unchanged" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 pl-3 pr-10 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
-                          <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-[28px] text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300">
+                          <input type={showPassword ? "text" : "password"} placeholder="Leave blank to keep unchanged" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 ps-3 pe-10 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
+                          <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute end-3 top-[28px] text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300">
                             {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                           </button>
                         </div>
@@ -992,7 +988,7 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
                                 <button type="button" onClick={() => setForm(f => ({...f, selectedInbounds: inbounds?.map((i: any) => i.id) || []}))} className="text-xs text-blue-500 hover:underline">Select All</button>
                               </label>
                               {inboundsLoading ? <div className="text-xs text-zinc-500">Loading inbounds...</div> : (
-                                <div className="space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+                                <div className="space-y-2 max-h-48 overflow-y-auto pe-2 custom-scrollbar">
                                   {(inbounds ?? []).map((i: any) => (
                                     <label key={i.id} className="flex items-center gap-3 p-2 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer">
                                       <input type="checkbox" checked={form.selectedInbounds.includes(i.id)} 
@@ -1035,7 +1031,7 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
         </div>
 
         {/* Admin Statistics (Sidebar) — below form on mobile */}
-        <div className="w-full md:w-1/3 shrink-0 bg-zinc-50 dark:bg-zinc-950/50 p-6 border-t md:border-t-0 md:border-r border-zinc-200 dark:border-zinc-800/50 flex flex-col order-2 md:order-1">
+        <div className="w-full md:w-1/3 shrink-0 bg-zinc-50 dark:bg-zinc-950/50 p-6 border-t md:border-t-0 md:border-e border-zinc-200 dark:border-zinc-800/50 flex flex-col order-2 md:order-1">
           <div className="flex justify-between items-start mb-6">
             <div>
               <h2 className="text-xl font-bold text-zinc-800 dark:text-zinc-100">{admin.username}</h2>

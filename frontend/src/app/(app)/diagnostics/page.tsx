@@ -5,8 +5,10 @@ import { api } from "@/lib/api";
 import { PageHeader, Card, Spinner, ErrorBox, Badge } from "@/components/ui";
 import { Server, HardDrive, Cpu, ShieldAlert, CheckCircle2, XCircle, Info, Lock, Activity } from "lucide-react";
 import { motion } from "framer-motion";
+import { useT } from "@/i18n";
 
 export default function DiagnosticsPage() {
+  const t = useT();
   const { data: diag, isLoading, error } = useQuery({
     queryKey: ["system-diagnostics"],
     queryFn: async () => (await api.get("/settings/diagnostics")).data,
@@ -20,8 +22,8 @@ export default function DiagnosticsPage() {
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
       <PageHeader
-        title="System Diagnostics"
-        subtitle="Read-only hardware, docker, and installation telemetry."
+        title={t("diagnostics.title")}
+        subtitle={t("diagnostics.subtitle")}
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">

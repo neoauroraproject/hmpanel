@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Save, Settings, Activity, ArchiveX, ChevronRight, Info, ExternalLink, Database, Download, Upload, Shield, RefreshCw } from "lucide-react";
+import { Save, Settings, Activity, ArchiveX, ChevronRight, Info, ExternalLink, Database, Download, Upload, Shield, RefreshCw, Clock } from "lucide-react";
 import { api } from "@/lib/api";
 import { useRouter } from "next/navigation";
 import { ErrorBox, PageHeader, Spinner, Card } from "@/components/ui";
@@ -10,8 +10,12 @@ import { useToast } from "@/components/toast";
 import { motion } from "framer-motion";
 import { SslManagerModal } from "./SslManagerModal";
 import { LicenseSettingsCard } from "@/components/LicenseSettingsCard";
+import { useT } from "@/i18n";
+import { setDisplayTimezone } from "@/lib/format";
+import { COMMON_TIMEZONES, DEFAULT_DISPLAY_TIMEZONE } from "@/lib/timezone";
 
 export default function GlobalSettingsPage() {
+  const t = useT();
   const qc = useQueryClient();
   const toast = useToast((s) => s.push);
   const router = useRouter();
@@ -32,15 +36,22 @@ export default function GlobalSettingsPage() {
 
   const [form, setForm] = useState({
     cleanup_threshold_days: 30,
+    display_timezone: DEFAULT_DISPLAY_TIMEZONE,
   });
   
   const [isSslModalOpen, setIsSslModalOpen] = useState(false);
 
   useEffect(() => {
     if (settings) {
+      const tz =
+        typeof settings.display_timezone === "string" && settings.display_timezone.trim()
+          ? settings.display_timezone.trim()
+          : DEFAULT_DISPLAY_TIMEZONE;
       setForm({
         cleanup_threshold_days: Number(settings.cleanup_threshold_days) || 30,
+        display_timezone: tz,
       });
+      setDisplayTimezone(tz);
     }
   }, [settings]);
 
@@ -50,8 +61,8 @@ export default function GlobalSettingsPage() {
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
       <PageHeader
-        title="Global Settings"
-        subtitle="Manage platform-wide configurations"
+        title={t("settings.title")}
+        subtitle={t("settings.subtitle")}
       />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -93,6 +104,58 @@ export default function GlobalSettingsPage() {
                 >
                   {updateSettings.isPending ? <Spinner className="w-4 h-4" /> : <Save size={16} />}
                   Save Settings
+                </button>
+              </div>
+            </div>
+          </Card>
+
+          <Card className="p-6">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-2 rounded-lg bg-amber-500/10 text-amber-500">
+                <Clock size={20} />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-zinc-800 dark:text-zinc-100">{t("settings.timezone")}</h3>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">{t("settings.timezoneHint")}</p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                  {t("settings.timezone")}
+                </label>
+                <select
+                  value={form.display_timezone}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setForm({ ...form, display_timezone: next });
+                    setDisplayTimezone(next);
+                  }}
+                  className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors"
+                >
+                  {COMMON_TIMEZONES.map((tz) => {
+                    const label = t(`timezones.${tz}`);
+                    return (
+                      <option key={tz} value={tz}>
+                        {label.startsWith("timezones.") ? tz : label}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              <div className="pt-4 border-t border-zinc-200 dark:border-zinc-800 flex justify-end">
+                <button
+                  onClick={() => {
+                    updateSettings.mutate(form);
+                    setDisplayTimezone(form.display_timezone);
+                  }}
+                  disabled={updateSettings.isPending}
+                  className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50 transition-colors"
+                >
+                  {updateSettings.isPending ? <Spinner className="w-4 h-4" /> : <Save size={16} />}
+                  {t("common.save")}
                 </button>
               </div>
             </div>
@@ -375,7 +438,7 @@ function BackupRestoreCard() {
             {restoreAnalysis.warnings?.length > 0 && (
               <div className="mb-6 p-3 rounded-lg bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20">
                 <p className="text-xs font-semibold text-amber-800 dark:text-amber-400 mb-1">Warnings:</p>
-                <ul className="list-disc pl-4 text-xs text-amber-700 dark:text-amber-500">
+                <ul className="list-disc ps-4 text-xs text-amber-700 dark:text-amber-500">
                   {restoreAnalysis.warnings.map((w, i) => <li key={i}>{w}</li>)}
                 </ul>
               </div>

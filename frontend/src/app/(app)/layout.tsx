@@ -6,6 +6,7 @@ import { useAuth } from "@/store/auth";
 import { Sidebar } from "@/components/sidebar";
 import { MobileNav } from "@/components/mobile-nav";
 import { Toaster } from "@/components/toast";
+import { TimezoneBootstrap } from "@/components/TimezoneBootstrap";
 
 export default function AppLayout({
   children,
@@ -40,10 +41,11 @@ export default function AppLayout({
   if (!ready) return null;
 
   return (
-    <div className="flex flex-col md:flex-row h-screen overflow-hidden bg-zinc-50 dark:bg-zinc-950">
+    <div className="flex h-screen flex-col overflow-hidden bg-zinc-50 dark:bg-zinc-950 md:flex-row">
+      <TimezoneBootstrap />
       <Sidebar />
       <MobileNav />
-      <main className="flex-1 overflow-y-auto p-4 md:p-8 pb-8 md:pb-8 relative">
+      <main className="relative flex-1 overflow-y-auto p-4 pb-8 md:p-8 md:pb-8">
         {children}
       </main>
       <Toaster />
