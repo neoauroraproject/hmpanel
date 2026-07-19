@@ -8,6 +8,18 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [1.8.1] - 2026-07-19
+
+### Fixed
+- **Clients page crash:** Moved `useMemo` above loading early-return (Rules of Hooks) so the page loads again.
+- **Premium mobile/sidebar menu labels:** Translate premium module titles via `nav.*` instead of English API names.
+
+### Changed
+- **Dashboard:** Full FA/EN i18n for Super Admin and Reseller dashboards.
+- **Settings:** Tabbed layout (General, License, SSL, Backup, About).
+
+---
+
 ## [1.5.6] - 2026-07-08
 
 ### Fixed

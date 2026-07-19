@@ -32,6 +32,7 @@ import { usePremiumModules } from "@/hooks/usePremiumModules";
 import { useLicenseActivation } from "@/hooks/useLicenseActivation";
 import { api } from "@/lib/api";
 import { useT } from "@/i18n";
+import { translatePremiumMenuTitle } from "@/lib/premium-nav";
 
 const CORE_NAV: {
   href: string;
@@ -114,7 +115,11 @@ export function MobileNav() {
           : []),
         ...(admin?.role === "SUPER_ADMIN"
           ? dynamicMenus.map((m) => ({
-              title: m.title,
+              title: translatePremiumMenuTitle(t, {
+                moduleId: m.moduleId as string | undefined,
+                href: m.href,
+                fallback: m.title,
+              }),
               href: m.href,
               icon: m.icon,
               moduleId: m.moduleId as string | undefined,
@@ -130,7 +135,11 @@ export function MobileNav() {
             return m.kind === "BUSINESS";
           })
           .map((m) => ({
-            title: m.name,
+            title: translatePremiumMenuTitle(t, {
+              moduleId: m.id,
+              href: m.frontendPath,
+              fallback: m.name,
+            }),
             href: m.frontendPath,
             icon: PREMIUM_MENU_ICONS[m.id] || Diamond,
             moduleId: m.id as string | undefined,

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Save, Settings, Activity, ArchiveX, ChevronRight, Info, ExternalLink, Database, Download, Upload, Shield, RefreshCw, Clock } from "lucide-react";
+import { Save, Settings, Activity, ArchiveX, ChevronRight, Info, ExternalLink, Database, Download, Upload, Shield, RefreshCw, Clock, KeyRound } from "lucide-react";
 import { api } from "@/lib/api";
 import { useRouter } from "next/navigation";
 import { ErrorBox, PageHeader, Spinner, Card } from "@/components/ui";
@@ -20,6 +20,9 @@ export default function GlobalSettingsPage() {
   const qc = useQueryClient();
   const toast = useToast((s) => s.push);
   const router = useRouter();
+
+  type SettingsTab = "general" | "license" | "ssl" | "backup" | "about";
+  const [tab, setTab] = useState<SettingsTab>("general");
 
   const { data: settings, isLoading, error } = useQuery({
     queryKey: ["settings"],
@@ -59,6 +62,14 @@ export default function GlobalSettingsPage() {
   if (isLoading) return <Spinner />;
   if (error) return <ErrorBox message={t("settings.loadFailed")} />;
 
+  const tabs: { id: SettingsTab; label: string; icon: typeof Settings }[] = [
+    { id: "general", label: t("settings.tabGeneral"), icon: Settings },
+    { id: "license", label: t("settings.tabLicense"), icon: KeyRound },
+    { id: "ssl", label: t("settings.tabSsl"), icon: Shield },
+    { id: "backup", label: t("settings.tabBackup"), icon: Database },
+    { id: "about", label: t("settings.tabAbout"), icon: Info },
+  ];
+
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
       <PageHeader
@@ -66,9 +77,29 @@ export default function GlobalSettingsPage() {
         subtitle={t("settings.subtitle")}
       />
 
-      {/* Balanced columns: left = Cleanup / TZ / Language / shortcuts; right = License / SSL / About+Updates / Backup */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-        <div className="space-y-6">
+      <div className="mb-6 flex flex-wrap gap-2 rounded-2xl border border-zinc-200 bg-zinc-50/80 p-1.5 dark:border-zinc-800 dark:bg-zinc-900/40">
+        {tabs.map(({ id, label, icon: Icon }) => {
+          const active = tab === id;
+          return (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setTab(id)}
+              className={
+                active
+                  ? "inline-flex items-center gap-2 rounded-xl bg-white px-3.5 py-2 text-sm font-semibold text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-50"
+                  : "inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-medium text-zinc-500 hover:bg-white/70 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800/60 dark:hover:text-zinc-200"
+              }
+            >
+              <Icon size={16} />
+              {label}
+            </button>
+          );
+        })}
+      </div>
+
+      {tab === "general" && (
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 items-start">
           <Card className="p-6">
             <div className="flex items-center gap-3 mb-6">
               <div className="p-2 rounded-lg bg-blue-500/10 text-blue-500">
@@ -176,55 +207,78 @@ export default function GlobalSettingsPage() {
             <LocaleSwitcher className="w-full justify-stretch [&>button]:flex-1" />
           </Card>
 
-          <Card className="p-0 overflow-hidden hover:border-blue-500 transition-colors cursor-pointer">
-            <div className="p-6 flex items-center justify-between" onClick={() => router.push('/diagnostics')}>
-              <div className="flex items-center gap-4">
-                <div className="p-3 rounded-lg bg-indigo-500/10 text-indigo-500">
-                  <Activity size={24} />
+          <div className="space-y-4">
+            <Card className="p-0 overflow-hidden hover:border-blue-500 transition-colors cursor-pointer">
+              <div className="p-6 flex items-center justify-between" onClick={() => router.push('/diagnostics')}>
+                <div className="flex items-center gap-4">
+                  <div className="p-3 rounded-lg bg-indigo-500/10 text-indigo-500">
+                    <Activity size={24} />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-zinc-800 dark:text-zinc-100">{t("settings.diagnosticsTitle")}</h3>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">{t("settings.diagnosticsHint")}</p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-lg font-bold text-zinc-800 dark:text-zinc-100">{t("settings.diagnosticsTitle")}</h3>
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">{t("settings.diagnosticsHint")}</p>
-                </div>
+                <ChevronRight className="text-zinc-400 rtl:rotate-180" />
               </div>
-              <ChevronRight className="text-zinc-400 rtl:rotate-180" />
-            </div>
-          </Card>
+            </Card>
 
-          <Card className="p-0 overflow-hidden hover:border-red-500 transition-colors cursor-pointer">
-            <div className="p-6 flex items-center justify-between" onClick={() => router.push('/cleanup')}>
-              <div className="flex items-center gap-4">
-                <div className="p-3 rounded-lg bg-red-500/10 text-red-500">
-                  <ArchiveX size={24} />
+            <Card className="p-0 overflow-hidden hover:border-red-500 transition-colors cursor-pointer">
+              <div className="p-6 flex items-center justify-between" onClick={() => router.push('/cleanup')}>
+                <div className="flex items-center gap-4">
+                  <div className="p-3 rounded-lg bg-red-500/10 text-red-500">
+                    <ArchiveX size={24} />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-zinc-800 dark:text-zinc-100">{t("settings.cleanupCandidatesTitle")}</h3>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">{t("settings.cleanupCandidatesHint")}</p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-lg font-bold text-zinc-800 dark:text-zinc-100">{t("settings.cleanupCandidatesTitle")}</h3>
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">{t("settings.cleanupCandidatesHint")}</p>
-                </div>
+                <ChevronRight className="text-zinc-400 rtl:rotate-180" />
               </div>
-              <ChevronRight className="text-zinc-400 rtl:rotate-180" />
+            </Card>
+          </div>
+        </div>
+      )}
+
+      {tab === "license" && (
+        <div className="max-w-3xl">
+          <LicenseSettingsCard />
+        </div>
+      )}
+
+      {tab === "ssl" && (
+        <div className="max-w-3xl">
+          <Card className="p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-3 rounded-lg bg-indigo-500/10 text-indigo-500">
+                <Shield size={24} />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-zinc-800 dark:text-zinc-100">{t("settings.sslTitle")}</h3>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">{t("settings.sslHint")}</p>
+              </div>
             </div>
+            <button
+              type="button"
+              onClick={() => setIsSslModalOpen(true)}
+              className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-500 transition-colors"
+            >
+              <Shield size={16} />
+              {t("settings.openSslManager")}
+            </button>
           </Card>
         </div>
+      )}
 
-        <div className="space-y-6">
-          <LicenseSettingsCard />
+      {tab === "backup" && (
+        <div className="max-w-4xl">
+          <BackupRestoreCard />
+        </div>
+      )}
 
-          <Card className="p-0 overflow-hidden hover:border-indigo-500 transition-colors cursor-pointer">
-            <div className="p-6 flex items-center justify-between" onClick={() => setIsSslModalOpen(true)}>
-              <div className="flex items-center gap-4">
-                <div className="p-3 rounded-lg bg-indigo-500/10 text-indigo-500">
-                  <Shield size={24} />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-zinc-800 dark:text-zinc-100">{t("settings.sslTitle")}</h3>
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">{t("settings.sslHint")}</p>
-                </div>
-              </div>
-              <ChevronRight className="text-zinc-400 rtl:rotate-180" />
-            </div>
-          </Card>
-
+      {tab === "about" && (
+        <div className="max-w-3xl">
           <Card className="p-6 border-blue-500/20 bg-blue-500/5">
             <div className="flex items-center gap-3 mb-4">
               <div className="p-2 rounded-lg bg-blue-500/10 text-blue-500">
@@ -260,10 +314,9 @@ export default function GlobalSettingsPage() {
               <UpdateCard />
             </div>
           </Card>
-
-          <BackupRestoreCard />
         </div>
-      </div>
+      )}
+
       <SslManagerModal isOpen={isSslModalOpen} onClose={() => setIsSslModalOpen(false)} />
     </motion.div>
   );

@@ -364,6 +364,20 @@ export default function ClientsPage() {
     },
   });
 
+  // Must stay above loading/error early returns (Rules of Hooks).
+  const filterChips = useMemo(
+    () => [
+      { id: "", label: t("clients.filterAll") },
+      { id: "online", label: t("clients.filterOnline") },
+      { id: "traffic-low", label: t("clients.filterLowTraffic") },
+      { id: "expiring-soon", label: t("clients.filterExpiringSoon") },
+      { id: "disabled", label: t("clients.filterDisabled") },
+      { id: "expired", label: t("clients.filterExpired") },
+      { id: "depleted", label: t("clients.filterNoTraffic") },
+    ],
+    [t],
+  );
+
   if (isLoading) return <Spinner />;
   if (error) return <ErrorBox message={t("clients.loadFailed")} />;
 
@@ -469,19 +483,6 @@ export default function ClientsPage() {
 
   // Traffic Impact calculations for Delete Confirmation
   const totalAllocatedTraffic = Object.values(selectedClients).reduce((sum, c) => sum + Number(c.total), 0);
-
-  const filterChips = useMemo(
-    () => [
-      { id: "", label: t("clients.filterAll") },
-      { id: "online", label: t("clients.filterOnline") },
-      { id: "traffic-low", label: t("clients.filterLowTraffic") },
-      { id: "expiring-soon", label: t("clients.filterExpiringSoon") },
-      { id: "disabled", label: t("clients.filterDisabled") },
-      { id: "expired", label: t("clients.filterExpired") },
-      { id: "depleted", label: t("clients.filterNoTraffic") },
-    ],
-    [t],
-  );
 
   return (
     <div className="space-y-6 pb-20">
