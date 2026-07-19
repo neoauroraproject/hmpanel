@@ -451,7 +451,7 @@ export default function ClientsPage() {
         title="Clients"
         subtitle={`${totalItems} client${totalItems === 1 ? "" : "s"} found`}
         action={
-          <div className="flex gap-2">
+          <>
             <PluginSlot name="clients.actions" />
             <button
               onClick={() => setBulkCreateOpen(true)}
@@ -465,7 +465,7 @@ export default function ClientsPage() {
             >
               <Plus size={16} /> Add Client
             </button>
-          </div>
+          </>
         }
       />
 

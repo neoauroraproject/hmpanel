@@ -76,12 +76,16 @@ export function PageHeader({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="mb-6 flex items-end justify-between gap-4">
-      <div>
+    <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
+      <div className="min-w-0">
         <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">{title}</h1>
         {subtitle && <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{subtitle}</p>}
       </div>
-      {action}
+      {action ? (
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:shrink-0 sm:justify-end">
+          {action}
+        </div>
+      ) : null}
     </div>
   );
 }
