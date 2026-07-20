@@ -11,6 +11,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PanelCapabilitiesService } from './panel-capabilities.service';
 import { buildConnectionExtrasEnvelope } from '../clients/output/connection-extras';
+import { ClientsService } from '../clients/clients.service';
 import axios, { AxiosError } from 'axios';
 import * as https from 'https';
 import * as crypto from 'crypto';
@@ -87,6 +88,8 @@ export class PanelsService implements OnModuleInit {
   constructor(
     private prisma: PrismaService,
     private panelCapabilitiesService: PanelCapabilitiesService,
+    @Inject(forwardRef(() => ClientsService))
+    private clientsService: ClientsService,
   ) {}
 
   // ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -1382,7 +1385,29 @@ export class PanelsService implements OnModuleInit {
             }
             if (dbClient.up !== up) changedData.up = up;
             if (dbClient.down !== down) changedData.down = down;
-            if (dbClient.total !== total) changedData.total = total;
+            if (dbClient.total !== total) {
+              if (total < dbClient.total) {
+                this.logger.warn(
+                  `[SYNC] Preserving DB total for ${trimmedEmail}: ` +
+                    `panel=${total} db=${dbClient.total}`,
+                );
+                await this.prisma.auditLog.create({
+                  data: {
+                    action: 'SYNC_TOTAL_CONFLICT',
+                    entity: 'Client',
+                    entityId: dbClient.id,
+                    details: {
+                      message:
+                        'Panel total lower than DB — preserving paid allocation',
+                      panelTotal: total.toString(),
+                      dbTotal: dbClient.total.toString(),
+                    },
+                  },
+                });
+              } else {
+                changedData.total = total;
+              }
+            }
             if (dbClient.expiryTime !== expiryTime)
               changedData.expiryTime = expiryTime;
             if (dbClient.flow !== unifiedClient.flow)
@@ -1483,27 +1508,13 @@ export class PanelsService implements OnModuleInit {
 
       for (const dbC of dbClientsInPanel) {
         if (!apiEmails.has(dbC.email)) {
-          // Client was deleted directly on the panel.
-          // Since the client is now scoped to this panel, we simply delete it from the DB.
-          await this.prisma.$transaction(async (tx) => {
-            const stillExists = await tx.client.findUnique({
-              where: { id: dbC.id },
-            });
-            if (!stillExists) return;
-
-            await tx.client.delete({ where: { id: dbC.id } });
-          });
-
-          await this.prisma.auditLog.create({
-            data: {
-              action: 'SYNC_ORPHAN_DELETED',
-              entity: 'Client',
-              entityId: dbC.id,
-              details: {
-                message: 'Client deleted directly on panel. Removed from DB.',
-              },
-            },
-          });
+          try {
+            await this.clientsService.deleteOrphanFromSync(dbC);
+          } catch (orphanErr: any) {
+            this.logger.error(
+              `[SYNC] Orphan delete failed for ${dbC.email}: ${orphanErr.message}`,
+            );
+          }
         }
       }
 
@@ -2596,6 +2607,60 @@ export class PanelsService implements OnModuleInit {
   ): Promise<boolean> {
     const result = await this.verifyClientExists(panelId, email, adminId);
     return !result.exists;
+  }
+
+  /**
+   * Post-update verification: panel quota/enable must match expected values
+   * before local DB debits or sync accepts panel state.
+   */
+  async verifyClientPanelState(
+    panelId: string,
+    email: string,
+    expected: { totalBytes?: bigint; enable?: boolean },
+    adminId?: string,
+  ): Promise<{ verified: boolean; message?: string }> {
+    const check = await this.verifyClientExists(panelId, email, adminId);
+    if (!check.exists || !check.data) {
+      return {
+        verified: false,
+        message: `Client "${email}" not found on panel after update.`,
+      };
+    }
+
+    const clientObj = check.data.client ?? check.data;
+    const panelTotal = BigInt(
+      Math.round(Number(clientObj.totalGB ?? clientObj.total ?? 0)),
+    );
+
+    if (expected.totalBytes !== undefined) {
+      const tolerance = 1024n;
+      const diff =
+        panelTotal > expected.totalBytes
+          ? panelTotal - expected.totalBytes
+          : expected.totalBytes - panelTotal;
+      if (diff > tolerance) {
+        return {
+          verified: false,
+          message:
+            `Panel total mismatch for ${email}. ` +
+            `Expected ${expected.totalBytes} bytes but panel has ${panelTotal}.`,
+        };
+      }
+    }
+
+    if (
+      expected.enable !== undefined &&
+      Boolean(clientObj.enable) !== expected.enable
+    ) {
+      return {
+        verified: false,
+        message:
+          `Panel enable mismatch for ${email}. ` +
+          `Expected ${expected.enable} but panel has ${clientObj.enable}.`,
+      };
+    }
+
+    return { verified: true };
   }
 
   /**

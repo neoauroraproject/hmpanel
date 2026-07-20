@@ -34,6 +34,10 @@ export class TrafficService {
   /** Deduct quota when creating a client (Allocation mode) */
   async provision(adminId: string, clientId: string, amountBytes: bigint) {
     return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const client = await tx.client.findUnique({
+        where: { id: clientId },
+        select: { uuid: true },
+      });
       const admin = await tx.admin.findUniqueOrThrow({
         where: { id: adminId },
         select: { balance: true, trafficMode: true },
@@ -53,7 +57,7 @@ export class TrafficService {
         data: {
           adminId,
           clientId,
-          targetClientUuid: clientId,
+          targetClientUuid: client?.uuid ?? clientId,
           amount: amountBytes,
           type: 'DEBIT',
           action: 'CLIENT_PROVISIONING',
@@ -79,6 +83,10 @@ export class TrafficService {
     if (remaining <= 0n) return; // Nothing to refund — all consumed
 
     return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const client = await tx.client.findUnique({
+        where: { id: clientId },
+        select: { uuid: true },
+      });
       const admin = await tx.admin.update({
         where: { id: adminId },
         data: { balance: { increment: Number(remaining) } },
@@ -88,7 +96,7 @@ export class TrafficService {
         data: {
           adminId,
           clientId,
-          targetClientUuid: clientId,
+          targetClientUuid: client?.uuid ?? clientId,
           amount: remaining,
           type: 'CREDIT',
           action: 'CLIENT_DELETION_REFUND',

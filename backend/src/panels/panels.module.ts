@@ -5,9 +5,10 @@ import { PanelsScheduler } from './panels.scheduler';
 import { PanelCapabilitiesService } from './panel-capabilities.service';
 import { ApiCapabilityResolver } from './api-capability.resolver';
 import { SettingsModule } from '../settings/settings.module';
+import { ClientsModule } from '../clients/clients.module';
 
 @Module({
-  imports: [forwardRef(() => SettingsModule)],
+  imports: [forwardRef(() => SettingsModule), forwardRef(() => ClientsModule)],
   controllers: [PanelsController],
   providers: [
     PanelsService,

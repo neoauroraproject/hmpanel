@@ -8,7 +8,7 @@ import { ClientOutputService } from './output/client-output.service';
 import { OutputCacheService } from './output/output-cache.service';
 
 @Module({
-  imports: [PanelsModule, forwardRef(() => StatsModule)],
+  imports: [forwardRef(() => PanelsModule), forwardRef(() => StatsModule)],
   controllers: [ClientsController],
   providers: [
     ClientsService,

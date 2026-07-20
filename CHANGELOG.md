@@ -8,6 +8,16 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [1.8.2] - 2026-07-20
+
+### Fixed
+- **Traffic refund & accounting:** Verify panel `totalGB`/`enable` after updates before debiting balance; prevent sync from downgrading paid DB totals; auto-enable clients on traffic increase; fix refund policy for `TRAFFIC_LIMIT`/`EXPIRED` clients with remaining quota.
+- **Deletion refunds:** Shared refund path for delete and sync orphan cleanup; cap refund to net charged; legacy clients with DEBIT but null `createdWithTrafficMode` now eligible; audit logs include `refundSkippedReason`.
+- **Bulk traffic:** Charge owning admin (not caller); compensate panel when local DB fails after bulkAdjust; normalize `targetClientUuid` to Xray uuid in ledger.
+- **Concurrency:** Distributed lock on client update to prevent double-debit on parallel edits.
+
+---
+
 ## [1.8.1] - 2026-07-19
 
 ### Fixed

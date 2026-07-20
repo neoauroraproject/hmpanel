@@ -4,6 +4,8 @@ import {
   ForbiddenException,
   BadRequestException,
   Logger,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { Prisma } from '@prisma/client';
@@ -35,6 +37,7 @@ export class ClientsService {
 
   constructor(
     private prisma: PrismaService,
+    @Inject(forwardRef(() => PanelsService))
     private panelsService: PanelsService,
     private monitoringService: MonitoringService,
     private lockService: RedisLockService,
@@ -73,15 +76,16 @@ export class ClientsService {
   }): boolean {
     const reason = client.disableReason;
 
-    if (
-      reason === 'TRAFFIC_LIMIT' ||
-      reason === 'EXPIRED' ||
-      reason === 'BALANCE_EXHAUSTED'
-    ) {
+    // USAGE-mode suspension — refund policy differs from allocation exhaustion
+    if (reason === 'BALANCE_EXHAUSTED') {
       return false;
     }
 
     const used = client.up + client.down;
+
+    if (client.total > 0n && used >= client.total) {
+      return false;
+    }
 
     // Legacy rows: disabled with no reason — infer exhaustion from usage/expiry
     if (!client.enable && !reason) {
@@ -92,6 +96,296 @@ export class ClientsService {
     }
 
     return true;
+  }
+
+  /** Net bytes charged to the owner for this client (DEBIT − CREDIT). */
+  private async getNetChargedForClient(
+    tx: Prisma.TransactionClient,
+    clientId: string,
+    adminId: string,
+  ): Promise<bigint> {
+    const [debits, credits] = await Promise.all([
+      tx.trafficTransaction.aggregate({
+        where: { clientId, adminId, type: 'DEBIT' },
+        _sum: { amount: true },
+      }),
+      tx.trafficTransaction.aggregate({
+        where: { clientId, adminId, type: 'CREDIT' },
+        _sum: { amount: true },
+      }),
+    ]);
+    const debitSum = debits._sum.amount ?? 0n;
+    const creditSum = credits._sum.amount ?? 0n;
+    const net = debitSum - creditSum;
+    return net > 0n ? net : 0n;
+  }
+
+  /** Shared refund path for remove() and sync orphan cleanup. */
+  private async applyClientDeletionRefund(
+    tx: Prisma.TransactionClient,
+    existing: {
+      id: string;
+      uuid: string;
+      email: string;
+      adminId: string | null;
+      enable: boolean;
+      disableReason: string | null;
+      total: bigint;
+      up: bigint;
+      down: bigint;
+      expiryTime: bigint;
+      createdWithTrafficMode: string | null;
+      balanceDeducted: boolean;
+      provisioningStatus?: string | null;
+    },
+    skipRefund: boolean,
+  ): Promise<{
+    refundGranted: boolean;
+    refundedAmount: bigint;
+    refundSkippedReason?: string;
+  }> {
+    let refundGranted = false;
+    let refundedAmount = 0n;
+    let refundSkippedReason: string | undefined;
+
+    if (skipRefund) {
+      return {
+        refundGranted,
+        refundedAmount,
+        refundSkippedReason: 'skipRefund flag',
+      };
+    }
+
+    if (existing.provisioningStatus === 'FAILED') {
+      return {
+        refundGranted,
+        refundedAmount,
+        refundSkippedReason: 'FAILED client never provisioned',
+      };
+    }
+
+    if (!existing.adminId) {
+      return {
+        refundGranted,
+        refundedAmount,
+        refundSkippedReason: 'no owning admin',
+      };
+    }
+
+    const wasDeducted = await this.hadTrafficDeducted(tx, {
+      id: existing.id,
+      uuid: existing.uuid,
+      balanceDeducted: existing.balanceDeducted,
+      adminId: existing.adminId,
+    });
+    if (!wasDeducted) {
+      return {
+        refundGranted,
+        refundedAmount,
+        refundSkippedReason: 'no prior traffic deduction',
+      };
+    }
+
+    if (
+      !this.shouldRefundDeletedClient({
+        enable: existing.enable,
+        disableReason: existing.disableReason,
+        total: existing.total,
+        up: existing.up,
+        down: existing.down,
+        expiryTime: existing.expiryTime,
+      })
+    ) {
+      return {
+        refundGranted,
+        refundedAmount,
+        refundSkippedReason: 'refund policy declined (quota exhausted)',
+      };
+    }
+
+    const admin = await tx.admin.findUnique({
+      where: { id: existing.adminId },
+    });
+    if (!admin) {
+      return {
+        refundGranted,
+        refundedAmount,
+        refundSkippedReason: 'admin not found',
+      };
+    }
+    if (admin.unlimitedTraffic) {
+      return {
+        refundGranted,
+        refundedAmount,
+        refundSkippedReason: 'admin has unlimited traffic',
+      };
+    }
+    if (admin.trafficMode !== 'ALLOCATION') {
+      return {
+        refundGranted,
+        refundedAmount,
+        refundSkippedReason: 'admin not in ALLOCATION mode',
+      };
+    }
+
+    const allocationEligible =
+      existing.createdWithTrafficMode === 'ALLOCATION' ||
+      (existing.createdWithTrafficMode == null && wasDeducted);
+    if (!allocationEligible) {
+      return {
+        refundGranted,
+        refundedAmount,
+        refundSkippedReason: 'client not created under ALLOCATION mode',
+      };
+    }
+    if (!admin.refundOnDelete) {
+      return {
+        refundGranted,
+        refundedAmount,
+        refundSkippedReason: 'admin.refundOnDelete disabled',
+      };
+    }
+
+    const used = existing.up + existing.down;
+    const remaining = existing.total - used;
+    if (remaining <= 0n) {
+      return {
+        refundGranted,
+        refundedAmount,
+        refundSkippedReason: 'no remaining traffic',
+      };
+    }
+
+    const netCharged = await this.getNetChargedForClient(
+      tx,
+      existing.id,
+      admin.id,
+    );
+    const refundAmount = remaining < netCharged ? remaining : netCharged;
+    if (refundAmount <= 0n) {
+      return {
+        refundGranted,
+        refundedAmount,
+        refundSkippedReason: 'net charged balance is zero',
+      };
+    }
+
+    const existingRefund = await tx.trafficTransaction.findFirst({
+      where: {
+        action: 'CLIENT_DELETION_REFUND',
+        OR: [
+          { targetClientUuid: existing.uuid },
+          { targetClientUuid: existing.id },
+          { clientId: existing.id },
+        ],
+      },
+    });
+    if (existingRefund) {
+      return {
+        refundGranted,
+        refundedAmount,
+        refundSkippedReason: 'refund already issued',
+      };
+    }
+
+    await tx.admin.update({
+      where: { id: admin.id },
+      data: { balance: admin.balance + Number(refundAmount) },
+    });
+    await tx.trafficTransaction.create({
+      data: {
+        adminId: admin.id,
+        clientId: existing.id,
+        targetClientUuid: existing.uuid,
+        amount: refundAmount,
+        type: 'CREDIT',
+        action: 'CLIENT_DELETION_REFUND',
+        description: `Client Deletion Refund (${existing.email})`,
+        balanceBefore: admin.balance,
+        balanceAfter: admin.balance + Number(refundAmount),
+      },
+    });
+
+    return { refundGranted: true, refundedAmount: refundAmount };
+  }
+
+  /**
+   * Delete a client already removed from the panel (sync orphan path).
+   * Uses the same refund evaluation as remove().
+   */
+  async deleteOrphanFromSync(client: {
+    id: string;
+    uuid: string;
+    email: string;
+    adminId: string | null;
+    enable: boolean;
+    disableReason: string | null;
+    total: bigint;
+    up: bigint;
+    down: bigint;
+    expiryTime: bigint;
+    createdWithTrafficMode: string | null;
+    balanceDeducted?: boolean | null;
+    provisioningStatus?: string | null;
+  }): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      const stillExists = await tx.client.findUnique({
+        where: { id: client.id },
+      });
+      if (!stillExists) return;
+
+      const refundResult = await this.applyClientDeletionRefund(
+        tx,
+        {
+          ...client,
+          balanceDeducted: client.balanceDeducted === true,
+        },
+        false,
+      );
+
+      await tx.client.delete({ where: { id: client.id } });
+      await tx.auditLog.create({
+        data: {
+          action: 'SYNC_ORPHAN_DELETED',
+          entity: 'Client',
+          entityId: client.id,
+          details: {
+            message:
+              'Client deleted directly on panel. Removed from DB with refund evaluation.',
+            clientEmail: client.email,
+            trafficRefunded: refundResult.refundedAmount.toString(),
+            refundGranted: refundResult.refundGranted,
+            refundSkippedReason: refundResult.refundSkippedReason,
+          },
+        },
+      });
+    });
+  }
+
+  private async verifyPanelClientQuotaAfterUpdate(
+    panelId: string,
+    email: string,
+    clientPayload: Record<string, unknown>,
+    adminId?: string,
+  ): Promise<{ verified: boolean; message?: string }> {
+    const expected: { totalBytes?: bigint; enable?: boolean } = {};
+    if (clientPayload.totalGB !== undefined) {
+      expected.totalBytes = BigInt(
+        Math.round(Number(clientPayload.totalGB)),
+      );
+    }
+    if (clientPayload.enable !== undefined) {
+      expected.enable = Boolean(clientPayload.enable);
+    }
+    if (expected.totalBytes === undefined && expected.enable === undefined) {
+      return { verified: true };
+    }
+    return this.panelsService.verifyClientPanelState(
+      panelId,
+      email,
+      expected,
+      adminId,
+    );
   }
 
   /** True when traffic was deducted from the owning admin for this client. */
@@ -111,7 +405,11 @@ export class ClientsService {
       where: {
         adminId: client.adminId,
         type: 'DEBIT',
-        OR: [{ targetClientUuid: client.uuid }, { clientId: client.id }],
+        OR: [
+          { targetClientUuid: client.uuid },
+          { targetClientUuid: client.id },
+          { clientId: client.id },
+        ],
       },
     });
     return !!debit;
@@ -527,7 +825,7 @@ export class ClientsService {
               data: {
                 adminId: callerId,
                 clientId: createdClients[0].id,
-                targetClientUuid: createdClients[0].id,
+                targetClientUuid: createdClients[0].uuid,
                 amount: totalBytes,
                 type: 'DEBIT',
                 action: `CLIENT_CREATION_ALLOCATION_${Date.now()}`,
@@ -817,7 +1115,12 @@ export class ClientsService {
           message: `Panel update failed: ${updateResult.error?.message}`,
         };
       }
-      return { verified: true };
+      return this.verifyPanelClientQuotaAfterUpdate(
+        panelId,
+        email,
+        clientPayload,
+        adminId,
+      );
     }
 
     // ── Step 1: PRE-FLIGHT — verify the client still exists on the panel ──
@@ -941,6 +1244,16 @@ export class ClientsService {
         `[SYNC_INBOUNDS] VERIFICATION FAILED: ${errMsg} Triggering rollback.`,
       );
       return { verified: false, message: errMsg }; // STICT VERIFICATION: This fails the operation
+    }
+
+    const quotaVerify = await this.verifyPanelClientQuotaAfterUpdate(
+      panelId,
+      email,
+      clientPayload,
+      adminId,
+    );
+    if (!quotaVerify.verified) {
+      return quotaVerify;
     }
 
     this.logger.log(`[SYNC_INBOUNDS] Verification passed for ${email}.`);
@@ -1108,7 +1421,14 @@ export class ClientsService {
     // The panelId for this client (all inbounds must be on the same panel)
     const clientPanelId = (existing as any).panelId;
 
-    return this.executeAtomicOperation(
+    const lockKey = `client:update:${id}`;
+    const locked = await this.lockService.acquireLock(lockKey, 30000);
+    if (!locked) {
+      throw new BadRequestException('Client update is already in progress');
+    }
+
+    try {
+      return await this.executeAtomicOperation(
       existing.adminId || null,
       id,
       'Client',
@@ -1143,10 +1463,7 @@ export class ClientsService {
         if (existing.email !== existing.email.trim()) {
           updateData.email = existing.email.trim();
         }
-        if (data.enable !== undefined) {
-          updateData.enable = data.enable;
-          updateData.disableReason = data.enable ? null : 'MANUAL';
-        }
+
         if (data.expiryTime !== undefined) updateData.expiryTime = newExpiry;
         if (data.remark !== undefined) updateData.remark = data.remark;
         if (data.flow !== undefined) updateData.flow = data.flow;
@@ -1157,9 +1474,23 @@ export class ClientsService {
         const previousAllocation = existing.total;
         const newAllocation = newTotal;
 
+        const trafficIncreased =
+          data.total !== undefined && newAllocation > existing.total;
+
+        if (data.enable !== undefined) {
+          updateData.enable = data.enable;
+          updateData.disableReason = data.enable ? null : 'MANUAL';
+        } else if (trafficIncreased || autoEnable) {
+          updateData.enable = true;
+          updateData.disableReason = null;
+        }
+
         if (data.total !== undefined && newAllocation !== existing.total) {
           diff = newAllocation - existing.total;
           updateData.total = newAllocation;
+          if (diff > 0n) {
+            updateData.balanceDeducted = true;
+          }
 
           if (existing.adminId) {
             const admin = await tx.admin.findUnique({
@@ -1194,7 +1525,7 @@ export class ClientsService {
                   data: {
                     adminId: admin.id,
                     clientId: id,
-                    targetClientUuid: id,
+                    targetClientUuid: existing.uuid,
                     amount: diff > 0n ? diff : -diff,
                     type: diff > 0n ? 'DEBIT' : 'CREDIT',
                     action:
@@ -1260,6 +1591,9 @@ export class ClientsService {
         return client;
       },
     );
+    } finally {
+      await this.lockService.releaseLock(lockKey);
+    }
   }
 
   async remove(
@@ -1348,76 +1682,25 @@ export class ClientsService {
             return { verified: verifiedCount === existing.inbounds.length };
           },
           async (tx) => {
-            let refundGranted = false;
-            let refundedAmount = 0n;
-
-            // NEVER refund for FAILED clients — they were never provisioned
-            const isFailed = (existing as any).provisioningStatus === 'FAILED';
-            const wasDeducted = await this.hadTrafficDeducted(tx, {
-              id: existing.id,
-              uuid: existing.uuid,
-              balanceDeducted: (existing as any).balanceDeducted === true,
-              adminId: existing.adminId,
-            });
-            const refundAllowed = this.shouldRefundDeletedClient({
-              enable: existing.enable,
-              disableReason: (existing as any).disableReason ?? null,
-              total: existing.total,
-              up: existing.up,
-              down: existing.down,
-              expiryTime: existing.expiryTime,
-            });
-
-            if (
-              existing.adminId &&
-              !skipRefund &&
-              !isFailed &&
-              wasDeducted &&
-              refundAllowed
-            ) {
-              const admin = await tx.admin.findUnique({
-                where: { id: existing.adminId },
-              });
-              if (
-                admin &&
-                !admin.unlimitedTraffic &&
-                admin.trafficMode === 'ALLOCATION' &&
-                existing.createdWithTrafficMode === 'ALLOCATION' &&
-                admin.refundOnDelete
-              ) {
-                const used = existing.up + existing.down;
-                const remaining = existing.total - used;
-                if (remaining > 0n) {
-                  const existingRefund = await tx.trafficTransaction.findFirst({
-                    where: {
-                      targetClientUuid: existing.uuid,
-                      action: 'CLIENT_DELETION_REFUND',
-                    },
-                  });
-                  if (!existingRefund) {
-                    await tx.admin.update({
-                      where: { id: admin.id },
-                      data: { balance: admin.balance + Number(remaining) },
-                    });
-                    await tx.trafficTransaction.create({
-                      data: {
-                        adminId: admin.id,
-                        clientId: id,
-                        targetClientUuid: existing.uuid,
-                        amount: remaining,
-                        type: 'CREDIT',
-                        action: 'CLIENT_DELETION_REFUND',
-                        description: `Client Deletion Refund (${existing.email})`,
-                        balanceBefore: admin.balance,
-                        balanceAfter: admin.balance + Number(remaining),
-                      },
-                    });
-                    refundGranted = true;
-                    refundedAmount = remaining;
-                  }
-                }
-              }
-            }
+            const refundResult = await this.applyClientDeletionRefund(
+              tx,
+              {
+                id: existing.id,
+                uuid: existing.uuid,
+                email: existing.email,
+                adminId: existing.adminId,
+                enable: existing.enable,
+                disableReason: (existing as any).disableReason ?? null,
+                total: existing.total,
+                up: existing.up,
+                down: existing.down,
+                expiryTime: existing.expiryTime,
+                createdWithTrafficMode: existing.createdWithTrafficMode,
+                balanceDeducted: (existing as any).balanceDeducted === true,
+                provisioningStatus: (existing as any).provisioningStatus,
+              },
+              skipRefund,
+            );
 
             await tx.client.delete({ where: { id } });
             await tx.auditLog.create({
@@ -1430,9 +1713,10 @@ export class ClientsService {
                   clientEmail: existing.email,
                   adminUsername: existing.admin?.username,
                   trafficBefore: existing.total.toString(),
-                  trafficRefunded: refundedAmount.toString(),
+                  trafficRefunded: refundResult.refundedAmount.toString(),
                   verified: true,
-                  refundGranted,
+                  refundGranted: refundResult.refundGranted,
+                  refundSkippedReason: refundResult.refundSkippedReason,
                 },
               },
             });
@@ -1521,7 +1805,7 @@ export class ClientsService {
                 data: {
                   adminId: admin.id,
                   clientId: id,
-                  targetClientUuid: id,
+                  targetClientUuid: existing.uuid,
                   amount: used,
                   type: 'DEBIT',
                   action: `CLIENT_USAGE_RESET_CHARGE_${Date.now()}`,
@@ -1535,7 +1819,7 @@ export class ClientsService {
                 data: {
                   adminId: admin.id,
                   clientId: id,
-                  targetClientUuid: id,
+                  targetClientUuid: existing.uuid,
                   amount: used,
                   type: 'USAGE_CHARGE',
                   action: `HISTORICAL_USAGE_ARCHIVED_${Date.now()}`,
@@ -2082,6 +2366,26 @@ export class ClientsService {
           await this.applyBulkAdjustLocalDb(adminId, role, c, dto);
           results.success++;
         } catch (err: any) {
+          const compensateBody: {
+            emails: string[];
+            addDays?: number;
+            addBytes?: number;
+          } = { emails: [c.email] };
+          if (dto.action === 'addTraffic') {
+            compensateBody.addBytes = -Math.round((dto.value ?? 0) * GB);
+          } else {
+            compensateBody.addDays = -(dto.value ?? 0);
+          }
+          const compensate = await this.panelsService.bulkAdjustClientsOnPanel(
+            panel.id,
+            compensateBody,
+            adminId,
+          );
+          if (!compensate.success) {
+            this.logger.error(
+              `[BULK_ADJUST] Panel compensation failed for ${c.email}: ${compensate.error?.message}`,
+            );
+          }
           results.failed++;
           results.errors.push(`${c.email}: ${err.message}`);
         }
@@ -2106,6 +2410,7 @@ export class ClientsService {
             if (bytes > 0n) {
               await this.update(c.id, adminId, role, {
                 total: Number(c.total + bytes),
+                enable: true,
               });
             }
           } else {
@@ -2133,6 +2438,7 @@ export class ClientsService {
     role: string,
     client: {
       id: string;
+      uuid: string;
       email: string;
       total: bigint;
       expiryTime: bigint;
@@ -2151,44 +2457,43 @@ export class ClientsService {
           const admin = await tx.admin.findUnique({
             where: { id: client.adminId },
           });
-          if (admin?.trafficMode === 'ALLOCATION') {
-            const caller = await tx.admin.findUnique({
-              where: { id: adminId },
-            });
-            if (caller && caller.role !== 'SUPER_ADMIN') {
-              if (caller.balance < Number(bytes)) {
-                throw new BadRequestException('Insufficient traffic balance');
-              }
-              await tx.admin.update({
-                where: { id: caller.id },
-                data: { balance: caller.balance - Number(bytes) },
-              });
-              await tx.trafficTransaction.create({
-                data: {
-                  adminId: caller.id,
-                  clientId: client.id,
-                  targetClientUuid: client.id,
-                  amount: bytes,
-                  type: 'DEBIT',
-                  action: `CLIENT_TRAFFIC_INCREASE_${Date.now()}`,
-                  description: 'Bulk Client Traffic Increase',
-                  balanceBefore: caller.balance,
-                  balanceAfter: caller.balance - Number(bytes),
-                },
-              });
+          if (
+            admin &&
+            !this.skipTrafficAccounting(admin) &&
+            admin.trafficMode === 'ALLOCATION'
+          ) {
+            if (admin.balance < Number(bytes)) {
+              throw new BadRequestException('Insufficient traffic balance');
             }
+            await tx.admin.update({
+              where: { id: admin.id },
+              data: { balance: admin.balance - Number(bytes) },
+            });
+            await tx.trafficTransaction.create({
+              data: {
+                adminId: admin.id,
+                clientId: client.id,
+                targetClientUuid: client.uuid,
+                amount: bytes,
+                type: 'DEBIT',
+                action: `CLIENT_TRAFFIC_INCREASE_${Date.now()}`,
+                description: 'Bulk Client Traffic Increase',
+                balanceBefore: admin.balance,
+                balanceAfter: admin.balance - Number(bytes),
+              },
+            });
           }
         }
 
         const newTotal = client.total + bytes;
         const used = client.up + client.down;
-        const shouldEnable =
-          newTotal === 0n || newTotal > used;
+        const shouldEnable = newTotal === 0n || newTotal > used;
 
         await tx.client.update({
           where: { id: client.id },
           data: {
             total: newTotal,
+            balanceDeducted: true,
             ...(shouldEnable
               ? { enable: true, disableReason: null }
               : {}),
@@ -2224,22 +2529,36 @@ export class ClientsService {
 
     const results = { success: 0, failed: 0, errors: [] as string[] };
 
-    // Up-front balance checks for traffic addition
+    // Up-front balance checks for traffic addition (per owning admin)
     if (dto.action === 'addTraffic') {
       const bytesToAddPerClient = BigInt(Math.round((dto.value ?? 0) * GB));
-      const totalRequired = bytesToAddPerClient * BigInt(targets.length);
+      const requiredByOwner = new Map<string, bigint>();
 
-      const caller = await this.prisma.admin.findUnique({
-        where: { id: adminId },
-      });
-      if (
-        caller &&
-        caller.role !== 'SUPER_ADMIN' &&
-        caller.trafficMode === 'ALLOCATION'
-      ) {
-        if (caller.balance < Number(totalRequired)) {
+      for (const t of targets) {
+        if (!t.adminId) continue;
+        const owner = await this.prisma.admin.findUnique({
+          where: { id: t.adminId },
+        });
+        if (
+          !owner ||
+          this.skipTrafficAccounting(owner) ||
+          owner.trafficMode !== 'ALLOCATION'
+        ) {
+          continue;
+        }
+        requiredByOwner.set(
+          t.adminId,
+          (requiredByOwner.get(t.adminId) ?? 0n) + bytesToAddPerClient,
+        );
+      }
+
+      for (const [ownerId, totalRequired] of requiredByOwner) {
+        const owner = await this.prisma.admin.findUnique({
+          where: { id: ownerId },
+        });
+        if (owner && owner.balance < Number(totalRequired)) {
           throw new BadRequestException(
-            `Insufficient balance to add traffic. Required: ${Number(totalRequired) / GB} GB, Available: ${caller.balance / GB} GB`,
+            `Insufficient balance to add traffic. Required: ${Number(totalRequired) / GB} GB, Available: ${owner.balance / GB} GB`,
           );
         }
       }
