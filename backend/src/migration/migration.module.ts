@@ -1,10 +1,10 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { MigrationController } from './migration.controller';
 import { MigrationService } from './migration.service';
 import { PanelsModule } from '../panels/panels.module';
 
 @Module({
-  imports: [PanelsModule],
+  imports: [forwardRef(() => PanelsModule)],
   controllers: [MigrationController],
   providers: [MigrationService],
 })

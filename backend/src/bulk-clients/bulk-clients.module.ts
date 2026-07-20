@@ -5,7 +5,7 @@ import { PanelsModule } from '../panels/panels.module';
 import { ClientsModule } from '../clients/clients.module';
 
 @Module({
-  imports: [PanelsModule, forwardRef(() => ClientsModule)],
+  imports: [forwardRef(() => PanelsModule), forwardRef(() => ClientsModule)],
   controllers: [BulkClientsController],
   providers: [BulkClientsService],
   exports: [BulkClientsService],

@@ -8,6 +8,13 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [1.8.3] - 2026-07-20
+
+### Fixed
+- **Startup crash on 1.8.2:** Circular module dependency (`PanelsModule` ↔ `ClientsModule` ↔ `StatsModule`) prevented NestJS from booting; health check timed out during `hm update`. Added `forwardRef()` on affected module imports.
+
+---
+
 ## [1.8.2] - 2026-07-20
 
 ### Fixed
