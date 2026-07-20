@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { QRCodeCanvas, QRCodeSVG } from "qrcode.react";
 import { Copy, Check, Download } from "lucide-react";
 import { copyToClipboard } from "@/lib/clipboard";
+import { useT } from "@/i18n/locale";
 import type { ConnectionRendererProps } from "../RendererRegistry";
 import type { SubscriptionPayload } from "../types";
 import { ConnectionMethods } from "../ConnectionMethods";
@@ -14,16 +15,24 @@ export function SubscriptionRenderer({
   showNativeQR = true,
   allowQRDownload = true,
 }: ConnectionRendererProps) {
+  const t = useT();
   const payload = (output.payload || {}) as SubscriptionPayload;
-  const [tab, setTab] = useState<"platform" | "native">(
-    showNativeQR ? "native" : "platform",
-  );
+  const [tab, setTab] = useState<"platform" | "native">(() => {
+    if (showPlatformQR && !showNativeQR) return "platform";
+    if (!showPlatformQR && showNativeQR) return "native";
+    return "platform";
+  });
   const [copied, setCopied] = useState(false);
 
   const systemUrl = payload.systemSubUrl || "";
   const nativeUrl = payload.nativeSubUrl || "";
-  const activeUrl = tab === "native" && nativeUrl ? nativeUrl : systemUrl;
-  const qrValue = (payload.qrText as string) || activeUrl;
+  const activeUrl =
+    tab === "native" && nativeUrl ? nativeUrl : systemUrl;
+  const qrValue = activeUrl;
+  const qrCanvasId = useMemo(
+    () => `conn-qr-canvas-${tab}`,
+    [tab],
+  );
 
   const onCopy = async () => {
     if (!activeUrl) return;
@@ -32,38 +41,50 @@ export function SubscriptionRenderer({
     window.setTimeout(() => setCopied(false), 1500);
   };
 
+  const showTabs = showPlatformQR && showNativeQR && !!nativeUrl;
+
   return (
     <div className="space-y-4">
       <ConnectionMethods methods={output.methods} capabilities={output.capabilities} />
 
       {output.warnings?.length ? (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
           {output.warnings.join(" · ")}
         </div>
       ) : null}
 
-      {showPlatformQR && showNativeQR && nativeUrl ? (
+      {showTabs ? (
         <div className="flex gap-1 rounded-xl bg-zinc-100 p-1 dark:bg-zinc-800">
           <button
             type="button"
             onClick={() => setTab("platform")}
-            className={`flex-1 rounded-lg py-2 text-xs font-semibold ${
-              tab === "platform" ? "bg-white shadow dark:bg-zinc-900" : ""
+            className={`flex-1 rounded-lg py-2 text-xs font-semibold transition ${
+              tab === "platform"
+                ? "bg-white shadow dark:bg-zinc-900"
+                : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
             }`}
           >
-            Platform QR
+            {t("connection.platformQr")}
           </button>
           <button
             type="button"
             onClick={() => setTab("native")}
-            className={`flex-1 rounded-lg py-2 text-xs font-semibold ${
-              tab === "native" ? "bg-white shadow dark:bg-zinc-900" : ""
+            className={`flex-1 rounded-lg py-2 text-xs font-semibold transition ${
+              tab === "native"
+                ? "bg-white shadow dark:bg-zinc-900"
+                : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
             }`}
           >
-            Native 3x-ui QR
+            {t("connection.nativeQr")}
           </button>
         </div>
       ) : null}
+
+      <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+        {tab === "native" && nativeUrl
+          ? t("connection.nativeSubHint")
+          : t("connection.platformSubHint")}
+      </p>
 
       <div className="flex items-center gap-2">
         <input
@@ -78,15 +99,21 @@ export function SubscriptionRenderer({
           className="inline-flex h-10 shrink-0 items-center gap-1 rounded-xl bg-blue-600 px-3 text-sm font-semibold text-white"
         >
           {copied ? <Check size={14} /> : <Copy size={14} />}
-          {copied ? "Copied" : "Copy"}
+          {copied ? t("common.copied") : t("common.copy")}
         </button>
       </div>
 
       {qrValue && output.capabilities.supportsQRCode ? (
         <div className="flex flex-col items-center gap-2 rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900">
-          <QRCodeCanvas id="conn-qr-canvas" value={qrValue} size={180} includeMargin />
+          <QRCodeCanvas
+            key={qrCanvasId}
+            id={qrCanvasId}
+            value={qrValue}
+            size={180}
+            includeMargin
+          />
           <div className="hidden">
-            <QRCodeSVG id="conn-qr-svg" value={qrValue} size={256} includeMargin />
+            <QRCodeSVG id={`${qrCanvasId}-svg`} value={qrValue} size={256} includeMargin />
           </div>
           {allowQRDownload ? (
             <button
@@ -94,16 +121,17 @@ export function SubscriptionRenderer({
               className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600"
               onClick={() => {
                 const canvas = document.getElementById(
-                  "conn-qr-canvas",
+                  qrCanvasId,
                 ) as HTMLCanvasElement | null;
                 if (!canvas) return;
                 const a = document.createElement("a");
                 a.href = canvas.toDataURL("image/png");
-                a.download = "subscription-qr.png";
+                a.download =
+                  tab === "native" ? "native-subscription-qr.png" : "platform-subscription-qr.png";
                 a.click();
               }}
             >
-              <Download size={12} /> Download QR
+              <Download size={12} /> {t("connection.downloadQr")}
             </button>
           ) : null}
         </div>

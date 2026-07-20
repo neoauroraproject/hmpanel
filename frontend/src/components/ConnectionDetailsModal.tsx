@@ -1,11 +1,11 @@
 "use client";
 
 import { X } from "lucide-react";
-import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { formatBytes } from "@/lib/format";
 import { api } from "@/lib/api";
 import { motion } from "framer-motion";
+import { useT } from "@/i18n/locale";
 import { getConnectionRenderer } from "@/components/connection/RendererRegistry";
 import type { ClientOutputModel } from "@/components/connection/types";
 
@@ -20,6 +20,7 @@ export function ConnectionDetailsModal({
   portalSettings,
   onClose,
 }: ConnectionDetailsModalProps) {
+  const t = useT();
   const used = Number(client.up) + Number(client.down);
   const total = Number(client.total);
   const currentInbound =
@@ -52,11 +53,12 @@ export function ConnectionDetailsModal({
       >
         <div className="flex items-center justify-between border-b border-zinc-200 p-4 dark:border-zinc-800">
           <h2 className="text-lg font-bold text-zinc-800 dark:text-zinc-100">
-            Connection Details
+            {t("connection.title")}
           </h2>
           <button
             onClick={onClose}
             className="rounded p-1 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+            aria-label={t("common.close")}
           >
             <X size={18} />
           </button>
@@ -66,7 +68,7 @@ export function ConnectionDetailsModal({
           <div className="grid grid-cols-2 gap-4 rounded-xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-950">
             <div>
               <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
-                Client
+                {t("connection.client")}
               </div>
               <div className="text-sm font-medium text-zinc-700 dark:text-zinc-200">
                 {client.remark || client.email}
@@ -74,30 +76,34 @@ export function ConnectionDetailsModal({
             </div>
             <div>
               <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
-                Status
+                {t("connection.status")}
               </div>
               <div className="text-sm">
                 {client.enable ? (
-                  <span className="font-medium text-emerald-500">Active</span>
+                  <span className="font-medium text-emerald-500">
+                    {t("connection.active")}
+                  </span>
                 ) : (
-                  <span className="font-medium text-red-400">Disabled</span>
+                  <span className="font-medium text-red-400">
+                    {t("connection.disabled")}
+                  </span>
                 )}
               </div>
             </div>
             <div>
               <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
-                Traffic
+                {t("connection.traffic")}
               </div>
               <div className="text-sm text-zinc-600 dark:text-zinc-300">
                 <span className="font-semibold text-zinc-800 dark:text-zinc-100">
                   {formatBytes(used)}
                 </span>{" "}
-                / {total === 0 ? "Unlimited" : formatBytes(total)}
+                / {total === 0 ? t("connection.unlimited") : formatBytes(total)}
               </div>
             </div>
             <div>
               <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
-                Protocol
+                {t("connection.protocol")}
               </div>
               <div className="truncate text-sm font-medium text-zinc-700 dark:text-zinc-200">
                 {output?.protocol || currentInbound?.protocol || "—"}
@@ -107,11 +113,11 @@ export function ConnectionDetailsModal({
 
           {isLoading ? (
             <div className="py-10 text-center text-sm text-zinc-500">
-              Loading connection methods…
+              {t("connection.loadingMethods")}
             </div>
           ) : error ? (
             <div className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-600 dark:bg-red-950/30">
-              Failed to load connection output
+              {t("connection.loadFailed")}
             </div>
           ) : output && Renderer ? (
             <Renderer

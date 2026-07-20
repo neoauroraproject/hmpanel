@@ -17,6 +17,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { ClientsService } from './clients.service';
 import { ClientOutputService } from './output/client-output.service';
+import { getRequestOrigin } from '../common/utils/request-origin';
 import {
   CreateClientDto,
   UpdateClientDto,
@@ -120,7 +121,7 @@ export class ClientsController {
     @Query('inboundId') inboundId?: string,
   ) {
     await this.clientsService.findOne(id, req.user.id, req.user.role);
-    const origin = `${req.protocol}://${req.get('host')}`;
+    const origin = getRequestOrigin(req);
     return this.clientOutput.getOutputByClientId(id, { origin, inboundId });
   }
 

@@ -10,6 +10,7 @@ import type { Response, Request } from 'express';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { SubscriptionsService } from './subscriptions.service';
 import { ClientOutputService } from '../clients/output/client-output.service';
+import { getRequestOrigin } from '../common/utils/request-origin';
 
 @ApiTags('Subscriptions (Public)')
 @Controller('subscriptions')
@@ -30,7 +31,7 @@ export class SubscriptionsController {
   @Get(':id/output')
   @ApiOperation({ summary: 'Protocol-aware connection output for portal / storefront' })
   getOutput(@Param('id') id: string, @Req() req: Request) {
-    const origin = `${req.protocol}://${req.get('host')}`;
+    const origin = getRequestOrigin(req);
     return this.clientOutput.getOutputBySubscriptionKey(id, { origin });
   }
 
