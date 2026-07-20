@@ -540,6 +540,8 @@ model StoreProfile {
   /// When true, paid orders auto-provision after autoDeliverDelayMinutes but stay tagged for admin confirm.
   autoDeliverEnabled   Boolean  @default(false)
   autoDeliverDelayMinutes Int   @default(10)
+  /// Next sequential order number to issue for this store (stored as StoreOrder.trackingCode).
+  nextOrderNumber     Int      @default(1000)
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
