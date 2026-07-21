@@ -1,9 +1,11 @@
 import { PrismaClient } from '@prisma/client';
+import { ensureCriticalSchema } from './ensure-critical-schema';
 
 /**
  * Prepare DB for premium OMS / Brand / Incident schema expansion.
  * - Drop legacy StoreOrder shape (incompatible with OMS) — StoreProfile kept
  * - Deduplicate Brand rows so adminId can become unique
+ * - Ensure critical columns exist (idempotent) for panels that skip prisma migrate
  * Exit 0 always — never block panel boot.
  */
 const prisma = new PrismaClient();
@@ -109,6 +111,7 @@ async function main() {
   try {
     await upgradeLegacyStore();
     await dedupeBrand();
+    await ensureCriticalSchema(prisma);
     console.log('[HMPanel] Premium schema prep complete');
   } catch (err: any) {
     console.warn(`[HMPanel] Schema prep warning: ${err?.message || err}`);
