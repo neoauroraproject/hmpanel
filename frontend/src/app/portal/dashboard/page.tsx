@@ -30,7 +30,7 @@ import type {
   StorefrontProduct,
   StorefrontStore,
 } from "@/modules/storefront/types";
-import { CategoryGrid, StoreShell, ServiceCard } from "@/modules/storefront/ui";
+import { CategoryGrid, PlanPickRow, StoreShell, ServiceCard } from "@/modules/storefront/ui";
 import { scrollToTop } from "@/modules/storefront/scroll";
 import {
   FieldBlock,
@@ -41,6 +41,8 @@ import {
   StatTile,
   EmptyState,
   springSoft,
+  sheetStepVariants,
+  sheetStepTransition,
   staggerContainer,
   staggerItem,
 } from "@/modules/storefront/design";
@@ -381,39 +383,42 @@ function CustomerDashboardInner() {
         onChange={(id) => setTab(id as DashTab)}
       />
 
-      {flow !== "idle" ? (
-        <CheckoutSheet
-          mode={flow}
-          step={sheetStep}
-          setStep={setSheetStep}
-          categories={categories}
-          productCounts={productCounts}
-          selectedCategoryId={selectedCategoryId}
-          setSelectedCategoryId={(id) => {
-            setSelectedCategoryId(id);
-            setSelectedProduct(null);
-          }}
-          products={flow === "renew" ? renewProducts : buyProducts}
-          selectedProduct={selectedProduct}
-          setSelectedProduct={setSelectedProduct}
-          renewingService={renewingService}
-          configName={configName}
-          setConfigName={setConfigName}
-          receiptText={receiptText}
-          setReceiptText={setReceiptText}
-          receiptPreview={receiptPreview}
-          onReceiptFile={onReceiptFile}
-          onClose={resetFlow}
-          submitting={orderMutation.isPending || renewMutation.isPending}
-          error={(orderMutation.error || renewMutation.error) as any}
-          onSubmit={() => {
-            if (flow === "buy") orderMutation.mutate();
-            else renewMutation.mutate();
-          }}
-          primary={primary}
-          payment={data?.store?.payment || null}
-        />
-      ) : null}
+      <AnimatePresence>
+        {flow !== "idle" ? (
+          <CheckoutSheet
+            key="portal-checkout"
+            mode={flow}
+            step={sheetStep}
+            setStep={setSheetStep}
+            categories={categories}
+            productCounts={productCounts}
+            selectedCategoryId={selectedCategoryId}
+            setSelectedCategoryId={(id) => {
+              setSelectedCategoryId(id);
+              setSelectedProduct(null);
+            }}
+            products={flow === "renew" ? renewProducts : buyProducts}
+            selectedProduct={selectedProduct}
+            setSelectedProduct={setSelectedProduct}
+            renewingService={renewingService}
+            configName={configName}
+            setConfigName={setConfigName}
+            receiptText={receiptText}
+            setReceiptText={setReceiptText}
+            receiptPreview={receiptPreview}
+            onReceiptFile={onReceiptFile}
+            onClose={resetFlow}
+            submitting={orderMutation.isPending || renewMutation.isPending}
+            error={(orderMutation.error || renewMutation.error) as any}
+            onSubmit={() => {
+              if (flow === "buy") orderMutation.mutate();
+              else renewMutation.mutate();
+            }}
+            primary={primary}
+            payment={data?.store?.payment || null}
+          />
+        ) : null}
+      </AnimatePresence>
     </StoreShell>
   );
 }
@@ -815,7 +820,8 @@ function CheckoutSheet({
   primary: string;
   payment: StorefrontStore["payment"] | null;
 }) {
-  const { t, formatToman, isFa } = useStorefrontLocale();
+  const { t, isFa } = useStorefrontLocale();
+  const [stepDir, setStepDir] = useState(1);
   const maxStep = mode === "buy" ? (categories.length ? 3 : 2) : 1;
   const productStep = mode === "buy" && categories.length ? 1 : 0;
   const configStep = mode === "buy" ? productStep + 1 : -1;
@@ -825,23 +831,47 @@ function CheckoutSheet({
 
   const paymentCards = resolvePaymentCards(payment);
 
+  const dirFactor = isFa ? -1 : 1;
+
+  const goBack = () => {
+    if (step === 0) {
+      onClose();
+      return;
+    }
+    setStepDir(-1);
+    setStep((s) => s - 1);
+  };
+
   const goNext = () => {
     if (step === categoryStep && !selectedCategoryId) return;
     if (step === productStep && !selectedProduct) return;
     if (mode === "buy" && step === configStep && !configName.trim()) return;
     if (step === paymentStep && !receiptText.trim() && !receiptPreview) return;
-    if (step >= maxStep) onSubmit();
-    else setStep((s) => s + 1);
+    if (step >= maxStep) {
+      onSubmit();
+      return;
+    }
+    setStepDir(1);
+    setStep((s) => s + 1);
   };
 
   if (typeof document === "undefined") return null;
 
   return createPortal(
     <div className="fixed inset-0 z-[200] flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-6">
-      <button type="button" className="absolute inset-0 cursor-pointer" aria-label="Close" onClick={onClose} />
+      <motion.button
+        type="button"
+        className="absolute inset-0 cursor-pointer"
+        aria-label="Close"
+        onClick={onClose}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+      />
       <motion.div
-        initial={{ y: 48, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
+        initial={{ y: 56, opacity: 0, scale: 0.98 }}
+        animate={{ y: 0, opacity: 1, scale: 1 }}
+        exit={{ y: 40, opacity: 0, scale: 0.98 }}
         transition={springSoft}
         className={`relative z-10 flex max-h-[min(92dvh,calc(100dvh-1.5rem))] w-full max-w-lg flex-col overflow-hidden rounded-t-[1.85rem] bg-white shadow-2xl dark:bg-zinc-950 sm:max-h-[min(90dvh,calc(100dvh-3rem))] sm:rounded-[1.85rem] ${
           isFa ? "font-[Vazirmatn,Tahoma,sans-serif]" : ""
@@ -849,13 +879,14 @@ function CheckoutSheet({
       >
         <div className="mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-zinc-300 dark:bg-zinc-700 sm:hidden" />
         <div className="flex items-center gap-2 border-b border-black/[0.05] px-3 py-3 dark:border-white/10">
-          <button
+          <motion.button
             type="button"
-            onClick={() => (step === 0 ? onClose() : setStep((s) => s - 1))}
+            onClick={goBack}
+            whileTap={{ scale: 0.92 }}
             className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-2xl bg-[#F5F5F7] dark:bg-zinc-900"
           >
             {step === 0 ? <X size={18} /> : <ChevronLeft size={20} className={isFa ? "rotate-180" : ""} />}
-          </button>
+          </motion.button>
           <div className="min-w-0 flex-1">
             <div className="font-bold">
               {mode === "renew" ? t("تمدید سرویس", "Renew service") : t("سفارش جدید", "New order")}
@@ -864,11 +895,28 @@ function CheckoutSheet({
               {t("مرحله", "Step")} {step + 1}/{maxStep + 1}
             </div>
           </div>
+          <div className="flex gap-1 pe-1">
+            {Array.from({ length: maxStep + 1 }).map((_, i) => (
+              <motion.span
+                key={i}
+                animate={{
+                  width: i === step ? 18 : 6,
+                  backgroundColor: i <= step ? "var(--store-primary)" : "rgb(212 212 216)",
+                }}
+                transition={{ type: "spring", stiffness: 420, damping: 28 }}
+                className="h-1.5 rounded-full"
+              />
+            ))}
+          </div>
         </div>
 
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-5">
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
           {mode === "renew" && renewingService ? (
-            <div className="space-y-2">
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mb-4 space-y-2"
+            >
               <div className="rounded-2xl bg-zinc-100 px-3.5 py-2.5 text-sm dark:bg-zinc-900">
                 {t("تمدید", "Renewing")}: <b>{renewingService.remark || renewingService.email}</b>
               </div>
@@ -883,170 +931,171 @@ function CheckoutSheet({
                   "Only plans from this service’s category are available. Volume and days are added to the current service.",
                 )}
               </p>
-            </div>
+            </motion.div>
           ) : null}
 
-          {mode === "buy" && step === categoryStep ? (
-            <div className="space-y-3">
-              <div>
-                <div className="text-sm font-bold">{t("انتخاب دسته‌بندی", "Choose category")}</div>
-                <p className="mt-1 text-xs text-zinc-500">
-                  {t("اول دسته، بعد پلن.", "Category first, then plan.")}
-                </p>
-              </div>
-              <CategoryGrid
-                categories={categories}
-                selectedId={selectedCategoryId}
-                productCounts={productCounts}
-                onSelect={(category) => {
-                  setSelectedCategoryId(category.id);
-                  setStep(productStep);
-                }}
-              />
-            </div>
-          ) : null}
+          <AnimatePresence mode="wait" custom={stepDir * dirFactor}>
+            <motion.div
+              key={`sheet-step-${step}`}
+              custom={stepDir * dirFactor}
+              variants={sheetStepVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={sheetStepTransition}
+              className="space-y-4"
+            >
+              {mode === "buy" && step === categoryStep ? (
+                <div className="space-y-3">
+                  <div>
+                    <div className="text-sm font-bold">{t("انتخاب دسته‌بندی", "Choose category")}</div>
+                    <p className="mt-1 text-xs text-zinc-500">
+                      {t("اول دسته، بعد پلن.", "Category first, then plan.")}
+                    </p>
+                  </div>
+                  <CategoryGrid
+                    categories={categories}
+                    selectedId={selectedCategoryId}
+                    productCounts={productCounts}
+                    onSelect={(category) => {
+                      setSelectedCategoryId(category.id);
+                      setStepDir(1);
+                      setStep(productStep);
+                    }}
+                  />
+                </div>
+              ) : null}
 
-          {step === productStep ? (
-            <div className="space-y-2">
-              {mode === "buy" && selectedCategory ? (
-                <div className="mb-1 flex items-center justify-between gap-2 text-[13px]">
-                  <span className="font-semibold text-zinc-600 dark:text-zinc-300">
-                    {selectedCategory.name}
-                  </span>
-                  {categories.length > 1 ? (
-                    <button
-                      type="button"
-                      className="font-semibold text-[color:var(--store-primary)]"
-                      onClick={() => setStep(0)}
-                    >
-                      {t("تغییر دسته", "Change")}
-                    </button>
+              {step === productStep ? (
+                <div className="space-y-2.5">
+                  {mode === "buy" && selectedCategory ? (
+                    <div className="mb-1 flex items-center justify-between gap-2 text-[13px]">
+                      <span className="font-semibold text-zinc-600 dark:text-zinc-300">
+                        {selectedCategory.name}
+                      </span>
+                      {categories.length > 1 ? (
+                        <button
+                          type="button"
+                          className="font-semibold text-[color:var(--store-primary)]"
+                          onClick={() => {
+                            setStepDir(-1);
+                            setStep(0);
+                          }}
+                        >
+                          {t("تغییر دسته", "Change")}
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  <div className="text-sm font-bold">{t("انتخاب پلن", "Choose plan")}</div>
+                  {products.map((p, index) => (
+                    <PlanPickRow
+                      key={p.id}
+                      product={p}
+                      selected={selectedProduct?.id === p.id}
+                      onSelect={() => setSelectedProduct(p)}
+                    />
+                  ))}
+                  {!products.length ? (
+                    <p className="rounded-2xl border border-dashed border-zinc-300 px-4 py-8 text-center text-sm text-zinc-500 dark:border-zinc-700">
+                      {t("محصولی در این دسته نیست.", "No products in this category.")}
+                    </p>
                   ) : null}
                 </div>
               ) : null}
-              {products.map((p) => {
-                const active = selectedProduct?.id === p.id;
-                return (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => setSelectedProduct(p)}
-                    className={`flex w-full items-center justify-between rounded-2xl border px-3.5 py-3.5 text-start transition ${
-                      active
-                        ? "border-[color:var(--store-primary)] bg-[color:var(--store-primary)]/10"
-                        : "border-zinc-200 dark:border-zinc-800"
-                    }`}
+
+              {mode === "buy" && step === configStep ? (
+                <FieldBlock
+                  title={t("نام کانفیگ", "Config name")}
+                  hint={t("این نام روی سرویس شما نمایش داده می‌شود.", "Shown on your service list.")}
+                  accent
+                >
+                  <input
+                    className="w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3.5 outline-none dark:border-zinc-700 dark:bg-zinc-950"
+                    style={{ fontSize: 16 }}
+                    value={configName}
+                    onChange={(e) => setConfigName(e.target.value)}
+                    placeholder={t("مثلاً phone-1", "e.g. phone-1")}
+                  />
+                </FieldBlock>
+              ) : null}
+
+              {step === paymentStep ? (
+                <>
+                  <div className="space-y-1">
+                    <div className="text-sm font-bold">{t("پرداخت کارت به کارت", "Card-to-card payment")}</div>
+                    <p className="text-xs text-zinc-500">
+                      {t(
+                        "مبلغ را به کارت زیر واریز کنید، سپس رسید یا کد پیگیری را بفرستید.",
+                        "Transfer to the card below, then submit receipt or tracking code.",
+                      )}
+                    </p>
+                  </div>
+                  {paymentCards.length ? (
+                    <div className="space-y-3">
+                      {paymentCards.map((card) => (
+                        <BankCardVisual
+                          key={card.id}
+                          bankName={card.bankName}
+                          cardNumber={card.cardNumber}
+                          cardHolder={card.cardHolder}
+                          iban={card.iban}
+                          instructions={card.instructions}
+                          transferLabel={t("کارت به کارت", "Card to Card")}
+                          copyLabel={t("کپی شماره کارت", "Copy card number")}
+                          copiedLabel={t("کپی شد", "Copied")}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-3.5 py-3 text-sm text-amber-800 dark:text-amber-200">
+                      {t(
+                        "اطلاعات کارت پرداخت هنوز تنظیم نشده. با پشتیبانی تماس بگیرید.",
+                        "Payment card is not configured yet. Please contact support.",
+                      )}
+                    </p>
+                  )}
+                  <FieldBlock
+                    title={t("یادداشت پرداخت", "Payment note")}
+                    hint={t("رسید یا یادداشت الزامی است", "Receipt or note is required")}
+                    accent
                   >
-                    <div>
-                      <div className="font-semibold">{p.name}</div>
-                      <div className="text-xs text-zinc-500">
-                        {p.traffic} · {p.durationDays} {t("روز", "days")}
-                      </div>
-                    </div>
-                    <div className="text-sm font-bold text-[color:var(--store-primary)]">
-                      {p.priceToman ? formatToman(p.priceToman) : `$${p.priceUsd}`}
-                    </div>
-                  </button>
-                );
-              })}
-              {!products.length ? (
-                <p className="rounded-2xl border border-dashed border-zinc-300 px-4 py-8 text-center text-sm text-zinc-500 dark:border-zinc-700">
-                  {t("محصولی در این دسته نیست.", "No products in this category.")}
+                    <textarea
+                      rows={2}
+                      className="w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 outline-none dark:border-zinc-700 dark:bg-zinc-950"
+                      style={{ fontSize: 16 }}
+                      value={receiptText}
+                      onChange={(e) => setReceiptText(e.target.value)}
+                    />
+                  </FieldBlock>
+                  <label className="flex cursor-pointer flex-col items-center gap-2 rounded-[1.35rem] border border-dashed border-zinc-300 px-4 py-8 text-sm dark:border-zinc-700">
+                    <Upload size={18} />
+                    {receiptPreview ? t("رسید پیوست شد", "Receipt attached") : t("آپلود رسید", "Upload receipt")}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => onReceiptFile(e.target.files?.[0])}
+                    />
+                    {receiptPreview ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={receiptPreview} alt="" className="max-h-32 rounded-xl object-contain" />
+                    ) : null}
+                  </label>
+                </>
+              ) : null}
+
+              {error ? (
+                <p className="text-sm text-rose-500">
+                  {error?.response?.data?.message || error?.message || "Failed"}
                 </p>
               ) : null}
-            </div>
-          ) : null}
-
-          {mode === "buy" && step === configStep ? (
-            <FieldBlock
-              title={t("نام کانفیگ", "Config name")}
-              hint={t("این نام روی سرویس شما نمایش داده می‌شود.", "Shown on your service list.")}
-              accent
-            >
-              <input
-                className="w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3.5 outline-none dark:border-zinc-700 dark:bg-zinc-950"
-                style={{ fontSize: 16 }}
-                value={configName}
-                onChange={(e) => setConfigName(e.target.value)}
-                placeholder={t("مثلاً phone-1", "e.g. phone-1")}
-              />
-            </FieldBlock>
-          ) : null}
-
-          {step === paymentStep ? (
-            <>
-              <div className="space-y-1">
-                <div className="text-sm font-bold">{t("پرداخت کارت به کارت", "Card-to-card payment")}</div>
-                <p className="text-xs text-zinc-500">
-                  {t(
-                    "مبلغ را به کارت زیر واریز کنید، سپس رسید یا کد پیگیری را بفرستید.",
-                    "Transfer to the card below, then submit receipt or tracking code.",
-                  )}
-                </p>
-              </div>
-              {paymentCards.length ? (
-                <div className="space-y-3">
-                  {paymentCards.map((card) => (
-                    <BankCardVisual
-                      key={card.id}
-                      bankName={card.bankName}
-                      cardNumber={card.cardNumber}
-                      cardHolder={card.cardHolder}
-                      iban={card.iban}
-                      instructions={card.instructions}
-                      transferLabel={t("کارت به کارت", "Card to Card")}
-                      copyLabel={t("کپی شماره کارت", "Copy card number")}
-                      copiedLabel={t("کپی شد", "Copied")}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <p className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-3.5 py-3 text-sm text-amber-800 dark:text-amber-200">
-                  {t(
-                    "اطلاعات کارت پرداخت هنوز تنظیم نشده. با پشتیبانی تماس بگیرید.",
-                    "Payment card is not configured yet. Please contact support.",
-                  )}
-                </p>
-              )}
-              <FieldBlock
-                title={t("یادداشت پرداخت", "Payment note")}
-                hint={t("رسید یا یادداشت الزامی است", "Receipt or note is required")}
-                accent
-              >
-                <textarea
-                  rows={2}
-                  className="w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 outline-none dark:border-zinc-700 dark:bg-zinc-950"
-                  style={{ fontSize: 16 }}
-                  value={receiptText}
-                  onChange={(e) => setReceiptText(e.target.value)}
-                />
-              </FieldBlock>
-              <label className="flex cursor-pointer flex-col items-center gap-2 rounded-[1.35rem] border border-dashed border-zinc-300 px-4 py-8 text-sm dark:border-zinc-700">
-                <Upload size={18} />
-                {receiptPreview ? t("رسید پیوست شد", "Receipt attached") : t("آپلود رسید", "Upload receipt")}
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => onReceiptFile(e.target.files?.[0])}
-                />
-                {receiptPreview ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={receiptPreview} alt="" className="max-h-32 rounded-xl object-contain" />
-                ) : null}
-              </label>
-            </>
-          ) : null}
-
-          {error ? (
-            <p className="text-sm text-rose-500">
-              {error?.response?.data?.message || error?.message || "Failed"}
-            </p>
-          ) : null}
+            </motion.div>
+          </AnimatePresence>
         </div>
 
         <div className="border-t border-zinc-200 p-4 dark:border-zinc-800">
-          <button
+          <motion.button
             type="button"
             disabled={
               submitting ||
@@ -1055,12 +1104,14 @@ function CheckoutSheet({
               (step === paymentStep && !receiptText.trim() && !receiptPreview)
             }
             onClick={goNext}
+            whileTap={{ scale: 0.98 }}
+            whileHover={{ scale: 1.01 }}
             className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl text-[15px] font-bold text-white disabled:opacity-50"
             style={{ background: primary }}
           >
             {submitting ? <LoaderCircle size={18} className="animate-spin" /> : null}
             {step >= maxStep ? t("ثبت", "Submit") : t("بعدی", "Next")}
-          </button>
+          </motion.button>
         </div>
       </motion.div>
     </div>,

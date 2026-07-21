@@ -276,22 +276,41 @@ export function CategoryCard({
       type="button"
       onClick={onSelect}
       disabled={locked && !selected}
-      whileHover={locked ? undefined : { y: -2 }}
-      whileTap={locked ? undefined : { scale: 0.985 }}
-      transition={{ type: "spring", stiffness: 320, damping: 24 }}
-      className={`group relative flex h-full min-h-[5.5rem] w-full items-center overflow-hidden rounded-[1.65rem] border p-4 text-start transition sm:min-h-[6rem] sm:p-5 ${
+      layout
+      whileHover={locked ? undefined : { y: -3, scale: 1.01 }}
+      whileTap={locked ? undefined : { scale: 0.98 }}
+      animate={
         selected
-          ? "border-[color:var(--store-primary)] bg-[color:var(--store-primary)]/[0.07] shadow-[0_12px_36px_-20px_var(--store-primary)] ring-2 ring-[color:var(--store-primary)]/20"
-          : "border-black/[0.05] bg-white/90 shadow-[0_10px_28px_-20px_rgba(15,23,42,0.35)] hover:border-black/[0.1] dark:border-white/[0.07] dark:bg-zinc-900/90"
+          ? { scale: 1.02, boxShadow: "0 16px 40px -18px color-mix(in srgb, var(--store-primary) 55%, transparent)" }
+          : { scale: 1, boxShadow: "0 10px 28px -20px rgba(15,23,42,0.28)" }
+      }
+      transition={{ type: "spring", stiffness: 380, damping: 26 }}
+      className={`group relative flex h-full min-h-[5.5rem] w-full items-center overflow-hidden rounded-[1.65rem] border p-4 text-start sm:min-h-[6rem] sm:p-5 ${
+        selected
+          ? "border-[color:var(--store-primary)] bg-[color:var(--store-primary)]/[0.1] ring-2 ring-[color:var(--store-primary)]/35"
+          : "border-black/[0.05] bg-white/90 hover:border-black/[0.1] dark:border-white/[0.07] dark:bg-zinc-900/90"
       } ${locked && !selected ? "cursor-default opacity-60" : "cursor-pointer"}`}
     >
-      <div
-        aria-hidden
-        className="pointer-events-none absolute -end-6 -top-8 h-24 w-24 rounded-full opacity-40 blur-2xl"
-        style={{ background: "var(--store-primary)" }}
-      />
+      <AnimatePresence>
+        {selected ? (
+          <motion.div
+            key="cat-glow"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            aria-hidden
+            className="pointer-events-none absolute inset-0"
+            style={{
+              background:
+                "radial-gradient(ellipse 80% 70% at 100% 0%, color-mix(in srgb, var(--store-primary) 22%, transparent), transparent 65%)",
+            }}
+          />
+        ) : null}
+      </AnimatePresence>
       <div className="relative flex w-full items-center gap-3.5">
-        <div
+        <motion.div
+          animate={selected ? { scale: 1.06, rotate: -4 } : { scale: 1, rotate: 0 }}
+          transition={{ type: "spring", stiffness: 400, damping: 18 }}
           className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-[1.1rem] text-lg font-black text-white shadow-sm sm:h-14 sm:w-14 sm:text-xl ${
             selected ? "" : "bg-zinc-900 dark:bg-zinc-100 dark:text-zinc-900"
           }`}
@@ -302,19 +321,40 @@ export function CategoryCard({
           ) : (
             initial
           )}
-        </div>
+        </motion.div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <div className="text-[15px] font-bold leading-snug tracking-tight sm:text-[16px]">
               {category.name}
             </div>
-            {selected ? (
-              <span className="inline-flex shrink-0 rounded-full bg-[color:var(--store-primary)] px-2 py-0.5 text-[10px] font-bold text-white">
-                {locked ? t("قفل", "Locked") : t("انتخاب شد", "Selected")}
-              </span>
-            ) : null}
+            <AnimatePresence>
+              {selected ? (
+                <motion.span
+                  initial={{ scale: 0.6, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  exit={{ scale: 0.6, opacity: 0 }}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[color:var(--store-primary)] px-2 py-0.5 text-[10px] font-bold text-white"
+                >
+                  <Check size={11} strokeWidth={3} />
+                  {locked ? t("قفل", "Locked") : t("انتخاب شد", "Selected")}
+                </motion.span>
+              ) : null}
+            </AnimatePresence>
           </div>
         </div>
+        <AnimatePresence>
+          {selected ? (
+            <motion.div
+              initial={{ scale: 0, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 500, damping: 22 }}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[color:var(--store-primary)] text-white shadow-md"
+            >
+              <Check size={16} strokeWidth={3} />
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
       </div>
     </motion.button>
   );
@@ -372,16 +412,41 @@ export function ProductCard({
     <motion.button
       type="button"
       onClick={onSelect}
-      whileHover={{ y: -2 }}
+      layout
+      whileHover={{ y: -3 }}
       whileTap={{ scale: 0.985 }}
-      transition={{ type: "spring", stiffness: 320, damping: 24 }}
-      className={`relative w-full cursor-pointer rounded-[1.75rem] border bg-white p-5 text-start shadow-[0_8px_30px_-18px_rgba(15,23,42,0.28)] transition dark:bg-zinc-900 sm:p-5 ${
+      animate={
         selected
-          ? "border-[color:var(--store-primary)] ring-2 ring-[color:var(--store-primary)]/25"
+          ? {
+              scale: 1.015,
+              boxShadow: "0 18px 44px -16px color-mix(in srgb, var(--store-primary) 50%, transparent)",
+            }
+          : { scale: 1, boxShadow: "0 8px 30px -18px rgba(15,23,42,0.28)" }
+      }
+      transition={{ type: "spring", stiffness: 360, damping: 24 }}
+      className={`relative w-full cursor-pointer overflow-hidden rounded-[1.75rem] border bg-white p-5 text-start dark:bg-zinc-900 sm:p-5 ${
+        selected
+          ? "border-[color:var(--store-primary)] ring-2 ring-[color:var(--store-primary)]/40"
           : "border-black/[0.04] hover:border-black/[0.08] dark:border-white/[0.06]"
       }`}
     >
-      <div className="mb-3 flex flex-wrap items-center gap-2">
+      <AnimatePresence>
+        {selected ? (
+          <motion.div
+            key="plan-glow"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            aria-hidden
+            className="pointer-events-none absolute inset-0"
+            style={{
+              background:
+                "radial-gradient(ellipse 90% 80% at 0% 0%, color-mix(in srgb, var(--store-primary) 18%, transparent), transparent 60%)",
+            }}
+          />
+        ) : null}
+      </AnimatePresence>
+      <div className="relative mb-3 flex flex-wrap items-center gap-2">
         {product.featured ? (
           <span className="inline-flex rounded-full bg-amber-500/15 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-400">
             {t("ویژه", "Featured")}
@@ -392,19 +457,27 @@ export function ProductCard({
             {product.badge}
           </span>
         ) : null}
-        {selected ? (
-          <span className="ms-auto inline-flex rounded-full bg-[color:var(--store-primary)] px-2.5 py-1 text-[11px] font-bold text-white">
-            {t("انتخاب شد", "Selected")}
-          </span>
-        ) : null}
+        <AnimatePresence>
+          {selected ? (
+            <motion.span
+              initial={{ scale: 0.7, opacity: 0, x: 8 }}
+              animate={{ scale: 1, opacity: 1, x: 0 }}
+              exit={{ scale: 0.7, opacity: 0 }}
+              className="ms-auto inline-flex items-center gap-1 rounded-full bg-[color:var(--store-primary)] px-2.5 py-1 text-[11px] font-bold text-white shadow-sm"
+            >
+              <Check size={12} strokeWidth={3} />
+              {t("انتخاب شد", "Selected")}
+            </motion.span>
+          ) : null}
+        </AnimatePresence>
       </div>
-      <div className="text-lg font-bold">{product.name}</div>
+      <div className="relative text-lg font-bold">{product.name}</div>
       {product.description ? (
-        <p className="mt-2 min-h-10 text-sm text-zinc-500 dark:text-zinc-400">
+        <p className="relative mt-2 min-h-10 text-sm text-zinc-500 dark:text-zinc-400">
           {product.description}
         </p>
       ) : null}
-      <div className="mt-5 space-y-1">
+      <div className="relative mt-5 space-y-1">
         {hasToman ? (
           <div className="text-2xl font-black text-[color:var(--store-primary)]">
             {formatToman(product.priceToman)}
@@ -425,7 +498,7 @@ export function ProductCard({
           <div className="text-lg font-bold text-zinc-400">{t("تماس برای قیمت", "Contact for price")}</div>
         ) : null}
       </div>
-      <div className="mt-4 space-y-2 text-sm text-zinc-600 dark:text-zinc-400">
+      <div className="relative mt-4 space-y-2 text-sm text-zinc-600 dark:text-zinc-400">
         <div className="flex justify-between gap-3">
           <span>{t("ترافیک", "Traffic")}</span>
           <span>{formatBytes(product.traffic)}</span>
@@ -437,6 +510,134 @@ export function ProductCard({
           </span>
         </div>
       </div>
+      <AnimatePresence>
+        {selected ? (
+          <motion.div
+            initial={{ scale: 0, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 520, damping: 20 }}
+            className="absolute end-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-[color:var(--store-primary)] text-white shadow-lg"
+          >
+            <Check size={18} strokeWidth={3} />
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+    </motion.button>
+  );
+}
+
+/** Compact selectable plan row for portal checkout sheet */
+export function PlanPickRow({
+  product,
+  selected = false,
+  onSelect,
+}: {
+  product: StorefrontProduct;
+  selected?: boolean;
+  onSelect: () => void;
+}) {
+  const { formatToman, t } = useStorefrontLocale();
+  const price =
+    Number(product.priceToman) > 0
+      ? formatToman(product.priceToman)
+      : Number(product.priceUsd) > 0
+        ? `$${Number(product.priceUsd)}`
+        : "—";
+
+  return (
+    <motion.button
+      type="button"
+      onClick={onSelect}
+      layout
+      whileHover={{ y: -2, scale: 1.012 }}
+      whileTap={{ scale: 0.98 }}
+      animate={
+        selected
+          ? {
+              scale: 1.025,
+              boxShadow: "0 16px 40px -14px color-mix(in srgb, var(--store-primary) 58%, transparent)",
+            }
+          : { scale: 1, boxShadow: "0 0 0 transparent" }
+      }
+      transition={{ type: "spring", stiffness: 420, damping: 24 }}
+      className={`relative flex w-full items-center justify-between gap-3 overflow-hidden rounded-[1.35rem] border px-3.5 py-3.5 text-start ${
+        selected
+          ? "border-[color:var(--store-primary)] bg-[color:var(--store-primary)]/[0.12] ring-2 ring-[color:var(--store-primary)]/40"
+          : "border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950"
+      }`}
+    >
+      <AnimatePresence>
+        {selected ? (
+          <motion.div
+            key="row-glow"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            aria-hidden
+            className="pointer-events-none absolute inset-0"
+            style={{
+              background:
+                "radial-gradient(ellipse 80% 100% at 0% 50%, color-mix(in srgb, var(--store-primary) 22%, transparent), transparent 70%)",
+            }}
+          />
+        ) : null}
+      </AnimatePresence>
+      <div className="relative flex min-w-0 flex-1 items-center gap-3">
+        <motion.div
+          animate={selected ? { scale: 1.08 } : { scale: 1 }}
+          transition={{ type: "spring", stiffness: 500, damping: 20 }}
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 ${
+            selected
+              ? "border-[color:var(--store-primary)] bg-[color:var(--store-primary)] text-white"
+              : "border-zinc-200 bg-zinc-50 text-transparent dark:border-zinc-700 dark:bg-zinc-900"
+          }`}
+        >
+          <AnimatePresence mode="wait">
+            {selected ? (
+              <motion.span
+                key="on"
+                initial={{ scale: 0, rotate: -50 }}
+                animate={{ scale: 1, rotate: 0 }}
+                exit={{ scale: 0 }}
+                transition={{ type: "spring", stiffness: 560, damping: 18 }}
+              >
+                <Check size={17} strokeWidth={3} className="text-white" />
+              </motion.span>
+            ) : (
+              <motion.span key="off" className="h-2.5 w-2.5 rounded-full bg-zinc-300 dark:bg-zinc-600" />
+            )}
+          </AnimatePresence>
+        </motion.div>
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <div className={`truncate font-semibold ${selected ? "text-[color:var(--store-primary)]" : ""}`}>
+              {product.name}
+            </div>
+            <AnimatePresence>
+              {selected ? (
+                <motion.span
+                  initial={{ opacity: 0, scale: 0.7 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.7 }}
+                  className="shrink-0 rounded-full bg-[color:var(--store-primary)] px-2 py-0.5 text-[10px] font-bold text-white"
+                >
+                  {t("انتخاب شد", "Selected")}
+                </motion.span>
+              ) : null}
+            </AnimatePresence>
+          </div>
+          <div className="mt-0.5 text-xs text-zinc-500">
+            {formatBytes(product.traffic)} · {product.durationDays} {t("روز", "days")}
+          </div>
+        </div>
+      </div>
+      <motion.div
+        animate={selected ? { scale: 1.05 } : { scale: 1 }}
+        className="relative shrink-0 text-sm font-bold text-[color:var(--store-primary)]"
+      >
+        {price}
+      </motion.div>
     </motion.button>
   );
 }

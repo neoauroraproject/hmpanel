@@ -16,6 +16,9 @@ import { clsx } from "clsx";
 /** Soft spring — sheets / panels (Soft UI Evolution) */
 export const springSoft: Transition = { type: "spring", stiffness: 420, damping: 34 };
 
+/** Snappier spring for selection / taps */
+export const springSelect: Transition = { type: "spring", stiffness: 480, damping: 28 };
+
 export const fadeUp = {
   initial: { opacity: 0, y: 14 },
   animate: { opacity: 1, y: 0 },
@@ -23,6 +26,32 @@ export const fadeUp = {
 };
 
 export const fadeUpTransition: Transition = { duration: 0.32, ease: [0.22, 1, 0.36, 1] };
+
+/** Checkout sheet step slide — pass custom = +1 (next) or -1 (back) */
+export const sheetStepVariants = {
+  enter: (dir: number) => ({
+    opacity: 0,
+    x: dir >= 0 ? 36 : -36,
+    filter: "blur(4px)",
+  }),
+  center: {
+    opacity: 1,
+    x: 0,
+    filter: "blur(0px)",
+  },
+  exit: (dir: number) => ({
+    opacity: 0,
+    x: dir >= 0 ? -28 : 28,
+    filter: "blur(3px)",
+  }),
+};
+
+export const sheetStepTransition: Transition = {
+  type: "spring",
+  stiffness: 380,
+  damping: 32,
+  mass: 0.85,
+};
 
 export const staggerContainer = {
   animate: { transition: { staggerChildren: 0.06 } },
