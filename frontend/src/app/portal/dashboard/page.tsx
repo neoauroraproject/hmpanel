@@ -23,8 +23,14 @@ import { publicApi } from "@/lib/api";
 import { useCustomerSession } from "@/modules/storefront/session";
 import { buildSubscriptionLink, parseSubscriptionToken } from "@/modules/storefront/subscription";
 import { compressReceiptImage } from "@/modules/storefront/receipt-image";
-import type { CustomerDashboard, CustomerService, StorefrontProduct, StorefrontStore } from "@/modules/storefront/types";
-import { StoreShell, ServiceCard } from "@/modules/storefront/ui";
+import type {
+  CustomerDashboard,
+  CustomerService,
+  StorefrontCategory,
+  StorefrontProduct,
+  StorefrontStore,
+} from "@/modules/storefront/types";
+import { CategoryGrid, StoreShell, ServiceCard } from "@/modules/storefront/ui";
 import { scrollToTop } from "@/modules/storefront/scroll";
 import {
   FieldBlock,
@@ -69,6 +75,7 @@ function CustomerDashboardInner() {
 
   const [tab, setTab] = useState<DashTab>("home");
   const [flow, setFlow] = useState<FlowMode>("idle");
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<StorefrontProduct | null>(null);
   const [renewingService, setRenewingService] = useState<CustomerService | null>(null);
   const [configName, setConfigName] = useState("");
@@ -142,12 +149,37 @@ function CustomerDashboardInner() {
 
   const resetFlow = () => {
     setFlow("idle");
+    setSelectedCategoryId(null);
     setSelectedProduct(null);
     setRenewingService(null);
     setConfigName("");
     setReceiptText("");
     setReceiptImage("");
     setReceiptPreview("");
+    setSheetStep(0);
+  };
+
+  const startBuy = (categoryId?: string | null) => {
+    const cats = data?.categories || [];
+    const nextCategory =
+      categoryId ||
+      (cats.length === 1 ? cats[0].id : null);
+    setRenewingService(null);
+    setSelectedCategoryId(nextCategory);
+    setSelectedProduct(null);
+    setFlow("buy");
+    setSheetStep(nextCategory && cats.length ? 1 : 0);
+  };
+
+  const startRenew = (service: CustomerService) => {
+    const lockedCategory = service.categoryId || null;
+    const pool = (data?.renewProducts?.length ? data.renewProducts : data?.products || []).filter(
+      (p) => !lockedCategory || p.categoryId === lockedCategory,
+    );
+    setRenewingService(service);
+    setSelectedCategoryId(lockedCategory);
+    setSelectedProduct(pool[0] || null);
+    setFlow("renew");
     setSheetStep(0);
   };
 
@@ -198,7 +230,19 @@ function CustomerDashboardInner() {
 
   const primary = data.branding?.primaryColor || "#2563eb";
   const products = data.products || [];
-  const renewProducts = data.renewProducts?.length ? data.renewProducts : products;
+  const categories = (data.categories || []).filter((c) => c?.id && c?.name);
+  const productCounts: Record<string, number> = {};
+  for (const product of products) {
+    if (!product?.categoryId) continue;
+    productCounts[product.categoryId] = (productCounts[product.categoryId] || 0) + 1;
+  }
+  const renewPool = data.renewProducts?.length ? data.renewProducts : products;
+  const renewProducts = renewingService?.categoryId
+    ? renewPool.filter((p) => p.categoryId === renewingService.categoryId)
+    : renewPool;
+  const buyProducts = selectedCategoryId
+    ? products.filter((p) => p.categoryId === selectedCategoryId)
+    : products;
   const activeCount = (data.activeServices || []).length || (data.services || []).filter((s) => s.status === "active" || s.status === "pending").length;
   const pendingCount = (data.pendingOrders || []).length;
 
@@ -265,11 +309,7 @@ function CustomerDashboardInner() {
               <StatTile label={t("سفارش در صف", "Orders in queue")} value={pendingCount} tone="warn" />
               <button
                 type="button"
-                onClick={() => {
-                  setFlow("buy");
-                  setSheetStep(0);
-                  setSelectedProduct(products[0] || null);
-                }}
+                onClick={() => startBuy()}
                 className="col-span-2 flex min-h-[72px] cursor-pointer items-center justify-center gap-2 rounded-[1.35rem] bg-[color:var(--store-primary)] px-4 text-[15px] font-bold text-white shadow-[0_14px_32px_-16px_var(--store-primary)] transition active:scale-[0.98] sm:col-span-2"
               >
                 <Plus size={18} /> {t("سفارش جدید", "New order")}
@@ -314,23 +354,14 @@ function CustomerDashboardInner() {
                 setCopiedToken={setCopiedToken}
                 claimService={claimService}
                 hideService={hideService}
-                onRenew={(service) => {
-                  setRenewingService(service);
-                  setSelectedProduct(renewProducts[0] || null);
-                  setFlow("renew");
-                  setSheetStep(0);
-                }}
+                onRenew={startRenew}
               />
             ) : null}
             {tab === "orders" ? (
               <OrdersTab
                 data={data}
                 cancelOrder={cancelOrder}
-                onBuy={() => {
-                  setFlow("buy");
-                  setSheetStep(0);
-                  setSelectedProduct(products[0] || null);
-                }}
+                onBuy={() => startBuy()}
               />
             ) : null}
             {tab === "alerts" ? (
@@ -355,7 +386,14 @@ function CustomerDashboardInner() {
           mode={flow}
           step={sheetStep}
           setStep={setSheetStep}
-          products={flow === "renew" ? renewProducts : products}
+          categories={categories}
+          productCounts={productCounts}
+          selectedCategoryId={selectedCategoryId}
+          setSelectedCategoryId={(id) => {
+            setSelectedCategoryId(id);
+            setSelectedProduct(null);
+          }}
+          products={flow === "renew" ? renewProducts : buyProducts}
           selectedProduct={selectedProduct}
           setSelectedProduct={setSelectedProduct}
           renewingService={renewingService}
@@ -732,6 +770,10 @@ function CheckoutSheet({
   mode,
   step,
   setStep,
+  categories,
+  productCounts,
+  selectedCategoryId,
+  setSelectedCategoryId,
   products,
   selectedProduct,
   setSelectedProduct,
@@ -752,6 +794,10 @@ function CheckoutSheet({
   mode: FlowMode;
   step: number;
   setStep: Dispatch<SetStateAction<number>>;
+  categories: StorefrontCategory[];
+  productCounts: Record<string, number>;
+  selectedCategoryId: string | null;
+  setSelectedCategoryId: (id: string | null) => void;
   products: StorefrontProduct[];
   selectedProduct: StorefrontProduct | null;
   setSelectedProduct: (p: StorefrontProduct | null) => void;
@@ -770,20 +816,20 @@ function CheckoutSheet({
   payment: StorefrontStore["payment"] | null;
 }) {
   const { t, formatToman, isFa } = useStorefrontLocale();
-  const maxStep = mode === "buy" ? 2 : 1;
+  const maxStep = mode === "buy" ? (categories.length ? 3 : 2) : 1;
+  const productStep = mode === "buy" && categories.length ? 1 : 0;
+  const configStep = mode === "buy" ? productStep + 1 : -1;
+  const paymentStep = mode === "buy" ? configStep + 1 : 1;
+  const categoryStep = mode === "buy" && categories.length ? 0 : -1;
+  const selectedCategory = categories.find((c) => c.id === selectedCategoryId) || null;
 
   const paymentCards = resolvePaymentCards(payment);
 
   const goNext = () => {
-    if (step === 0 && !selectedProduct) return;
-    if (mode === "buy" && step === 1 && !configName.trim()) return;
-    if (
-      ((mode === "buy" && step === 2) || (mode === "renew" && step === 1)) &&
-      !receiptText.trim() &&
-      !receiptPreview
-    ) {
-      return;
-    }
+    if (step === categoryStep && !selectedCategoryId) return;
+    if (step === productStep && !selectedProduct) return;
+    if (mode === "buy" && step === configStep && !configName.trim()) return;
+    if (step === paymentStep && !receiptText.trim() && !receiptPreview) return;
     if (step >= maxStep) onSubmit();
     else setStep((s) => s + 1);
   };
@@ -826,17 +872,58 @@ function CheckoutSheet({
               <div className="rounded-2xl bg-zinc-100 px-3.5 py-2.5 text-sm dark:bg-zinc-900">
                 {t("تمدید", "Renewing")}: <b>{renewingService.remark || renewingService.email}</b>
               </div>
+              {selectedCategory ? (
+                <div className="rounded-2xl border border-[color:var(--store-primary)]/20 bg-[color:var(--store-primary)]/8 px-3.5 py-2 text-[13px] font-semibold text-[color:var(--store-primary)]">
+                  {t("دسته", "Category")}: {selectedCategory.name}
+                </div>
+              ) : null}
               <p className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-3.5 py-2.5 text-[13px] leading-relaxed text-emerald-800 dark:text-emerald-300">
                 {t(
-                  "حجم و زمان پلن انتخابی به سرویس فعلی اضافه می‌شود؛ مصرف قبلی و تنظیمات پاک نمی‌شوند.",
-                  "Selected plan volume and days are added to this service. Used traffic and settings are kept.",
+                  "فقط پلن‌های همان دسته‌بندی سرویس قابل انتخاب‌اند. حجم و زمان به سرویس فعلی اضافه می‌شود.",
+                  "Only plans from this service’s category are available. Volume and days are added to the current service.",
                 )}
               </p>
             </div>
           ) : null}
 
-          {step === 0 ? (
+          {mode === "buy" && step === categoryStep ? (
+            <div className="space-y-3">
+              <div>
+                <div className="text-sm font-bold">{t("انتخاب دسته‌بندی", "Choose category")}</div>
+                <p className="mt-1 text-xs text-zinc-500">
+                  {t("اول دسته، بعد پلن.", "Category first, then plan.")}
+                </p>
+              </div>
+              <CategoryGrid
+                categories={categories}
+                selectedId={selectedCategoryId}
+                productCounts={productCounts}
+                onSelect={(category) => {
+                  setSelectedCategoryId(category.id);
+                  setStep(productStep);
+                }}
+              />
+            </div>
+          ) : null}
+
+          {step === productStep ? (
             <div className="space-y-2">
+              {mode === "buy" && selectedCategory ? (
+                <div className="mb-1 flex items-center justify-between gap-2 text-[13px]">
+                  <span className="font-semibold text-zinc-600 dark:text-zinc-300">
+                    {selectedCategory.name}
+                  </span>
+                  {categories.length > 1 ? (
+                    <button
+                      type="button"
+                      className="font-semibold text-[color:var(--store-primary)]"
+                      onClick={() => setStep(0)}
+                    >
+                      {t("تغییر دسته", "Change")}
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
               {products.map((p) => {
                 const active = selectedProduct?.id === p.id;
                 return (
@@ -862,10 +949,15 @@ function CheckoutSheet({
                   </button>
                 );
               })}
+              {!products.length ? (
+                <p className="rounded-2xl border border-dashed border-zinc-300 px-4 py-8 text-center text-sm text-zinc-500 dark:border-zinc-700">
+                  {t("محصولی در این دسته نیست.", "No products in this category.")}
+                </p>
+              ) : null}
             </div>
           ) : null}
 
-          {mode === "buy" && step === 1 ? (
+          {mode === "buy" && step === configStep ? (
             <FieldBlock
               title={t("نام کانفیگ", "Config name")}
               hint={t("این نام روی سرویس شما نمایش داده می‌شود.", "Shown on your service list.")}
@@ -881,7 +973,7 @@ function CheckoutSheet({
             </FieldBlock>
           ) : null}
 
-          {(mode === "buy" && step === 2) || (mode === "renew" && step === 1) ? (
+          {step === paymentStep ? (
             <>
               <div className="space-y-1">
                 <div className="text-sm font-bold">{t("پرداخت کارت به کارت", "Card-to-card payment")}</div>
@@ -958,10 +1050,9 @@ function CheckoutSheet({
             type="button"
             disabled={
               submitting ||
-              (step === 0 && !selectedProduct) ||
-              (((mode === "buy" && step === 2) || (mode === "renew" && step === 1)) &&
-                !receiptText.trim() &&
-                !receiptPreview)
+              (step === categoryStep && !selectedCategoryId) ||
+              (step === productStep && !selectedProduct) ||
+              (step === paymentStep && !receiptText.trim() && !receiptPreview)
             }
             onClick={goNext}
             className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl text-[15px] font-bold text-white disabled:opacity-50"

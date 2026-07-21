@@ -6,10 +6,11 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { AlertCircle, LoaderCircle, Upload } from "lucide-react";
 import { publicApi, getCustomerSessionToken } from "@/lib/api";
-import type { CustomerProfile, StorefrontProduct, StorefrontStore } from "@/modules/storefront/types";
+import type { CustomerProfile, StorefrontCategory, StorefrontProduct, StorefrontStore } from "@/modules/storefront/types";
 import { useStorefrontLocale } from "@/modules/storefront/locale";
 import { compressReceiptImage } from "@/modules/storefront/receipt-image";
 import {
+  CategoryGrid,
   PendingOrderCard,
   PrimaryButton,
   ProductCard,
@@ -22,7 +23,7 @@ import { FieldBlock } from "@/modules/storefront/design";
 import { BankCardVisual, resolvePaymentCards } from "@/modules/storefront/BankCardVisual";
 import { rememberStoreSlug, portalPathForSlug } from "@/modules/storefront/store-slug";
 
-type Step = 0 | 1 | 2 | 3 | 4 | 5;
+type Step = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 
 export default function ShopPage() {
   const params = useParams();
@@ -37,10 +38,15 @@ export default function ShopPage() {
   const flow = (searchParams.get("flow") || "").toLowerCase();
   const renewClientId = searchParams.get("clientId") || "";
   const serviceName = searchParams.get("serviceName") || "";
+  const urlCategoryId = searchParams.get("categoryId") || "";
   const isRenewFlow = flow === "renew" && !!renewClientId;
   const isBuyFromPortal = flow === "buy";
 
-  const [step, setStep] = useState<Step>(flow === "buy" || flow === "renew" ? 1 : 0);
+  const initialStep: Step = isRenewFlow ? 2 : flow === "buy" || urlCategoryId ? 1 : 0;
+  const [step, setStep] = useState<Step>(initialStep);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(
+    urlCategoryId || null,
+  );
   const [selectedProduct, setSelectedProduct] = useState<StorefrontProduct | null>(null);
   const [haveToken, setHaveToken] = useState(isRenewFlow || isBuyFromPortal);
   const [lookupError, setLookupError] = useState("");
@@ -68,10 +74,47 @@ export default function ShopPage() {
 
   const store = data?.store as StorefrontStore | undefined;
   const products = (data?.products || []) as StorefrontProduct[];
+  const categories = ((data?.categories || []) as StorefrontCategory[]).filter(
+    (c) => c?.id && c?.name,
+  );
+  const productCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const product of products) {
+      if (!product?.categoryId) continue;
+      counts[product.categoryId] = (counts[product.categoryId] || 0) + 1;
+    }
+    return counts;
+  }, [products]);
+
   const catalog = useMemo(() => {
-    if (!isRenewFlow) return products;
-    return products.filter((p) => p && (p as any).renewable !== false);
-  }, [isRenewFlow, products]);
+    let list = products;
+    if (isRenewFlow) {
+      list = list.filter((p) => p && (p as any).renewable !== false);
+    }
+    if (selectedCategoryId) {
+      list = list.filter((p) => p.categoryId === selectedCategoryId);
+    }
+    return list;
+  }, [isRenewFlow, products, selectedCategoryId]);
+
+  // Prefill / auto-skip category when URL or single-category store
+  useEffect(() => {
+    if (!data) return;
+    if (urlCategoryId) {
+      setSelectedCategoryId(urlCategoryId);
+      if (isRenewFlow) setStep(2);
+      else if (step <= 1) setStep(2);
+      return;
+    }
+    if (isRenewFlow) {
+      setStep(2);
+      return;
+    }
+    if ((isBuyFromPortal || step === 1) && categories.length === 1) {
+      setSelectedCategoryId(categories[0].id);
+      setStep(2);
+    }
+  }, [data, urlCategoryId, isRenewFlow, isBuyFromPortal, categories.length]);
 
   useEffect(() => {
     document.title = store?.title || store?.branding?.name || "Store";
@@ -109,12 +152,18 @@ export default function ShopPage() {
             email: me.profile?.email || current.email,
           }));
         }
+        if (isRenewFlow && !urlCategoryId && renewClientId) {
+          const service = (me?.services || []).find((s: any) => s.id === renewClientId);
+          if (service?.categoryId) {
+            setSelectedCategoryId(service.categoryId);
+          }
+        }
       } catch {
         /* guest checkout still works */
       }
     };
     void boot();
-  }, [isBuyFromPortal, isRenewFlow]);
+  }, [isBuyFromPortal, isRenewFlow, renewClientId, urlCategoryId]);
 
   const lookupCustomer = useMutation({
     mutationFn: async (token: string) =>
@@ -201,6 +250,10 @@ export default function ShopPage() {
       <ShopBody
         store={store}
         catalog={catalog}
+        categories={categories}
+        productCounts={productCounts}
+        selectedCategoryId={selectedCategoryId}
+        setSelectedCategoryId={setSelectedCategoryId}
         step={step}
         setStep={setStep}
         selectedProduct={selectedProduct}
@@ -232,6 +285,10 @@ export default function ShopPage() {
 function ShopBody(props: {
   store: StorefrontStore;
   catalog: StorefrontProduct[];
+  categories: StorefrontCategory[];
+  productCounts: Record<string, number>;
+  selectedCategoryId: string | null;
+  setSelectedCategoryId: (id: string | null) => void;
   step: Step;
   setStep: (s: Step | ((c: Step) => Step)) => void;
   selectedProduct: StorefrontProduct | null;
@@ -259,6 +316,10 @@ function ShopBody(props: {
   const {
     store,
     catalog,
+    categories,
+    productCounts,
+    selectedCategoryId,
+    setSelectedCategoryId,
     step,
     setStep,
     selectedProduct,
@@ -288,11 +349,37 @@ function ShopBody(props: {
     () => resolvePaymentCards(store?.payment),
     [store?.payment],
   );
+  const selectedCategory =
+    categories.find((c) => c.id === selectedCategoryId) ||
+    (selectedCategoryId
+      ? ({ id: selectedCategoryId, name: t("دسته انتخاب‌شده", "Selected category") } as StorefrontCategory)
+      : null);
 
   const canContinueConfig = isRenewFlow || !!form.configName.trim();
   const canContinueProfile =
     !!selectedProduct &&
     (haveToken ? !!form.customerToken.trim() : !!form.name.trim());
+
+  const startBuy = (category?: StorefrontCategory | null) => {
+    if (category) {
+      setSelectedCategoryId(category.id);
+      setSelectedProduct(null);
+      setStep(2);
+      return;
+    }
+    if (categories.length === 1) {
+      setSelectedCategoryId(categories[0].id);
+      setSelectedProduct(null);
+      setStep(2);
+      return;
+    }
+    if (!categories.length) {
+      setSelectedCategoryId(null);
+      setStep(2);
+      return;
+    }
+    setStep(1);
+  };
 
   const contextBanner =
     isRenewFlow || isBuyFromPortal ? (
@@ -303,12 +390,12 @@ function ShopBody(props: {
         <p className="mt-1 text-zinc-600 dark:text-zinc-400">
           {isRenewFlow
             ? t(
-                `در حال تمدید سرویس «${serviceName || "—"}» هستید. پلن را انتخاب و پرداخت را ثبت کنید.`,
-                `You are renewing “${serviceName || "—"}”. Pick a plan and submit payment.`,
+                `در حال تمدید سرویس «${serviceName || "—"}» هستید. فقط پلن‌های همان دسته‌بندی قابل انتخاب‌اند.`,
+                `You are renewing “${serviceName || "—"}”. Only plans from the same category are available.`,
               )
             : t(
-                "سفارش جدید از پورتال مشتری — پلن را انتخاب کنید و مراحل را ادامه دهید.",
-                "New order from your customer portal — pick a plan and continue.",
+                "سفارش جدید از پورتال مشتری — اول دسته، بعد پلن را انتخاب کنید.",
+                "New order from your customer portal — pick a category, then a plan.",
               )}
         </p>
       </div>
@@ -326,9 +413,11 @@ function ShopBody(props: {
         >
           <WelcomeHero
             store={store}
-            onBuy={() => setStep(1)}
+            onBuy={() => startBuy()}
             onLogin={() => router.push(portalPathForSlug(store.slug, "login"))}
             onTrack={() => setShowTrack(true)}
+            categories={categories}
+            onSelectCategory={(category) => startBuy(category)}
           />
           <AnimatePresence>
             {showTrack ? (
@@ -379,10 +468,34 @@ function ShopBody(props: {
         >
           {contextBanner}
           <div className="mt-4">
-            <Stepper step={step} />
+            <Stepper step={step} renew={isRenewFlow} />
           </div>
           <div className="rounded-[1.75rem] border border-zinc-200 bg-white/95 p-4 shadow-sm backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/95 sm:rounded-[2rem] sm:p-8">
-            {selectedProduct && step > 1 ? (
+            {selectedCategory && step > 1 ? (
+              <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
+                <span className="rounded-full bg-zinc-100 px-3 py-1 font-semibold text-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
+                  {selectedCategory.name}
+                </span>
+                {!isRenewFlow && categories.length > 1 ? (
+                  <button
+                    type="button"
+                    className="text-[13px] font-semibold text-[color:var(--store-primary)]"
+                    onClick={() => {
+                      setStep(1);
+                      setSelectedProduct(null);
+                    }}
+                  >
+                    {t("تغییر دسته", "Change category")}
+                  </button>
+                ) : null}
+                {isRenewFlow ? (
+                  <span className="text-[12px] text-zinc-500">
+                    {t("دسته‌بندی این سرویس قفل است", "This service category is locked")}
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
+            {selectedProduct && step > 2 ? (
               <div className="mb-5 rounded-2xl bg-zinc-50 p-4 dark:bg-zinc-950">
                 <div className="font-bold">{selectedProduct.name}</div>
                 <div className="mt-2 flex flex-wrap gap-3 text-sm text-zinc-500">
@@ -401,17 +514,47 @@ function ShopBody(props: {
               </div>
             ) : null}
 
-            {step === 1 ? (
+            {step === 1 && !isRenewFlow ? (
+              <div className="space-y-4">
+                <div>
+                  <div className="text-lg font-bold">{t("انتخاب دسته‌بندی", "Choose category")}</div>
+                  <p className="mt-1 text-sm text-zinc-500">
+                    {t(
+                      "اول دسته را انتخاب کنید؛ بعد پلن‌های همان دسته نمایش داده می‌شود.",
+                      "Pick a category first — then only plans in that category appear.",
+                    )}
+                  </p>
+                </div>
+                {!categories.length ? (
+                  <p className="rounded-2xl border border-dashed border-zinc-300 px-4 py-8 text-center text-sm text-zinc-500 dark:border-zinc-700">
+                    {t("دسته‌بندی‌ای تعریف نشده.", "No categories are available.")}
+                  </p>
+                ) : (
+                  <CategoryGrid
+                    categories={categories}
+                    selectedId={selectedCategoryId}
+                    productCounts={productCounts}
+                    onSelect={(category) => {
+                      setSelectedCategoryId(category.id);
+                      setSelectedProduct(null);
+                      setStep(2);
+                    }}
+                  />
+                )}
+              </div>
+            ) : null}
+
+            {step === 2 ? (
               <div className="space-y-4">
                 <div>
                   <div className="text-lg font-bold">{t("انتخاب پلن", "Choose Product")}</div>
                   <p className="mt-1 text-sm text-zinc-500">
-                    {t("اول پلن را انتخاب کنید، بعد ادامه دهید.", "Select a plan first, then continue.")}
+                    {t("پلن را انتخاب کنید، بعد ادامه دهید.", "Select a plan, then continue.")}
                   </p>
                 </div>
                 {!catalog.length ? (
                   <p className="rounded-2xl border border-dashed border-zinc-300 px-4 py-8 text-center text-sm text-zinc-500 dark:border-zinc-700">
-                    {t("محصولی موجود نیست.", "No products are available right now.")}
+                    {t("محصولی در این دسته نیست.", "No products in this category.")}
                   </p>
                 ) : (
                   <div className="grid gap-3">
@@ -434,7 +577,7 @@ function ShopBody(props: {
               </div>
             ) : null}
 
-            {step === 2 ? (
+            {step === 3 ? (
               <div className="space-y-5">
                 <div>
                   <div className="text-lg font-bold">{t("نام کانفیگ", "Config name")}</div>
@@ -469,7 +612,7 @@ function ShopBody(props: {
               </div>
             ) : null}
 
-            {step === 3 ? (
+            {step === 4 ? (
               <div className="space-y-5">
                 <div>
                   <div className="text-lg font-bold">{t("اطلاعات تماس و پروفایل", "Contact & profile")}</div>
@@ -561,7 +704,7 @@ function ShopBody(props: {
               </div>
             ) : null}
 
-            {step === 4 ? (
+            {step === 5 ? (
               <div className="space-y-4">
                 <div>
                   <div className="text-lg font-bold">{t("پرداخت", "Payment")}</div>
@@ -636,10 +779,13 @@ function ShopBody(props: {
               </div>
             ) : null}
 
-            {step === 5 ? (
+            {step === 6 ? (
               <div className="space-y-3 text-sm">
                 {isRenewFlow ? (
                   <SummaryRow label={t("سرویس", "Service")} value={serviceName || "—"} />
+                ) : null}
+                {selectedCategory ? (
+                  <SummaryRow label={t("دسته", "Category")} value={selectedCategory.name} />
                 ) : null}
                 <SummaryRow label={t("محصول", "Product")} value={selectedProduct?.name || "-"} />
                 <SummaryRow label={t("مشتری", "Customer")} value={form.name || t("پروفایل موجود", "Existing profile")} />
@@ -669,12 +815,29 @@ function ShopBody(props: {
                     setSelectedProduct(null);
                     return;
                   }
-                  if (isRenewFlow && step === 3) {
+                  if (step === 2) {
+                    if (isRenewFlow) {
+                      router.push(portalPathForSlug(store.slug, "dashboard"));
+                      return;
+                    }
+                    if (categories.length <= 1) {
+                      if (isBuyFromPortal) {
+                        router.push(portalPathForSlug(store.slug, "dashboard"));
+                        return;
+                      }
+                      setStep(0);
+                      return;
+                    }
                     setStep(1);
+                    setSelectedProduct(null);
                     return;
                   }
                   if (isRenewFlow && step === 4) {
-                    setStep(3);
+                    setStep(2);
+                    return;
+                  }
+                  if (isRenewFlow && step === 5) {
+                    setStep(4);
                     return;
                   }
                   setStep((current) => Math.max(1, current - 1) as Step);
@@ -682,25 +845,26 @@ function ShopBody(props: {
               >
                 {t("بازگشت", "Back")}
               </SecondaryButton>
-              {step < 5 ? (
+              {step < 6 ? (
                 <PrimaryButton
                   onClick={() => {
-                    // Renew skips config step (2 → 3)
-                    if (step === 1 && isRenewFlow) {
-                      setStep(3);
+                    // Renew skips config (2 → 4)
+                    if (step === 2 && isRenewFlow) {
+                      setStep(4);
                       return;
                     }
-                    if (step === 3 && isRenewFlow) {
-                      setStep(4);
+                    if (step === 4 && isRenewFlow) {
+                      setStep(5);
                       return;
                     }
                     setStep((current) => (current + 1) as Step);
                   }}
                   disabled={
-                    (step === 1 && !selectedProduct) ||
-                    (step === 2 && !canContinueConfig) ||
-                    (step === 3 && !canContinueProfile) ||
-                    (step === 4 && !form.receiptText.trim() && !form.receiptImage)
+                    (step === 1 && !selectedCategoryId && categories.length > 0) ||
+                    (step === 2 && !selectedProduct) ||
+                    (step === 3 && !canContinueConfig) ||
+                    (step === 4 && !canContinueProfile) ||
+                    (step === 5 && !form.receiptText.trim() && !form.receiptImage)
                   }
                 >
                   {t("ادامه", "Continue")}

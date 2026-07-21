@@ -1,5 +1,13 @@
 "use client";
 
+export type StorefrontCategory = {
+  id: string;
+  name: string;
+  description?: string | null;
+  icon?: string | null;
+  sortOrder?: number;
+};
+
 export type StorefrontProduct = {
   id: string;
   categoryId: string;
@@ -89,6 +97,8 @@ export type CustomerService = {
   up: string;
   down: string;
   expiryTime: string;
+  /** Category of the last fulfilled order for this service (renew lock). */
+  categoryId?: string | null;
 };
 
 export type CustomerOrder = {
@@ -129,6 +139,7 @@ export type CustomerDashboard = {
   orders: CustomerOrder[];
   products: StorefrontProduct[];
   renewProducts: StorefrontProduct[];
+  categories?: StorefrontCategory[];
   notifications: CustomerNotification[];
   activity: Array<{
     id: string;

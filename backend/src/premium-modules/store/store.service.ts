@@ -1005,18 +1005,21 @@ export class StoreService {
     };
   }
 
-  private serializeService(service: {
-    id: string;
-    email: string;
-    remark: string | null;
-    subId: string | null;
-    subToken: string | null;
-    enable: boolean;
-    expiryTime: bigint;
-    total: bigint;
-    up: bigint;
-    down: bigint;
-  }) {
+  private serializeService(
+    service: {
+      id: string;
+      email: string;
+      remark: string | null;
+      subId: string | null;
+      subToken: string | null;
+      enable: boolean;
+      expiryTime: bigint;
+      total: bigint;
+      up: bigint;
+      down: bigint;
+    },
+    categoryId: string | null = null,
+  ) {
     const used = service.up + service.down;
     const expired = service.expiryTime > 0n && service.expiryTime <= BigInt(Date.now());
     const disabled = !service.enable;
@@ -1028,6 +1031,7 @@ export class StoreService {
 
     return {
       ...service,
+      categoryId,
       status,
       unused: !disabled && !expired && used === 0n,
       total: service.total.toString(),
@@ -1035,6 +1039,53 @@ export class StoreService {
       down: service.down.toString(),
       expiryTime: service.expiryTime.toString(),
     };
+  }
+
+  /** Newest fulfilled order wins — used to lock renewals to the service category. */
+  private categoryIdByClientId(
+    orders: Array<{
+      clientId: string | null;
+      renewClientId: string | null;
+      createdAt?: Date;
+      product: { categoryId: string };
+    }>,
+  ): Map<string, string> {
+    const sorted = [...orders].sort((a, b) => {
+      const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return tb - ta;
+    });
+    const map = new Map<string, string>();
+    for (const order of sorted) {
+      const cat = order.product?.categoryId;
+      if (!cat) continue;
+      if (order.clientId && !map.has(order.clientId)) map.set(order.clientId, cat);
+      if (order.renewClientId && !map.has(order.renewClientId)) {
+        map.set(order.renewClientId, cat);
+      }
+    }
+    return map;
+  }
+
+  private async assertRenewCategoryCompatible(
+    adminId: string,
+    clientId: string,
+    productCategoryId: string,
+  ) {
+    const existing = await this.prisma.storeOrder.findFirst({
+      where: {
+        OR: [{ clientId }, { renewClientId: clientId }],
+        status: { in: ['ACTIVE', 'RENEWED'] },
+        product: { adminId },
+      },
+      include: { product: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (existing && existing.product.categoryId !== productCategoryId) {
+      throw new BadRequestException(
+        'Product category is not compatible with this service / دسته‌بندی پلن با این سرویس سازگار نیست',
+      );
+    }
   }
 
   private serializeNotification(notification: {
@@ -1188,26 +1239,37 @@ export class StoreService {
     const customer = await this.customers.getByToken(customerToken);
     if (!customer) throw new NotFoundException('Customer not found');
 
-    const [store, branding, services, renewProducts, catalogProducts] = await Promise.all([
-      this.prisma.storeProfile.findUnique({
-        where: { adminId: customer.adminId },
-      }),
-      this.buildPublicBranding(customer.adminId),
-      this.resolveCustomerServices(
-        customer.orders,
-        this.getLinkedClientIds(customer.metadata),
-      ),
-      this.listCompatibleRenewProducts(customer.adminId, customer.orders),
-      this.prisma.storeProduct.findMany({
-        where: {
-          adminId: customer.adminId,
-          visible: true,
-          status: 'active',
-        },
-        include: { category: true },
-        orderBy: [{ featured: 'desc' }, { sortOrder: 'asc' }],
-      }),
-    ]);
+    const [store, branding, servicesRaw, renewProducts, catalogProducts, categories] =
+      await Promise.all([
+        this.prisma.storeProfile.findUnique({
+          where: { adminId: customer.adminId },
+        }),
+        this.buildPublicBranding(customer.adminId),
+        this.resolveCustomerServices(
+          customer.orders,
+          this.getLinkedClientIds(customer.metadata),
+        ),
+        this.listCompatibleRenewProducts(customer.adminId, customer.orders),
+        this.prisma.storeProduct.findMany({
+          where: {
+            adminId: customer.adminId,
+            visible: true,
+            status: 'active',
+          },
+          include: { category: true },
+          orderBy: [{ featured: 'desc' }, { sortOrder: 'asc' }],
+        }),
+        this.prisma.productCategory.findMany({
+          where: { adminId: customer.adminId, visible: true, enabled: true },
+          orderBy: [{ sortOrder: 'asc' }],
+        }),
+      ]);
+
+    const categoryByClient = this.categoryIdByClientId(customer.orders);
+    const services = servicesRaw.map((service) => ({
+      ...service,
+      categoryId: categoryByClient.get(service.id) || null,
+    }));
 
     const pendingStatuses: StoreOrderStatus[] = [
       'PENDING_PAYMENT',
@@ -1299,6 +1361,7 @@ export class StoreService {
       })),
       products: catalogProducts.map((product) => this.serializeProduct(product)),
       renewProducts,
+      categories,
       notifications: this.collapseNotifications(
         customer.notifications.map((notification) => this.serializeNotification(notification)),
       ),
@@ -1488,15 +1551,10 @@ export class StoreService {
       const client = await this.provisioning.resolveRenewClient(store.adminId, payload.renewClientId);
       renewClientId = client.id;
 
-      const compatible = await this.prisma.storeProduct.findFirst({
-        where: {
-          adminId: store.adminId,
-          categoryId: product.categoryId,
-          id: product.id,
-          renewable: true,
-        },
-      });
-      if (!compatible) throw new BadRequestException('Product is not compatible for renewal');
+      if (!product.renewable) {
+        throw new BadRequestException('Product is not compatible for renewal');
+      }
+      await this.assertRenewCategoryCompatible(store.adminId, client.id, product.categoryId);
     } else if (!payload.configName && !payload.isRenewal) {
       throw new BadRequestException('Config name is required');
     }
@@ -1647,14 +1705,7 @@ export class StoreService {
     });
     if (!product) throw new NotFoundException('Product not found');
 
-    const existingProduct = await this.prisma.storeOrder.findFirst({
-      where: { clientId: client.id, status: { in: ['ACTIVE', 'RENEWED'] } },
-      include: { product: true },
-      orderBy: { createdAt: 'desc' },
-    });
-    if (existingProduct && existingProduct.product.categoryId !== product.categoryId) {
-      throw new BadRequestException('Product category is not compatible with this service');
-    }
+    await this.assertRenewCategoryCompatible(customer.adminId, client.id, product.categoryId);
 
     return this.createCheckout(store.slug, {
       productId: product.id,

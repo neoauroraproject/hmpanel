@@ -31,6 +31,7 @@ import type {
   CustomerNotification,
   CustomerOrder,
   CustomerService,
+  StorefrontCategory,
   StorefrontProduct,
   StorefrontStore,
 } from "./types";
@@ -156,15 +157,20 @@ export function WelcomeHero({
   onBuy,
   onLogin,
   onTrack,
+  categories,
+  onSelectCategory,
 }: {
   store?: StorefrontStore;
   onBuy: () => void;
   onLogin: () => void;
   onTrack?: () => void;
+  categories?: StorefrontCategory[];
+  onSelectCategory?: (category: StorefrontCategory) => void;
 }) {
   const { t, isFa } = useStorefrontLocale();
   const logoLight = store?.logoUrl || store?.branding?.logo || null;
   const logoDark = store?.logoDarkUrl || store?.branding?.logoDark || null;
+  const visibleCategories = (categories || []).filter((c) => c?.id && c?.name);
 
   return (
     <motion.section
@@ -215,6 +221,27 @@ export function WelcomeHero({
         <PrimaryButton onClick={onBuy}>{t("سفارش جدید", "New Order")}</PrimaryButton>
         <SecondaryButton onClick={onLogin}>{t("ورود", "Login")}</SecondaryButton>
       </div>
+      {visibleCategories.length ? (
+        <div className="mt-10 w-full text-start">
+          <div className="mb-3 flex items-end justify-between gap-3">
+            <div>
+              <div className="text-[13px] font-semibold uppercase tracking-[0.14em] text-zinc-400">
+                {t("دسته‌بندی", "Categories")}
+              </div>
+              <p className="mt-1 text-sm text-zinc-500">
+                {t("اول دسته را انتخاب کنید، بعد پلن.", "Pick a category first, then a plan.")}
+              </p>
+            </div>
+          </div>
+          <CategoryGrid
+            categories={visibleCategories}
+            onSelect={(category) => {
+              if (onSelectCategory) onSelectCategory(category);
+              else onBuy();
+            }}
+          />
+        </div>
+      ) : null}
       {onTrack ? (
         <button
           type="button"
@@ -226,6 +253,120 @@ export function WelcomeHero({
       ) : null}
       <SupportFooter supportLinks={store?.branding?.supportLinks} />
     </motion.section>
+  );
+}
+
+export function CategoryCard({
+  category,
+  productCount,
+  selected = false,
+  onSelect,
+  locked = false,
+}: {
+  category: StorefrontCategory;
+  productCount?: number;
+  selected?: boolean;
+  onSelect: () => void;
+  locked?: boolean;
+}) {
+  const { t } = useStorefrontLocale();
+  const initial = (category.name || "?").trim().slice(0, 1).toUpperCase();
+
+  return (
+    <motion.button
+      type="button"
+      onClick={onSelect}
+      disabled={locked && !selected}
+      whileHover={locked ? undefined : { y: -2 }}
+      whileTap={locked ? undefined : { scale: 0.985 }}
+      transition={{ type: "spring", stiffness: 320, damping: 24 }}
+      className={`group relative w-full overflow-hidden rounded-[1.65rem] border p-4 text-start transition sm:p-5 ${
+        selected
+          ? "border-[color:var(--store-primary)] bg-[color:var(--store-primary)]/[0.07] shadow-[0_12px_36px_-20px_var(--store-primary)] ring-2 ring-[color:var(--store-primary)]/20"
+          : "border-black/[0.05] bg-white/90 shadow-[0_10px_28px_-20px_rgba(15,23,42,0.35)] hover:border-black/[0.1] dark:border-white/[0.07] dark:bg-zinc-900/90"
+      } ${locked && !selected ? "cursor-default opacity-60" : "cursor-pointer"}`}
+    >
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -end-6 -top-8 h-24 w-24 rounded-full opacity-40 blur-2xl"
+        style={{ background: "var(--store-primary)" }}
+      />
+      <div className="relative flex items-start gap-3.5">
+        <div
+          className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-[1.1rem] text-lg font-black text-white shadow-sm sm:h-14 sm:w-14 sm:text-xl ${
+            selected ? "" : "bg-zinc-900 dark:bg-zinc-100 dark:text-zinc-900"
+          }`}
+          style={selected ? { background: "var(--store-primary)" } : undefined}
+        >
+          {category.icon?.trim() ? (
+            <span className="text-[1.35rem] leading-none">{category.icon.trim()}</span>
+          ) : (
+            initial
+          )}
+        </div>
+        <div className="min-w-0 flex-1 pt-0.5">
+          <div className="flex items-center gap-2">
+            <div className="truncate text-[16px] font-bold tracking-tight sm:text-[17px]">
+              {category.name}
+            </div>
+            {selected ? (
+              <span className="inline-flex rounded-full bg-[color:var(--store-primary)] px-2 py-0.5 text-[10px] font-bold text-white">
+                {locked ? t("قفل", "Locked") : t("انتخاب شد", "Selected")}
+              </span>
+            ) : null}
+          </div>
+          {category.description ? (
+            <p className="mt-1 line-clamp-2 text-[13px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+              {category.description}
+            </p>
+          ) : (
+            <p className="mt-1 text-[13px] text-zinc-400">
+              {t("مشاهده پلن‌های این دسته", "Browse plans in this category")}
+            </p>
+          )}
+          {typeof productCount === "number" ? (
+            <div className="mt-2.5 text-[12px] font-semibold text-zinc-400">
+              {productCount} {t("پلن", "plans")}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </motion.button>
+  );
+}
+
+export function CategoryGrid({
+  categories,
+  selectedId,
+  productCounts,
+  onSelect,
+  lockedId,
+}: {
+  categories: StorefrontCategory[];
+  selectedId?: string | null;
+  productCounts?: Record<string, number>;
+  onSelect: (category: StorefrontCategory) => void;
+  lockedId?: string | null;
+}) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      {categories.map((category, index) => (
+        <motion.div
+          key={category.id}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: index * 0.04, duration: 0.28 }}
+        >
+          <CategoryCard
+            category={category}
+            selected={selectedId === category.id}
+            locked={!!lockedId && lockedId !== category.id}
+            productCount={productCounts?.[category.id]}
+            onSelect={() => onSelect(category)}
+          />
+        </motion.div>
+      ))}
+    </div>
   );
 }
 
@@ -315,29 +456,50 @@ export function ProductCard({
   );
 }
 
-export function Stepper({ step }: { step: number }) {
+export function Stepper({ step, renew = false }: { step: number; renew?: boolean }) {
   const { t } = useStorefrontLocale();
-  const labels = [
-    t("پلن", "Plan"),
-    t("کانفیگ", "Config"),
-    t("پروفایل", "Profile"),
-    t("پرداخت", "Payment"),
-    t("تأیید", "Confirm"),
-  ];
+  const labels = renew
+    ? [
+        t("پلن", "Plan"),
+        t("پروفایل", "Profile"),
+        t("پرداخت", "Payment"),
+        t("تأیید", "Confirm"),
+      ]
+    : [
+        t("دسته", "Category"),
+        t("پلن", "Plan"),
+        t("کانفیگ", "Config"),
+        t("پروفایل", "Profile"),
+        t("پرداخت", "Payment"),
+        t("تأیید", "Confirm"),
+      ];
+  // Map absolute checkout step (1..) onto the visible label index
+  const activeIndex = renew
+    ? step === 1
+      ? 0
+      : step === 3
+        ? 1
+        : step === 4
+          ? 2
+          : step >= 5
+            ? 3
+            : Math.max(0, step - 1)
+    : Math.max(0, step - 1);
+
   return (
     <div className="mb-6 flex items-center justify-between gap-1 overflow-x-auto pb-1 text-[10px] font-semibold uppercase tracking-wide sm:mb-8 sm:justify-center sm:gap-2 sm:text-xs">
       {labels.map((label, index) => (
         <div key={label} className="flex shrink-0 items-center gap-1.5 sm:gap-2">
           <div
             className={`flex h-7 w-7 items-center justify-center rounded-full border transition-colors sm:h-8 sm:w-8 ${
-              index + 1 <= step
+              index <= activeIndex
                 ? "border-[color:var(--store-primary)] bg-[color:var(--store-primary)] text-white"
                 : "border-zinc-200 bg-white text-zinc-400 dark:border-zinc-800 dark:bg-zinc-900"
             }`}
           >
             {index + 1}
           </div>
-          <span className={index + 1 <= step ? "text-zinc-800 dark:text-zinc-200" : "text-zinc-400"}>
+          <span className={index <= activeIndex ? "text-zinc-800 dark:text-zinc-200" : "text-zinc-400"}>
             {label}
           </span>
         </div>
