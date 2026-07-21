@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Check, ChevronLeft, LoaderCircle, Upload, X } from "lucide-react";
 import { publicApi } from "@/lib/api";
@@ -177,6 +178,7 @@ export function TmaCheckoutSheet({
   });
 
   if (!open) return null;
+  if (typeof document === "undefined") return null;
 
   const priceLabel = selected
     ? selected.priceToman
@@ -187,8 +189,8 @@ export function TmaCheckoutSheet({
   const showPayment =
     (mode === "buy" && step === 3) || (mode === "renew" && (step === 1 || step === 2));
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 p-0 animate-[fadeIn_0.2s_ease]">
+  return createPortal(
+    <div className="fixed inset-0 z-[200] flex items-end justify-center bg-black/45 p-0 animate-[fadeIn_0.2s_ease]">
       <style>{`
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         @keyframes slideUp { from { opacity: 0.65; transform: translateY(36px); } to { opacity: 1; transform: none; } }
@@ -529,6 +531,7 @@ export function TmaCheckoutSheet({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
