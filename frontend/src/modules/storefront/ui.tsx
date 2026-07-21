@@ -258,7 +258,6 @@ export function WelcomeHero({
 
 export function CategoryCard({
   category,
-  productCount,
   selected = false,
   onSelect,
   locked = false,
@@ -280,7 +279,7 @@ export function CategoryCard({
       whileHover={locked ? undefined : { y: -2 }}
       whileTap={locked ? undefined : { scale: 0.985 }}
       transition={{ type: "spring", stiffness: 320, damping: 24 }}
-      className={`group relative w-full overflow-hidden rounded-[1.65rem] border p-4 text-start transition sm:p-5 ${
+      className={`group relative flex h-full min-h-[5.5rem] w-full items-center overflow-hidden rounded-[1.65rem] border p-4 text-start transition sm:min-h-[6rem] sm:p-5 ${
         selected
           ? "border-[color:var(--store-primary)] bg-[color:var(--store-primary)]/[0.07] shadow-[0_12px_36px_-20px_var(--store-primary)] ring-2 ring-[color:var(--store-primary)]/20"
           : "border-black/[0.05] bg-white/90 shadow-[0_10px_28px_-20px_rgba(15,23,42,0.35)] hover:border-black/[0.1] dark:border-white/[0.07] dark:bg-zinc-900/90"
@@ -291,7 +290,7 @@ export function CategoryCard({
         className="pointer-events-none absolute -end-6 -top-8 h-24 w-24 rounded-full opacity-40 blur-2xl"
         style={{ background: "var(--store-primary)" }}
       />
-      <div className="relative flex items-start gap-3.5">
+      <div className="relative flex w-full items-center gap-3.5">
         <div
           className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-[1.1rem] text-lg font-black text-white shadow-sm sm:h-14 sm:w-14 sm:text-xl ${
             selected ? "" : "bg-zinc-900 dark:bg-zinc-100 dark:text-zinc-900"
@@ -304,31 +303,17 @@ export function CategoryCard({
             initial
           )}
         </div>
-        <div className="min-w-0 flex-1 pt-0.5">
+        <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <div className="truncate text-[16px] font-bold tracking-tight sm:text-[17px]">
+            <div className="text-[15px] font-bold leading-snug tracking-tight sm:text-[16px]">
               {category.name}
             </div>
             {selected ? (
-              <span className="inline-flex rounded-full bg-[color:var(--store-primary)] px-2 py-0.5 text-[10px] font-bold text-white">
+              <span className="inline-flex shrink-0 rounded-full bg-[color:var(--store-primary)] px-2 py-0.5 text-[10px] font-bold text-white">
                 {locked ? t("قفل", "Locked") : t("انتخاب شد", "Selected")}
               </span>
             ) : null}
           </div>
-          {category.description ? (
-            <p className="mt-1 line-clamp-2 text-[13px] leading-relaxed text-zinc-500 dark:text-zinc-400">
-              {category.description}
-            </p>
-          ) : (
-            <p className="mt-1 text-[13px] text-zinc-400">
-              {t("مشاهده پلن‌های این دسته", "Browse plans in this category")}
-            </p>
-          )}
-          {typeof productCount === "number" ? (
-            <div className="mt-2.5 text-[12px] font-semibold text-zinc-400">
-              {productCount} {t("پلن", "plans")}
-            </div>
-          ) : null}
         </div>
       </div>
     </motion.button>
@@ -349,10 +334,11 @@ export function CategoryGrid({
   lockedId?: string | null;
 }) {
   return (
-    <div className="grid gap-3 sm:grid-cols-2">
+    <div className="grid grid-cols-1 items-stretch gap-3 sm:grid-cols-2">
       {categories.map((category, index) => (
         <motion.div
           key={category.id}
+          className="h-full min-h-0"
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: index * 0.04, duration: 0.28 }}
@@ -361,7 +347,6 @@ export function CategoryGrid({
             category={category}
             selected={selectedId === category.id}
             locked={!!lockedId && lockedId !== category.id}
-            productCount={productCounts?.[category.id]}
             onSelect={() => onSelect(category)}
           />
         </motion.div>
