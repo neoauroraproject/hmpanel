@@ -336,7 +336,11 @@ interface RestoreAnalysis {
     admin: number;
     panel: number;
     inbound: number;
+    store?: number;
+    brand?: number;
+    domain?: number;
   };
+  components?: string[];
   warnings: string[];
 }
 
@@ -495,11 +499,24 @@ function BackupRestoreCard() {
               {restoreAnalysis.counts && (
                 <div className="flex justify-between items-center pb-2 border-b border-zinc-200 dark:border-zinc-800/50">
                   <span className="text-zinc-500">{t("settings.contentsLabel")}</span>
-                  <span className="font-semibold text-zinc-800 dark:text-zinc-200 text-xs">
+                  <span className="font-semibold text-zinc-800 dark:text-zinc-200 text-xs text-end">
                     {t("settings.contentsSummary", { admin: restoreAnalysis.counts.admin, panel: restoreAnalysis.counts.panel, inbound: restoreAnalysis.counts.inbound })}
+                    {(restoreAnalysis.counts.store || restoreAnalysis.counts.brand || restoreAnalysis.counts.domain) ? (
+                      <span className="block mt-1 opacity-80">
+                        Store {restoreAnalysis.counts.store ?? 0} · Brand {restoreAnalysis.counts.brand ?? 0} · Domain {restoreAnalysis.counts.domain ?? 0}
+                      </span>
+                    ) : null}
                   </span>
                 </div>
               )}
+              {Array.isArray(restoreAnalysis.components) && restoreAnalysis.components.length > 0 ? (
+                <div className="flex justify-between items-center pb-2 border-b border-zinc-200 dark:border-zinc-800/50">
+                  <span className="text-zinc-500">Components</span>
+                  <span className="font-semibold text-zinc-800 dark:text-zinc-200 text-xs text-end max-w-[60%]">
+                    {restoreAnalysis.components.join(", ")}
+                  </span>
+                </div>
+              ) : null}
               <div className="flex justify-between items-center">
                 <span className="text-zinc-500">{t("settings.sizeLabel")}</span>
                 <span className="font-semibold text-zinc-800 dark:text-zinc-200">{(restoreAnalysis.sizeBytes / 1024 / 1024).toFixed(2)} MB</span>

@@ -329,12 +329,25 @@ do_backup() {
   if [[ "$silent" != "true" ]]; then echo "Creating $backup_type backup..."; fi
   
   local checksums=""
+  local components_json="["
+  local first_component=1
+  
+  add_component() {
+    local name="$1"
+    if [[ $first_component -eq 1 ]]; then
+      first_component=0
+    else
+      components_json+=", "
+    fi
+    components_json+="\"$name\""
+  }
   
   if [[ "$backup_type" == "database" || "$backup_type" == "full" ]]; then
     if [[ "$silent" != "true" ]]; then echo " -> Exporting database..."; fi
     if docker exec hmpanel-postgres pg_dumpall -c -U panel_user | gzip > "${temp_dir}/database.sql.gz"; then
       local db_sum=$(sha256sum "${temp_dir}/database.sql.gz" | awk '{print $1}')
       checksums+="\"database.sql.gz\": \"$db_sum\""
+      add_component "database.sql.gz"
     else
       if [[ "$silent" != "true" ]]; then echo -e "${RED}✘ Database export failed.${NC}"; fi
       rm -rf "$temp_dir"
@@ -347,21 +360,65 @@ do_backup() {
     local conf_temp=$(mktemp -d)
     cp "${INSTALL_DIR}/.env" "$conf_temp/" 2>/dev/null || true
     cp -r "${INSTALL_DIR}/nginx" "$conf_temp/" 2>/dev/null || true
+    # ACME state for SSL renewals after migrate
+    if [[ -d "${INSTALL_DIR}/acme.sh" ]]; then
+      cp -r "${INSTALL_DIR}/acme.sh" "$conf_temp/" 2>/dev/null || true
+    fi
     tar -czf "${temp_dir}/config.tar.gz" -C "$conf_temp" .
     rm -rf "$conf_temp"
     
     local conf_sum=$(sha256sum "${temp_dir}/config.tar.gz" | awk '{print $1}')
     if [[ -n "$checksums" ]]; then checksums+=", "; fi
     checksums+="\"config.tar.gz\": \"$conf_sum\""
+    add_component "config.tar.gz"
   fi
+
+  # Full backups include uploads volume (branding logos, etc.) + instance id
+  if [[ "$backup_type" == "full" ]]; then
+    if [[ "$silent" != "true" ]]; then echo " -> Archiving uploads (branding assets)..."; fi
+    if docker exec hmpanel-panel test -d /app/uploads 2>/dev/null; then
+      if docker exec hmpanel-panel tar -czf - -C /app/uploads . > "${temp_dir}/uploads.tar.gz" 2>/dev/null; then
+        if [[ -s "${temp_dir}/uploads.tar.gz" ]]; then
+          local up_sum=$(sha256sum "${temp_dir}/uploads.tar.gz" | awk '{print $1}')
+          if [[ -n "$checksums" ]]; then checksums+=", "; fi
+          checksums+="\"uploads.tar.gz\": \"$up_sum\""
+          add_component "uploads.tar.gz"
+        else
+          rm -f "${temp_dir}/uploads.tar.gz"
+          if [[ "$silent" != "true" ]]; then echo -e "${YELLOW}⚠ Uploads archive empty — skipped.${NC}"; fi
+        fi
+      else
+        rm -f "${temp_dir}/uploads.tar.gz"
+        if [[ "$silent" != "true" ]]; then echo -e "${YELLOW}⚠ Could not archive uploads volume.${NC}"; fi
+      fi
+    else
+      if [[ "$silent" != "true" ]]; then echo -e "${YELLOW}⚠ Panel container uploads path not found.${NC}"; fi
+    fi
+
+    # Persist license instance id when available (backups volume)
+    local instance_tmp="${temp_dir}/.hmpanel-instance-id"
+    if docker exec hmpanel-panel test -f /app/backups/.hmpanel-instance-id 2>/dev/null; then
+      docker exec hmpanel-panel cat /app/backups/.hmpanel-instance-id > "$instance_tmp" 2>/dev/null || true
+    elif [[ -f "${BACKUP_DIR}/.hmpanel-instance-id" ]]; then
+      cp "${BACKUP_DIR}/.hmpanel-instance-id" "$instance_tmp" 2>/dev/null || true
+    fi
+    if [[ -s "$instance_tmp" ]]; then
+      add_component ".hmpanel-instance-id"
+    else
+      rm -f "$instance_tmp"
+    fi
+  fi
+
+  components_json+="]"
   
   cat > "${temp_dir}/manifest.json" <<EOF
 {
   "version": "$app_ver",
-  "schemaVersion": "1",
+  "schemaVersion": "2",
   "timestamp": "$timestamp",
   "type": "$backup_type",
   "domain": "${PANEL_DOMAIN:-localhost}",
+  "components": $components_json,
   "checksums": {
     $checksums
   }
@@ -381,9 +438,9 @@ EOF
 
 cmd_backup() {
   echo -e "${BOLD}--- Create Backup ---${NC}\n"
-  echo "1. Full Backup (Database + Config)"
+  echo "1. Full Backup (Database + Config + Uploads)"
   echo "2. Database Only"
-  echo "3. Configuration Only"
+  echo "3. Configuration Only (.env + nginx + acme)"
   echo "0. Cancel"
   read -rp "Select backup type: " btype
   
@@ -464,6 +521,28 @@ do_restore() {
     docker restart hmpanel-nginx >/dev/null 2>&1 || true
     docker restart hmpanel-panel hmpanel-app >/dev/null 2>&1 || true
     sleep 3
+  fi
+
+  if [[ $restore_failed -eq 0 && -f "${temp_dir}/uploads.tar.gz" ]]; then
+    if [[ "$silent" != "true" ]]; then echo "Restoring uploads (branding assets)..."; fi
+    if docker exec hmpanel-panel mkdir -p /app/uploads >/dev/null 2>&1; then
+      if ! docker exec -i hmpanel-panel tar -xzf - -C /app/uploads < "${temp_dir}/uploads.tar.gz"; then
+        if [[ "$silent" != "true" ]]; then echo -e "${YELLOW}⚠ Uploads restore failed (continuing — DB/config already applied).${NC}"; fi
+      fi
+    else
+      if [[ "$silent" != "true" ]]; then echo -e "${YELLOW}⚠ Panel container not ready for uploads restore.${NC}"; fi
+    fi
+  elif [[ $restore_failed -eq 0 && "$btype" == "full" ]]; then
+    if [[ "$silent" != "true" ]]; then
+      echo -e "${YELLOW}⚠ This full backup has no uploads.tar.gz — branding logos may be missing.${NC}"
+    fi
+  fi
+
+  if [[ $restore_failed -eq 0 && -f "${temp_dir}/.hmpanel-instance-id" ]]; then
+    if [[ "$silent" != "true" ]]; then echo "Restoring instance id..."; fi
+    docker exec -i hmpanel-panel sh -c 'cat > /app/backups/.hmpanel-instance-id' \
+      < "${temp_dir}/.hmpanel-instance-id" 2>/dev/null || \
+      cp "${temp_dir}/.hmpanel-instance-id" "${BACKUP_DIR}/.hmpanel-instance-id" 2>/dev/null || true
   fi
   
   # 3. Verify

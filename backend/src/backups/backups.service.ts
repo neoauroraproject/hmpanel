@@ -97,6 +97,14 @@ export class BackupsService {
           );
         }
 
+        // ACME account/certs state — needed for renewals after migrate
+        const acmeDir = path.join(appRoot, 'acme.sh');
+        if (fs.existsSync(acmeDir)) {
+          await execPromise(
+            `cp -r "${acmeDir}" "${path.join(confTemp, 'acme.sh')}"`,
+          );
+        }
+
         const confFile = path.join(tempDir, 'config.tar.gz');
         await execPromise(`tar -czf "${confFile}" -C "${confTemp}" .`);
         await execPromise(`rm -rf "${confTemp}"`);
@@ -104,12 +112,44 @@ export class BackupsService {
         checksums['config.tar.gz'] = await this.calculateChecksum(confFile);
       }
 
+      // Full backups also pack uploads (branding logos, SSL cache, migration files)
+      // and the stable license instance id for Premium migration.
+      const components: string[] = Object.keys(checksums);
+      if (type === 'full') {
+        const uploadsDir = path.join(process.cwd(), 'uploads');
+        if (fs.existsSync(uploadsDir)) {
+          this.logger.log('Archiving uploads (branding assets, etc.)...');
+          const uploadsFile = path.join(tempDir, 'uploads.tar.gz');
+          await execPromise(`tar -czf "${uploadsFile}" -C "${uploadsDir}" .`);
+          checksums['uploads.tar.gz'] = await this.calculateChecksum(uploadsFile);
+          components.push('uploads.tar.gz');
+        } else {
+          this.logger.warn('Uploads directory missing — branding files will not be in this backup');
+        }
+
+        const instanceCandidates = [
+          path.join(this.backupsDir, '.hmpanel-instance-id'),
+          path.join(process.cwd(), 'backups', '.hmpanel-instance-id'),
+        ];
+        for (const candidate of instanceCandidates) {
+          if (fs.existsSync(candidate)) {
+            fs.copyFileSync(
+              candidate,
+              path.join(tempDir, '.hmpanel-instance-id'),
+            );
+            components.push('.hmpanel-instance-id');
+            break;
+          }
+        }
+      }
+
       const manifest = {
         version: getAppVersion(),
-        schemaVersion: '1',
+        schemaVersion: '2',
         timestamp: new Date().toISOString(),
         type: type,
         domain: process.env.PANEL_DOMAIN || 'localhost',
+        components: [...new Set(components)],
         checksums,
       };
 
@@ -174,7 +214,14 @@ export class BackupsService {
     this.logger.log(`Analyzing backup: ${tempFilePath}`);
 
     try {
-      let counts = { admin: 0, panel: 0, inbound: 0 };
+      let counts = {
+        admin: 0,
+        panel: 0,
+        inbound: 0,
+        store: 0,
+        brand: 0,
+        domain: 0,
+      };
 
       const extractCounts = async (sqlFile: string) => {
         const catCmd = sqlFile.endsWith('.gz') ? 'zcat' : 'cat';
@@ -182,25 +229,36 @@ export class BackupsService {
           /^COPY public\\."Admin" / { in_admin=1; next }
           /^COPY public\\."Panel" / { in_panel=1; next }
           /^COPY public\\."Inbound" / { in_inbound=1; next }
-          /^\\\\\\./ { in_admin=0; in_panel=0; in_inbound=0; next }
+          /^COPY public\\."StoreProfile" / { in_store=1; next }
+          /^COPY public\\."Brand" / { in_brand=1; next }
+          /^COPY public\\."Domain" / { in_domain=1; next }
+          /^\\\\\\./ { in_admin=0; in_panel=0; in_inbound=0; in_store=0; in_brand=0; in_domain=0; next }
           in_admin { admin_count++ }
           in_panel { panel_count++ }
           in_inbound { inbound_count++ }
+          in_store { store_count++ }
+          in_brand { brand_count++ }
+          in_domain { domain_count++ }
           /^INSERT INTO "Admin"/ { admin_count++ }
           /^INSERT INTO "Panel"/ { panel_count++ }
           /^INSERT INTO "Inbound"/ { inbound_count++ }
-          /^INSERT INTO \\\`Admin\\\`/ { admin_count++ }
-          /^INSERT INTO \\\`Panel\\\`/ { panel_count++ }
-          /^INSERT INTO \\\`Inbound\\\`/ { inbound_count++ }
-          END { print "admin:" admin_count+0 ",panel:" panel_count+0 ",inbound:" inbound_count+0 }
+          /^INSERT INTO "StoreProfile"/ { store_count++ }
+          /^INSERT INTO "Brand"/ { brand_count++ }
+          /^INSERT INTO "Domain"/ { domain_count++ }
+          END { print "admin:" admin_count+0 ",panel:" panel_count+0 ",inbound:" inbound_count+0 ",store:" store_count+0 ",brand:" brand_count+0 ",domain:" domain_count+0 }
         `;
         try {
           const { stdout } = await execPromise(`${catCmd} "${sqlFile}" | awk '${awkScript.replace(/\n/g, ' ')}'`);
-          const matches = stdout.match(/admin:(\d+),panel:(\d+),inbound:(\d+)/);
+          const matches = stdout.match(
+            /admin:(\d+),panel:(\d+),inbound:(\d+),store:(\d+),brand:(\d+),domain:(\d+)/,
+          );
           if (matches) {
             counts.admin = parseInt(matches[1], 10);
             counts.panel = parseInt(matches[2], 10);
             counts.inbound = parseInt(matches[3], 10);
+            counts.store = parseInt(matches[4], 10);
+            counts.brand = parseInt(matches[5], 10);
+            counts.domain = parseInt(matches[6], 10);
           }
         } catch (e) {
           this.logger.warn('Failed to extract counts: ' + e.message);
@@ -264,7 +322,39 @@ export class BackupsService {
         );
       }
 
+      const hasUploads = fs.existsSync(
+        path.join(tempExtractDir, 'uploads.tar.gz'),
+      );
+      const hasInstanceId = fs.existsSync(
+        path.join(tempExtractDir, '.hmpanel-instance-id'),
+      );
+      const components: string[] = Array.isArray(manifest?.components)
+        ? manifest.components
+        : [
+            ...(fs.existsSync(path.join(tempExtractDir, 'database.sql.gz'))
+              ? ['database.sql.gz']
+              : []),
+            ...(fs.existsSync(path.join(tempExtractDir, 'config.tar.gz'))
+              ? ['config.tar.gz']
+              : []),
+            ...(hasUploads ? ['uploads.tar.gz'] : []),
+            ...(hasInstanceId ? ['.hmpanel-instance-id'] : []),
+          ];
+
       await execPromise(`rm -rf "${tempExtractDir}"`);
+
+      const warnings: string[] = [];
+      if (!manifest) {
+        warnings.push(
+          'This backup was created with an older version (Legacy tar.gz). Metadata is not available.',
+        );
+      }
+      const isFull = (manifest?.type || 'full') === 'full';
+      if (isFull && !hasUploads) {
+        warnings.push(
+          'This archive has no uploads.tar.gz — branding logos and other uploaded assets will be missing after restore. Create a new Full backup after updating the panel.',
+        );
+      }
 
       if (!manifest) {
         return {
@@ -275,9 +365,8 @@ export class BackupsService {
           uploadDate: new Date(),
           isLegacy: true,
           counts,
-          warnings: [
-            'This backup was created with an older version (Legacy tar.gz). Metadata is not available.',
-          ],
+          components,
+          warnings,
         };
       }
 
@@ -292,7 +381,8 @@ export class BackupsService {
         uploadDate: new Date(manifest.timestamp || Date.now()),
         isLegacy: false,
         counts,
-        warnings: [],
+        components,
+        warnings,
       };
     } catch (error) {
       if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
