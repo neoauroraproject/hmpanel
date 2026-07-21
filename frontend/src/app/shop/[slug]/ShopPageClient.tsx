@@ -19,6 +19,7 @@ import {
   WelcomeHero,
 } from "@/modules/storefront/ui";
 import { FieldBlock } from "@/modules/storefront/design";
+import { BankCardVisual, resolvePaymentCards } from "@/modules/storefront/BankCardVisual";
 import { rememberStoreSlug, portalPathForSlug } from "@/modules/storefront/store-slug";
 
 type Step = 0 | 1 | 2 | 3 | 4 | 5;
@@ -67,6 +68,7 @@ export default function ShopPage() {
 
   const store = data?.store as StorefrontStore | undefined;
   const products = (data?.products || []) as StorefrontProduct[];
+  const paymentCards = useMemo(() => resolvePaymentCards(store?.payment), [store?.payment]);
   const catalog = useMemo(() => {
     if (!isRenewFlow) return products;
     return products.filter((p) => p && (p as any).renewable !== false);
@@ -561,36 +563,33 @@ function ShopBody(props: {
                 <div>
                   <div className="text-lg font-bold">{t("پرداخت", "Payment")}</div>
                   <p className="mt-1 text-sm text-zinc-500">
-                    {t("کد پیگیری تراکنش، تصویر رسید، یا هر دو را بفرستید.", "Submit transaction ID, receipt image, or both.")}
+                    {t(
+                      "مبلغ را کارت‌به‌کارت واریز کنید؛ سپس کد پیگیری، تصویر رسید، یا هر دو را بفرستید.",
+                      "Pay by card-to-card transfer, then submit tracking code, receipt image, or both.",
+                    )}
                   </p>
                 </div>
-                {(store.payment?.cards?.length
-                  ? store.payment.cards
-                  : store.payment?.cardNumber || store.payment?.bankName
-                    ? [
-                        {
-                          id: "legacy",
-                          bankName: store.payment.bankName || undefined,
-                          cardNumber: store.payment.cardNumber || undefined,
-                          cardHolder: store.payment.cardHolder || undefined,
-                          iban: store.payment.iban || undefined,
-                          instructions: store.payment.instructions || undefined,
-                        },
-                      ]
-                    : []
-                ).map((card) => (
-                  <div key={card.id} className="rounded-2xl bg-zinc-50 p-4 dark:bg-zinc-950">
-                    <div className="text-sm font-semibold">{card.bankName || t("کارت به کارت", "Card to Card")}</div>
-                    {card.cardNumber ? (
-                      <div className="mt-2 font-mono text-lg tracking-wide">{card.cardNumber}</div>
-                    ) : null}
-                    {card.cardHolder ? <div className="mt-1 text-sm text-zinc-500">{card.cardHolder}</div> : null}
-                    {card.iban ? <div className="mt-1 font-mono text-xs text-zinc-500">{card.iban}</div> : null}
-                    {card.instructions ? (
-                      <p className="mt-3 whitespace-pre-line text-sm text-zinc-500">{card.instructions}</p>
-                    ) : null}
-                  </div>
+                {paymentCards.map((card) => (
+                  <BankCardVisual
+                    key={card.id}
+                    bankName={card.bankName}
+                    cardNumber={card.cardNumber}
+                    cardHolder={card.cardHolder}
+                    iban={card.iban}
+                    instructions={card.instructions}
+                    transferLabel={t("کارت به کارت", "Card to Card")}
+                    copyLabel={t("کپی شماره کارت", "Copy card number")}
+                    copiedLabel={t("کپی شد", "Copied")}
+                  />
                 ))}
+                {!paymentCards.length ? (
+                  <p className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-3.5 py-3 text-sm text-amber-800 dark:text-amber-200">
+                    {t(
+                      "اطلاعات کارت پرداخت هنوز تنظیم نشده.",
+                      "Payment card is not configured yet.",
+                    )}
+                  </p>
+                ) : null}
                 <textarea
                   rows={3}
                   value={form.receiptText}

@@ -6,7 +6,8 @@ import { Check, ChevronLeft, LoaderCircle, Upload, X } from "lucide-react";
 import { publicApi } from "@/lib/api";
 import { compressReceiptImage } from "../receipt-image";
 import { useStorefrontLocale } from "../locale";
-import type { CustomerService, StorefrontProduct } from "../types";
+import type { CustomerService, StorefrontProduct, StorefrontStore } from "../types";
+import { BankCardVisual, resolvePaymentCards } from "../BankCardVisual";
 import { scrollTmaToTop } from "./scroll";
 import { useTelegramWebApp } from "./useTelegramWebApp";
 
@@ -29,6 +30,7 @@ export function TmaCheckoutSheet({
   products,
   renewService,
   primaryColor,
+  payment,
   onClose,
   onSuccess,
 }: {
@@ -37,6 +39,7 @@ export function TmaCheckoutSheet({
   products: StorefrontProduct[];
   renewService?: CustomerService | null;
   primaryColor?: string;
+  payment?: StorefrontStore["payment"] | null;
   onClose: () => void;
   onSuccess: (trackingCode: string) => void;
 }) {
@@ -69,6 +72,7 @@ export function TmaCheckoutSheet({
   const maxStep = (labels.length - 1) as Step;
   const selected = catalog.find((p) => p.id === productId) || catalog[0];
   const accent = primaryColor || LIGHT.button;
+  const paymentCards = resolvePaymentCards(payment);
 
   useEffect(() => {
     if (!open) return;
@@ -392,6 +396,33 @@ export function TmaCheckoutSheet({
 
               {(mode === "buy" && step === 3) || (mode === "renew" && step === 1) ? (
                 <>
+                  {paymentCards.length ? (
+                    <div className="space-y-3">
+                      {paymentCards.map((card) => (
+                        <BankCardVisual
+                          key={card.id}
+                          bankName={card.bankName}
+                          cardNumber={card.cardNumber}
+                          cardHolder={card.cardHolder}
+                          iban={card.iban}
+                          instructions={card.instructions}
+                          transferLabel={t("کارت به کارت", "Card to Card")}
+                          copyLabel={t("کپی شماره کارت", "Copy card number")}
+                          copiedLabel={t("کپی شد", "Copied")}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <p
+                      className="rounded-2xl px-3.5 py-3 text-[13px]"
+                      style={{ background: "rgba(245,158,11,0.12)", color: "#92400e" }}
+                    >
+                      {t(
+                        "اطلاعات کارت پرداخت هنوز تنظیم نشده. با پشتیبانی تماس بگیرید.",
+                        "Payment card is not configured yet. Contact support.",
+                      )}
+                    </p>
+                  )}
                   <label className="block space-y-2 text-sm">
                     <span className="font-medium">
                       {t("یادداشت پرداخت", "Payment note")}

@@ -1232,15 +1232,50 @@ export class StoreService {
         title: store?.title,
         defaultCurrency: store?.defaultCurrency,
         payment: store
-          ? {
-              method: 'manual_bank',
-              instructions: store.paymentInstructions,
-              cardNumber: store.bankCardNumber,
-              cardHolder: store.bankCardHolder,
-              bankName: store.bankName,
-              iban: store.bankIban,
-              accountInfo: store.bankAccountInfo,
-            }
+          ? (() => {
+              const paymentConfig = normalizePaymentConfig(store.paymentConfig, store);
+              const manualBankEnabled = paymentConfig.methods.manual_bank !== false;
+              const cardsFiltered = manualBankEnabled
+                ? paymentConfig.cards.filter(
+                    (c) =>
+                      c.enabled !== false &&
+                      Boolean(c.cardNumber || c.bankName || c.iban || c.instructions),
+                  )
+                : [];
+              const primary = cardsFiltered[0] || primaryCardFromConfig(paymentConfig);
+              const cards =
+                cardsFiltered.length > 0
+                  ? cardsFiltered
+                  : primary &&
+                      (primary.cardNumber ||
+                        primary.bankName ||
+                        primary.iban ||
+                        primary.instructions ||
+                        store.bankCardNumber)
+                    ? [
+                        {
+                          ...primary,
+                          id: primary.id || 'primary',
+                          bankName: primary.bankName || store.bankName || '',
+                          cardNumber: primary.cardNumber || store.bankCardNumber || '',
+                          cardHolder: primary.cardHolder || store.bankCardHolder || '',
+                          iban: primary.iban || store.bankIban || '',
+                          instructions:
+                            primary.instructions || store.paymentInstructions || '',
+                        },
+                      ]
+                    : [];
+              return {
+                method: 'manual_bank',
+                instructions: primary?.instructions || store.paymentInstructions,
+                cardNumber: primary?.cardNumber || store.bankCardNumber,
+                cardHolder: primary?.cardHolder || store.bankCardHolder,
+                bankName: primary?.bankName || store.bankName,
+                iban: primary?.iban || store.bankIban,
+                accountInfo: store.bankAccountInfo,
+                cards,
+              };
+            })()
           : null,
       },
       branding,

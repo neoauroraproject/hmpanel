@@ -22,7 +22,7 @@ import { publicApi } from "@/lib/api";
 import { useCustomerSession } from "@/modules/storefront/session";
 import { buildSubscriptionLink, parseSubscriptionToken } from "@/modules/storefront/subscription";
 import { compressReceiptImage } from "@/modules/storefront/receipt-image";
-import type { CustomerDashboard, CustomerService, StorefrontProduct } from "@/modules/storefront/types";
+import type { CustomerDashboard, CustomerService, StorefrontProduct, StorefrontStore } from "@/modules/storefront/types";
 import { StoreShell, ServiceCard } from "@/modules/storefront/ui";
 import { scrollToTop } from "@/modules/storefront/scroll";
 import {
@@ -37,6 +37,7 @@ import {
   staggerContainer,
   staggerItem,
 } from "@/modules/storefront/design";
+import { BankCardVisual, resolvePaymentCards } from "@/modules/storefront/BankCardVisual";
 import { usePortalTelegramGate } from "@/modules/storefront/tma/usePortalTelegramGate";
 import { StorefrontLocaleProvider, useStorefrontLocale } from "@/modules/storefront/locale";
 import { rememberStoreSlug, portalPathForSlug, shopPathForSlug } from "@/modules/storefront/store-slug";
@@ -61,7 +62,7 @@ function CustomerDashboardInner() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const gate = usePortalTelegramGate();
-  const { data, isLoading, error, logout, markNotificationRead, markAllNotificationsRead, cancelOrder, claimService } =
+  const { data, isLoading, error, logout, markNotificationRead, markAllNotificationsRead, cancelOrder, claimService, hideService } =
     useCustomerSession();
   const { t, isFa } = useStorefrontLocale();
 
@@ -218,46 +219,63 @@ function CustomerDashboardInner() {
         slug: data.store?.slug || "",
         branding: data.branding,
       }}
-      topBar={<PortalTopBarLabel />}
-    >
-      <MotionPage className={isFa ? "font-[Vazirmatn,Tahoma,sans-serif]" : ""}>
-        {/* Greeting + quick actions — app home header */}
-        <section className="mb-5 sm:mb-7">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-[13px] font-medium text-zinc-500">
-                {t("سلام", "Hello")}
-              </p>
-              <h1 className="mt-0.5 truncate text-[1.75rem] font-black tracking-tight text-zinc-900 dark:text-zinc-50 sm:text-[2rem]">
-                {data.profile?.name || t("مشتری عزیز", "Customer")}
-              </h1>
-            </div>
+      topBar={
+        tab === "home" ? (
+          <PortalTopBarLabel />
+        ) : (
+          <div className="flex w-full items-center justify-between gap-3">
+            <PortalTopBarLabel />
             <button
               type="button"
               onClick={() => logout.mutateAsync().then(goShop)}
-              className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-2xl border border-black/[0.06] bg-white text-zinc-600 shadow-sm transition active:scale-95 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-300"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-zinc-200 text-zinc-600 dark:border-zinc-700 dark:text-zinc-300"
               aria-label="Logout"
             >
-              <LogOut size={18} />
+              <LogOut size={16} />
             </button>
           </div>
+        )
+      }
+    >
+      <MotionPage className={isFa ? "font-[Vazirmatn,Tahoma,sans-serif]" : ""}>
+        {tab === "home" ? (
+          <section className="mb-5 sm:mb-7">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[13px] font-medium text-zinc-500">
+                  {t("سلام", "Hello")}
+                </p>
+                <h1 className="mt-0.5 truncate text-[1.75rem] font-black tracking-tight text-zinc-900 dark:text-zinc-50 sm:text-[2rem]">
+                  {data.profile?.name || t("مشتری عزیز", "Customer")}
+                </h1>
+              </div>
+              <button
+                type="button"
+                onClick={() => logout.mutateAsync().then(goShop)}
+                className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-2xl border border-black/[0.06] bg-white text-zinc-600 shadow-sm transition active:scale-95 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-300"
+                aria-label="Logout"
+              >
+                <LogOut size={18} />
+              </button>
+            </div>
 
-          <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4 sm:gap-3">
-            <StatTile label={t("سرویس فعال", "Active services")} value={activeCount} tone="success" />
-            <StatTile label={t("سفارش در صف", "Orders in queue")} value={pendingCount} tone="warn" />
-            <button
-              type="button"
-              onClick={() => {
-                setFlow("buy");
-                setSheetStep(0);
-                setSelectedProduct(products[0] || null);
-              }}
-              className="col-span-2 flex min-h-[72px] cursor-pointer items-center justify-center gap-2 rounded-[1.35rem] bg-[color:var(--store-primary)] px-4 text-[15px] font-bold text-white shadow-[0_14px_32px_-16px_var(--store-primary)] transition active:scale-[0.98] sm:col-span-2"
-            >
-              <Plus size={18} /> {t("سفارش جدید", "New order")}
-            </button>
-          </div>
-        </section>
+            <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4 sm:gap-3">
+              <StatTile label={t("سرویس فعال", "Active services")} value={activeCount} tone="success" />
+              <StatTile label={t("سفارش در صف", "Orders in queue")} value={pendingCount} tone="warn" />
+              <button
+                type="button"
+                onClick={() => {
+                  setFlow("buy");
+                  setSheetStep(0);
+                  setSelectedProduct(products[0] || null);
+                }}
+                className="col-span-2 flex min-h-[72px] cursor-pointer items-center justify-center gap-2 rounded-[1.35rem] bg-[color:var(--store-primary)] px-4 text-[15px] font-bold text-white shadow-[0_14px_32px_-16px_var(--store-primary)] transition active:scale-[0.98] sm:col-span-2"
+              >
+                <Plus size={18} /> {t("سفارش جدید", "New order")}
+              </button>
+            </div>
+          </section>
+        ) : null}
 
         {/* Desktop tabs */}
         <div className="mb-5 hidden gap-1 rounded-[1.35rem] border border-black/[0.05] bg-white p-1.5 shadow-sm dark:border-white/[0.06] dark:bg-zinc-900 lg:mb-7 lg:flex lg:max-w-md">
@@ -294,6 +312,7 @@ function CustomerDashboardInner() {
                 copiedToken={copiedToken}
                 setCopiedToken={setCopiedToken}
                 claimService={claimService}
+                hideService={hideService}
                 onRenew={(service) => {
                   setRenewingService(service);
                   setSelectedProduct(renewProducts[0] || null);
@@ -353,6 +372,7 @@ function CustomerDashboardInner() {
             else renewMutation.mutate();
           }}
           primary={primary}
+          payment={data?.store?.payment || null}
         />
       ) : null}
     </StoreShell>
@@ -366,6 +386,7 @@ function HomeTab({
   copiedToken,
   setCopiedToken,
   claimService,
+  hideService,
   onRenew,
 }: {
   data: CustomerDashboard;
@@ -374,12 +395,14 @@ function HomeTab({
   copiedToken: boolean;
   setCopiedToken: (v: boolean) => void;
   claimService: ReturnType<typeof useCustomerSession>["claimService"];
+  hideService: ReturnType<typeof useCustomerSession>["hideService"];
   onRenew: (service: CustomerService) => void;
 }) {
   const { t, isFa } = useStorefrontLocale();
   const services = data.services || [];
   const [linkInput, setLinkInput] = useState("");
   const [linkError, setLinkError] = useState("");
+  const [linkOpen, setLinkOpen] = useState(false);
 
   const submitLink = async (mode: "claim" | "renew") => {
     setLinkError("");
@@ -391,6 +414,7 @@ function HomeTab({
     try {
       const result = await claimService.mutateAsync(linkInput.trim() || token);
       setLinkInput("");
+      setLinkOpen(false);
       if (mode === "renew" && result.service) onRenew(result.service);
     } catch (err: any) {
       setLinkError(
@@ -439,62 +463,80 @@ function HomeTab({
         </div>
       </Surface>
 
-      <Surface>
-        <div className="flex items-start gap-3">
-          <div
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
-            style={{ background: "color-mix(in srgb, var(--store-primary) 12%, transparent)" }}
-          >
-            <Link2 size={18} style={{ color: "var(--store-primary)" }} />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="text-sm font-bold">{t("افزودن یا تمدید با لینک ساب", "Add or renew with sub link")}</div>
-            <p className="mt-1 text-xs text-zinc-500">
-              {t(
-                "لینک سابسکریپشن قبلی را بچسبانید تا به حساب شما اضافه شود.",
-                "Paste your previous subscription link to attach it to your account.",
-              )}
-            </p>
-            <textarea
-              value={linkInput}
-              onChange={(e) => {
-                setLinkInput(e.target.value);
-                setLinkError("");
-              }}
-              placeholder={t("https://…/s/abc123", "https://…/s/abc123")}
-              dir="ltr"
-              rows={2}
-              className="mt-3 w-full resize-none rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 font-mono text-[12px] outline-none focus:border-[color:var(--store-primary)] dark:border-zinc-700 dark:bg-zinc-900"
-            />
-            {linkError ? <p className="mt-2 text-xs text-red-500">{linkError}</p> : null}
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button
-                type="button"
-                disabled={claimService.isPending || !linkInput.trim()}
-                onClick={() => void submitLink("claim")}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-[color:var(--store-primary)] px-4 py-2.5 text-xs font-semibold text-white disabled:opacity-50"
-              >
-                {claimService.isPending ? <LoaderCircle size={14} className="animate-spin" /> : null}
-                {t("افزودن سرویس", "Add service")}
-              </button>
-              <button
-                type="button"
-                disabled={claimService.isPending || !linkInput.trim()}
-                onClick={() => void submitLink("renew")}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-zinc-200 px-4 py-2.5 text-xs font-semibold dark:border-zinc-700"
-              >
-                {t("تمدید", "Renew")}
-              </button>
-            </div>
-          </div>
-        </div>
-      </Surface>
-
       <div>
         <SectionHeading
           title={t("سرویس‌ها", "Services")}
           subtitle={t("اشتراک‌های فعال و قبلی شما", "Your active and past subscriptions")}
+          action={
+            <button
+              type="button"
+              onClick={() => {
+                setLinkOpen((v) => !v);
+                setLinkError("");
+              }}
+              className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 px-3 py-1.5 text-xs font-bold dark:border-zinc-700"
+            >
+              <Link2 size={13} />
+              {linkOpen
+                ? t("بستن", "Close")
+                : t("افزودن با لینک ساب", "Add by sub link")}
+            </button>
+          }
         />
+
+        {linkOpen ? (
+          <Surface className="mb-3">
+            <div className="flex items-start gap-3">
+              <div
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
+                style={{ background: "color-mix(in srgb, var(--store-primary) 12%, transparent)" }}
+              >
+                <Link2 size={18} style={{ color: "var(--store-primary)" }} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-bold">{t("افزودن یا تمدید با لینک ساب", "Add or renew with sub link")}</div>
+                <p className="mt-1 text-xs text-zinc-500">
+                  {t(
+                    "لینک سابسکریپشن قبلی را بچسبانید تا به حساب شما اضافه شود.",
+                    "Paste your previous subscription link to attach it to your account.",
+                  )}
+                </p>
+                <textarea
+                  value={linkInput}
+                  onChange={(e) => {
+                    setLinkInput(e.target.value);
+                    setLinkError("");
+                  }}
+                  placeholder={t("https://…/s/abc123", "https://…/s/abc123")}
+                  dir="ltr"
+                  rows={2}
+                  className="mt-3 w-full resize-none rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 font-mono text-[12px] outline-none focus:border-[color:var(--store-primary)] dark:border-zinc-700 dark:bg-zinc-900"
+                />
+                {linkError ? <p className="mt-2 text-xs text-red-500">{linkError}</p> : null}
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={claimService.isPending || !linkInput.trim()}
+                    onClick={() => void submitLink("claim")}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-[color:var(--store-primary)] px-4 py-2.5 text-xs font-semibold text-white disabled:opacity-50"
+                  >
+                    {claimService.isPending ? <LoaderCircle size={14} className="animate-spin" /> : null}
+                    {t("افزودن سرویس", "Add service")}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={claimService.isPending || !linkInput.trim()}
+                    onClick={() => void submitLink("renew")}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-zinc-200 px-4 py-2.5 text-xs font-semibold dark:border-zinc-700"
+                  >
+                    {t("تمدید", "Renew")}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </Surface>
+        ) : null}
+
         <motion.div className="grid gap-3 lg:grid-cols-2 lg:gap-4" variants={staggerContainer} initial="initial" animate="animate">
           {services.map((service) => {
             const link = buildSubscriptionLink(service.subId, service.subToken);
@@ -502,6 +544,7 @@ function HomeTab({
               <motion.div key={service.id} variants={staggerItem}>
                 <ServiceCard
                   service={service}
+                  subLink={link}
                   onCopy={() => {
                     if (link) void copyToClipboard(link);
                   }}
@@ -509,6 +552,19 @@ function HomeTab({
                     if (link) window.open(link, "_blank", "noopener,noreferrer");
                   }}
                   onRenew={() => onRenew(service)}
+                  onHide={() => {
+                    if (
+                      window.confirm(
+                        t(
+                          "فقط از لیست شما حذف می‌شود؛ خود سرویس حذف نمی‌شود.",
+                          "Removed from your list only — the service itself is not deleted.",
+                        ),
+                      )
+                    ) {
+                      hideService.mutate(service.id);
+                    }
+                  }}
+                  hiding={hideService.isPending}
                 />
               </motion.div>
             );
@@ -556,8 +612,17 @@ function OrdersTab({
         {orders.map((order) => (
           <Surface key={order.id}>
             <div className="flex items-start justify-between gap-2">
-              <div>
+              <div className="min-w-0">
                 <div className="font-semibold">{order.productName}</div>
+                {order.configName ? (
+                  <div className="mt-0.5 truncate font-mono text-xs text-zinc-600 dark:text-zinc-400" dir="ltr">
+                    {order.isRenewal
+                      ? t(`تمدید: ${order.configName}`, `Renew: ${order.configName}`)
+                      : order.configName}
+                  </div>
+                ) : order.isRenewal ? (
+                  <div className="mt-0.5 text-xs text-amber-600">{t("تمدید سرویس", "Service renewal")}</div>
+                ) : null}
                 <div className="mt-1 text-xs text-zinc-500">
                   {order.trackingCode} ·{" "}
                   {order.status === "PENDING_PAYMENT"
@@ -566,7 +631,7 @@ function OrdersTab({
                       ? t("پرداخت ارسال شد", "Payment submitted")
                       : order.status === "UNDER_REVIEW"
                         ? t("در حال بررسی", "Under review")
-                        : order.status === "COMPLETED" || order.status === "FULFILLED"
+                        : order.status === "COMPLETED" || order.status === "FULFILLED" || order.status === "ACTIVE" || order.status === "RENEWED"
                           ? t("تکمیل شده", "Completed")
                           : order.status === "CANCELLED"
                             ? t("لغو شده", "Cancelled")
@@ -575,7 +640,7 @@ function OrdersTab({
               </div>
               <a
                 href={`/track/${encodeURIComponent(order.trackingCode)}`}
-                className="text-xs font-bold text-[color:var(--store-primary)]"
+                className="shrink-0 text-xs font-bold text-[color:var(--store-primary)]"
               >
                 {t("پیگیری", "Track")}
               </a>
@@ -681,6 +746,7 @@ function CheckoutSheet({
   error,
   onSubmit,
   primary,
+  payment,
 }: {
   mode: FlowMode;
   step: number;
@@ -700,13 +766,23 @@ function CheckoutSheet({
   error: any;
   onSubmit: () => void;
   primary: string;
+  payment: StorefrontStore["payment"] | null;
 }) {
   const { t, formatToman, isFa } = useStorefrontLocale();
   const maxStep = mode === "buy" ? 2 : 1;
 
+  const paymentCards = resolvePaymentCards(payment);
+
   const goNext = () => {
     if (step === 0 && !selectedProduct) return;
     if (mode === "buy" && step === 1 && !configName.trim()) return;
+    if (
+      ((mode === "buy" && step === 2) || (mode === "renew" && step === 1)) &&
+      !receiptText.trim() &&
+      !receiptPreview
+    ) {
+      return;
+    }
     if (step >= maxStep) onSubmit();
     else setStep((s) => s + 1);
   };
@@ -804,7 +880,44 @@ function CheckoutSheet({
 
           {(mode === "buy" && step === 2) || (mode === "renew" && step === 1) ? (
             <>
-              <FieldBlock title={t("یادداشت پرداخت", "Payment note")} hint={t("اختیاری", "Optional")}>
+              <div className="space-y-1">
+                <div className="text-sm font-bold">{t("پرداخت کارت به کارت", "Card-to-card payment")}</div>
+                <p className="text-xs text-zinc-500">
+                  {t(
+                    "مبلغ را به کارت زیر واریز کنید، سپس رسید یا کد پیگیری را بفرستید.",
+                    "Transfer to the card below, then submit receipt or tracking code.",
+                  )}
+                </p>
+              </div>
+              {paymentCards.length ? (
+                <div className="space-y-3">
+                  {paymentCards.map((card) => (
+                    <BankCardVisual
+                      key={card.id}
+                      bankName={card.bankName}
+                      cardNumber={card.cardNumber}
+                      cardHolder={card.cardHolder}
+                      iban={card.iban}
+                      instructions={card.instructions}
+                      transferLabel={t("کارت به کارت", "Card to Card")}
+                      copyLabel={t("کپی شماره کارت", "Copy card number")}
+                      copiedLabel={t("کپی شد", "Copied")}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <p className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-3.5 py-3 text-sm text-amber-800 dark:text-amber-200">
+                  {t(
+                    "اطلاعات کارت پرداخت هنوز تنظیم نشده. با پشتیبانی تماس بگیرید.",
+                    "Payment card is not configured yet. Please contact support.",
+                  )}
+                </p>
+              )}
+              <FieldBlock
+                title={t("یادداشت پرداخت", "Payment note")}
+                hint={t("رسید یا یادداشت الزامی است", "Receipt or note is required")}
+                accent
+              >
                 <textarea
                   rows={2}
                   className="w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 outline-none dark:border-zinc-700 dark:bg-zinc-950"
@@ -840,7 +953,13 @@ function CheckoutSheet({
         <div className="border-t border-zinc-200 p-4 dark:border-zinc-800">
           <button
             type="button"
-            disabled={submitting || (step === 0 && !selectedProduct)}
+            disabled={
+              submitting ||
+              (step === 0 && !selectedProduct) ||
+              (((mode === "buy" && step === 2) || (mode === "renew" && step === 1)) &&
+                !receiptText.trim() &&
+                !receiptPreview)
+            }
             onClick={goNext}
             className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl text-[15px] font-bold text-white disabled:opacity-50"
             style={{ background: primary }}

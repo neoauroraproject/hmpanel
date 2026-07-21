@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
+import QRCode from "react-qr-code";
 import {
   Check,
   Copy,
@@ -9,9 +11,11 @@ import {
   LoaderCircle,
   MessageCircle,
   Phone,
+  QrCode,
   ShieldCheck,
   Globe,
   Mail,
+  X,
 } from "lucide-react";
 import { formatBytes, formatDate, formatExpiry } from "@/lib/format";
 import { copyToClipboard } from "@/lib/clipboard";
@@ -448,14 +452,21 @@ export function PendingOrderCard({
 
 export function ServiceCard({
   service,
+  subLink,
   onCopy,
   onOpen,
   onRenew,
+  onHide,
+  hiding,
 }: {
   service: CustomerService;
+  /** Full subscription URL for QR / open / copy */
+  subLink?: string | null;
   onCopy: () => void;
   onOpen: () => void;
   onRenew: () => void;
+  onHide?: () => void;
+  hiding?: boolean;
 }) {
   const { t } = useStorefrontLocale();
   const used = Number(service.up) + Number(service.down);
@@ -463,6 +474,8 @@ export function ServiceCard({
   const pct = total > 0 ? Math.min(100, (used / total) * 100) : 0;
   const remaining = total > 0 ? Math.max(total - used, 0) : null;
   const [copied, setCopied] = useState(false);
+  const [showQr, setShowQr] = useState(false);
+  const qrValue = String(subLink || "").trim();
 
   const statusTone =
     service.status === "active" || service.status === "pending"
@@ -498,9 +511,22 @@ export function ServiceCard({
             {t("انقضا", "Expires")}: {formatExpiry(service.expiryTime)}
           </div>
         </div>
-        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${statusTone}`}>
-          {statusLabel}
-        </span>
+        <div className="flex shrink-0 items-center gap-2">
+          <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${statusTone}`}>
+            {statusLabel}
+          </span>
+          {onHide ? (
+            <button
+              type="button"
+              disabled={hiding}
+              onClick={onHide}
+              className="rounded-lg px-2 py-1 text-[10px] font-semibold text-zinc-400 transition hover:bg-zinc-100 hover:text-rose-500 disabled:opacity-50 dark:hover:bg-zinc-800"
+              title={t("حذف از لیست", "Remove from list")}
+            >
+              {t("حذف از لیست", "Hide")}
+            </button>
+          ) : null}
+        </div>
       </div>
 
       <div className="space-y-3 px-5 py-4">
@@ -532,7 +558,16 @@ export function ServiceCard({
         ) : null}
       </div>
 
-      <div className="grid gap-2 border-t border-zinc-100 px-5 py-4 sm:grid-cols-3 dark:border-zinc-800">
+      <div className="grid grid-cols-2 gap-2 border-t border-zinc-100 px-5 py-4 sm:grid-cols-4 dark:border-zinc-800">
+        <SecondaryButton
+          onClick={() => qrValue && setShowQr(true)}
+          disabled={!qrValue}
+        >
+          <span className="inline-flex items-center justify-center gap-1.5">
+            <QrCode size={14} />
+            {t("QR کد", "QR code")}
+          </span>
+        </SecondaryButton>
         <SecondaryButton
           onClick={async () => {
             onCopy();
@@ -545,6 +580,44 @@ export function ServiceCard({
         <SecondaryButton onClick={onOpen}>{t("باز کردن ساب", "Open sub")}</SecondaryButton>
         <PrimaryButton onClick={onRenew}>{t("تمدید", "Renew")}</PrimaryButton>
       </div>
+
+      {showQr && qrValue && typeof document !== "undefined"
+        ? createPortal(
+            <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50 p-4">
+              <button
+                type="button"
+                className="absolute inset-0 cursor-pointer"
+                aria-label={t("بستن", "Close")}
+                onClick={() => setShowQr(false)}
+              />
+              <div className="relative z-10 w-full max-w-sm rounded-3xl bg-white p-5 shadow-2xl dark:bg-zinc-950">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-base font-bold">{t("QR سابسکریپشن", "Subscription QR")}</div>
+                    <div className="mt-0.5 truncate text-xs text-zinc-500">
+                      {service.remark || service.email}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowQr(false)}
+                    className="rounded-xl border border-zinc-200 p-2 dark:border-zinc-700"
+                    aria-label={t("بستن", "Close")}
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+                <div className="mx-auto flex w-fit rounded-2xl bg-white p-3 ring-1 ring-zinc-200">
+                  <QRCode value={qrValue} size={200} />
+                </div>
+                <p className="mt-3 break-all text-center font-mono text-[11px] text-zinc-500" dir="ltr">
+                  {qrValue}
+                </p>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </motion.div>
   );
 }
@@ -812,7 +885,7 @@ export function SecondaryButton({
   return (
     <button
       {...props}
-      className={`inline-flex h-12 min-h-[48px] w-full cursor-pointer items-center justify-center rounded-2xl border border-black/[0.06] bg-white px-5 text-[15px] font-semibold text-zinc-900 transition duration-200 active:scale-[0.98] dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100 ${className}`}
+      className={`inline-flex h-12 min-h-[48px] w-full cursor-pointer items-center justify-center rounded-2xl border border-black/[0.06] bg-white px-5 text-[15px] font-semibold text-zinc-900 transition duration-200 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100 ${className}`}
     >
       {children}
     </button>
