@@ -73,6 +73,19 @@ export function useCustomerSession() {
     },
   });
 
+  const hideService = useMutation({
+    mutationFn: async (clientId: string) =>
+      (
+        await publicApi.post(`/store/customer/services/${encodeURIComponent(clientId)}/hide`)
+      ).data as { dashboard: CustomerDashboard },
+    onSuccess: async (data) => {
+      if (data?.dashboard) {
+        queryClient.setQueryData(["customer-session"], data.dashboard);
+      }
+      await queryClient.invalidateQueries({ queryKey: ["customer-session"] });
+    },
+  });
+
   return {
     ...sessionQuery,
     login,
@@ -81,5 +94,6 @@ export function useCustomerSession() {
     markAllNotificationsRead,
     cancelOrder,
     claimService,
+    hideService,
   };
 }

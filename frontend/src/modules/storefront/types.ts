@@ -99,6 +99,8 @@ export type CustomerOrder = {
   currency: string;
   isRenewal: boolean;
   productName: string;
+  /** Server-side config name (email/remark) — especially important for renewals */
+  configName?: string | null;
   categoryId: string;
   createdAt: string;
   timeline?: Array<{

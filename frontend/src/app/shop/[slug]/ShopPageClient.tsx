@@ -68,7 +68,6 @@ export default function ShopPage() {
 
   const store = data?.store as StorefrontStore | undefined;
   const products = (data?.products || []) as StorefrontProduct[];
-  const paymentCards = useMemo(() => resolvePaymentCards(store?.payment), [store?.payment]);
   const catalog = useMemo(() => {
     if (!isRenewFlow) return products;
     return products.filter((p) => p && (p as any).renewable !== false);
@@ -285,6 +284,10 @@ function ShopBody(props: {
     serviceName,
   } = props;
   const { t, formatToman } = useStorefrontLocale();
+  const paymentCards = useMemo(
+    () => resolvePaymentCards(store?.payment),
+    [store?.payment],
+  );
 
   const canContinueConfig = isRenewFlow || !!form.configName.trim();
   const canContinueProfile =
