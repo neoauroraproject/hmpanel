@@ -478,6 +478,9 @@ export default function ClientsPage() {
   const totalRequired = bytesToAddPerClient * selectedCount;
   const availableTraffic = overviewData?.admin?.availableTraffic ?? 0;
   const trafficMode = overviewData?.admin?.trafficMode ?? 'ALLOCATION';
+  const unlimitedTraffic = overviewData?.admin?.unlimitedTraffic === true;
+  const trafficExhausted =
+    !!overviewData?.admin && !unlimitedTraffic && availableTraffic <= 0;
   const balanceAfter = availableTraffic - totalRequired;
   const insufficientBalance = trafficMode === 'ALLOCATION' && totalRequired > availableTraffic;
 
@@ -494,13 +497,17 @@ export default function ClientsPage() {
             <PluginSlot name="clients.actions" />
             <button
               onClick={() => setBulkCreateOpen(true)}
-              className="flex items-center gap-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+              disabled={trafficExhausted}
+              title={trafficExhausted ? t("clients.insufficientBalance") : undefined}
+              className="flex items-center gap-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors disabled:opacity-50 disabled:pointer-events-none"
             >
               <Users size={16} /> {t("clients.bulkCreate")}
             </button>
             <button
               onClick={() => setAddOpen(true)}
-              className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 transition-colors shadow-lg shadow-blue-500/20"
+              disabled={trafficExhausted}
+              title={trafficExhausted ? t("clients.insufficientBalance") : undefined}
+              className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 transition-colors shadow-lg shadow-blue-500/20 disabled:opacity-50 disabled:pointer-events-none disabled:shadow-none"
             >
               <Plus size={16} /> {t("clients.addClient")}
             </button>
@@ -1958,7 +1965,7 @@ function AddClientModal({
                       return (
                         <label
                           key={i.id}
-                          className="flex items-center gap-3 px-3 py-2.5 text-sm text-zinc-850 dark:text-zinc-200 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-850/30 select-none"
+                          className="flex items-center gap-3 px-3 py-2.5 text-sm text-zinc-800 dark:text-zinc-200 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/50 select-none"
                         >
                           <input
                             type="checkbox"

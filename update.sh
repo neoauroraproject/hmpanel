@@ -21,6 +21,26 @@ info()    { echo -e "${BLUE}ℹ${NC}  $*"; }
 step()    { echo -e "\n${CYAN}${BOLD}──── $* ────${NC}"; }
 die()     { error "$*"; exit 1; }
 
+# Compose V2 (`docker compose`) or legacy V1 (`docker-compose`)
+COMPOSE_BIN=()
+resolve_compose() {
+  if docker compose version &>/dev/null 2>&1; then
+    COMPOSE_BIN=(docker compose)
+    return 0
+  fi
+  if command -v docker-compose &>/dev/null; then
+    COMPOSE_BIN=(docker-compose)
+    return 0
+  fi
+  return 1
+}
+compose() {
+  if [[ ${#COMPOSE_BIN[@]} -eq 0 ]]; then
+    resolve_compose || die "Docker Compose is not available (need 'docker compose' or 'docker-compose')"
+  fi
+  "${COMPOSE_BIN[@]}" "$@"
+}
+
 read_app_version() {
   local dir="${1:-.}"
   if [[ -f "${dir}/VERSION" ]]; then
@@ -135,7 +155,7 @@ main() {
   local pull_attempt=1
   local pull_success=false
   while [[ $pull_attempt -le $max_pull ]]; do
-    if docker compose pull; then
+    if compose pull; then
       pull_success=true
       break
     else
@@ -185,7 +205,7 @@ main() {
 
   step "[6/8] Executing Database Migrations"
   info "Starting database to apply migrations..."
-  docker compose up -d postgres
+  compose up -d postgres
   
   info "Waiting for database to be ready..."
   sleep 5 # Ensure postgres is up
@@ -217,11 +237,11 @@ END \$\$;
   # after those safe prep steps; it does not wipe unrelated business tables.
   # upgrade + ensureCriticalSchema (idempotent) → db push → custom migrations → baseline migrate history
   # baseline is best-effort (|| true) so existing prod DBs without _prisma_migrations don't fail updates
-  if ! docker compose run --rm panel-app /bin/sh -c "node backend/dist/scripts/upgrade-legacy-store-schema.js || true; npx prisma db push --schema=/app/prisma/schema.prisma --accept-data-loss && node backend/dist/scripts/run-migrations.js && (node backend/dist/scripts/baseline-prisma-migrations.js || true)"; then
+  if ! compose run --rm panel-app /bin/sh -c "node backend/dist/scripts/upgrade-legacy-store-schema.js || true; npx prisma db push --schema=/app/prisma/schema.prisma --accept-data-loss && node backend/dist/scripts/run-migrations.js && (node backend/dist/scripts/baseline-prisma-migrations.js || true)"; then
     error "MIGRATION FAILED! Executing emergency rollback..."
     
     info "Stopping containers..."
-    docker compose down
+    compose down
     
     if [[ -n "${BACKUP_FILE:-}" && -f "$BACKUP_FILE" ]]; then
       info "Restoring state from pre-update backup..."
@@ -237,7 +257,7 @@ END \$\$;
     fi
     
     info "Restarting previous version..."
-    docker compose up -d
+    compose up -d
     die "Update aborted due to migration failure. The system has been rolled back."
   fi
   
@@ -256,7 +276,7 @@ END \$\$;
 
   step "[7/8] Deploying Containers"
   info "Recreating containers with latest mounts and images..."
-  docker compose up -d --remove-orphans
+  compose up -d --remove-orphans
 
   step "[8/8] Verifying Health & Cleaning Up"
   local max_attempts=30
@@ -273,7 +293,7 @@ END \$\$;
   done
 
   if [[ $attempt -eq $max_attempts ]]; then
-    warn "Health check timeout. Check logs: docker compose logs panel-app"
+    warn "Health check timeout. Check logs: $( [[ ${#COMPOSE_BIN[@]} -gt 0 ]] && echo "${COMPOSE_BIN[*]}" || echo "docker compose" ) logs panel-app"
   else
     echo ""
     

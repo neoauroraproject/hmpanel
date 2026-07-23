@@ -90,7 +90,7 @@ export type CustomerService = {
   remark?: string | null;
   subId?: string | null;
   subToken?: string | null;
-  status: "active" | "expired" | "disabled" | "pending";
+  status: "active" | "expired" | "disabled" | "pending" | "depleted";
   /** True when provisioned but no traffic used yet (still “active”, ready to connect). */
   unused?: boolean;
   total: string;

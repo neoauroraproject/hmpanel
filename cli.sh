@@ -7,6 +7,29 @@ set -euo pipefail
 INSTALL_DIR="/opt/hmpanel"
 BACKUP_DIR="${INSTALL_DIR}/backups"
 
+# Compose V2 (`docker compose`) or legacy V1 (`docker-compose`)
+COMPOSE_BIN=()
+resolve_compose() {
+  if docker compose version &>/dev/null 2>&1; then
+    COMPOSE_BIN=(docker compose)
+    return 0
+  fi
+  if command -v docker-compose &>/dev/null; then
+    COMPOSE_BIN=(docker-compose)
+    return 0
+  fi
+  return 1
+}
+compose() {
+  if [[ ${#COMPOSE_BIN[@]} -eq 0 ]]; then
+    resolve_compose || {
+      echo -e "${RED:-}✘ Docker Compose is not available (need 'docker compose' or 'docker-compose')${NC:-}" >&2
+      return 1
+    }
+  fi
+  "${COMPOSE_BIN[@]}" "$@"
+}
+
 update_env() {
   local key="$1"
   local val="$2"
@@ -292,7 +315,7 @@ cmd_info() {
   echo -e "  SSL Path:      ${CYAN}${INSTALL_DIR}/nginx/ssl${NC}"
   echo ""
   echo -e "  Useful Commands:"
-  echo -e "  - View raw compose logs: ${YELLOW}docker compose -f ${INSTALL_DIR}/docker-compose.yml logs -f${NC}"
+  echo -e "  - View raw compose logs: ${YELLOW}$(resolve_compose >/dev/null 2>&1; echo "${COMPOSE_BIN[*]:-docker compose}") -f ${INSTALL_DIR}/docker-compose.yml logs -f${NC}"
   echo -e "  - Inspect database:      ${YELLOW}docker exec -it hmpanel-postgres psql -U panel_user -d panel_db${NC}"
   pause
 }
@@ -604,7 +627,7 @@ cmd_restart() {
   echo -e "${BOLD}--- Restart Services ---${NC}\n"
   cd "$INSTALL_DIR" || return
   echo "Restarting all containers..."
-  docker compose restart
+  compose restart
   echo -e "${GREEN}✔ Services restarted.${NC}"
   pause
 }
@@ -623,11 +646,11 @@ cmd_logs() {
   cd "$INSTALL_DIR" || return
   echo ""
   case $choice in
-    1) docker compose logs -f --tail 100 ;;
-    2) docker compose logs -f --tail 100 panel-app ;;
-    3) docker compose logs -f --tail 100 nginx ;;
-    4) docker compose logs -f --tail 100 postgres ;;
-    5) docker compose logs -f --tail 100 redis ;;
+    1) compose logs -f --tail 100 ;;
+    2) compose logs -f --tail 100 panel-app ;;
+    3) compose logs -f --tail 100 nginx ;;
+    4) compose logs -f --tail 100 postgres ;;
+    5) compose logs -f --tail 100 redis ;;
     0) return ;;
     *) echo -e "${RED}Invalid option${NC}" ; sleep 1 ;;
   esac
@@ -1829,9 +1852,9 @@ cmd_doctor() {
   fi
   
   local compose_status="missing"
-  if docker compose version &>/dev/null; then
+  if resolve_compose; then
     compose_status="installed"
-    if [[ "$JSON_OUTPUT" != "true" ]]; then echo -e "✓ Docker Compose"; fi
+    if [[ "$JSON_OUTPUT" != "true" ]]; then echo -e "✓ Docker Compose ($(echo "${COMPOSE_BIN[*]}"))"; fi
   else
     if [[ "$JSON_OUTPUT" != "true" ]]; then echo -e "✗ Docker Compose"; fi
   fi

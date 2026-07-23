@@ -237,15 +237,16 @@ export default function AdminsPage() {
                     </div>
                   ) : (
                     <div className="text-xs">
-                      {a.balance === 0 && a.trafficMode !== 'USAGE' ? (
+                      {a.balance === 0 ? (
                         <>
-                          <div className="font-medium text-blue-400">{t("common.unlimited")}</div>
+                          <div className="font-medium text-red-400">{t("admins.exhausted")}</div>
+                          <div className="text-zinc-500">{t("admins.outOfTraffic", { total: formatBytes(a.totalAssigned || 0) })}</div>
                           <div className="text-zinc-500 mt-0.5">{t("admins.usedTraffic", { amount: formatBytes(a.usedTraffic || 0) })}</div>
                         </>
                       ) : (
                         <>
                           <div className="font-medium text-blue-400">
-                            {a.balance === 0 ? <span className="text-red-400">{t("admins.exhausted")}</span> : t("admins.leftTraffic", { amount: formatBytes(a.balance) })}
+                            {t("admins.leftTraffic", { amount: formatBytes(a.balance) })}
                           </div>
                           <div className="text-zinc-500">{t("admins.outOfTraffic", { total: formatBytes(a.totalAssigned || 0) })}</div>
                           <div className="text-zinc-500 mt-0.5">{t("admins.usedTraffic", { amount: formatBytes(a.usedTraffic || 0) })}</div>
@@ -1054,7 +1055,7 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
             {!admin.unlimitedTraffic && (
               <>
                 <SummaryStat icon={<Activity size={16} />} label={t("admins.usedTrafficLabel")} value={formatBytes(admin.usedTraffic || 0)} />
-                <SummaryStat icon={<Database size={16} />} label={t("admins.availableTraffic")} value={remaining} highlight={admin.balance === 0 && admin.trafficMode !== 'USAGE'} />
+                <SummaryStat icon={<Database size={16} />} label={t("admins.availableTraffic")} value={remaining} highlight={!admin.unlimitedTraffic && admin.balance === 0} />
               </>
             )}
             {admin.unlimitedTraffic && (

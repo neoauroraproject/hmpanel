@@ -542,6 +542,10 @@ export class ClientsService {
             );
           }
           if (caller.trafficMode === 'ALLOCATION') {
+            if (caller.balance <= 0)
+              throw new BadRequestException(
+                'Insufficient traffic balance. Cannot create clients when balance is zero or below.',
+              );
             if (caller.balance < Number(totalBytes))
               throw new BadRequestException('Insufficient traffic balance');
           } else if (caller.trafficMode === 'USAGE') {
@@ -1967,6 +1971,11 @@ export class ClientsService {
           );
         }
         if (caller.trafficMode === 'ALLOCATION') {
+          if (caller.balance <= 0) {
+            throw new BadRequestException(
+              'Insufficient traffic balance. Cannot create clients when balance is zero or below.',
+            );
+          }
           if (caller.balance < Number(totalBytesRequired)) {
             throw new BadRequestException('Insufficient traffic balance');
           }

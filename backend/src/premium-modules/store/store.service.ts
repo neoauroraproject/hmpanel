@@ -1022,18 +1022,20 @@ export class StoreService {
   ) {
     const used = service.up + service.down;
     const expired = service.expiryTime > 0n && service.expiryTime <= BigInt(Date.now());
+    const depleted = service.total > 0n && used >= service.total;
     const disabled = !service.enable;
-    // Unused traffic is still an active provisioned service (ready for first connect),
-    // not "pending" — pending is reserved for unpaid/review orders in the UI.
+    // Keep expired/depleted services visible so customers can renew.
+    // Prefer time-expiry over disable flag (panel often disables expired configs).
     let status = 'active';
-    if (disabled) status = 'disabled';
-    else if (expired) status = 'expired';
+    if (expired) status = 'expired';
+    else if (depleted) status = 'depleted';
+    else if (disabled) status = 'disabled';
 
     return {
       ...service,
       categoryId,
       status,
-      unused: !disabled && !expired && used === 0n,
+      unused: !disabled && !expired && !depleted && used === 0n,
       total: service.total.toString(),
       up: service.up.toString(),
       down: service.down.toString(),
@@ -1344,7 +1346,12 @@ export class StoreService {
       supportLinks: branding.supportLinks,
       services,
       activeServices: services.filter((service) => service.status === 'active'),
-      expiredServices: services.filter((service) => service.status === 'expired' || service.status === 'disabled'),
+      expiredServices: services.filter(
+        (service) =>
+          service.status === 'expired' ||
+          service.status === 'depleted' ||
+          service.status === 'disabled',
+      ),
       pendingOrders: customer.orders.filter((order) => pendingStatuses.includes(order.status)),
       orders: customer.orders.map((order) => ({
         id: order.id,

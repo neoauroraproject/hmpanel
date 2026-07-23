@@ -246,11 +246,20 @@ function Modal({ title, onClose, children, hideClose }: { title: string; onClose
   );
 }
 
-function Field({ label, ...props }: { label: string } & React.InputHTMLAttributes<HTMLInputElement>) {
+function Field({
+  label,
+  ltr,
+  className,
+  ...props
+}: { label: string; ltr?: boolean } & React.InputHTMLAttributes<HTMLInputElement>) {
   return (
     <div>
       <label className="mb-1 block text-sm text-zinc-500 dark:text-zinc-400">{label}</label>
-      <input {...props} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
+      <input
+        {...props}
+        dir={ltr ? "ltr" : props.dir}
+        className={`w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors ${ltr ? "text-start" : ""} ${className || ""}`}
+      />
     </div>
   );
 }
@@ -350,16 +359,16 @@ function PanelWizard({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
       <div className="space-y-4">
         <Field label={t("panels.panelName")} value={form.name} placeholder={t("panels.panelNamePlaceholder")} onChange={(e) => setForm({ ...form, name: e.target.value })} />
         <div>
-          <Field label={t("panels.panelUrl")} value={form.url} placeholder={t("panels.panelUrlPlaceholder")} onChange={(e) => { setForm({ ...form, url: e.target.value }); setTest(null); }} />
+          <Field ltr label={t("panels.panelUrl")} value={form.url} placeholder={t("panels.panelUrlPlaceholder")} onChange={(e) => { setForm({ ...form, url: e.target.value }); setTest(null); }} />
           <div className="text-[10px] text-zinc-500 mt-1 ps-1">{t("panels.panelUrlHint")}</div>
         </div>
         <div>
-          <Field label={t("panels.subUrl")} value={form.subUrl} placeholder={t("panels.subUrlPlaceholder")} onChange={(e) => { setForm({ ...form, subUrl: e.target.value }); }} />
+          <Field ltr label={t("panels.subUrl")} value={form.subUrl} placeholder={t("panels.subUrlPlaceholder")} onChange={(e) => { setForm({ ...form, subUrl: e.target.value }); }} />
           <div className="text-[10px] text-zinc-500 mt-1 ps-1 leading-tight">
             {t("panels.subUrlHint")}
           </div>
         </div>
-        <Field label={t("panels.apiToken")} value={form.apiToken} placeholder={t("panels.apiTokenPlaceholder")} onChange={(e) => { setForm({ ...form, apiToken: e.target.value }); setTest(null); }} />
+        <Field ltr label={t("panels.apiToken")} value={form.apiToken} placeholder={t("panels.apiTokenPlaceholder")} onChange={(e) => { setForm({ ...form, apiToken: e.target.value }); setTest(null); }} />
 
         <div className="space-y-3">
           <div className="flex items-center gap-3">
@@ -517,14 +526,14 @@ function EditPanel({ panel, onClose, onSaved }: { panel: any; onClose: () => voi
     <Modal title={t("common.editTitle", { name: panel.name })} onClose={onClose}>
       <div className="space-y-4">
         <Field label={t("panels.panelName")} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-        <Field label={t("panels.panelUrl")} value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} />
+        <Field ltr label={t("panels.panelUrl")} value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} />
         <div>
-          <Field label={t("panels.subUrl")} value={form.subUrl} placeholder={t("panels.subUrlPlaceholder")} onChange={(e) => setForm({ ...form, subUrl: e.target.value })} />
+          <Field ltr label={t("panels.subUrl")} value={form.subUrl} placeholder={t("panels.subUrlPlaceholder")} onChange={(e) => setForm({ ...form, subUrl: e.target.value })} />
           <div className="text-[10px] text-zinc-500 mt-1 ps-1 leading-tight">
             {t("panels.subUrlHint")}
           </div>
         </div>
-        <Field label={t("panels.apiToken")} type="password" value={form.apiToken} placeholder={t("panels.apiTokenKeep")} onChange={(e) => setForm({ ...form, apiToken: e.target.value })} />
+        <Field ltr label={t("panels.apiToken")} type="password" value={form.apiToken} placeholder={t("panels.apiTokenKeep")} onChange={(e) => setForm({ ...form, apiToken: e.target.value })} />
         <div>
           <label className="mb-1 block text-sm text-zinc-500 dark:text-zinc-400">{t("panels.status")}</label>
           <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}

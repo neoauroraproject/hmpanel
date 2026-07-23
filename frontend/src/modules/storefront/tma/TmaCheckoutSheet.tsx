@@ -183,7 +183,7 @@ export function TmaCheckoutSheet({
   const priceLabel = selected
     ? selected.priceToman
       ? formatToman(selected.priceToman)
-      : `$${selected.priceUsd}`
+      : `${Number(selected.priceUsd).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${isFa ? "دلار" : "USD"}`
     : "";
 
   const showPayment =
@@ -298,7 +298,9 @@ export function TmaCheckoutSheet({
                     </div>
                     <div className="text-end">
                       <div className="text-sm font-bold" style={{ color: LIGHT.link }}>
-                        {p.priceToman ? formatToman(p.priceToman) : `$${p.priceUsd}`}
+                        {p.priceToman
+                          ? formatToman(p.priceToman)
+                          : `${Number(p.priceUsd).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${isFa ? "دلار" : "USD"}`}
                       </div>
                       {active ? <Check size={16} className="ms-auto mt-1" style={{ color: accent }} /> : null}
                     </div>

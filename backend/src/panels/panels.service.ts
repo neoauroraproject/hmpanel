@@ -1177,8 +1177,10 @@ export class PanelsService implements OnModuleInit {
       }
 
       const apiInboundIdToDbId = new Map<number, string>();
+      const syncedLocalInboundIds = new Set<string>();
 
-      // 1. Sync Inbounds
+      // 1. Sync Inbounds — prefer remote panelInboundId (survives port changes),
+      // then fall back to port for legacy rows. Prune locals missing from API.
       this.logger.debug(
         `[DIAGNOSTIC] Syncing ${apiInbounds.length} inbounds into Database`,
       );
@@ -1193,15 +1195,36 @@ export class PanelsService implements OnModuleInit {
             ? JSON.parse(apiInbound.streamSettings || '{}')
             : apiInbound.streamSettings || {};
 
-        let dbInbound = await this.prisma.inbound.findFirst({
+        const remoteId =
+          apiInbound.id !== undefined && apiInbound.id !== null
+            ? Number(apiInbound.id)
+            : null;
+
+        let dbInbound =
+          remoteId != null && !Number.isNaN(remoteId)
+            ? await this.prisma.inbound.findFirst({
+                where: { panelId: panel.id, panelInboundId: remoteId },
+              })
+            : null;
+
+        const byPort = await this.prisma.inbound.findFirst({
           where: { panelId: panel.id, port: apiInbound.port },
         });
+
+        // Port moved onto a slot that still has a ghost — merge ghost into ID match.
+        if (dbInbound && byPort && byPort.id !== dbInbound.id) {
+          await this.mergeInboundInto(byPort.id, dbInbound.id);
+        }
+
+        if (!dbInbound && byPort) {
+          dbInbound = byPort;
+        }
 
         if (!dbInbound) {
           dbInbound = await this.prisma.inbound.create({
             data: {
               panelId: panel.id,
-              panelInboundId: apiInbound.id, // persist numeric ID for native client APIs
+              panelInboundId: remoteId,
               tag: apiInbound.remark || `inbound-${apiInbound.port}`,
               port: apiInbound.port,
               protocol: apiInbound.protocol,
@@ -1213,15 +1236,65 @@ export class PanelsService implements OnModuleInit {
           dbInbound = await this.prisma.inbound.update({
             where: { id: dbInbound.id },
             data: {
-              panelInboundId: apiInbound.id, // always keep in sync
+              panelInboundId: remoteId ?? dbInbound.panelInboundId,
               tag: apiInbound.remark || dbInbound.tag,
+              port: apiInbound.port,
               protocol: apiInbound.protocol,
               settings,
               streamSettings,
             },
           });
         }
-        apiInboundIdToDbId.set(apiInbound.id, dbInbound.id);
+        if (remoteId != null && !Number.isNaN(remoteId)) {
+          apiInboundIdToDbId.set(remoteId, dbInbound.id);
+        }
+        syncedLocalInboundIds.add(dbInbound.id);
+      }
+
+      // Drop local inbounds no longer present on the remote panel
+      // (ClientInbound / AdminInbound cascade on delete).
+      const staleInbounds = await this.prisma.inbound.findMany({
+        where: {
+          panelId: panel.id,
+          id: { notIn: [...syncedLocalInboundIds] },
+        },
+        select: { id: true, port: true, tag: true, panelInboundId: true },
+      });
+      if (staleInbounds.length) {
+        const staleIds = staleInbounds.map((i) => i.id);
+        const staleIdSet = new Set(staleIds);
+        await this.prisma.inbound.deleteMany({
+          where: { id: { in: staleIds } },
+        });
+        this.logger.log(
+          `[SYNC] Panel ${panel.name}: pruned ${staleInbounds.length} stale inbound(s): ${staleInbounds
+            .map((i) => `${i.tag}:${i.port}`)
+            .join(', ')}`,
+        );
+
+        // Scrub JSON inbound refs on store provisioning profiles for this panel
+        try {
+          const profiles = await this.prisma.provisioningProfile.findMany({
+            where: { panelId: panel.id },
+            select: { id: true, inboundIds: true },
+          });
+          for (const profile of profiles) {
+            const ids = Array.isArray(profile.inboundIds)
+              ? (profile.inboundIds as string[])
+              : [];
+            const next = ids.filter((id) => !staleIdSet.has(id));
+            if (next.length !== ids.length) {
+              await this.prisma.provisioningProfile.update({
+                where: { id: profile.id },
+                data: { inboundIds: next },
+              });
+            }
+          }
+        } catch (scrubErr: any) {
+          this.logger.warn(
+            `[SYNC] Could not scrub store profile inbound refs: ${scrubErr?.message || scrubErr}`,
+          );
+        }
       }
 
       // 2. Sync Clients
@@ -1735,6 +1808,48 @@ export class PanelsService implements OnModuleInit {
     });
 
     return next;
+  }
+
+  /** Move client/admin links from a ghost inbound onto the kept row, then delete the ghost. */
+  private async mergeInboundInto(fromId: string, toId: string) {
+    if (fromId === toId) return;
+
+    const fromClientLinks = await this.prisma.clientInbound.findMany({
+      where: { inboundId: fromId },
+    });
+    for (const link of fromClientLinks) {
+      const exists = await this.prisma.clientInbound.findUnique({
+        where: {
+          clientId_inboundId: { clientId: link.clientId, inboundId: toId },
+        },
+      });
+      if (!exists) {
+        await this.prisma.clientInbound.create({
+          data: { clientId: link.clientId, inboundId: toId },
+        });
+      }
+    }
+
+    const fromAdminLinks = await this.prisma.adminInbound.findMany({
+      where: { inboundId: fromId },
+    });
+    for (const link of fromAdminLinks) {
+      const exists = await this.prisma.adminInbound.findUnique({
+        where: {
+          adminId_inboundId: { adminId: link.adminId, inboundId: toId },
+        },
+      });
+      if (!exists) {
+        await this.prisma.adminInbound.create({
+          data: { adminId: link.adminId, inboundId: toId },
+        });
+      }
+    }
+
+    await this.prisma.inbound.delete({ where: { id: fromId } });
+    this.logger.log(
+      `[SYNC] Merged ghost inbound ${fromId} into ${toId} (${fromClientLinks.length} client link(s), ${fromAdminLinks.length} admin link(s))`,
+    );
   }
 
   private async _doUpdateInboundFull(

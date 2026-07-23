@@ -416,6 +416,7 @@ function CustomerDashboardInner() {
             }}
             primary={primary}
             payment={data?.store?.payment || null}
+            currency={data?.store?.defaultCurrency}
           />
         ) : null}
       </AnimatePresence>
@@ -795,6 +796,7 @@ function CheckoutSheet({
   onSubmit,
   primary,
   payment,
+  currency,
 }: {
   mode: FlowMode;
   step: number;
@@ -819,6 +821,7 @@ function CheckoutSheet({
   onSubmit: () => void;
   primary: string;
   payment: StorefrontStore["payment"] | null;
+  currency?: string | null;
 }) {
   const { t, isFa } = useStorefrontLocale();
   const [stepDir, setStepDir] = useState(1);
@@ -992,6 +995,7 @@ function CheckoutSheet({
                     <PlanPickRow
                       key={p.id}
                       product={p}
+                      currency={currency}
                       selected={selectedProduct?.id === p.id}
                       onSelect={() => setSelectedProduct(p)}
                     />

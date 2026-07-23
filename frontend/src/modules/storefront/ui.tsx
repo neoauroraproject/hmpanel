@@ -399,14 +399,16 @@ export function ProductCard({
   product,
   onSelect,
   selected = false,
+  currency,
 }: {
   product: StorefrontProduct;
   onSelect: () => void;
   selected?: boolean;
+  /** Store default currency — show one price, prefer this currency. */
+  currency?: string | null;
 }) {
-  const { formatToman, t } = useStorefrontLocale();
-  const hasUsd = Number(product.priceUsd) > 0;
-  const hasToman = Number(product.priceToman) > 0;
+  const { formatProductPrice, t } = useStorefrontLocale();
+  const price = formatProductPrice(product, currency);
 
   return (
     <motion.button
@@ -478,25 +480,11 @@ export function ProductCard({
         </p>
       ) : null}
       <div className="relative mt-5 space-y-1">
-        {hasToman ? (
-          <div className="text-2xl font-black text-[color:var(--store-primary)]">
-            {formatToman(product.priceToman)}
-          </div>
-        ) : null}
-        {hasUsd ? (
-          <div
-            className={
-              hasToman
-                ? "text-sm font-semibold text-zinc-500"
-                : "text-2xl font-black text-[color:var(--store-primary)]"
-            }
-          >
-            ${Number(product.priceUsd).toLocaleString()}
-          </div>
-        ) : null}
-        {!hasUsd && !hasToman ? (
+        {price ? (
+          <div className="text-2xl font-black text-[color:var(--store-primary)]">{price}</div>
+        ) : (
           <div className="text-lg font-bold text-zinc-400">{t("تماس برای قیمت", "Contact for price")}</div>
-        ) : null}
+        )}
       </div>
       <div className="relative mt-4 space-y-2 text-sm text-zinc-600 dark:text-zinc-400">
         <div className="flex justify-between gap-3">
@@ -532,18 +520,15 @@ export function PlanPickRow({
   product,
   selected = false,
   onSelect,
+  currency,
 }: {
   product: StorefrontProduct;
   selected?: boolean;
   onSelect: () => void;
+  currency?: string | null;
 }) {
-  const { formatToman, t } = useStorefrontLocale();
-  const price =
-    Number(product.priceToman) > 0
-      ? formatToman(product.priceToman)
-      : Number(product.priceUsd) > 0
-        ? `$${Number(product.priceUsd)}`
-        : "—";
+  const { formatProductPrice, t } = useStorefrontLocale();
+  const price = formatProductPrice(product, currency) || "—";
 
   return (
     <motion.button
@@ -828,18 +813,20 @@ export function ServiceCard({
   const statusTone =
     service.status === "active" || service.status === "pending"
       ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
-      : service.status === "expired"
+      : service.status === "expired" || service.status === "depleted"
         ? "bg-rose-500/15 text-rose-700 dark:text-rose-400"
         : "bg-zinc-500/15 text-zinc-600 dark:text-zinc-400";
 
   const statusLabel =
     service.status === "expired"
       ? t("منقضی", "Expired")
-      : service.status === "disabled"
-        ? t("غیرفعال", "Disabled")
-        : service.unused || service.status === "pending"
-          ? t("آمادۀ اتصال", "Ready")
-          : t("فعال", "Active");
+      : service.status === "depleted"
+        ? t("حجم تمام", "Traffic ended")
+        : service.status === "disabled"
+          ? t("غیرفعال", "Disabled")
+          : service.unused || service.status === "pending"
+            ? t("آمادۀ اتصال", "Ready")
+            : t("فعال", "Active");
 
   const barColor =
     pct >= 90 ? "bg-rose-500" : pct >= 75 ? "bg-amber-500" : "bg-emerald-500";
@@ -981,7 +968,7 @@ export function OrderCard({
   onCancel?: () => void;
   cancelling?: boolean;
 }) {
-  const { t, formatToman } = useStorefrontLocale();
+  const { t, formatToman, formatUsd } = useStorefrontLocale();
   const canCancel = ["PENDING_PAYMENT", "PAYMENT_SUBMITTED", "UNDER_REVIEW"].includes(order.status);
   const tone =
     order.status === "ACTIVE" || order.status === "RENEWED"
@@ -997,9 +984,7 @@ export function OrderCard({
   const isToman = ["TOMAN", "IRT", "IRR", "TMN"].includes(cur);
   const amount = isToman
     ? formatToman(order.amount)
-    : cur === "USD"
-      ? `$${order.amount}`
-      : `${order.amount} ${order.currency}`;
+    : formatUsd(order.amount);
 
   return (
     <div className="rounded-2xl border border-zinc-200/90 bg-white p-4 transition hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700">

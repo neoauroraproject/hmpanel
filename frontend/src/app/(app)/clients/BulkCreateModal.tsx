@@ -270,7 +270,7 @@ export function BulkCreateModal({ onClose, inboundsList }: BulkCreateModalProps)
                         return (
                           <label
                             key={i.id}
-                            className="flex items-center gap-3 px-3 py-2.5 text-sm text-zinc-850 dark:text-zinc-200 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-850/30 select-none"
+                            className="flex items-center gap-3 px-3 py-2.5 text-sm text-zinc-800 dark:text-zinc-200 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/50 select-none"
                           >
                             <input
                               type="checkbox"

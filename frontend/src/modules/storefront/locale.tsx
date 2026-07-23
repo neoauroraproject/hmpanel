@@ -23,9 +23,18 @@ type LocaleContextValue = {
   t: (fa: string, en: string) => string;
   tomanLabel: string;
   formatToman: (value: number | string | null | undefined) => string;
+  formatUsd: (value: number | string | null | undefined) => string;
+  formatProductPrice: (
+    product: { priceUsd?: number | null; priceToman?: number | null },
+    defaultCurrency?: string | null,
+  ) => string | null;
 };
 
 const LocaleContext = createContext<LocaleContextValue | null>(null);
+
+function isTomanCurrency(code?: string | null) {
+  return ["TOMAN", "IRT", "IRR", "TMN"].includes(String(code || "").toUpperCase());
+}
 
 function detectDefaultLang(store?: StorefrontStore | null): StorefrontLang {
   if (typeof window !== "undefined") {
@@ -83,15 +92,34 @@ function StorefrontLocaleProviderInner({
 
   const value = useMemo<LocaleContextValue>(() => {
     const isFa = lang === "fa";
+    const formatToman = (raw: number | string | null | undefined) => {
+      const n = Number(raw || 0);
+      return `${n.toLocaleString()} ${isFa ? "تومان" : "Toman"}`;
+    };
+    const formatUsd = (raw: number | string | null | undefined) => {
+      const n = Number(raw || 0);
+      return `${n.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${isFa ? "دلار" : "USD"}`;
+    };
     return {
       lang,
       setLang,
       isFa,
       t: (fa, en) => (isFa ? fa : en),
       tomanLabel: isFa ? "تومان" : "Toman",
-      formatToman: (raw) => {
-        const n = Number(raw || 0);
-        return `${n.toLocaleString()} ${isFa ? "تومان" : "Toman"}`;
+      formatToman,
+      formatUsd,
+      formatProductPrice: (product, defaultCurrency) => {
+        const usd = Number(product.priceUsd || 0);
+        const toman = Number(product.priceToman || 0);
+        const preferToman = isTomanCurrency(defaultCurrency);
+        if (preferToman) {
+          if (toman > 0) return formatToman(toman);
+          if (usd > 0) return formatUsd(usd);
+        } else {
+          if (usd > 0) return formatUsd(usd);
+          if (toman > 0) return formatToman(toman);
+        }
+        return null;
       },
     };
   }, [lang, setLang]);
@@ -110,6 +138,26 @@ export function useStorefrontLocale() {
       tomanLabel: "Toman",
       formatToman: (raw: number | string | null | undefined) =>
         `${Number(raw || 0).toLocaleString()} Toman`,
+      formatUsd: (raw: number | string | null | undefined) =>
+        `${Number(raw || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} USD`,
+      formatProductPrice: (
+        product: { priceUsd?: number | null; priceToman?: number | null },
+        defaultCurrency?: string | null,
+      ) => {
+        const usd = Number(product.priceUsd || 0);
+        const toman = Number(product.priceToman || 0);
+        const preferToman = ["TOMAN", "IRT", "IRR", "TMN"].includes(
+          String(defaultCurrency || "").toUpperCase(),
+        );
+        if (preferToman) {
+          if (toman > 0) return `${toman.toLocaleString()} Toman`;
+          if (usd > 0) return `${usd.toLocaleString(undefined, { maximumFractionDigits: 2 })} USD`;
+        } else {
+          if (usd > 0) return `${usd.toLocaleString(undefined, { maximumFractionDigits: 2 })} USD`;
+          if (toman > 0) return `${toman.toLocaleString()} Toman`;
+        }
+        return null;
+      },
     };
   }
   return ctx;

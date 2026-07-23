@@ -344,7 +344,7 @@ function ShopBody(props: {
     isBuyFromPortal,
     serviceName,
   } = props;
-  const { t, formatToman } = useStorefrontLocale();
+  const { t, formatProductPrice } = useStorefrontLocale();
   const paymentCards = useMemo(
     () => resolvePaymentCards(store?.payment),
     [store?.payment],
@@ -502,13 +502,10 @@ function ShopBody(props: {
                   <span>
                     {selectedProduct.durationDays} {t("روز", "days")}
                   </span>
-                  {Number(selectedProduct.priceToman) > 0 ? (
+                  {formatProductPrice(selectedProduct, store?.defaultCurrency) ? (
                     <span className="font-semibold text-[color:var(--store-primary)]">
-                      {formatToman(selectedProduct.priceToman)}
+                      {formatProductPrice(selectedProduct, store?.defaultCurrency)}
                     </span>
-                  ) : null}
-                  {Number(selectedProduct.priceUsd) > 0 ? (
-                    <span className="font-semibold">${Number(selectedProduct.priceUsd)}</span>
                   ) : null}
                 </div>
               </div>
@@ -567,6 +564,7 @@ function ShopBody(props: {
                       >
                         <ProductCard
                           product={product}
+                          currency={store?.defaultCurrency}
                           selected={selectedProduct?.id === product.id}
                           onSelect={() => setSelectedProduct(product)}
                         />
@@ -794,11 +792,11 @@ function ShopBody(props: {
                   label={t("تراکنش", "Transaction ID")}
                   value={form.receiptText || t("فقط تصویر رسید", "Uploaded receipt only")}
                 />
-                {Number(selectedProduct?.priceToman) > 0 ? (
-                  <SummaryRow label={t("مبلغ", "Amount")} value={formatToman(selectedProduct?.priceToman)} />
-                ) : null}
-                {Number(selectedProduct?.priceUsd) > 0 ? (
-                  <SummaryRow label="USD" value={`$${Number(selectedProduct?.priceUsd)}`} />
+                {formatProductPrice(selectedProduct || {}, store?.defaultCurrency) ? (
+                  <SummaryRow
+                    label={t("مبلغ", "Amount")}
+                    value={formatProductPrice(selectedProduct || {}, store?.defaultCurrency) || "—"}
+                  />
                 ) : null}
               </div>
             ) : null}

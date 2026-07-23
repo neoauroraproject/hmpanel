@@ -21,6 +21,26 @@ info()    { echo -e "${BLUE}ℹ${NC}  $*"; }
 step()    { echo -e "\n${CYAN}${BOLD}──── $* ────${NC}"; }
 die()     { error "$*"; exit 1; }
 
+# Compose V2 (`docker compose`) or legacy V1 (`docker-compose`)
+COMPOSE_BIN=()
+resolve_compose() {
+  if docker compose version &>/dev/null 2>&1; then
+    COMPOSE_BIN=(docker compose)
+    return 0
+  fi
+  if command -v docker-compose &>/dev/null; then
+    COMPOSE_BIN=(docker-compose)
+    return 0
+  fi
+  return 1
+}
+compose() {
+  if [[ ${#COMPOSE_BIN[@]} -eq 0 ]]; then
+    resolve_compose || return 1
+  fi
+  "${COMPOSE_BIN[@]}" "$@"
+}
+
 check_root() {
   if [[ $EUID -ne 0 ]]; then
     die "This uninstaller must be run as root. Use: sudo bash uninstall.sh"
@@ -150,10 +170,10 @@ main() {
     cd "$INSTALL_DIR"
     info "Stopping docker containers..."
     if [[ "$REMOVE_DATA" == "y" ]]; then
-      docker compose down -v --rmi all || true
+      compose down -v --rmi all || true
       log "Docker containers, networks, volumes, and images stopped and removed."
     else
-      docker compose down || true
+      compose down || true
       log "Docker containers and networks stopped."
     fi
   else

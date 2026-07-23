@@ -25,6 +25,32 @@ info()    { echo -e "${BLUE}ℹ${NC}  $*"; }
 step()    { echo -e "\n${CYAN}${BOLD}──── $* ────${NC}"; }
 die()     { error "$*"; exit 1; }
 
+# Compose V2 (`docker compose`) or legacy V1 (`docker-compose`)
+COMPOSE_BIN=()
+resolve_compose() {
+  if docker compose version &>/dev/null 2>&1; then
+    COMPOSE_BIN=(docker compose)
+    return 0
+  fi
+  if command -v docker-compose &>/dev/null; then
+    COMPOSE_BIN=(docker-compose)
+    return 0
+  fi
+  return 1
+}
+compose() {
+  if [[ ${#COMPOSE_BIN[@]} -eq 0 ]]; then
+    resolve_compose || die "Docker Compose is not available (need 'docker compose' or 'docker-compose')"
+  fi
+  "${COMPOSE_BIN[@]}" "$@"
+}
+compose_cmd_str() {
+  if [[ ${#COMPOSE_BIN[@]} -eq 0 ]]; then
+    resolve_compose || { echo "docker compose"; return; }
+  fi
+  echo "${COMPOSE_BIN[*]}"
+}
+
 # ─────────────────────────────────────────────────────────────────
 # Global Helpers
 # ─────────────────────────────────────────────────────────────────
@@ -241,8 +267,8 @@ install_docker() {
 }
 
 install_docker_compose() {
-  if docker compose version &>/dev/null 2>&1 || command -v docker-compose &>/dev/null; then
-    log "Docker Compose is already installed"
+  if resolve_compose; then
+    log "Docker Compose is already installed ($(compose_cmd_str))"
     return
   fi
 
@@ -256,6 +282,23 @@ install_docker_compose() {
   mkdir -p /usr/local/lib/docker/cli-plugins
   run_with_spinner "Installing Docker Compose" curl -SL "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-linux-${COMPOSE_ARCH}" -o /usr/local/lib/docker/cli-plugins/docker-compose
   chmod +x /usr/local/lib/docker/cli-plugins/docker-compose 2>/dev/null || true
+
+  if resolve_compose; then
+    log "Docker Compose ready ($(compose_cmd_str))"
+    return
+  fi
+
+  # Fallback: standalone Compose V1 binary (legacy Docker without CLI plugins)
+  warn "Compose V2 plugin unavailable — installing legacy docker-compose (V1)..."
+  local v1_arch="$COMPOSE_ARCH"
+  run_with_spinner "Installing docker-compose V1" curl -SL "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-Linux-${v1_arch}" -o /usr/local/bin/docker-compose
+  chmod +x /usr/local/bin/docker-compose 2>/dev/null || true
+
+  if resolve_compose; then
+    log "Docker Compose ready ($(compose_cmd_str))"
+  else
+    die "Docker Compose installation failed. Install 'docker compose' (v2) or 'docker-compose' (v1) and retry."
+  fi
 }
 
 # ─────────────────────────────────────────────────────────────────
@@ -438,8 +481,8 @@ ssl_fallback_to_http() {
   update_env "NEXT_PUBLIC_API_URL" "http://${DOMAIN}/api"
 
   # Restart/Recreate nginx container to pick up the patched config
-  docker compose -f "${INSTALL_DIR}/docker-compose.yml" down nginx >/dev/null 2>&1 || true
-  docker compose -f "${INSTALL_DIR}/docker-compose.yml" up -d nginx >/dev/null 2>&1 || true
+  compose -f "${INSTALL_DIR}/docker-compose.yml" down nginx >/dev/null 2>&1 || true
+  compose -f "${INSTALL_DIR}/docker-compose.yml" up -d nginx >/dev/null 2>&1 || true
 
   log "HTTP-only mode active. You can add SSL later via: hmpanel -> SSL Management"
 }
@@ -632,7 +675,7 @@ step_4_database() {
     log "Pre-flight permissions check passed."
   fi
 
-  if ! run_with_spinner "Starting PostgreSQL container" docker compose up -d postgres; then
+  if ! run_with_spinner "Starting PostgreSQL container" compose up -d postgres; then
     die "Failed to start database container."
   fi
 
@@ -677,7 +720,7 @@ step_4_database() {
 step_5_redis() {
   step "[5/10] Redis"
   cd "$INSTALL_DIR"
-  if ! run_with_spinner "Starting Redis container" docker compose up -d redis; then
+  if ! run_with_spinner "Starting Redis container" compose up -d redis; then
     die "Failed to start redis container."
   fi
 }
@@ -690,7 +733,7 @@ step_6_application() {
   local pull_attempt=1
   local pull_success=false
   while [[ $pull_attempt -le $max_pull ]]; do
-    if run_with_spinner "Pulling latest images (Attempt $pull_attempt/$max_pull)" docker compose pull; then
+    if run_with_spinner "Pulling latest images (Attempt $pull_attempt/$max_pull)" compose pull; then
       pull_success=true
       break
     else
@@ -705,7 +748,7 @@ step_6_application() {
   
   info "Running Database Initialization and Migrations..."
 
-  if ! run_with_spinner "Applying Schema & Migrations" docker compose run --rm panel-app /bin/sh -c "node backend/dist/scripts/upgrade-legacy-store-schema.js || true; npx prisma db push --schema=/app/prisma/schema.prisma --accept-data-loss && node backend/dist/scripts/run-migrations.js && (node backend/dist/scripts/baseline-prisma-migrations.js || true)"; then
+  if ! run_with_spinner "Applying Schema & Migrations" compose run --rm panel-app /bin/sh -c "node backend/dist/scripts/upgrade-legacy-store-schema.js || true; npx prisma db push --schema=/app/prisma/schema.prisma --accept-data-loss && node backend/dist/scripts/run-migrations.js && (node backend/dist/scripts/baseline-prisma-migrations.js || true)"; then
     die "Failed to initialize database schema."
   fi
 
@@ -734,7 +777,7 @@ END \$\$;
 " || warn "Pre-migration SQL failed, but continuing..."
   fi
 
-  if ! run_with_spinner "Starting Application services" docker compose up -d; then
+  if ! run_with_spinner "Starting Application services" compose up -d; then
     die "Failed to start application services."
   fi
   verify_nginx_status
@@ -857,7 +900,11 @@ step_10_complete() {
   step "[10/10] Installation Complete"
   if command -v systemctl &>/dev/null; then
     info "Setting up systemd service..."
-    cat > /etc/systemd/system/hmpanel.service <<EOF
+    resolve_compose || true
+    local compose_exec
+    if [[ ${#COMPOSE_BIN[@]} -gt 0 && "${COMPOSE_BIN[0]}" == "docker-compose" ]]; then
+      compose_exec="$(command -v docker-compose)"
+      cat > /etc/systemd/system/hmpanel.service <<EOF
 [Unit]
 Description=HMPanel
 Requires=docker.service
@@ -867,16 +914,37 @@ After=docker.service
 Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=${INSTALL_DIR}
-ExecStart=/usr/bin/docker compose up -d
-ExecStop=/usr/bin/docker compose down
+ExecStart=${compose_exec} up -d
+ExecStop=${compose_exec} down
 TimeoutStartSec=300
 
 [Install]
 WantedBy=multi-user.target
 EOF
+    else
+      local docker_bin
+      docker_bin="$(command -v docker || echo /usr/bin/docker)"
+      cat > /etc/systemd/system/hmpanel.service <<EOF
+[Unit]
+Description=HMPanel
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=${INSTALL_DIR}
+ExecStart=${docker_bin} compose up -d
+ExecStop=${docker_bin} compose down
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    fi
     systemctl daemon-reload >/dev/null 2>&1 || true
     systemctl enable hmpanel >/dev/null 2>&1 || true
-    log "Systemd auto-start enabled"
+    log "Systemd auto-start enabled ($(compose_cmd_str))"
   fi
 
   print_success
