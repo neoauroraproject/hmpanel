@@ -239,7 +239,18 @@ export class LicenseActivationService {
 
     try {
       const state = await this.licenseManager.getLicenseState();
-      const { res, data } = await this.requestBundleUrl(licenseKey);
+      let { res, data } = await this.requestBundleUrl(licenseKey);
+
+      // Instance id often changes after hm update / restore / container recreate.
+      // Re-bind this panel to the license, then retry (same recovery as resolveBundleDownloadUrl).
+      if (!res.ok && this.isActivationMismatch(data, res.status)) {
+        this.logger.warn(
+          'Bundle update: license server has no activation for this instance — re-registering…',
+        );
+        await this.reregisterWithLicenseServer(licenseKey);
+        ({ res, data } = await this.requestBundleUrl(licenseKey));
+      }
+
       if (!res.ok) {
         const message =
           (typeof data.error === 'string' && data.error) ||

@@ -8,6 +8,13 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [1.8.7] - 2026-07-24
+
+### Fixed
+- **Premium bundle update:** `No active activation for this instance` when updating the bundle after panel recreate / restore — `updateBundle` now re-registers the instance with the license server and retries (same recovery as download path).
+
+---
+
 ## [1.8.6] - 2026-07-24
 
 ### Fixed
