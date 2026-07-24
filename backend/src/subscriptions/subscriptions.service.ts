@@ -283,7 +283,26 @@ export class SubscriptionsService {
 
       const responses = await Promise.all(fetchPromises);
       let combinedData = '';
-      let firstValidResponse = null;
+      let firstValidResponse: any = null;
+      let sawClashYaml = false;
+
+      const looksLikeClash = (s: string) =>
+        /^\s*(proxies|proxy-groups|rules|mixed-port|port)\s*:/m.test(s) ||
+        s.includes('proxy-groups:') ||
+        s.includes('\nproxies:');
+
+      const tryDecodeSubBody = (content: string): string => {
+        const trimmed = content.trim();
+        if (!trimmed) return '';
+        if (looksLikeClash(trimmed) || /:\/\//.test(trimmed)) return trimmed;
+        try {
+          const decoded = Buffer.from(trimmed, 'base64').toString('utf-8');
+          if (looksLikeClash(decoded) || /:\/\//.test(decoded)) return decoded;
+        } catch {
+          /* keep original */
+        }
+        return trimmed;
+      };
 
       for (const response of responses) {
         if (!response || !response.data) continue;
@@ -294,16 +313,8 @@ export class SubscriptionsService {
           content = JSON.stringify(content);
         }
 
-        let decoded = content;
-        try {
-          decoded = Buffer.from(content, 'base64').toString('utf-8');
-          if (!decoded.includes('://')) {
-            decoded = content;
-          }
-        } catch (e) {
-          decoded = content;
-        }
-
+        const decoded = tryDecodeSubBody(content);
+        if (looksLikeClash(decoded)) sawClashYaml = true;
         combinedData += decoded + '\n';
       }
 
@@ -312,7 +323,6 @@ export class SubscriptionsService {
       }
 
       const totalTraffic = details.total;
-      const usedTraffic = details.up + details.down;
       const expireDate = Math.floor(details.expiryTime / 1000);
 
       res.setHeader(
@@ -320,11 +330,26 @@ export class SubscriptionsService {
         `upload=${details.up}; download=${details.down}; total=${totalTraffic}; expire=${expireDate}`,
       );
 
+      const titleSource =
+        String(details.remark || details.email || 'subscription').trim() ||
+        'subscription';
+      res.setHeader(
+        'profile-title',
+        `base64:${Buffer.from(titleSource, 'utf8').toString('base64')}`,
+      );
+
+      if (details.portalSettings?.websiteUrl) {
+        res.setHeader('support-url', String(details.portalSettings.websiteUrl));
+      } else if (details.portalSettings?.telegramLink) {
+        res.setHeader('support-url', String(details.portalSettings.telegramLink));
+      }
+
       const headersToForward = [
         'profile-update-interval',
         'profile-web-page-url',
-        'content-type',
         'content-disposition',
+        'announce',
+        'update-interval',
       ];
 
       for (const h of headersToForward) {
@@ -333,8 +358,29 @@ export class SubscriptionsService {
         }
       }
 
-      const finalBase64 = Buffer.from(combinedData.trim()).toString('base64');
-      res.send(finalBase64);
+      // Single Clash YAML response: passthrough (do not re-base64 — breaks Clash clients)
+      if (sawClashYaml && responses.filter((r) => r?.data).length === 1) {
+        const raw = firstValidResponse.data;
+        const body = typeof raw === 'string' ? raw : JSON.stringify(raw);
+        res.setHeader(
+          'Content-Type',
+          firstValidResponse.headers['content-type'] ||
+            'text/yaml; charset=utf-8',
+        );
+        return res.send(body);
+      }
+
+      // Normalize to URI lines when possible, then classic base64 for v2ray*/v2box
+      const lines = combinedData
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter(Boolean);
+      const uriLines = lines.filter((l) => /^[a-z0-9+.-]+:\/\//i.test(l));
+      const payload = (uriLines.length ? uriLines : lines).join('\n');
+      const finalBase64 = Buffer.from(payload).toString('base64');
+
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      return res.send(finalBase64);
     } catch (error: any) {
       if (error instanceof NotFoundException) {
         return res.status(404).send('Subscription not found');

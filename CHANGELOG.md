@@ -8,6 +8,15 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [1.8.8] - 2026-07-25
+
+### Fixed
+- **Backup analyze 413:** Nginx `client_max_body_size` raised from 50M to 2048M (matches backend upload limit) so full backups can be uploaded for restore analysis; longer proxy timeouts for large uploads.
+- **Default sub portal:** Persian UI + FA/EN language toggle; default language Persian.
+- **Subscription import:** Stop treating Mozilla-like VPN client User-Agents as browsers (HTML redirect broke some v2ray apps while v2box worked); copy/QR links use `?raw=1`; safer Clash YAML passthrough and `profile-title` headers.
+
+---
+
 ## [1.8.7] - 2026-07-24
 
 ### Fixed

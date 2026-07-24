@@ -808,6 +808,7 @@
     "backupGenerated": "Backup generated and downloaded",
     "backupFailed": "Failed to generate backup",
     "analyzeFailed": "Failed to analyze upload",
+    "analyzeTooLarge": "Backup file is too large for upload (nginx limit). Update the panel, or restore via CLI: hm restore <file>",
     "restoreSuccess": "Restore applied — reloading…",
     "restoreInitiated": "Restore started — panel will restart. Wait ~1–2 minutes then refresh.",
     "restoreFailed": "Restore failed",

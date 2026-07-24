@@ -18,7 +18,6 @@ import { API_BASE } from "@/lib/api";
 import { formatBytes, formatDate } from "@/lib/format";
 import {
   ensureVazirFont,
-  hasPersianText,
   resolveThemeLogo,
 } from "@/modules/shared/brand-logo";
 import { getConnectionRenderer } from "@/components/connection/RendererRegistry";
@@ -84,15 +83,22 @@ const STRINGS = {
   disabled: { fa: "غیرفعال", en: "Disabled" },
   depleted: { fa: "تمام‌شده", en: "Depleted" },
   traffic: { fa: "ترافیک", en: "Traffic" },
+  trafficUsage: { fa: "مصرف ترافیک", en: "Traffic Usage" },
   usage: { fa: "مصرف", en: "Usage" },
   unlimited: { fa: "نامحدود", en: "Unlimited" },
+  days: { fa: "روز", en: "Days" },
   daysLeft: { fa: "روز مانده", en: "days left" },
   expiresOn: { fa: "انقضا", en: "Expires" },
+  expiresOnDate: { fa: "تاریخ انقضا", en: "Expires on" },
+  noExpiry: { fa: "بدون تاریخ انقضا", en: "No expiration date" },
   never: { fa: "بدون انقضا", en: "Never" },
+  copy: { fa: "کپی", en: "Copy" },
   copyLink: { fa: "کپی لینک ساب", en: "Copy subscription" },
   copied: { fa: "کپی شد", en: "Copied" },
   qr: { fa: "کیوآر", en: "QR" },
+  qrCode: { fa: "کیوآر کد", en: "QR Code" },
   scanQr: { fa: "اسکن کیوآر کد", en: "Scan QR Code" },
+  saveQr: { fa: "ذخیره تصویر کیوآر", en: "Save QR Image" },
   configs: { fa: "کانفیگ‌ها", en: "Configurations" },
   nodes: { fa: "نود", en: "nodes" },
   noConfigs: { fa: "هنوز کانفیگی موجود نیست.", en: "No configs available yet." },
@@ -102,8 +108,18 @@ const STRINGS = {
   website: { fa: "وب‌سایت", en: "Website" },
   email: { fa: "ایمیل", en: "Email" },
   importApp: { fa: "ورود به اپ", en: "Import to App" },
+  importHint: {
+    fa: "اشتراک را به‌صورت خودکار وارد اپلیکیشن سازگار کنید.",
+    en: "Automatically import your subscription into a compatible VPN client.",
+  },
+  importPick: {
+    fa: "اپ مورد نظر را برای پیکربندی خودکار انتخاب کنید.",
+    en: "Select your preferred app to automatically configure your connection.",
+  },
+  cancel: { fa: "انصراف", en: "Cancel" },
   systemSub: { fa: "لینک سیستم", en: "System Sub" },
   nativeSub: { fa: "لینک پنل", en: "Panel Native" },
+  subLink: { fa: "لینک اشتراک", en: "Subscription Link" },
   client: { fa: "مشتری", en: "Client" },
   remaining: { fa: "باقی‌مانده", en: "Remaining" },
   download: { fa: "دانلود", en: "Download" },
@@ -113,7 +129,10 @@ const STRINGS = {
   remainingTraffic: { fa: "ترافیک باقی‌مانده", en: "Remaining Traffic" },
   remainingData: { fa: "داده باقی‌مانده", en: "Remaining Data" },
   totalUsed: { fa: "مصرف کل", en: "Total Used" },
+  totalConsumed: { fa: "مصرف کل", en: "Total Consumed" },
   totalLimit: { fa: "سقف کل", en: "Total Limit" },
+  showDetails: { fa: "نمایش جزئیات ترافیک", en: "Show Traffic Details" },
+  hideDetails: { fa: "مخفی کردن جزئیات", en: "Hide Traffic Details" },
   clientProfile: { fa: "پروفایل مشتری", en: "Client Profile" },
   hi: { fa: "سلام،", en: "Hi," },
   advancedInfo: { fa: "اطلاعات پیشرفته", en: "Advanced Information" },
@@ -122,6 +141,7 @@ const STRINGS = {
   quickActions: { fa: "عملیات سریع", en: "Quick Actions" },
   poweredBy: { fa: "قدرت‌گرفته از", en: "Powered by" },
   daysRemaining: { fa: "روز باقی‌مانده", en: "days remaining" },
+  subscriptionInfo: { fa: "اطلاعات اشتراک", en: "Subscription Info" },
 } as const;
 
 export type PortalStringKey = keyof typeof STRINGS;
@@ -157,10 +177,17 @@ export function supportContacts(ps?: PortalSettings, t?: (k: PortalStringKey) =>
   return items;
 }
 
-export function buildSystemSubUrl(subId?: string, email?: string) {
+export function buildSystemSubUrl(
+  subId?: string,
+  email?: string,
+  opts?: { raw?: boolean },
+) {
   const key = encodeURIComponent(subId || email || "");
-  if (typeof window === "undefined") return `/s/${key}`;
-  return `${window.location.origin}/s/${key}`;
+  const path = `/s/${key}`;
+  const base =
+    typeof window === "undefined" ? path : `${window.location.origin}${path}`;
+  // ?raw=1 bypasses HTML portal redirect for picky VPN clients
+  return opts?.raw === false ? base : `${base}?raw=1`;
 }
 
 export function buildNativeSubUrl(data: SubData) {
@@ -216,18 +243,8 @@ function detectPortalLang(data: SubData): PortalLang {
     const saved = window.localStorage.getItem(PORTAL_LANG_KEY);
     if (saved === "fa" || saved === "en") return saved;
   }
-  const ps = data.portalSettings;
-  if (
-    hasPersianText(
-      ps?.portalName,
-      ps?.footerText,
-      data.remark,
-      data.email,
-    )
-  ) {
-    return "fa";
-  }
-  return "en";
+  // Community default: Persian unless user previously chose English
+  return "fa";
 }
 
 export function usePortalLocale(data: SubData) {

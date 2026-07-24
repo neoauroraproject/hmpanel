@@ -389,12 +389,14 @@ function BackupRestoreCard() {
       });
       setRestoreAnalysis(res.data);
     } catch (err: any) {
+      const status = err?.response?.status;
+      const serverMsg = err?.response?.data?.message;
       const msg =
-        err?.response?.data?.message ||
-        (Array.isArray(err?.response?.data?.message)
-          ? err.response.data.message.join(", ")
-          : null) ||
-        t("settings.analyzeFailed");
+        status === 413
+          ? t("settings.analyzeTooLarge")
+          : (typeof serverMsg === "string" && serverMsg) ||
+            (Array.isArray(serverMsg) ? serverMsg.join(", ") : null) ||
+            t("settings.analyzeFailed");
       toast(typeof msg === "string" ? msg : t("settings.analyzeFailed"), "error");
     } finally {
       setIsRestoring(false);

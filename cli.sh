@@ -2063,7 +2063,7 @@ server {
     listen 80;
     server_name ${VHOST_DOMAIN};
 
-    client_max_body_size 50M;
+    client_max_body_size 2048M;
 
     location /.well-known/acme-challenge/ {
         root /var/www/acme;
@@ -2129,7 +2129,7 @@ server {
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_prefer_server_ciphers off;
 
-    client_max_body_size 50M;
+    client_max_body_size 2048M;
 
     location /api/ {
         proxy_pass http://backend/;

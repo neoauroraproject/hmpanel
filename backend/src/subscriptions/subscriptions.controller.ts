@@ -74,19 +74,78 @@ export class PublicSubController {
     @Req() req: Request,
     @Res() res: Response,
   ) {
-    const userAgent = (req.headers['user-agent'] || '').toLowerCase();
-    const isBrowser =
-      userAgent.includes('mozilla') ||
-      userAgent.includes('chrome') ||
-      userAgent.includes('safari') ||
-      userAgent.includes('edge');
-
-    // If it's a browser (and they didn't explicitly request raw), redirect to the React portal themes
-    if (isBrowser && !req.query.raw) {
+    // Real browser navigation → HTML portal. VPN clients (even Mozilla-like UAs) → raw sub.
+    if (this.isBrowserNavigation(req)) {
       return res.redirect(`/p/${token}`);
     }
 
-    // Otherwise, for VPN apps (v2rayng, shadowrocket, etc.), proxy the raw config stream
     return this.subscriptionsService.proxySubscription(token, req, res);
+  }
+
+  /**
+   * Do NOT treat every UA containing "mozilla" as a browser — many VPN clients
+   * (Clash Meta, some v2rayN builds, Electron wrappers) include Mozilla/5.0 and
+   * were incorrectly redirected to the HTML portal (import failed; v2box worked).
+   */
+  private isBrowserNavigation(req: Request): boolean {
+    const raw = req.query.raw;
+    if (raw != null && String(raw) !== '0' && String(raw).toLowerCase() !== 'false') {
+      return false;
+    }
+
+    const ua = String(req.headers['user-agent'] || '');
+    const uaLower = ua.toLowerCase();
+    if (!uaLower) return false;
+
+    const vpnHints = [
+      'v2ray',
+      'v2box',
+      'clash',
+      'sing-box',
+      'singbox',
+      'hiddify',
+      'shadowrocket',
+      'streisand',
+      'quantumult',
+      'surge',
+      'loon',
+      'stash',
+      'nekoray',
+      'nekobox',
+      'sfa/',
+      'sfm/',
+      'surfboard',
+      'okhttp',
+      'go-http-client',
+      'dart/',
+      'cfnetwork',
+      'pharos',
+      'napsternet',
+      'foxray',
+      'happ/',
+      'karing',
+      'flclash',
+    ];
+    if (vpnHints.some((h) => uaLower.includes(h))) return false;
+
+    const mode = String(req.headers['sec-fetch-mode'] || '').toLowerCase();
+    const dest = String(req.headers['sec-fetch-dest'] || '').toLowerCase();
+    if (mode === 'navigate' || dest === 'document') return true;
+
+    const accept = String(req.headers['accept'] || '').toLowerCase();
+    const htmlPreferred =
+      accept.startsWith('text/html') ||
+      (accept.includes('text/html') &&
+        (accept.indexOf('*/*') === -1 ||
+          accept.indexOf('text/html') < accept.indexOf('*/*')));
+
+    if (
+      htmlPreferred &&
+      /mozilla|chrome\/|safari\/|firefox\/|edg\//i.test(ua)
+    ) {
+      return true;
+    }
+
+    return false;
   }
 }

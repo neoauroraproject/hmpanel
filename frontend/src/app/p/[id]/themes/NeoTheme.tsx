@@ -568,7 +568,7 @@ export default function NeoTheme({
                 </button>
               </div>
               <a
-                href={`v2rayng://install-config?url=${encodeURIComponent(primarySubUrl)}`}
+                href={`v2rayng://install-sub?url=${encodeURIComponent(primarySubUrl)}`}
                 className={`block w-full py-3.5 text-center text-sm font-semibold ${v.btn} ${v.radius}`}
               >
                 V2rayNG
