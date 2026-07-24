@@ -8,6 +8,15 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [1.8.6] - 2026-07-24
+
+### Fixed
+- **Backup analyze (critical):** `Failed to analyze backup` on upload — detect archive type by magic bytes (not only filename), sanitize upload names for shell safety, preserve real Nest error messages, and use `gzip -dc` + Node FS walk instead of fragile `zcat`/`find`.
+- **Unified engine:** Community `BackupsService` is the single backup/restore engine (HMPanel archives + 3x-ui `getDb`/`getMigration`/`importDB`) for Settings and Premium Backup Center.
+- **Restore UX:** Settings restore toast now shows the server error detail instead of a generic failure.
+
+---
+
 ## [1.8.5] - 2026-07-24
 
 ### Fixed

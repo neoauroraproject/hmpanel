@@ -107,16 +107,21 @@ export class BackupsController {
   @ApiBody({
     schema: {
       type: 'object',
-      properties: { id: { type: 'string' }, fileName: { type: 'string' } },
+      properties: {
+        id: { type: 'string' },
+        fileName: { type: 'string' },
+        panelId: { type: 'string' },
+      },
     },
   })
   async applyBackup(
     @Body('id') id: string,
     @Body('fileName') fileName: string,
+    @Body('panelId') panelId?: string,
   ) {
     if (!id) {
       throw new BadRequestException('id is required');
     }
-    return this.backupsService.applyBackup(id, fileName);
+    return this.backupsService.applyAnalyzedBackup(id, fileName, { panelId });
   }
 }

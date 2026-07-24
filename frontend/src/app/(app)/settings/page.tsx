@@ -388,8 +388,14 @@ function BackupRestoreCard() {
         headers: { "Content-Type": "multipart/form-data" }
       });
       setRestoreAnalysis(res.data);
-    } catch (err) {
-      toast(t("settings.analyzeFailed"), "error");
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.message ||
+        (Array.isArray(err?.response?.data?.message)
+          ? err.response.data.message.join(", ")
+          : null) ||
+        t("settings.analyzeFailed");
+      toast(typeof msg === "string" ? msg : t("settings.analyzeFailed"), "error");
     } finally {
       setIsRestoring(false);
       e.target.value = "";
@@ -457,7 +463,7 @@ function BackupRestoreCard() {
           <label className="w-full flex items-center justify-center gap-2 rounded-lg border-2 border-dashed border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm font-medium text-amber-600 hover:bg-amber-500/20 cursor-pointer disabled:opacity-50 transition-colors">
             {isRestoring && !restoreAnalysis ? <Spinner className="w-5 h-5 text-amber-500" /> : <Upload size={18} />}
             {t("settings.uploadArchive")}
-            <input type="file" accept=".sql,.gz,.tar.gz" className="hidden" onChange={handleRestoreUpload} disabled={isRestoring || isBackingUp} />
+            <input type="file" accept=".sql,.gz,.tar.gz,.tgz,.db,.dump" className="hidden" onChange={handleRestoreUpload} disabled={isRestoring || isBackingUp} />
           </label>
         </div>
       </div>
