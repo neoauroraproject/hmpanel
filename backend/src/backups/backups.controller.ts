@@ -22,6 +22,27 @@ import { RolesGuard, Roles } from '../common/roles.guard';
 import { BackupsService } from './backups.service';
 import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
+import * as multer from 'multer';
+import * as path from 'path';
+import * as fs from 'fs';
+
+const backupsUploadDir =
+  process.env.BACKUP_PATH || path.join(process.cwd(), 'backups');
+
+const backupUploadStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    if (!fs.existsSync(backupsUploadDir)) {
+      fs.mkdirSync(backupsUploadDir, { recursive: true });
+    }
+    cb(null, backupsUploadDir);
+  },
+  filename: (_req, file, cb) => {
+    const safe = path
+      .basename(file.originalname || 'upload.tar.gz')
+      .replace(/[^\w.\-]+/g, '_');
+    cb(null, `upload-staging-${Date.now()}-${safe}`);
+  },
+});
 
 @ApiTags('Backups')
 @ApiBearerAuth()
@@ -34,7 +55,12 @@ export class BackupsController {
   @Post()
   @ApiOperation({ summary: 'Generate a new PostgreSQL backup' })
   @ApiBody({
-    schema: { type: 'object', properties: { type: { type: 'string', enum: ['full', 'database', 'config'] } } },
+    schema: {
+      type: 'object',
+      properties: {
+        type: { type: 'string', enum: ['full', 'database', 'config'] },
+      },
+    },
   })
   async generateBackup(@Body('type') type?: 'full' | 'database' | 'config') {
     return this.backupsService.generateBackup(type || 'full');
@@ -48,7 +74,12 @@ export class BackupsController {
   }
 
   @Post('analyze-upload')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: backupUploadStorage,
+      limits: { fileSize: 2 * 1024 * 1024 * 1024 }, // 2 GB
+    }),
+  )
   @ApiOperation({
     summary: 'Upload and analyze a database backup before restoring',
   })
@@ -74,7 +105,10 @@ export class BackupsController {
   @Post('restore-apply')
   @ApiOperation({ summary: 'Apply a previously analyzed backup' })
   @ApiBody({
-    schema: { type: 'object', properties: { id: { type: 'string' }, fileName: { type: 'string' } } },
+    schema: {
+      type: 'object',
+      properties: { id: { type: 'string' }, fileName: { type: 'string' } },
+    },
   })
   async applyBackup(
     @Body('id') id: string,
@@ -82,9 +116,6 @@ export class BackupsController {
   ) {
     if (!id) {
       throw new BadRequestException('id is required');
-    }
-    if (!fileName) {
-      throw new BadRequestException('fileName is required');
     }
     return this.backupsService.applyBackup(id, fileName);
   }

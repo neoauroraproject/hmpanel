@@ -8,6 +8,20 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [1.8.5] - 2026-07-24
+
+### Fixed
+- **Backup restore (critical):** Web restore now uses the uploaded archive id (not original filename), resolves host path correctly, and no longer fails health check / forced rollback after a successful restore.
+- **Database restore:** `pg_dumpall` archives are restored into the `postgres` database (not `panel_db`) so DROP/CREATE DATABASE works.
+- **Backup storage:** Bind-mount `./backups` so UI and `hm` CLI share the same files; update migrates legacy `hmpanel_backups` volume when needed.
+- **Large uploads:** Analyze/upload uses disk storage (up to 2 GB) instead of loading the whole archive into RAM.
+
+### Changed
+- **Full backup includes premium:** `premium.tar.gz` (plugin bundle) is packed and restored with full backups, alongside DB license rows, uploads, config, and instance id.
+- **Restore UX:** Clearer FA/EN messaging; longer wait before reload while the panel restarts.
+
+---
+
 ## [1.8.4] - 2026-07-20
 
 ### Fixed

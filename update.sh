@@ -275,6 +275,24 @@ END \$\$;
   fi
 
   step "[7/8] Deploying Containers"
+
+  # One-time: migrate legacy named volume hmpanel_backups → bind-mount ./backups
+  mkdir -p "${INSTALL_DIR}/backups"
+  if docker volume inspect hmpanel_backups &>/dev/null; then
+    local vol_files
+    vol_files=$(docker run --rm -v hmpanel_backups:/from alpine sh -c 'ls -A /from 2>/dev/null | wc -l' 2>/dev/null || echo 0)
+    local host_files
+    host_files=$(ls -A "${INSTALL_DIR}/backups" 2>/dev/null | wc -l | tr -d ' ')
+    if [[ "${vol_files:-0}" -gt 0 && "${host_files:-0}" -eq 0 ]]; then
+      info "Migrating backups from Docker volume to ${INSTALL_DIR}/backups ..."
+      docker run --rm \
+        -v hmpanel_backups:/from \
+        -v "${INSTALL_DIR}/backups:/to" \
+        alpine sh -c 'cp -a /from/. /to/ && ls -la /to' || warn "Backup volume migration had warnings"
+      log "Backups migrated to bind mount."
+    fi
+  fi
+
   info "Recreating containers with latest mounts and images..."
   compose up -d --remove-orphans
 

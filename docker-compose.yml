@@ -42,7 +42,7 @@ services:
         condition: service_healthy
     volumes:
       - uploads:/app/uploads
-      - backups:/app/backups
+      - ./backups:/app/backups
       - logs:/app/logs
       - premium:/opt/hmpanel/premium
       - /var/run/docker.sock:/var/run/docker.sock
@@ -167,8 +167,6 @@ volumes:
     name: hmpanel_redisdata
   uploads:
     name: hmpanel_uploads
-  backups:
-    name: hmpanel_backups
   logs:
     name: hmpanel_logs
   premium:

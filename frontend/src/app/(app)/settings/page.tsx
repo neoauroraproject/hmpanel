@@ -400,11 +400,14 @@ function BackupRestoreCard() {
     if (!restoreAnalysis) return;
     setIsRestoring(true);
     try {
-      // @ts-ignore
-      const analysis = restoreAnalysis as { id: string, fileName: string };
-      await api.post(`/backups/restore-apply`, { id: analysis.id, fileName: analysis.fileName });
-      toast(t("settings.restoreSuccess"));
-      setTimeout(() => window.location.reload(), 2000);
+      const analysis = restoreAnalysis as { id: string; fileName: string };
+      await api.post(`/backups/restore-apply`, {
+        id: analysis.id,
+        fileName: analysis.fileName,
+      });
+      toast(t("settings.restoreInitiated"));
+      // Panel restarts during restore — reload after enough time for health
+      setTimeout(() => window.location.reload(), 45000);
     } catch (err) {
       toast(t("settings.restoreFailed"), "error");
       setIsRestoring(false);

@@ -5,14 +5,14 @@ import {
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
-import { spawn, exec } from 'child_process';
+import { exec } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
-import * as zlib from 'zlib';
 import { promisify } from 'util';
 import { HmctlClient } from '../settings/hmctl.client';
 import { getAppVersion } from '../common/utils/app-version';
+
 const execPromise = promisify(exec);
 
 @Injectable()
@@ -43,10 +43,6 @@ export class BackupsService {
       throw new InternalServerErrorException('DATABASE_URL is not configured');
     }
 
-    const parsedUrl = new URL(databaseUrl);
-    parsedUrl.searchParams.delete('schema');
-    const cleanDatabaseUrl = parsedUrl.toString();
-
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const backupId = Date.now().toString();
     const backupFile = path.join(
@@ -64,14 +60,13 @@ export class BackupsService {
         const dbFile = path.join(tempDir, 'database.sql.gz');
         this.logger.log('Exporting database via docker exec...');
         const dbUser = process.env.POSTGRES_USER || 'panel_user';
-        
-        // Ensure the directory exists
+
         fs.mkdirSync(tempDir, { recursive: true });
 
         await execPromise(
-          `docker exec hmpanel-postgres pg_dumpall -c -U ${dbUser} | gzip > "${dbFile}"`
+          `docker exec hmpanel-postgres pg_dumpall -c -U ${dbUser} | gzip > "${dbFile}"`,
         );
-        
+
         checksums['database.sql.gz'] = await this.calculateChecksum(dbFile);
       }
 
@@ -80,8 +75,6 @@ export class BackupsService {
         const confTemp = path.join(this.backupsDir, `temp_conf_${backupId}`);
         fs.mkdirSync(confTemp, { recursive: true });
 
-        // Use standard Node.js path resolutions to find .env and nginx.
-        // Assuming we are running from /app in the docker container.
         const appRoot = process.cwd();
 
         if (fs.existsSync(path.join(appRoot, '.env'))) {
@@ -97,7 +90,6 @@ export class BackupsService {
           );
         }
 
-        // ACME account/certs state — needed for renewals after migrate
         const acmeDir = path.join(appRoot, 'acme.sh');
         if (fs.existsSync(acmeDir)) {
           await execPromise(
@@ -112,8 +104,6 @@ export class BackupsService {
         checksums['config.tar.gz'] = await this.calculateChecksum(confFile);
       }
 
-      // Full backups also pack uploads (branding logos, SSL cache, migration files)
-      // and the stable license instance id for Premium migration.
       const components: string[] = Object.keys(checksums);
       if (type === 'full') {
         const uploadsDir = path.join(process.cwd(), 'uploads');
@@ -121,10 +111,40 @@ export class BackupsService {
           this.logger.log('Archiving uploads (branding assets, etc.)...');
           const uploadsFile = path.join(tempDir, 'uploads.tar.gz');
           await execPromise(`tar -czf "${uploadsFile}" -C "${uploadsDir}" .`);
-          checksums['uploads.tar.gz'] = await this.calculateChecksum(uploadsFile);
+          checksums['uploads.tar.gz'] =
+            await this.calculateChecksum(uploadsFile);
           components.push('uploads.tar.gz');
         } else {
-          this.logger.warn('Uploads directory missing — branding files will not be in this backup');
+          this.logger.warn(
+            'Uploads directory missing — branding files will not be in this backup',
+          );
+        }
+
+        // Premium plugin bundle (store, branding UI, backup-center, etc.)
+        const premiumDir = '/opt/hmpanel/premium';
+        if (fs.existsSync(premiumDir)) {
+          this.logger.log('Archiving premium modules...');
+          const premiumFile = path.join(tempDir, 'premium.tar.gz');
+          try {
+            await execPromise(
+              `tar -czf "${premiumFile}" -C "${premiumDir}" .`,
+            );
+            if (
+              fs.existsSync(premiumFile) &&
+              fs.statSync(premiumFile).size > 32
+            ) {
+              checksums['premium.tar.gz'] =
+                await this.calculateChecksum(premiumFile);
+              components.push('premium.tar.gz');
+            } else {
+              fs.unlinkSync(premiumFile);
+              this.logger.warn('Premium archive empty — skipped');
+            }
+          } catch (err: any) {
+            this.logger.warn(
+              `Could not archive premium volume: ${err.message}`,
+            );
+          }
         }
 
         const instanceCandidates = [
@@ -145,11 +165,11 @@ export class BackupsService {
 
       const manifest = {
         version: getAppVersion(),
-        schemaVersion: '2',
+        schemaVersion: '3',
         timestamp: new Date().toISOString(),
         type: type,
         domain: process.env.PANEL_DOMAIN || 'localhost',
-        components: [...new Set(components)],
+        components: [...new Set([...Object.keys(checksums), ...components])],
         checksums,
       };
 
@@ -168,9 +188,11 @@ export class BackupsService {
         type,
         size: fs.statSync(backupFile).size,
       };
-    } catch (error) {
+    } catch (error: any) {
       this.logger.error('Backup generation failed', error);
-      throw new InternalServerErrorException('Backup failed: ' + error.message);
+      throw new InternalServerErrorException(
+        'Backup failed: ' + (error?.message || error),
+      );
     } finally {
       if (fs.existsSync(tempDir)) {
         await execPromise(`rm -rf "${tempDir}"`).catch(() => {});
@@ -179,21 +201,24 @@ export class BackupsService {
   }
 
   async getBackupFilePath(id: string) {
-    // Strip out potential directory traversal
     const safeId = path.basename(id);
-    let filePath = path.join(this.backupsDir, `backup-${safeId}.sql.gz`);
-
-    if (!fs.existsSync(filePath)) {
-      filePath = path.join(this.backupsDir, safeId);
-      if (!fs.existsSync(filePath)) {
-        throw new NotFoundException('Backup file not found');
+    const candidates = [
+      path.join(this.backupsDir, safeId),
+      path.join(this.backupsDir, `backup-${safeId}.sql.gz`),
+    ];
+    for (const filePath of candidates) {
+      if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+        return filePath;
       }
     }
-    return filePath;
+    throw new NotFoundException('Backup file not found');
   }
 
+  /**
+   * Analyze an uploaded backup. Supports multer memory (file.buffer) or disk (file.path).
+   */
   async analyzeBackup(file: Express.Multer.File) {
-    const safeName = path.basename(file.originalname);
+    const safeName = path.basename(file.originalname || 'upload.tar.gz');
     if (
       !safeName.endsWith('.tar.gz') &&
       !safeName.endsWith('.sql.gz') &&
@@ -205,13 +230,19 @@ export class BackupsService {
     }
 
     const tempId = Date.now().toString();
-    const tempFilePath = path.join(
-      this.backupsDir,
-      `temp-restore-${tempId}-${safeName}`,
-    );
-    fs.writeFileSync(tempFilePath, file.buffer);
+    const storedName = `temp-restore-${tempId}-${safeName}`;
+    const tempFilePath = path.join(this.backupsDir, storedName);
 
-    this.logger.log(`Analyzing backup: ${tempFilePath}`);
+    if (file.path && fs.existsSync(file.path)) {
+      fs.renameSync(file.path, tempFilePath);
+    } else if (file.buffer) {
+      fs.writeFileSync(tempFilePath, file.buffer);
+    } else {
+      throw new BadRequestException('Uploaded file is empty or unreadable');
+    }
+
+    const sizeBytes = fs.statSync(tempFilePath).size;
+    this.logger.log(`Analyzing backup: ${tempFilePath} (${sizeBytes} bytes)`);
 
     try {
       let counts = {
@@ -248,7 +279,9 @@ export class BackupsService {
           END { print "admin:" admin_count+0 ",panel:" panel_count+0 ",inbound:" inbound_count+0 ",store:" store_count+0 ",brand:" brand_count+0 ",domain:" domain_count+0 }
         `;
         try {
-          const { stdout } = await execPromise(`${catCmd} "${sqlFile}" | awk '${awkScript.replace(/\n/g, ' ')}'`);
+          const { stdout } = await execPromise(
+            `${catCmd} "${sqlFile}" | awk '${awkScript.replace(/\n/g, ' ')}'`,
+          );
           const matches = stdout.match(
             /admin:(\d+),panel:(\d+),inbound:(\d+),store:(\d+),brand:(\d+),domain:(\d+)/,
           );
@@ -260,38 +293,35 @@ export class BackupsService {
             counts.brand = parseInt(matches[5], 10);
             counts.domain = parseInt(matches[6], 10);
           }
-        } catch (e) {
+        } catch (e: any) {
           this.logger.warn('Failed to extract counts: ' + e.message);
         }
       };
 
       if (safeName.endsWith('.sql') || safeName.endsWith('.sql.gz')) {
-        // Legacy Support
         await extractCounts(tempFilePath);
         return {
-          id: `temp-restore-${tempId}-${safeName}`,
+          id: storedName,
           fileName: safeName,
           type: 'database',
-          sizeBytes: file.size,
+          sizeBytes,
           uploadDate: new Date(),
           isLegacy: true,
           counts,
+          components: ['database'],
           warnings: [
             'This is a legacy SQL backup format. Full rollback functionality may be limited.',
           ],
         };
       }
 
-      // New format .tar.gz
       const tempExtractDir = path.join(
         this.backupsDir,
         `temp_extract_${tempId}`,
       );
       fs.mkdirSync(tempExtractDir, { recursive: true });
 
-      await execPromise(
-        `tar -xzf "${tempFilePath}" -C "${tempExtractDir}"`,
-      );
+      await execPromise(`tar -xzf "${tempFilePath}" -C "${tempExtractDir}"`);
 
       let manifest: any = null;
       if (fs.existsSync(path.join(tempExtractDir, 'manifest.json'))) {
@@ -310,7 +340,7 @@ export class BackupsService {
         if (stdout.trim()) {
           dbPath = stdout.trim();
         }
-      } catch (e) {
+      } catch (e: any) {
         this.logger.warn('Failed to search for sql files: ' + e.message);
       }
 
@@ -325,6 +355,9 @@ export class BackupsService {
       const hasUploads = fs.existsSync(
         path.join(tempExtractDir, 'uploads.tar.gz'),
       );
+      const hasPremium = fs.existsSync(
+        path.join(tempExtractDir, 'premium.tar.gz'),
+      );
       const hasInstanceId = fs.existsSync(
         path.join(tempExtractDir, '.hmpanel-instance-id'),
       );
@@ -338,6 +371,7 @@ export class BackupsService {
               ? ['config.tar.gz']
               : []),
             ...(hasUploads ? ['uploads.tar.gz'] : []),
+            ...(hasPremium ? ['premium.tar.gz'] : []),
             ...(hasInstanceId ? ['.hmpanel-instance-id'] : []),
           ];
 
@@ -352,39 +386,30 @@ export class BackupsService {
       const isFull = (manifest?.type || 'full') === 'full';
       if (isFull && !hasUploads) {
         warnings.push(
-          'This archive has no uploads.tar.gz — branding logos and other uploaded assets will be missing after restore. Create a new Full backup after updating the panel.',
+          'This archive has no uploads.tar.gz — branding logos and other uploaded assets will be missing after restore.',
+        );
+      }
+      if (isFull && !hasPremium) {
+        warnings.push(
+          'This archive has no premium.tar.gz — premium modules (store, branding UI, etc.) will need to be re-downloaded after restore if they were installed.',
         );
       }
 
-      if (!manifest) {
-        return {
-          id: `temp-restore-${tempId}-${safeName}`,
-          fileName: safeName,
-          type: 'full',
-          sizeBytes: file.size,
-          uploadDate: new Date(),
-          isLegacy: true,
-          counts,
-          components,
-          warnings,
-        };
-      }
-
       return {
-        id: `temp-restore-${tempId}-${safeName}`,
+        id: storedName,
         fileName: safeName,
-        type: manifest.type || 'full',
-        domain: manifest.domain,
-        version: manifest.version,
-        schemaVersion: manifest.schemaVersion,
-        sizeBytes: file.size,
-        uploadDate: new Date(manifest.timestamp || Date.now()),
-        isLegacy: false,
+        type: manifest?.type || 'full',
+        domain: manifest?.domain,
+        version: manifest?.version,
+        schemaVersion: manifest?.schemaVersion,
+        sizeBytes,
+        uploadDate: new Date(manifest?.timestamp || Date.now()),
+        isLegacy: !manifest,
         counts,
         components,
         warnings,
       };
-    } catch (error) {
+    } catch (error: any) {
       if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
       throw new BadRequestException(
         `Failed to analyze backup: ${error.message}`,
@@ -392,25 +417,60 @@ export class BackupsService {
     }
   }
 
-  async restoreBackup(backupId: string) {
+  async restoreBackup(_backupId: string) {
     throw new BadRequestException(
-      'To perform a full transactional restore, please run "hm restore" on the host server CLI. The web UI currently only supports downloading backups.',
+      'Use restore-apply after analyze-upload, or run "hm restore <file>" on the host.',
     );
   }
 
-  async applyBackup(id: string, fileName: string) {
-    const backupFilePath = await this.getBackupFilePath(fileName);
-    
-    // We execute the restore asynchronously because it will stop this very container
+  /**
+   * Apply a previously analyzed backup.
+   * Critical: resolve by `id` (stored temp-restore-* name), not original fileName.
+   * Host CLI receives the basename so it can find the bind-mounted backups dir.
+   */
+  async applyBackup(id: string, fileName?: string) {
+    if (!id) {
+      throw new BadRequestException('Backup id is required');
+    }
+
+    let backupFilePath: string | null = null;
+    const candidates = [id, fileName].filter(Boolean) as string[];
+    for (const name of candidates) {
+      try {
+        backupFilePath = await this.getBackupFilePath(name);
+        break;
+      } catch {
+        /* try next */
+      }
+    }
+    if (!backupFilePath) {
+      throw new NotFoundException(
+        `Backup file not found for id=${id} fileName=${fileName || ''}`,
+      );
+    }
+
+    const basename = path.basename(backupFilePath);
+    this.logger.log(
+      `Scheduling restore of ${basename} (resolved from id=${id})`,
+    );
+
+    // Host `hm restore` runs after a short delay — this container may restart mid-restore
     setTimeout(() => {
-      this.hmctl.execute('restore', backupFilePath).catch(err => {
-        this.logger.error('Failed to execute restore: ' + err.message);
-      });
-    }, 1000);
+      this.hmctl
+        .execute('restore', basename, [], undefined, { timeoutMs: 900_000 })
+        .then((res) => {
+          this.logger.log(`Restore finished: ${JSON.stringify(res)}`);
+        })
+        .catch((err) => {
+          this.logger.error('Failed to execute restore: ' + err.message);
+        });
+    }, 1500);
 
     return {
       success: true,
-      message: 'Restore initiated. The panel will restart shortly.',
+      message:
+        'Restore initiated. The panel will restart shortly. Keep this page open and wait 1–2 minutes.',
+      file: basename,
     };
   }
 }

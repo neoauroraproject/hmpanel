@@ -343,6 +343,7 @@ do_backup() {
     app_ver="${app_ver:-unknown}"
   fi
   
+  mkdir -p "${BACKUP_DIR}"
   local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
   local filename="backup_${backup_type}_$(date +%F_%H-%M-%S).tar.gz"
   local filepath="${BACKUP_DIR}/${filename}"
@@ -396,7 +397,7 @@ do_backup() {
     add_component "config.tar.gz"
   fi
 
-  # Full backups include uploads volume (branding logos, etc.) + instance id
+  # Full backups include uploads, premium modules, and instance id
   if [[ "$backup_type" == "full" ]]; then
     if [[ "$silent" != "true" ]]; then echo " -> Archiving uploads (branding assets)..."; fi
     if docker exec hmpanel-panel test -d /app/uploads 2>/dev/null; then
@@ -418,6 +419,26 @@ do_backup() {
       if [[ "$silent" != "true" ]]; then echo -e "${YELLOW}⚠ Panel container uploads path not found.${NC}"; fi
     fi
 
+    if [[ "$silent" != "true" ]]; then echo " -> Archiving premium modules..."; fi
+    if docker exec hmpanel-panel test -d /opt/hmpanel/premium 2>/dev/null; then
+      if docker exec hmpanel-panel tar -czf - -C /opt/hmpanel/premium . > "${temp_dir}/premium.tar.gz" 2>/dev/null; then
+        if [[ -s "${temp_dir}/premium.tar.gz" ]] && [[ $(stat -c%s "${temp_dir}/premium.tar.gz" 2>/dev/null || echo 0) -gt 32 ]]; then
+          local prem_sum=$(sha256sum "${temp_dir}/premium.tar.gz" | awk '{print $1}')
+          if [[ -n "$checksums" ]]; then checksums+=", "; fi
+          checksums+="\"premium.tar.gz\": \"$prem_sum\""
+          add_component "premium.tar.gz"
+        else
+          rm -f "${temp_dir}/premium.tar.gz"
+          if [[ "$silent" != "true" ]]; then echo -e "${YELLOW}⚠ Premium archive empty — skipped.${NC}"; fi
+        fi
+      else
+        rm -f "${temp_dir}/premium.tar.gz"
+        if [[ "$silent" != "true" ]]; then echo -e "${YELLOW}⚠ Could not archive premium volume.${NC}"; fi
+      fi
+    else
+      if [[ "$silent" != "true" ]]; then echo -e "${YELLOW}⚠ Premium path not found (Community install?).${NC}"; fi
+    fi
+
     # Persist license instance id when available (backups volume)
     local instance_tmp="${temp_dir}/.hmpanel-instance-id"
     if docker exec hmpanel-panel test -f /app/backups/.hmpanel-instance-id 2>/dev/null; then
@@ -437,7 +458,7 @@ do_backup() {
   cat > "${temp_dir}/manifest.json" <<EOF
 {
   "version": "$app_ver",
-  "schemaVersion": "2",
+  "schemaVersion": "3",
   "timestamp": "$timestamp",
   "type": "$backup_type",
   "domain": "${PANEL_DOMAIN:-localhost}",
@@ -461,7 +482,7 @@ EOF
 
 cmd_backup() {
   echo -e "${BOLD}--- Create Backup ---${NC}\n"
-  echo "1. Full Backup (Database + Config + Uploads)"
+  echo "1. Full Backup (Database + Config + Uploads + Premium)"
   echo "2. Database Only"
   echo "3. Configuration Only (.env + nginx + acme)"
   echo "0. Cancel"
@@ -476,19 +497,66 @@ cmd_backup() {
   pause
 }
 
+# Resolve a backup path for restore:
+# - absolute host path
+# - basename under BACKUP_DIR (bind-mounted ./backups)
+# - docker cp from panel container /app/backups (legacy named volume)
+resolve_restore_filepath() {
+  local input="$1"
+  local name
+  name=$(basename "$input")
+
+  if [[ -f "$input" ]]; then
+    echo "$input"
+    return 0
+  fi
+  if [[ -f "${BACKUP_DIR}/${name}" ]]; then
+    echo "${BACKUP_DIR}/${name}"
+    return 0
+  fi
+
+  mkdir -p "${BACKUP_DIR}"
+  if docker exec hmpanel-panel test -f "/app/backups/${name}" 2>/dev/null; then
+    if docker cp "hmpanel-panel:/app/backups/${name}" "${BACKUP_DIR}/${name}" 2>/dev/null; then
+      echo "${BACKUP_DIR}/${name}"
+      return 0
+    fi
+  fi
+  return 1
+}
+
+wait_for_panel_health() {
+  local attempts="${1:-24}"
+  local i=0
+  while [[ $i -lt $attempts ]]; do
+    if docker exec hmpanel-panel curl -sf "http://127.0.0.1:4000/health" 2>/dev/null | grep -q '"status"[[:space:]]*:[[:space:]]*"ok"'; then
+      return 0
+    fi
+    # Fallback: status field without strict JSON quoting
+    if docker exec hmpanel-panel curl -sf "http://127.0.0.1:4000/health" 2>/dev/null | grep -Eq 'ok'; then
+      return 0
+    fi
+    i=$((i + 1))
+    sleep 5
+  done
+  return 1
+}
+
 do_restore() {
-  local filepath="$1"
+  local input_path="$1"
   local silent="${2:-false}"
+  local is_rollback="${3:-false}"
   
-  if [[ ! -f "$filepath" ]]; then
-    if [[ "$silent" != "true" ]]; then echo -e "${RED}✘ File not found: ${filepath}${NC}"; fi
+  local filepath
+  if ! filepath=$(resolve_restore_filepath "$input_path"); then
+    if [[ "$silent" != "true" ]]; then echo -e "${RED}✘ File not found: ${input_path}${NC}"; fi
     return 1
   fi
   
   local temp_dir=$(mktemp -d)
   
   if [[ "$filepath" == *.sql || "$filepath" == *.sql.gz ]]; then
-    # Legacy Restore
+    # Legacy Restore — dump is panel_db only
     if [[ "$silent" != "true" ]]; then echo "Legacy SQL backup detected. Proceeding with database restore..."; fi
     if [[ "$filepath" == *.sql.gz ]]; then
       zcat "$filepath" | docker exec -i hmpanel-postgres psql -U panel_user -d panel_db >/dev/null 2>&1
@@ -518,21 +586,25 @@ do_restore() {
   btype="${btype:-unknown}"
   if [[ "$silent" != "true" ]]; then echo "Starting transactional restore ($btype)..."; fi
   
-  # 1. Create Rollback Backup
-  if [[ "$silent" != "true" ]]; then echo "Creating automatic rollback backup..."; fi
-  local rollback_file=$(do_backup "full" "true")
-  if [[ -z "$rollback_file" || ! -f "$rollback_file" ]]; then
-    if [[ "$silent" != "true" ]]; then echo -e "${RED}✘ Failed to create rollback backup. Restore aborted.${NC}"; fi
-    rm -rf "$temp_dir"
-    return 1
+  # 1. Create Rollback Backup (skip when we are already rolling back)
+  local rollback_file=""
+  if [[ "$is_rollback" != "true" ]]; then
+    if [[ "$silent" != "true" ]]; then echo "Creating automatic rollback backup..."; fi
+    rollback_file=$(do_backup "full" "true")
+    if [[ -z "$rollback_file" || ! -f "$rollback_file" ]]; then
+      if [[ "$silent" != "true" ]]; then echo -e "${RED}✘ Failed to create rollback backup. Restore aborted.${NC}"; fi
+      rm -rf "$temp_dir"
+      return 1
+    fi
   fi
   
   # 2. Execute Restore
   local restore_failed=0
   
   if [[ -f "${temp_dir}/database.sql.gz" ]]; then
-    if [[ "$silent" != "true" ]]; then echo "Restoring database..."; fi
-    if ! zcat "${temp_dir}/database.sql.gz" | docker exec -i hmpanel-postgres psql -U panel_user -d panel_db >/dev/null 2>&1; then
+    if [[ "$silent" != "true" ]]; then echo "Restoring database (pg_dumpall → postgres)..."; fi
+    # pg_dumpall must be restored against the postgres DB (not panel_db) so DROP/CREATE DATABASE works
+    if ! zcat "${temp_dir}/database.sql.gz" | docker exec -i hmpanel-postgres psql -U panel_user -d postgres >/dev/null 2>&1; then
       if [[ "$silent" != "true" ]]; then echo -e "${RED}✘ Database restore failed.${NC}"; fi
       restore_failed=1
     fi
@@ -542,12 +614,14 @@ do_restore() {
     if [[ "$silent" != "true" ]]; then echo "Restoring configuration..."; fi
     tar -xzf "${temp_dir}/config.tar.gz" -C "${INSTALL_DIR}"
     docker restart hmpanel-nginx >/dev/null 2>&1 || true
-    docker restart hmpanel-panel hmpanel-app >/dev/null 2>&1 || true
-    sleep 3
+    docker restart hmpanel-panel >/dev/null 2>&1 || true
+    sleep 5
   fi
 
   if [[ $restore_failed -eq 0 && -f "${temp_dir}/uploads.tar.gz" ]]; then
     if [[ "$silent" != "true" ]]; then echo "Restoring uploads (branding assets)..."; fi
+    # Ensure panel is up enough for docker exec
+    wait_for_panel_health 6 || true
     if docker exec hmpanel-panel mkdir -p /app/uploads >/dev/null 2>&1; then
       if ! docker exec -i hmpanel-panel tar -xzf - -C /app/uploads < "${temp_dir}/uploads.tar.gz"; then
         if [[ "$silent" != "true" ]]; then echo -e "${YELLOW}⚠ Uploads restore failed (continuing — DB/config already applied).${NC}"; fi
@@ -561,18 +635,34 @@ do_restore() {
     fi
   fi
 
+  if [[ $restore_failed -eq 0 && -f "${temp_dir}/premium.tar.gz" ]]; then
+    if [[ "$silent" != "true" ]]; then echo "Restoring premium modules..."; fi
+    wait_for_panel_health 6 || true
+    if docker exec hmpanel-panel mkdir -p /opt/hmpanel/premium >/dev/null 2>&1; then
+      if docker exec -i hmpanel-panel tar -xzf - -C /opt/hmpanel/premium < "${temp_dir}/premium.tar.gz"; then
+        docker restart hmpanel-panel >/dev/null 2>&1 || true
+        sleep 5
+      else
+        if [[ "$silent" != "true" ]]; then echo -e "${YELLOW}⚠ Premium restore failed (license DB rows still restored — re-download bundle if needed).${NC}"; fi
+      fi
+    else
+      if [[ "$silent" != "true" ]]; then echo -e "${YELLOW}⚠ Panel container not ready for premium restore.${NC}"; fi
+    fi
+  fi
+
   if [[ $restore_failed -eq 0 && -f "${temp_dir}/.hmpanel-instance-id" ]]; then
     if [[ "$silent" != "true" ]]; then echo "Restoring instance id..."; fi
-    docker exec -i hmpanel-panel sh -c 'cat > /app/backups/.hmpanel-instance-id' \
-      < "${temp_dir}/.hmpanel-instance-id" 2>/dev/null || \
-      cp "${temp_dir}/.hmpanel-instance-id" "${BACKUP_DIR}/.hmpanel-instance-id" 2>/dev/null || true
+    mkdir -p "${BACKUP_DIR}"
+    cp "${temp_dir}/.hmpanel-instance-id" "${BACKUP_DIR}/.hmpanel-instance-id" 2>/dev/null || true
+    docker exec -i hmpanel-panel sh -c 'mkdir -p /app/backups && cat > /app/backups/.hmpanel-instance-id' \
+      < "${temp_dir}/.hmpanel-instance-id" 2>/dev/null || true
   fi
   
-  # 3. Verify
+  # 3. Verify via in-container health endpoint (ports are not published to host)
   if [[ $restore_failed -eq 0 ]]; then
-    if [[ "$silent" != "true" ]]; then echo "Verifying end-to-end health..."; fi
-    # Simple check for now, backend should be up
-    if ! curl -s --connect-timeout 5 "http://localhost:3000/api/health" | grep -q "ok"; then
+    if [[ "$silent" != "true" ]]; then echo "Verifying panel health..."; fi
+    docker restart hmpanel-panel >/dev/null 2>&1 || true
+    if ! wait_for_panel_health 24; then
       if [[ "$silent" != "true" ]]; then echo -e "${RED}✘ Health verification failed!${NC}"; fi
       restore_failed=1
     fi
@@ -580,9 +670,15 @@ do_restore() {
   
   # 4. Commit or Rollback
   if [[ $restore_failed -eq 1 ]]; then
-    if [[ "$silent" != "true" ]]; then echo -e "${YELLOW}Rolling back to previous state...${NC}"; fi
-    # Recursively call do_restore with rollback file
-    do_restore "$rollback_file" "true"
+    if [[ "$is_rollback" == "true" ]]; then
+      if [[ "$silent" != "true" ]]; then echo -e "${RED}✘ Rollback restore also failed.${NC}"; fi
+      rm -rf "$temp_dir"
+      return 1
+    fi
+    if [[ -n "$rollback_file" && -f "$rollback_file" ]]; then
+      if [[ "$silent" != "true" ]]; then echo -e "${YELLOW}Rolling back to previous state...${NC}"; fi
+      do_restore "$rollback_file" "true" "true"
+    fi
     if [[ "$silent" != "true" ]]; then echo -e "${RED}✘ Restore failed and rollback was applied.${NC}"; fi
     rm -rf "$temp_dir"
     return 1
