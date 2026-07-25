@@ -657,14 +657,25 @@ do_restore() {
   
   # 2. Execute Restore
   local restore_failed=0
+  local db_restore_applied=0
   
   if [[ -f "${temp_dir}/database.sql.gz" ]]; then
     if [[ "$silent" != "true" ]]; then echo "Restoring database (pg_dumpall → postgres)..."; fi
-    # pg_dumpall must be restored against the postgres DB (not panel_db) so DROP/CREATE DATABASE works
-    if ! zcat "${temp_dir}/database.sql.gz" | docker exec -i hmpanel-postgres psql -U panel_user -d postgres >/dev/null 2>&1; then
-      if [[ "$silent" != "true" ]]; then echo -e "${RED}✘ Database restore failed.${NC}"; fi
+    # pg_dumpall must be restored against the postgres DB (not panel_db) so DROP/CREATE DATABASE works.
+    # ON_ERROR_STOP is required — without it psql can exit 0 after partial/failed SQL and leave an empty DB.
+    local db_restore_log
+    db_restore_log=$(mktemp)
+    if zcat "${temp_dir}/database.sql.gz" | docker exec -i hmpanel-postgres \
+      psql -U panel_user -d postgres -v ON_ERROR_STOP=1 >"$db_restore_log" 2>&1; then
+      db_restore_applied=1
+    else
+      if [[ "$silent" != "true" ]]; then
+        echo -e "${RED}✘ Database restore failed.${NC}"
+        tail -n 40 "$db_restore_log" 2>/dev/null || true
+      fi
       restore_failed=1
     fi
+    rm -f "$db_restore_log"
   fi
   
   if [[ $restore_failed -eq 0 && -f "${temp_dir}/config.tar.gz" ]]; then
@@ -680,6 +691,27 @@ do_restore() {
     if [[ -f "${temp_dir}/database.sql.gz" || -f "${temp_dir}/config.tar.gz" ]]; then
       sync_credentials_after_restore "$silent" || true
       sleep 3
+    fi
+  fi
+
+  # Sanity-check: a successful DB restore must leave at least one Admin row.
+  if [[ $restore_failed -eq 0 && $db_restore_applied -eq 1 ]]; then
+    local admin_n=0
+    admin_n=$(docker exec -u postgres hmpanel-postgres \
+      psql -d panel_db -tAc 'SELECT COUNT(*) FROM "Admin"' 2>/dev/null | tr -d '[:space:]' || echo 0)
+    if [[ "${admin_n:-0}" -lt 1 ]]; then
+      if [[ "$silent" != "true" ]]; then
+        echo -e "${RED}✘ Database restore left an empty Admin table — treating as failed.${NC}"
+      fi
+      restore_failed=1
+      db_restore_applied=0
+    else
+      if [[ "$silent" != "true" ]]; then
+        local client_n=0
+        client_n=$(docker exec -u postgres hmpanel-postgres \
+          psql -d panel_db -tAc 'SELECT COUNT(*) FROM "Client"' 2>/dev/null | tr -d '[:space:]' || echo 0)
+        echo "Database verify: Admin=${admin_n} Client=${client_n}"
+      fi
     fi
   fi
 
@@ -745,6 +777,18 @@ do_restore() {
   if [[ $restore_failed -eq 1 ]]; then
     if [[ "$is_rollback" == "true" ]]; then
       if [[ "$silent" != "true" ]]; then echo -e "${RED}✘ Rollback restore also failed.${NC}"; fi
+      rm -rf "$temp_dir"
+      return 1
+    fi
+    # NEVER auto-rollback after a successful DB apply + health flake.
+    # That was wiping restored business data and leaving an empty panel.
+    if [[ $db_restore_applied -eq 1 ]]; then
+      if [[ "$silent" != "true" ]]; then
+        echo -e "${YELLOW}⚠ Keeping restored database (will NOT roll back).${NC}"
+        echo -e "${YELLOW}  Fix health with: hm update   — then re-check the panel.${NC}"
+        echo -e "${YELLOW}  Rollback snapshot kept at: ${rollback_file}${NC}"
+      fi
+      sync_credentials_after_restore "$silent" || true
       rm -rf "$temp_dir"
       return 1
     fi
