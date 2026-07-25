@@ -97,7 +97,10 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
     return eventSource;
   };
 
-  const executeAction = async (actionFn: () => Promise<unknown>) => {
+  const executeAction = async (
+    actionFn: () => Promise<unknown>,
+    redirectDomain?: string,
+  ) => {
     if (isExecutingRef.current) return;
     isExecutingRef.current = true;
     setView("progress");
@@ -114,11 +117,11 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
       let message = t("settings.sslFailedToExecute");
       if (err instanceof Error) {
         if (err.message === "Network Error") {
-          // Nginx restart drops connection
-          if (form.domain && (actionFn.toString().includes("change-domain") || actionFn.toString().includes("issue"))) {
-            setLogs(prev => [...prev, t("settings.sslConnectionLostRedirect"), t("settings.sslRedirectingIn", { domain: form.domain })]);
+          // Recreating nginx at the end of the workflow drops this connection.
+          if (redirectDomain) {
+            setLogs(prev => [...prev, t("settings.sslConnectionLostRedirect"), t("settings.sslRedirectingIn", { domain: redirectDomain })]);
             setTimeout(() => {
-              window.location.href = `https://${form.domain}${window.location.pathname}`;
+              window.location.href = `https://${redirectDomain}${window.location.pathname}`;
             }, 10000);
           }
           return;
@@ -139,8 +142,17 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
     }
   };
 
-  const handleIssue = () => executeAction(() => api.post("/settings/ssl/issue", form));
-  const handleChangeDomain = () => executeAction(() => api.post("/settings/ssl/change-domain", form));
+  const handleIssue = () => executeAction(() => api.post("/settings/ssl/issue", form), form.domain);
+  // change-domain always goes through ACME, so a self-signed choice must use the
+  // issue endpoint (which now adopts the domain too).
+  const handleChangeDomain = () =>
+    executeAction(
+      () =>
+        form.selfSigned
+          ? api.post("/settings/ssl/issue", form)
+          : api.post("/settings/ssl/change-domain", form),
+      form.domain,
+    );
   const handleRenew = () => executeAction(() => api.post("/settings/ssl/renew"));
   const handleEnable = () => executeAction(() => api.post("/settings/ssl/switch", { enableHttps: true }));
   const handleDisable = () => executeAction(() => api.post("/settings/ssl/switch", { enableHttps: false }));

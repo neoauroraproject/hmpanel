@@ -97,7 +97,10 @@ info "Recreating panel-app (reload DATABASE_URL)..."
 compose up -d --force-recreate --no-deps panel-app
 sleep 5
 
-info "Starting nginx + remaining services..."
+info "Recreating nginx (reload PANEL_DOMAIN from .env)..."
+compose up -d --force-recreate --no-deps nginx || warn "Could not recreate nginx."
+
+info "Starting remaining services..."
 compose up -d --remove-orphans
 
 info "Waiting for backend health..."

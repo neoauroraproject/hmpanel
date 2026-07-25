@@ -502,7 +502,22 @@ export class SslService {
     return this.stream$.asObservable();
   }
 
+  private assertValidDomain(domain: string) {
+    const value = (domain || '').trim().toLowerCase();
+    const isFqdn =
+      /^(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/.test(
+        value,
+      );
+    if (!isFqdn) {
+      throw new HttpException(
+        `"${domain}" is not a valid domain name. Use a fully qualified domain such as panel.example.com.`,
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+  }
+
   async issue(domain: string, email: string, selfSigned: boolean = false) {
+    this.assertValidDomain(domain);
     if (this.isExecuting) {
       throw new HttpException(
         'SSL operation already in progress.',
@@ -553,6 +568,7 @@ export class SslService {
   }
 
   async changeDomain(domain: string, email: string) {
+    this.assertValidDomain(domain);
     if (this.isExecuting) {
       throw new HttpException(
         'SSL operation already in progress.',

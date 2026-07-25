@@ -348,19 +348,75 @@ acquire_ssl_lock() {
   trap 'rm -f "$LOCKFILE"; ssl_restore_nginx_if_stopped' EXIT
 }
 
+# .env is the source of truth for the panel domain. Callers that never sourced
+# it (e.g. `hm ssl enable`) would otherwise regenerate nginx.conf with
+# server_name localhost.
+panel_domain() {
+  local d="${PANEL_DOMAIN:-${DOMAIN:-}}"
+  if [[ -z "$d" && -f "${INSTALL_DIR}/.env" ]]; then
+    d=$(grep -E '^(PANEL_)?DOMAIN=' "${INSTALL_DIR}/.env" 2>/dev/null | head -n1 | cut -d= -f2- | tr -d '"'"'"'\r' || true)
+  fi
+  echo "${d:-localhost}"
+}
+
 reload_nginx() {
-  local domain="${PANEL_DOMAIN:-${DOMAIN:-localhost}}"
+  local domain
+  domain=$(panel_domain)
   docker exec \
     -e APP_PORT="${APP_PORT:-3000}" \
     -e BACKEND_PORT="${BACKEND_PORT:-4000}" \
     -e PANEL_DOMAIN="$domain" \
     hmpanel-nginx sh -c "
       sh /etc/nginx/generate_config.sh && nginx -t && nginx -s reload
-    " >/dev/null 2>&1 || docker restart hmpanel-nginx >/dev/null 2>&1
+    " >/dev/null 2>&1 || docker restart hmpanel-nginx >/dev/null 2>&1 || true
 }
 
 reload_nginx_deferred() {
   (sleep 2 && reload_nginx) >/dev/null 2>&1 &
+}
+
+# The nginx container bakes PANEL_DOMAIN at create time from .env, and its
+# entrypoint regenerates nginx.conf on every start. A `docker exec` reload uses
+# the value we pass, but the next restart/reboot would silently rebuild the
+# config with the OLD domain — so after a domain change the container must be
+# recreated, not reloaded.
+recreate_nginx() {
+  cd "$INSTALL_DIR" 2>/dev/null || true
+  compose up -d --force-recreate --no-deps nginx >/dev/null 2>&1 \
+    || docker restart hmpanel-nginx >/dev/null 2>&1 \
+    || true
+  return 0
+}
+
+# generate_config.sh serves HTTPS whenever valid certs exist, so "disable HTTPS"
+# only survives a restart if we leave this marker behind.
+SSL_DISABLED_MARKER="${INSTALL_DIR}/nginx/ssl/.ssl_disabled"
+
+ssl_mark_disabled() {
+  mkdir -p "${INSTALL_DIR}/nginx/ssl"
+  : > "$SSL_DISABLED_MARKER"
+}
+
+ssl_clear_disabled() {
+  rm -f "$SSL_DISABLED_MARKER" 2>/dev/null || true
+}
+
+# Wait until nginx answers /api/health for $1 on HTTPS or HTTP.
+wait_for_nginx_health() {
+  local domain="${1:-localhost}"
+  local attempts="${2:-20}"
+  local i code_https code_http
+  for ((i = 1; i <= attempts; i++)); do
+    code_https=$(curl -s -o /dev/null -w "%{http_code}" -k --max-time 4 \
+      --resolve "${domain}:443:127.0.0.1" "https://${domain}/api/health" 2>/dev/null || echo "000")
+    code_http=$(curl -s -o /dev/null -w "%{http_code}" --max-time 4 \
+      --resolve "${domain}:80:127.0.0.1" "http://${domain}/api/health" 2>/dev/null || echo "000")
+    if [[ "$code_https" == "200" || "$code_http" == "200" ]]; then
+      return 0
+    fi
+    sleep 3
+  done
+  return 1
 }
 
 
@@ -1062,11 +1118,13 @@ verify_nginx_status() {
     config_valid=true
   fi
 
+  local vdomain
+  vdomain=$(panel_domain)
   local curl_success=false
   for i in {1..15}; do
     local code_https code_http
-    code_https=$(curl -s -o /dev/null -w "%{http_code}" -k --resolve "${PANEL_DOMAIN}:443:127.0.0.1" "https://${PANEL_DOMAIN}/api/health" || echo "000")
-    code_http=$(curl -s -o /dev/null -w "%{http_code}" --resolve "${PANEL_DOMAIN}:80:127.0.0.1" "http://${PANEL_DOMAIN}/api/health" || echo "000")
+    code_https=$(curl -s -o /dev/null -w "%{http_code}" -k --max-time 4 --resolve "${vdomain}:443:127.0.0.1" "https://${vdomain}/api/health" || echo "000")
+    code_http=$(curl -s -o /dev/null -w "%{http_code}" --max-time 4 --resolve "${vdomain}:80:127.0.0.1" "http://${vdomain}/api/health" || echo "000")
     
     if [[ "$code_https" == "200" || "$code_http" == "200" ]]; then
       curl_success=true
@@ -1104,20 +1162,23 @@ verify_nginx_status() {
 ssl_fallback_to_http() {
   local reason="${1:-Unknown SSL failure}"
   echo -e "${RED}✘ SSL failed: ${reason}${NC}" >&2
-  
-  # Critical fix: Remove certificates to prevent nginx from picking them up on next restart/repair
-  rm -f "${INSTALL_DIR}/nginx/ssl/fullchain.pem" "${INSTALL_DIR}/nginx/ssl/privkey.pem" 2>/dev/null || true
 
-  # On failure during issuance, we do not touch certificates.
-  # We merely ensure Nginx runs in HTTP mode or falls back to the previous config.
-  local domain="${PANEL_DOMAIN:-${DOMAIN:-localhost}}"
-  docker exec \
+  # Keep the certificates (re-issuing hits CA rate limits) but stop nginx from
+  # loading them, including on any later restart.
+  ssl_mark_disabled
+
+  local domain
+  domain=$(panel_domain)
+  if ! docker exec \
     -e APP_PORT="${APP_PORT:-3000}" \
     -e BACKEND_PORT="${BACKEND_PORT:-4000}" \
     -e PANEL_DOMAIN="$domain" \
     hmpanel-nginx sh -c "
-      envsubst '\$APP_PORT \$BACKEND_PORT \$PANEL_DOMAIN' < /etc/nginx/nginx.conf.http.template > /etc/nginx/nginx.conf && nginx -s reload
-    " >/dev/null 2>&1 || true
+      envsubst '\$APP_PORT \$BACKEND_PORT \$PANEL_DOMAIN' < /etc/nginx/nginx.conf.http.template > /etc/nginx/nginx.conf && nginx -t && nginx -s reload
+    " >/dev/null 2>&1; then
+    # Container is dead or restart-looping: recreating regenerates HTTP config.
+    recreate_nginx
+  fi
 }
 
 ssl_issue() {
@@ -1141,7 +1202,7 @@ ssl_issue() {
         if [[ -n "$deps_json" ]]; then deps_json+=","; fi
         deps_json+="\"$dep\""
       done
-      output_json false "MISSING_DEPENDENCIES" "\"missing\":[$deps_json]"
+      output_json false "MISSING_DEPENDENCIES" "\"missing\":[$deps_json],\"reason\":\"Missing system packages: ${missing_deps[*]}. Install them with: apt-get install -y ${missing_deps[*]}\""
       exit 40
     else
       echo -e "${RED}✗ Error: Missing required system dependencies: ${missing_deps[*]}${NC}" >&2
@@ -1157,7 +1218,7 @@ ssl_issue() {
 
   if [[ -z "${PANEL_DOMAIN:-}" || "$PANEL_DOMAIN" == "localhost" || "$PANEL_DOMAIN" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     if [[ "$JSON_OUTPUT" == "true" ]]; then
-      output_json false "INVALID_DOMAIN"
+      output_json false "INVALID_DOMAIN" "\"reason\":\"A real domain name is required — an IP address or localhost cannot get a certificate.\""
       exit 30
     else
       echo -e "${YELLOW}⚠ IP address or localhost detected (${PANEL_DOMAIN:-None}). Skipping SSL workflow entirely.${NC}"
@@ -1168,7 +1229,7 @@ ssl_issue() {
   stream_progress "Checking DNS..."
   if ! verify_dns "$PANEL_DOMAIN"; then
     if [[ "$JSON_OUTPUT" == "true" ]]; then
-      output_json false "DNS_ERROR"
+      output_json false "DNS_ERROR" "\"domain\":\"$PANEL_DOMAIN\",\"reason\":\"${PANEL_DOMAIN} does not resolve. Add an A record pointing to this server and try again — nothing was changed.\""
       exit 10
     else
       echo -e "${RED}✘ DNS verification failed for $PANEL_DOMAIN${NC}" >&2
@@ -1177,9 +1238,16 @@ ssl_issue() {
   fi
   
   stream_progress "Checking Port..."
-  if ! verify_port_80; then
+  # Our own nginx holding :80 is exactly what the webroot challenge needs, so it
+  # must not be treated as a conflict. The strict check only matters when nginx
+  # is down and a standalone challenge is the only option.
+  local nginx_running
+  nginx_running=$(docker inspect -f '{{.State.Running}}' hmpanel-nginx 2>/dev/null || echo "false")
+  if [[ "$nginx_running" == "true" ]]; then
+    stream_progress "Port 80 is served by hmpanel-nginx — using webroot challenge."
+  elif ! verify_port_80; then
     if [[ "$JSON_OUTPUT" == "true" ]]; then
-      output_json false "PORT_BUSY"
+      output_json false "PORT_BUSY" "\"reason\":\"Port 80 is held by another process and Nginx is not running, so the ACME challenge cannot be answered.\""
       exit 11
     else
       echo -e "${RED}✘ Port 80 is occupied${NC}" >&2
@@ -1188,12 +1256,18 @@ ssl_issue() {
   fi
 
   stream_progress "Preparing environment..."
-  NGINX_STOPPED_FOR_SSL=1
-  docker stop hmpanel-nginx >/dev/null 2>&1 || true
 
   local cert_obtained=false
   local provider="none"
   local SSL_DIR="${INSTALL_DIR}/nginx/ssl"
+  local ACME_WEBROOT="${INSTALL_DIR}/nginx/acme"
+
+  # Webroot challenges are served by the running nginx (both templates expose
+  # /.well-known/acme-challenge/ on the default port-80 server), so the panel
+  # stays online for the whole issuance. Nginx is only stopped if we have to
+  # fall back to a standalone challenge.
+  mkdir -p "${ACME_WEBROOT}/.well-known/acme-challenge"
+  docker start hmpanel-nginx >/dev/null 2>&1 || true
 
   local acme_bin=""
   if [[ -f "${INSTALL_DIR}/acme.sh/acme.sh" ]]; then
@@ -1244,19 +1318,22 @@ ssl_issue() {
     fi
   fi
 
+  # ── Attempt 1: acme.sh webroot (nginx keeps serving) ───────────────
   if [[ -n "$acme_bin" ]]; then
     for ca in "letsencrypt" "zerossl"; do
       if [[ "$cert_obtained" == false ]]; then
-        stream_progress "Trying acme.sh ($ca)..."
+        stream_progress "Trying acme.sh webroot ($ca) — panel stays online..."
         "$acme_bin" --home "${INSTALL_DIR}/acme.sh" --set-default-ca --server "$ca" >/dev/null 2>&1
-        
+
         local issue_success=false
         if command -v timeout &>/dev/null; then
-          if timeout 90 "$acme_bin" --home "${INSTALL_DIR}/acme.sh" --issue -d "$PANEL_DOMAIN" --standalone >/dev/null 2>&1; then
+          if timeout 120 "$acme_bin" --home "${INSTALL_DIR}/acme.sh" --issue -d "$PANEL_DOMAIN" \
+            --webroot "$ACME_WEBROOT" --force >/dev/null 2>&1; then
             issue_success=true
           fi
         else
-          if "$acme_bin" --home "${INSTALL_DIR}/acme.sh" --issue -d "$PANEL_DOMAIN" --standalone >/dev/null 2>&1; then
+          if "$acme_bin" --home "${INSTALL_DIR}/acme.sh" --issue -d "$PANEL_DOMAIN" \
+            --webroot "$ACME_WEBROOT" --force >/dev/null 2>&1; then
             issue_success=true
           fi
         fi
@@ -1268,89 +1345,149 @@ ssl_issue() {
           if [[ -f "${SSL_DIR}/fullchain.pem" && -f "${SSL_DIR}/privkey.pem" ]]; then
             cert_obtained=true
             provider="$ca"
-            stream_progress "Certificate issued successfully via $ca"
+            stream_progress "Certificate issued successfully via $ca (webroot)"
           else
             stream_progress "acme.sh ($ca) issued but cert files missing..."
           fi
         else
-          stream_progress "acme.sh ($ca) failed or timed out..."
+          stream_progress "acme.sh webroot ($ca) failed or timed out..."
         fi
       fi
     done
   fi
 
-  # Certbot fallback
+  # ── Attempt 2: certbot webroot (nginx keeps serving) ───────────────
   if [[ "$cert_obtained" == false ]]; then
-    stream_progress "Trying Certbot..."
+    stream_progress "Trying Certbot webroot..."
     local certbot_exit=1
     if command -v certbot &>/dev/null; then
       if command -v timeout &>/dev/null; then
-        if timeout 120 certbot certonly --standalone --non-interactive --agree-tos -m "admin@$PANEL_DOMAIN" -d "$PANEL_DOMAIN" >/dev/null 2>&1; then
+        if timeout 120 certbot certonly --webroot -w "$ACME_WEBROOT" --non-interactive --agree-tos \
+          -m "${ADMIN_EMAIL:-admin@$PANEL_DOMAIN}" -d "$PANEL_DOMAIN" >/dev/null 2>&1; then
           certbot_exit=0
         fi
       else
-        if certbot certonly --standalone --non-interactive --agree-tos -m "admin@$PANEL_DOMAIN" -d "$PANEL_DOMAIN" >/dev/null 2>&1; then
+        if certbot certonly --webroot -w "$ACME_WEBROOT" --non-interactive --agree-tos \
+          -m "${ADMIN_EMAIL:-admin@$PANEL_DOMAIN}" -d "$PANEL_DOMAIN" >/dev/null 2>&1; then
           certbot_exit=0
         fi
       fi
     else
-      if command -v timeout &>/dev/null; then
-        if timeout 180 docker run --rm -p 80:80 -v "${SSL_DIR}:/etc/letsencrypt" certbot/certbot certonly --standalone --non-interactive --agree-tos -m "admin@$PANEL_DOMAIN" -d "$PANEL_DOMAIN" >/dev/null 2>&1; then
-          certbot_exit=0
-        fi
-      else
-        if docker run --rm -p 80:80 -v "${SSL_DIR}:/etc/letsencrypt" certbot/certbot certonly --standalone --non-interactive --agree-tos -m "admin@$PANEL_DOMAIN" -d "$PANEL_DOMAIN" >/dev/null 2>&1; then
-          certbot_exit=0
-        fi
+      # No -p 80:80 here: the challenge is written into the shared webroot.
+      if timeout 180 docker run --rm \
+        -v "${ACME_WEBROOT}:/var/www/acme" \
+        -v "${SSL_DIR}:/etc/letsencrypt" \
+        certbot/certbot certonly --webroot -w /var/www/acme --non-interactive --agree-tos \
+        -m "${ADMIN_EMAIL:-admin@$PANEL_DOMAIN}" -d "$PANEL_DOMAIN" >/dev/null 2>&1; then
+        certbot_exit=0
       fi
     fi
 
     if [[ $certbot_exit -eq 0 ]]; then
       if [[ -f "/etc/letsencrypt/live/${PANEL_DOMAIN}/privkey.pem" ]]; then
-        cp "/etc/letsencrypt/live/${PANEL_DOMAIN}/privkey.pem" "${SSL_DIR}/privkey.pem"
-        cp "/etc/letsencrypt/live/${PANEL_DOMAIN}/fullchain.pem" "${SSL_DIR}/fullchain.pem"
+        cp -f "/etc/letsencrypt/live/${PANEL_DOMAIN}/privkey.pem" "${SSL_DIR}/privkey.pem"
+        cp -f "/etc/letsencrypt/live/${PANEL_DOMAIN}/fullchain.pem" "${SSL_DIR}/fullchain.pem"
+        cert_obtained=true
       elif [[ -f "${SSL_DIR}/live/${PANEL_DOMAIN}/privkey.pem" ]]; then
-        cp "${SSL_DIR}/live/${PANEL_DOMAIN}/privkey.pem" "${SSL_DIR}/privkey.pem"
-        cp "${SSL_DIR}/live/${PANEL_DOMAIN}/fullchain.pem" "${SSL_DIR}/fullchain.pem"
+        cp -f "${SSL_DIR}/live/${PANEL_DOMAIN}/privkey.pem" "${SSL_DIR}/privkey.pem"
+        cp -f "${SSL_DIR}/live/${PANEL_DOMAIN}/fullchain.pem" "${SSL_DIR}/fullchain.pem"
+        cert_obtained=true
       fi
-      cert_obtained=true
-      provider="certbot"
-      stream_progress "Certificate issued successfully via Certbot"
+      if [[ "$cert_obtained" == true ]]; then
+        provider="certbot"
+        stream_progress "Certificate issued successfully via Certbot (webroot)"
+      else
+        stream_progress "Certbot reported success but cert files are missing..."
+      fi
     else
-      stream_progress "Certbot failed or timed out..."
+      stream_progress "Certbot webroot failed or timed out..."
     fi
   fi
 
-  docker start hmpanel-nginx >/dev/null 2>&1 || true
-  NGINX_STOPPED_FOR_SSL=0
+  # ── Attempt 3: standalone (last resort — nginx pauses briefly) ─────
+  if [[ "$cert_obtained" == false && -n "$acme_bin" ]]; then
+    stream_progress "Webroot failed — trying standalone (panel pauses ~1 min)..."
+    NGINX_STOPPED_FOR_SSL=1
+    docker stop hmpanel-nginx >/dev/null 2>&1 || true
+    for ca in "letsencrypt" "zerossl"; do
+      if [[ "$cert_obtained" == false ]]; then
+        "$acme_bin" --home "${INSTALL_DIR}/acme.sh" --set-default-ca --server "$ca" >/dev/null 2>&1
+        local standalone_ok=false
+        if command -v timeout &>/dev/null; then
+          if timeout 90 "$acme_bin" --home "${INSTALL_DIR}/acme.sh" --issue -d "$PANEL_DOMAIN" \
+            --standalone --force >/dev/null 2>&1; then
+            standalone_ok=true
+          fi
+        else
+          if "$acme_bin" --home "${INSTALL_DIR}/acme.sh" --issue -d "$PANEL_DOMAIN" \
+            --standalone --force >/dev/null 2>&1; then
+            standalone_ok=true
+          fi
+        fi
+        if [[ "$standalone_ok" == true ]]; then
+          "$acme_bin" --home "${INSTALL_DIR}/acme.sh" --install-cert -d "$PANEL_DOMAIN" \
+            --fullchain-file "${SSL_DIR}/fullchain.pem" \
+            --key-file "${SSL_DIR}/privkey.pem" >/dev/null 2>&1 || true
+          if [[ -f "${SSL_DIR}/fullchain.pem" && -f "${SSL_DIR}/privkey.pem" ]]; then
+            cert_obtained=true
+            provider="$ca"
+            stream_progress "Certificate issued successfully via $ca (standalone)"
+          fi
+        fi
+      fi
+    done
+    docker start hmpanel-nginx >/dev/null 2>&1 || true
+    NGINX_STOPPED_FOR_SSL=0
+    sleep 3
+  fi
 
-  if [[ "$cert_obtained" == true ]]; then
-    update_env "SSL_PROVIDER" "$provider"
-    update_env "DOMAIN" "$PANEL_DOMAIN"
-    update_env "PANEL_DOMAIN" "$PANEL_DOMAIN"
-    
-    stream_progress "Reloading Nginx..."
-    reload_nginx
-    sleep 2
-    
-    stream_progress "Verifying..."
+  if [[ "$cert_obtained" != true ]]; then
+    # Nothing was changed: .env still points at the previous domain and the
+    # previous config is untouched, so the panel keeps working as before.
+    ssl_restore_nginx_if_stopped
+    if [[ "$JSON_OUTPUT" == "true" ]]; then
+      output_json false "ACME_FAILED" "\"domain\":\"$PANEL_DOMAIN\",\"reason\":\"Could not get a certificate for ${PANEL_DOMAIN}. Check that its A record points to this server and that port 80 is reachable from the internet. The panel was left on the previous domain.\""
+      exit 12
+    fi
+    echo -e "${RED}✘ Certificate issuance failed. Panel left on the previous domain.${NC}"
+    exit 1
+  fi
+
+  ssl_clear_disabled
+  update_env "SSL_PROVIDER" "$provider"
+  update_env "DOMAIN" "$PANEL_DOMAIN"
+  update_env "PANEL_DOMAIN" "$PANEL_DOMAIN"
+
+  # Recreate (not reload) so the container's baked PANEL_DOMAIN matches .env and
+  # survives future restarts/reboots.
+  stream_progress "Applying domain ${PANEL_DOMAIN} to Nginx..."
+  recreate_nginx
+
+  stream_progress "Waiting for the panel to answer on ${PANEL_DOMAIN}..."
+  if wait_for_nginx_health "$PANEL_DOMAIN" 20; then
+    stream_progress "Panel is reachable on ${PANEL_DOMAIN}."
     if [[ "$JSON_OUTPUT" == "true" ]]; then
       stream_progress "Completed."
       output_json true "SSL_ISSUED" "\"provider\":\"$provider\",\"domain\":\"$PANEL_DOMAIN\""
       exit 0
-    else
-      verify_nginx_status
     fi
-  else
-    if [[ "$JSON_OUTPUT" == "true" ]]; then
-      output_json false "ACME_FAILED"
-      exit 12
-    else
-      echo -e "${RED}✘ Certificate issuance failed.${NC}"
-      exit 1
-    fi
+    verify_nginx_status
+    pause
+    return
   fi
-  pause
+
+  # Cert is fine but nginx will not serve it — never leave the panel dark.
+  stream_progress "Panel did not answer with the new certificate — reverting to HTTP so it stays reachable."
+  ssl_fallback_to_http "Nginx did not become healthy after issuing the certificate"
+  recreate_nginx
+  wait_for_nginx_health "$PANEL_DOMAIN" 10 || true
+
+  if [[ "$JSON_OUTPUT" == "true" ]]; then
+    output_json false "NGINX_UNHEALTHY_AFTER_ISSUE" "\"domain\":\"$PANEL_DOMAIN\",\"reason\":\"The certificate was issued but Nginx would not serve it, so the panel was reverted to HTTP and is still reachable. Run: hm ssl repair\""
+    exit 13
+  fi
+  echo -e "${RED}✘ Nginx could not serve the new certificate. Reverted to HTTP.${NC}"
+  exit 1
 }
 
 ssl_selfsigned() {
@@ -1360,10 +1497,9 @@ ssl_selfsigned() {
     echo -e "${BOLD}--- Generating Self-Signed SSL ---${NC}\n"
   fi
   local SSL_DIR="${INSTALL_DIR}/nginx/ssl"
-  
-  NGINX_STOPPED_FOR_SSL=1
-  docker stop hmpanel-nginx >/dev/null 2>&1 || true
+  mkdir -p "$SSL_DIR"
 
+  # Generated on the host — no need to free port 80, so nginx keeps serving.
   openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
     -keyout "${SSL_DIR}/privkey.pem" \
     -out "${SSL_DIR}/fullchain.pem" \
@@ -1373,12 +1509,34 @@ ssl_selfsigned() {
     docker run --rm -v "${SSL_DIR}:/ssl" alpine sh -c "apk add --no-cache openssl && openssl req -x509 -nodes -days 3650 -newkey rsa:2048 -keyout /ssl/privkey.pem -out /ssl/fullchain.pem -subj '/C=US/ST=State/L=City/O=Organization/CN=${domain}'" >/dev/null 2>&1 || true
   fi
 
-  docker start hmpanel-nginx >/dev/null 2>&1 || true
-  NGINX_STOPPED_FOR_SSL=0
+  if [[ ! -f "${SSL_DIR}/fullchain.pem" || ! -f "${SSL_DIR}/privkey.pem" ]]; then
+    if [[ "$JSON_OUTPUT" == "true" ]]; then
+      output_json false "SELFSIGNED_FAILED" "\"domain\":\"$domain\""
+      exit 12
+    fi
+    echo -e "${RED}✘ Could not generate a self-signed certificate.${NC}"
+    exit 1
+  fi
 
+  ssl_clear_disabled
   update_env "SSL_PROVIDER" "self-signed"
-  reload_nginx
-  sleep 2
+  # Only adopt the domain when one was actually supplied — the default
+  # "localhost" must never overwrite a configured domain.
+  if [[ -n "${1:-}" && "$domain" != "localhost" ]]; then
+    update_env "DOMAIN" "$domain"
+    update_env "PANEL_DOMAIN" "$domain"
+  fi
+  recreate_nginx
+
+  if ! wait_for_nginx_health "$domain" 15; then
+    ssl_fallback_to_http "Nginx did not become healthy with the self-signed certificate"
+    if [[ "$JSON_OUTPUT" == "true" ]]; then
+      output_json false "NGINX_UNHEALTHY_AFTER_ISSUE" "\"domain\":\"$domain\""
+      exit 13
+    fi
+    echo -e "${RED}✘ Nginx unhealthy. Reverted to HTTP.${NC}"
+    exit 1
+  fi
 
   if [[ "$JSON_OUTPUT" == "true" ]]; then
     output_json true "SSL_SELFSIGNED" "\"domain\":\"$domain\""
@@ -1733,11 +1891,26 @@ ssl_enable() {
   fi
 
   if [[ "$JSON_OUTPUT" != "true" ]]; then echo "Enabling HTTPS..."; fi
-  
+
+  ssl_clear_disabled
   reload_nginx
-  
+
+  local domain
+  domain=$(panel_domain)
+  if ! wait_for_nginx_health "$domain" 10; then
+    stream_progress "Panel unreachable with HTTPS — reverting to HTTP."
+    ssl_fallback_to_http "Nginx did not become healthy after enabling HTTPS"
+    if [[ "$JSON_OUTPUT" == "true" ]]; then
+      output_json false "NGINX_UNHEALTHY" "\"domain\":\"$domain\",\"reason\":\"Nginx would not serve HTTPS, so the panel was kept on HTTP. Run: hm ssl repair\""
+      exit 13
+    fi
+    echo -e "${RED}✘ Could not enable HTTPS. Reverted to HTTP.${NC}"
+    pause
+    return
+  fi
+
   if [[ "$JSON_OUTPUT" == "true" ]]; then
-    output_json true "HTTPS_ENABLED"
+    output_json true "HTTPS_ENABLED" "\"domain\":\"$domain\",\"https\":true"
     exit 0
   else
     verify_nginx_status
@@ -1757,18 +1930,25 @@ ssl_disable() {
   
   if [[ "${confirm,,}" == "y" ]]; then
     update_env "SSL_PROVIDER" "none"
-    
-    local domain="${PANEL_DOMAIN:-${DOMAIN:-localhost}}"
+
+    # Marker keeps HTTP mode after any nginx restart; certs are left on disk so
+    # HTTPS can be switched back on without a new CA order.
+    ssl_mark_disabled
+
+    local domain
+    domain=$(panel_domain)
     docker exec \
       -e APP_PORT="${APP_PORT:-3000}" \
       -e BACKEND_PORT="${BACKEND_PORT:-4000}" \
       -e PANEL_DOMAIN="$domain" \
       hmpanel-nginx sh -c "
         envsubst '\$APP_PORT \$BACKEND_PORT \$PANEL_DOMAIN' < /etc/nginx/nginx.conf.http.template > /etc/nginx/nginx.conf && nginx -s reload
-      " >/dev/null 2>&1 || docker restart hmpanel-nginx >/dev/null 2>&1
-    
+      " >/dev/null 2>&1 || recreate_nginx
+
+    wait_for_nginx_health "$domain" 10 || true
+
     if [[ "$JSON_OUTPUT" == "true" ]]; then
-      output_json true "HTTPS_DISABLED"
+      output_json true "HTTPS_DISABLED" "\"domain\":\"$domain\",\"https\":false"
       exit 0
     else
       echo -e "${GREEN}✔ HTTPS Disabled (HTTP configuration applied).${NC}"
@@ -1811,15 +1991,31 @@ ssl_renew() {
   local renew_out=""
   
   if [[ "$provider" == "letsencrypt" || "$provider" == "zerossl" ]]; then
-    renew_out=$("${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" --renew -d "$PANEL_DOMAIN" --force 2>&1)
-    if [[ $? -eq 0 ]]; then renew_success=true; fi
+    if renew_out=$("${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" --renew -d "$PANEL_DOMAIN" --force 2>&1); then
+      renew_success=true
+    else
+      # Certificates first issued with a standalone challenge cannot renew while
+      # nginx owns :80 — retry over the webroot nginx already serves.
+      stream_progress "Renew failed — retrying over webroot..."
+      mkdir -p "${INSTALL_DIR}/nginx/acme/.well-known/acme-challenge"
+      if renew_out=$("${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" \
+        --issue -d "$PANEL_DOMAIN" --webroot "${INSTALL_DIR}/nginx/acme" --force 2>&1); then
+        "${INSTALL_DIR}/acme.sh/acme.sh" --home "${INSTALL_DIR}/acme.sh" --install-cert -d "$PANEL_DOMAIN" \
+          --fullchain-file "${INSTALL_DIR}/nginx/ssl/fullchain.pem" \
+          --key-file "${INSTALL_DIR}/nginx/ssl/privkey.pem" >/dev/null 2>&1 || true
+        renew_success=true
+      fi
+    fi
   elif [[ "$provider" == "certbot" ]]; then
     if command -v certbot &>/dev/null; then
-      renew_out=$(certbot renew --force-renewal 2>&1)
-      if [[ $? -eq 0 ]]; then renew_success=true; fi
+      if renew_out=$(certbot renew --force-renewal 2>&1); then renew_success=true; fi
     else
-      renew_out=$(docker run --rm -v "${INSTALL_DIR}/nginx/ssl:/etc/letsencrypt" certbot/certbot renew --force-renewal 2>&1)
-      if [[ $? -eq 0 ]]; then renew_success=true; fi
+      if renew_out=$(docker run --rm \
+        -v "${INSTALL_DIR}/nginx/acme:/var/www/acme" \
+        -v "${INSTALL_DIR}/nginx/ssl:/etc/letsencrypt" \
+        certbot/certbot renew --webroot -w /var/www/acme --force-renewal 2>&1); then
+        renew_success=true
+      fi
     fi
   fi
 
@@ -1914,20 +2110,38 @@ ssl_repair() {
   fi
   update_env "SSL_PROVIDER" "$provider"
 
-  # 3. Reload Nginx (which dynamically generates HTTP or HTTPS)
-  reload_nginx
+  # Repair means "serve HTTPS again if we can", so it clears an earlier HTTP
+  # fallback. Going back to HTTP on purpose is what `hm ssl disable` is for.
+  if [[ "$cert_exists" == "true" ]]; then
+    ssl_clear_disabled
+  fi
 
-  # 4. Verify Nginx status
+  # 3. Recreate so the container env matches .env (a reload would keep a stale
+  #    PANEL_DOMAIN from the last time the container was created).
+  recreate_nginx
+
+  # 4. Verify, and drop to HTTP rather than leaving the panel unreachable
+  if ! wait_for_nginx_health "$domain" 15; then
+    ssl_fallback_to_http "Nginx unhealthy during repair"
+    recreate_nginx
+    wait_for_nginx_health "$domain" 10 || true
+  fi
+
+  local https_now="true"
+  if [[ -f "$SSL_DISABLED_MARKER" || "$cert_exists" != "true" ]]; then
+    https_now="false"
+  fi
+
   if verify_nginx_status "true"; then
     if [[ "$JSON_OUTPUT" == "true" ]]; then
-      output_json true "REPAIR_SUCCESS" "\"details\":\"Nginx is running and configuration is valid.\""
+      output_json true "REPAIR_SUCCESS" "\"domain\":\"$domain\",\"https\":$https_now,\"details\":\"Nginx is running and configuration is valid.\""
       exit 0
     else
       echo -e "${GREEN}✔ SSL repaired successfully!${NC}"
     fi
   else
     if [[ "$JSON_OUTPUT" == "true" ]]; then
-      output_json false "REPAIR_FAILED" "\"details\":\"Nginx container is not running or configuration is invalid.\""
+      output_json false "REPAIR_FAILED" "\"reason\":\"Nginx is not running or its configuration is invalid. Check: docker compose -f ${INSTALL_DIR}/docker-compose.yml logs --tail 50 nginx\""
       exit 1
     else
       echo -e "${RED}✘ Repair failed. Nginx is not running or configuration is invalid.${NC}"
@@ -2156,6 +2370,36 @@ ssl_status() {
   pause
 }
 
+# Terminal equivalent of the panel's "Change Domain" wizard, so the domain can
+# still be moved when the UI is unreachable.
+ssl_change_domain_interactive() {
+  echo -e "${BOLD}--- Change Panel Domain ---${NC}\n"
+  echo -e "  Current domain: ${CYAN}$(panel_domain)${NC}\n"
+
+  local new_domain new_email confirm
+  read -rp "  New domain (e.g. panel.example.com): " new_domain
+  if [[ -z "$new_domain" || "$new_domain" != *.* ]]; then
+    echo -e "${RED}✘ A fully qualified domain is required.${NC}"
+    pause
+    return
+  fi
+  read -rp "  Admin email for the certificate [admin@${new_domain}]: " new_email
+  new_email="${new_email:-admin@${new_domain}}"
+
+  echo ""
+  echo -e "${YELLOW}⚠ The A record of ${new_domain} must already point to this server.${NC}"
+  read -rp "  Continue? [y/N]: " confirm
+  if [[ "${confirm,,}" != "y" ]]; then
+    echo "Cancelled."
+    pause
+    return
+  fi
+
+  export PANEL_DOMAIN="$new_domain"
+  export ADMIN_EMAIL="$new_email"
+  ssl_issue
+}
+
 cmd_ssl() {
   while true; do
     clear
@@ -2168,6 +2412,7 @@ cmd_ssl() {
     echo "  5) Check SSL Status"
     echo "  6) Test Domain & DNS"
     echo "  7) Repair SSL"
+    echo "  8) Change Panel Domain"
     echo "  0) Back to Main Menu"
     echo ""
     read -rp "  Choice: " choice
@@ -2181,6 +2426,7 @@ cmd_ssl() {
       5) ssl_status ;;
       6) ssl_test_dns ;;
       7) ssl_repair ;;
+      8) ssl_change_domain_interactive ;;
       0) return ;;
       *) echo -e "${RED}Invalid option!${NC}"; sleep 1 ;;
     esac

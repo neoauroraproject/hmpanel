@@ -8,6 +8,24 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [1.8.18] - 2026-07-25
+
+### Fixed
+- **Panel went offline during SSL issuance / domain change:** the workflow stopped Nginx before contacting the CA, so the panel (and the progress stream) died for the whole ACME run. Certificates are now obtained over the webroot Nginx already serves at `/.well-known/acme-challenge/`, and Nginx is only stopped as a last resort if webroot fails.
+- **Domain change did not survive a restart:** `.env` was updated but the Nginx container keeps `PANEL_DOMAIN` from when it was created, and its entrypoint regenerates `nginx.conf` on every start — so any restart or reboot silently rebuilt the config with the previous domain. The container is now recreated instead of reloaded.
+- **UI reported success while the panel was unreachable:** the post-issue verification in `ssl_transactional` was dead code because `ssl_issue` exited first. Issue, change-domain, enable, self-signed and repair now wait for `/api/health` on the target domain and automatically revert to HTTP if Nginx will not serve the certificate, so the panel is never left dark.
+- **"Disable HTTPS" came back by itself** after any Nginx restart, because the config is generated from cert presence alone. A `.ssl_disabled` marker now persists the choice, and certificates are kept on disk instead of deleted (re-enabling no longer needs a new CA order and cannot hit rate limits).
+- **`PORT_BUSY` on servers without `lsof`:** our own Nginx holding port 80 is what the webroot challenge needs, so it is no longer treated as a conflict.
+- **`server_name localhost` after Enable HTTPS:** `hm ssl enable` never sourced `.env`, so the config was regenerated with an empty domain. The domain is now always resolved from `.env`.
+- **Renewals for certificates first issued standalone** failed because Nginx owns port 80; renew now retries over the webroot.
+- **Self-signed selected in the Change Domain wizard** silently ran ACME instead; it now adopts the new domain through the self-signed path.
+- Failures return a human-readable `reason` (DNS not resolving, port 80 unreachable, invalid domain), and invalid domains are rejected before any change is made.
+
+### Added
+- `hm ssl` menu option **8) Change Panel Domain** — moves the domain from the terminal when the UI is unreachable.
+
+---
+
 ## [1.8.17] - 2026-07-25
 
 ### Fixed

@@ -638,6 +638,8 @@ EOF
 
   # Always create dummy certs so Nginx can start if SSL is enabled
   SSL_DIR="${INSTALL_DIR}/nginx/ssl"
+  # A marker left behind by a previous `hm ssl disable` would keep nginx on HTTP.
+  rm -f "${SSL_DIR}/.ssl_disabled" 2>/dev/null || true
   if [[ ! -f "${SSL_DIR}/fullchain.pem" ]]; then
     info "Generating temporary self-signed certificate for initial startup..."
     openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
