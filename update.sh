@@ -204,29 +204,69 @@ main() {
   fi
 
   step "[6/8] Executing Database Migrations"
-  info "Starting database to apply migrations..."
-  compose up -d postgres
-  
-  info "Waiting for database to be ready..."
-  sleep 5 # Ensure postgres is up
-
-  # Heal password drift from restores that only restarted the panel
-  # (pg_dumpall role password vs .env / create-time DATABASE_URL).
+  info "Starting database + redis for migrations..."
   if [[ -f "${INSTALL_DIR}/.env" ]]; then
     set -a
     # shellcheck disable=SC1091
     source "${INSTALL_DIR}/.env"
     set +a
-    local db_user="${POSTGRES_USER:-panel_user}"
-    local db_pass="${POSTGRES_PASSWORD:-}"
-    if [[ -n "$db_pass" ]]; then
-      info "Synchronizing PostgreSQL credentials with .env..."
-      local escaped_pass="${db_pass//\'/\'\'}"
+  fi
+  compose up -d postgres redis
+
+  info "Waiting for database to be ready..."
+  local pg_ready=false
+  local pg_wait=0
+  while [[ $pg_wait -lt 30 ]]; do
+    if docker exec hmpanel-postgres pg_isready -U "${POSTGRES_USER:-panel_user}" -d "${POSTGRES_DB:-panel_db}" &>/dev/null; then
+      pg_ready=true
+      break
+    fi
+    # Superuser socket may work even when role auth is drifted
+    if docker exec -u postgres hmpanel-postgres pg_isready -d postgres &>/dev/null; then
+      pg_ready=true
+      break
+    fi
+    pg_wait=$((pg_wait + 1))
+    sleep 2
+  done
+  if [[ "$pg_ready" != "true" ]]; then
+    die "PostgreSQL did not become ready. Check: docker logs hmpanel-postgres"
+  fi
+
+  # Heal password drift from restores (pg_dumpall role password vs .env).
+  local db_user="${POSTGRES_USER:-panel_user}"
+  local db_pass="${POSTGRES_PASSWORD:-}"
+  if [[ -n "$db_pass" ]]; then
+    info "Synchronizing PostgreSQL credentials with .env..."
+    local escaped_pass="${db_pass//\'/\'\'}"
+    if ! docker exec -u postgres hmpanel-postgres \
+      psql -d postgres -v ON_ERROR_STOP=1 \
+      -c "ALTER ROLE \"${db_user}\" WITH PASSWORD '${escaped_pass}';" >/dev/null 2>&1; then
+      warn "Could not sync DB password via OS user — retrying shortly..."
+      sleep 3
       docker exec -u postgres hmpanel-postgres \
         psql -d postgres -v ON_ERROR_STOP=1 \
         -c "ALTER ROLE \"${db_user}\" WITH PASSWORD '${escaped_pass}';" >/dev/null 2>&1 \
-        || warn "Could not sync DB password (continuing)..."
+        || warn "DB password sync still failing (continuing)..."
+    else
+      log "PostgreSQL role password synced."
     fi
+  fi
+  # Recreate redis so --requirepass + healthcheck match restored .env
+  info "Recreating Redis so password matches .env..."
+  compose up -d --force-recreate --no-deps redis >/dev/null 2>&1 || true
+  sleep 3
+  local redis_wait=0
+  while [[ $redis_wait -lt 20 ]]; do
+    if docker exec hmpanel-redis redis-cli -a "${REDIS_PASSWORD:-redis_secret}" ping 2>/dev/null | grep -qi PONG; then
+      log "Redis is healthy."
+      break
+    fi
+    redis_wait=$((redis_wait + 1))
+    sleep 2
+  done
+  if [[ $redis_wait -ge 20 ]]; then
+    warn "Redis still not responding to ping — migration may fail."
   fi
 
   info "Applying pre-migration schema fixes for existing clients..."
@@ -258,26 +298,32 @@ END \$\$;
   # baseline is best-effort (|| true) so existing prod DBs without _prisma_migrations don't fail updates
   if ! compose run --rm panel-app /bin/sh -c "node backend/dist/scripts/upgrade-legacy-store-schema.js || true; npx prisma db push --schema=/app/prisma/schema.prisma --accept-data-loss && node backend/dist/scripts/run-migrations.js && (node backend/dist/scripts/baseline-prisma-migrations.js || true)"; then
     error "MIGRATION FAILED! Executing emergency rollback..."
-    
-    info "Stopping containers..."
-    compose down
-    
-    if [[ -n "${BACKUP_FILE:-}" && -f "$BACKUP_FILE" ]]; then
-      info "Restoring state from pre-update backup..."
-      hm restore "$BACKUP_FILE"
-      log "Rollback completed."
-    else
-      warn "No backup file found to restore."
-    fi
-    
+
+    # NEVER `compose down` before restore — that removes hmpanel-postgres and
+    # makes `hm restore` fail with: No such container: hmpanel-postgres
     info "Reverting Docker image to previous version..."
     if docker image inspect ghcr.io/neoauroraproject/hmpanel:rollback &>/dev/null; then
       docker tag ghcr.io/neoauroraproject/hmpanel:rollback ghcr.io/neoauroraproject/hmpanel:latest
     fi
-    
-    info "Restarting previous version..."
-    compose up -d
-    die "Update aborted due to migration failure. The system has been rolled back."
+
+    info "Ensuring postgres/redis are up for rollback restore..."
+    compose up -d postgres redis || true
+    sleep 5
+
+    if [[ -n "${BACKUP_FILE:-}" && -f "$BACKUP_FILE" ]]; then
+      info "Restoring state from pre-update backup..."
+      if hm restore "$BACKUP_FILE"; then
+        log "Rollback restore completed."
+      else
+        error "hm restore failed during rollback. Bring stack up manually: cd ${INSTALL_DIR} && docker compose up -d"
+      fi
+    else
+      warn "No backup file found to restore."
+    fi
+
+    info "Starting previous version stack..."
+    compose up -d || true
+    die "Update aborted due to migration failure. Attempted rollback — verify health with: docker compose -f ${INSTALL_DIR}/docker-compose.yml ps"
   fi
   
   log "Migrations completed successfully."

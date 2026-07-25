@@ -8,6 +8,15 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [1.8.12] - 2026-07-25
+
+### Fixed
+- **Update rollback crash:** On migration failure, `update.sh` ran `compose down` then `hm restore`, which failed with `No such container: hmpanel-postgres`. Rollback now keeps/starts postgres+redis first, then restores.
+- **Update Redis unhealthy:** Before migrations, recreate Redis so `requirepass` matches `.env` (avoids `dependency redis failed to start` after restore).
+- **Emergency heal:** `scripts/heal-panel.sh` and `hm heal` bring the stack back (sync DB password, recreate redis/panel/nginx) without a full update.
+
+---
+
 ## [1.8.11] - 2026-07-25
 
 ### Fixed

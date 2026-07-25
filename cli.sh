@@ -331,6 +331,16 @@ cmd_update() {
   pause
 }
 
+cmd_heal() {
+  echo -e "${BOLD}--- Heal HMPanel (emergency) ---${NC}\n"
+  if curl -fsSL https://raw.githubusercontent.com/neoauroraproject/hmpanel/main/scripts/heal-panel.sh | bash; then
+    echo -e "${GREEN}✔ Heal finished.${NC}"
+  else
+    echo -e "${RED}✘ Heal failed — check docker logs.${NC}"
+  fi
+  pause
+}
+
 do_backup() {
   local backup_type="${1:-full}" # full, database, config
   local silent="${2:-false}"
@@ -2698,7 +2708,7 @@ ssl_remove_vhost() {
 # ─────────────────────────────────────────────────────────────────
 # Headless Command Parser (for API/Backend integration)
 # ─────────────────────────────────────────────────────────────────
-if [[ "$JSON_OUTPUT" == "true" || "${1:-}" == "ssl" || "${1:-}" == "doctor" || "${1:-}" == "version" || "${1:-}" == "backup" || "${1:-}" == "restore" ]]; then
+if [[ "$JSON_OUTPUT" == "true" || "${1:-}" == "ssl" || "${1:-}" == "doctor" || "${1:-}" == "version" || "${1:-}" == "backup" || "${1:-}" == "restore" || "${1:-}" == "heal" || "${1:-}" == "update" ]]; then
   HEADLESS=true
   MODULE="${1:-}"
   ACTION="${2:-}"
@@ -2762,6 +2772,12 @@ if [[ "$JSON_OUTPUT" == "true" || "${1:-}" == "ssl" || "${1:-}" == "doctor" || "
     cmd_doctor
   elif [[ "$MODULE" == "version" ]]; then
     cmd_version
+  elif [[ "$MODULE" == "heal" ]]; then
+    curl -fsSL https://raw.githubusercontent.com/neoauroraproject/hmpanel/main/scripts/heal-panel.sh | bash
+    exit $?
+  elif [[ "$MODULE" == "update" ]]; then
+    curl -fsSL https://raw.githubusercontent.com/neoauroraproject/hmpanel/main/update.sh | bash
+    exit $?
   fi
   exit 0
 fi
@@ -2782,6 +2798,7 @@ while true; do
   echo -e "  8. SSL Management"
   echo -e "  9. System Cleanup"
   echo -e "  10. Uninstall HMPanel"
+  echo -e "  11. Heal Panel (fix 502 / auth drift)"
   echo -e "  0. Exit"
   echo ""
   
@@ -2799,6 +2816,7 @@ while true; do
     8) cmd_ssl ;;
     9) cmd_cleanup ;;
     10) cmd_uninstall ;;
+    11) cmd_heal ;;
     0) echo "Goodbye!"; exit 0 ;;
     *) echo -e "  ${RED}Invalid option!${NC}"; sleep 1 ;;
   esac
