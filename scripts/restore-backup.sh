@@ -13,6 +13,7 @@ RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC
 die() { echo -e "${RED}✘${NC}  $*" >&2; exit 1; }
 info() { echo -e "${BLUE}ℹ${NC}  $*"; }
 log() { echo -e "${GREEN}✔${NC}  $*"; }
+warn() { echo -e "${YELLOW}⚠${NC}  $*"; }
 
 [[ $EUID -eq 0 ]] || die "Run as root."
 [[ -n "$BACKUP_NAME" ]] || die "Usage: $0 <backup-file-name-or-path>"
