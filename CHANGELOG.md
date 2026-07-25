@@ -8,6 +8,16 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [1.8.9] - 2026-07-25
+
+### Fixed
+- **Backup restore (critical):** After restore, Postgres role password from `pg_dumpall` and panel `DATABASE_URL` (frozen at container create) could diverge from `.env` → `password authentication failed for user "panel_user"` and `ERR_CONNECTION_REFUSED`. Restore now syncs `ALTER ROLE` to final `.env` and `compose up --force-recreate panel-app` (restart alone is not enough). `hm update` / `update.sh` also heals this drift before migrations.
+- **In-panel update false success:** UI treated image-prune lines (`Total reclaimed space`) as success even when `/health` never came up. Completion now requires healthy backend; health timeout rolls back to previous image.
+- **In-panel updater:** Runs `update.sh` on the host via `nsenter` so Docker Compose / `hm` are available (previously ran inside `docker:latest` without Compose).
+- **Super Admin traffic:** Store approve / renew / client edits no longer fail with `Insufficient traffic balance` for Super Admin; clients overview shows unlimited.
+
+---
+
 ## [1.8.8] - 2026-07-25
 
 ### Fixed

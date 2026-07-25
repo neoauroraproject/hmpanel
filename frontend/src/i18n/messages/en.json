@@ -829,6 +829,8 @@
     "updateInitiateFailed": "Failed to start update",
     "confirmUpdate": "Update the panel now? The service may restart.",
     "updateComplete": "Update complete",
+    "updateFailedHealth": "Update finished but backend did not come up",
+    "updateFailedHint": "On the server run: hm update   — or check logs with: docker compose -f /opt/hmpanel/docker-compose.yml logs --tail 100 panel-app",
     "reloadPanel": "Reload Panel",
     "updateInProgress": "Update in progress…",
     "initializingUpdater": "Initializing updater…",

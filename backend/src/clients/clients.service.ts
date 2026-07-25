@@ -43,12 +43,16 @@ export class ClientsService {
     private lockService: RedisLockService,
   ) {}
 
-  /** Only admins with unlimitedTraffic may own or create unlimited-traffic clients. */
+  /** Only admins with unlimitedTraffic (or Super Admin) may own/create unlimited clients. */
   private assertUnlimitedClientAllowed(
-    targetAdmin: { unlimitedTraffic?: boolean | null },
+    targetAdmin: { unlimitedTraffic?: boolean | null; role?: string | null },
     totalBytes: bigint,
   ): void {
-    if (totalBytes === 0n && !targetAdmin.unlimitedTraffic) {
+    if (
+      totalBytes === 0n &&
+      !targetAdmin.unlimitedTraffic &&
+      targetAdmin.role !== 'SUPER_ADMIN'
+    ) {
       throw new BadRequestException(
         'Only admins with unlimited traffic enabled can create unlimited-traffic clients.',
       );
@@ -57,7 +61,11 @@ export class ClientsService {
 
   private skipTrafficAccounting(admin: {
     unlimitedTraffic?: boolean | null;
+    role?: string | null;
   }): boolean {
+    // Super Admin is never traffic-capped — balance/unlimitedTraffic flags
+    // only affect display aggregation on the clients overview.
+    if (admin.role === 'SUPER_ADMIN') return true;
     return admin.unlimitedTraffic === true;
   }
 
@@ -1500,7 +1508,14 @@ export class ClientsService {
             const admin = await tx.admin.findUnique({
               where: { id: existing.adminId },
             });
-            if (admin && !this.skipTrafficAccounting(admin) && admin.trafficMode === 'ALLOCATION') {
+            // Super Admin operations never debit/credit traffic balances.
+            const skipOwnerAccounting =
+              role === 'SUPER_ADMIN' || this.skipTrafficAccounting(admin ?? {});
+            if (
+              admin &&
+              !skipOwnerAccounting &&
+              admin.trafficMode === 'ALLOCATION'
+            ) {
               if (diff > 0n) {
                 if (admin.balance < Number(diff))
                   throw new BadRequestException('Insufficient traffic balance');
@@ -1520,7 +1535,7 @@ export class ClientsService {
 
             if (
               admin &&
-              !this.skipTrafficAccounting(admin) &&
+              !skipOwnerAccounting &&
               admin.trafficMode === 'ALLOCATION' &&
               diff !== 0n
             ) {
@@ -1794,7 +1809,11 @@ export class ClientsService {
           const admin = await tx.admin.findUnique({
             where: { id: existing.adminId },
           });
-          if (admin && !this.skipTrafficAccounting(admin)) {
+          if (
+            admin &&
+            role !== 'SUPER_ADMIN' &&
+            !this.skipTrafficAccounting(admin)
+          ) {
             if (admin.trafficMode === 'ALLOCATION') {
               if (admin.balance < Number(used)) {
                 throw new BadRequestException(
@@ -2468,6 +2487,7 @@ export class ClientsService {
           });
           if (
             admin &&
+            role !== 'SUPER_ADMIN' &&
             !this.skipTrafficAccounting(admin) &&
             admin.trafficMode === 'ALLOCATION'
           ) {

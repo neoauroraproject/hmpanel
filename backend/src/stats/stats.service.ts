@@ -152,6 +152,7 @@ export class StatsService {
         trafficMode: true,
         unlimitedTraffic: true,
         gracePeriodStart: true,
+        role: true,
       },
     });
 
@@ -296,7 +297,8 @@ export class StatsService {
       admin.balance,
     );
 
-    const unlimitedTraffic = admin.unlimitedTraffic === true;
+    const unlimitedTraffic =
+      admin.unlimitedTraffic === true || admin.role === 'SUPER_ADMIN';
 
     return {
       admin: {

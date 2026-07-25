@@ -829,6 +829,8 @@
     "updateInitiateFailed": "شروع به‌روزرسانی ناموفق بود",
     "confirmUpdate": "پنل اکنون به‌روزرسانی شود؟ سرویس ممکن است راه‌اندازی مجدد شود.",
     "updateComplete": "به‌روزرسانی کامل شد",
+    "updateFailedHealth": "آپدیت تمام شد ولی بک‌اند بالا نیامد",
+    "updateFailedHint": "روی سرور اجرا کنید: hm update   — یا لاگ را ببینید: docker compose -f /opt/hmpanel/docker-compose.yml logs --tail 100 panel-app",
     "reloadPanel": "بارگذاری مجدد پنل",
     "updateInProgress": "به‌روزرسانی در جریان است…",
     "initializingUpdater": "در حال آماده‌سازی به‌روزرسانی…",

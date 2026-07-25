@@ -39,9 +39,22 @@ export class AdminsService implements OnModuleInit {
             role: 'SUPER_ADMIN',
             balance: 0,
             status: 'active',
+            // Super Admin is never traffic-capped; flag drives clients overview UI.
+            unlimitedTraffic: true,
           },
         });
         this.logger.log('Initial SUPER_ADMIN created successfully.');
+      }
+
+      // Backfill: existing Super Admins must never be traffic-capped.
+      const fixed = await this.prisma.admin.updateMany({
+        where: { role: 'SUPER_ADMIN', unlimitedTraffic: false },
+        data: { unlimitedTraffic: true, gracePeriodStart: null },
+      });
+      if (fixed.count > 0) {
+        this.logger.log(
+          `Enabled unlimitedTraffic for ${fixed.count} SUPER_ADMIN account(s).`,
+        );
       }
     } catch (error) {
       this.logger.error('Failed to seed initial admin', error);
@@ -295,13 +308,19 @@ export class AdminsService implements OnModuleInit {
     if (data.refundOnEdit !== undefined)
       updateData.refundOnEdit = data.refundOnEdit;
     if (data.unlimitedTraffic !== undefined) {
-      updateData.unlimitedTraffic = data.unlimitedTraffic;
-      if (data.unlimitedTraffic) {
-        updateData.balance = 0;
-        updateData.totalAssigned = 0;
-        updateData.refundOnDelete = false;
-        updateData.refundOnEdit = false;
+      // Super Admin must always remain unlimited — cannot be capped via UI/API.
+      if (existing.role === 'SUPER_ADMIN') {
+        updateData.unlimitedTraffic = true;
         updateData.gracePeriodStart = null;
+      } else {
+        updateData.unlimitedTraffic = data.unlimitedTraffic;
+        if (data.unlimitedTraffic) {
+          updateData.balance = 0;
+          updateData.totalAssigned = 0;
+          updateData.refundOnDelete = false;
+          updateData.refundOnEdit = false;
+          updateData.gracePeriodStart = null;
+        }
       }
     }
 

@@ -595,6 +595,7 @@ function UpdateCard() {
   const [isUpdating, setIsUpdating] = useState(false);
   const [updateLogs, setUpdateLogs] = useState<string>('');
   const [updateCompleted, setUpdateCompleted] = useState(false);
+  const [updateFailed, setUpdateFailed] = useState(false);
 
   const { data: updateInfo, isLoading } = useQuery({
     queryKey: ['check-update'],
@@ -610,6 +611,7 @@ function UpdateCard() {
       }
       if (res.data.completed) {
         setUpdateCompleted(true);
+        setUpdateFailed(res.data.failed === true || res.data.updateSuccess === false);
       }
     } catch (e) {
       // Panel is likely offline and restarting!
@@ -631,6 +633,7 @@ function UpdateCard() {
       toast(data.message || t("settings.updateStarted"), 'success');
       setIsUpdating(true);
       setUpdateCompleted(false);
+      setUpdateFailed(false);
     },
     onError: (e: Error & { response?: { data?: { message?: string } } }) => {
       toast(e.response?.data?.message || t("settings.updateInitiateFailed"), "error");
@@ -650,13 +653,22 @@ function UpdateCard() {
       <div className="mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-800/60">
         {updateCompleted ? (
           <>
-            <p className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 mb-2">✔ {t("settings.updateComplete")}</p>
+            <p className={`text-sm font-semibold mb-2 ${updateFailed ? "text-red-600 dark:text-red-400" : "text-emerald-600 dark:text-emerald-400"}`}>
+              {updateFailed ? `✘ ${t("settings.updateFailedHealth")}` : `✔ ${t("settings.updateComplete")}`}
+            </p>
+            {updateFailed && (
+              <p className="text-xs text-zinc-500 mb-2">{t("settings.updateFailedHint")}</p>
+            )}
             <pre className="text-[10px] sm:text-xs bg-zinc-900 text-green-400 p-3 rounded-lg overflow-x-auto max-h-48 whitespace-pre-wrap font-mono mb-3">
               {updateLogs}
             </pre>
             <button
               onClick={() => window.location.reload()}
-              className="w-full py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+              className={`w-full py-2 text-white text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-2 ${
+                updateFailed
+                  ? "bg-zinc-600 hover:bg-zinc-500"
+                  : "bg-emerald-500 hover:bg-emerald-600"
+              }`}
             >
               <RefreshCw size={14} /> {t("settings.reloadPanel")}
             </button>

@@ -261,10 +261,28 @@ export class SettingsService {
         '[1/7] Checking Versions (Passed)\n[2/7] Creating Backup (Passed)\n[3/7] Initializing Detached Updater...\n',
       );
 
-      // 8. Run detached background docker container executing the master updater on host
-      const command = `docker run -d --name hmpanel-updater --rm -v "${installDir}:${installDir}" -v ${logVolumeName}:/app/logs -v /var/run/docker.sock:/var/run/docker.sock -w "${installDir}" docker:latest /bin/sh -c "apk add --no-cache bash curl && echo '[4/7] Downloading and Executing master update.sh on host...' >> /app/logs/updater.log && curl -fsSL https://raw.githubusercontent.com/neoauroraproject/hmpanel/main/update.sh | bash >> /app/logs/updater.log 2>&1"`;
+      // 8. Run updater on the HOST (nsenter) so docker compose / hm / openssl
+      // are available. The previous approach ran update.sh inside docker:latest,
+      // which often lacks Compose — UI could still show "success" while the
+      // stack never recovered.
+      const updateScriptPath = `${installDir}/.update-run.sh`;
+      const updaterShell = [
+        'set -e',
+        'apk add --no-cache bash curl util-linux >/dev/null',
+        'echo "[4/7] Running master update.sh on host via nsenter..." >> /updater-logs/updater.log',
+        `curl -fsSL https://raw.githubusercontent.com/neoauroraproject/hmpanel/main/update.sh -o "${updateScriptPath}"`,
+        `chmod +x "${updateScriptPath}"`,
+        'set +e',
+        `nsenter -t 1 -m -u -i -n -- bash "${updateScriptPath}" >> /updater-logs/updater.log 2>&1`,
+        'EC=$?',
+        'echo "[updater] exit=$EC" >> /updater-logs/updater.log',
+        `rm -f "${updateScriptPath}"`,
+        'exit $EC',
+      ].join('\n');
 
-      await execAsync(command);
+      const runCmd = `docker run -d --name hmpanel-updater --rm --privileged --pid=host -v "${installDir}:${installDir}" -v ${logVolumeName}:/updater-logs docker:latest /bin/sh -c ${JSON.stringify(updaterShell)}`;
+
+      await execAsync(runCmd);
 
       return {
         success: true,
@@ -359,32 +377,46 @@ export class SettingsService {
         logs = 'Waiting for updater to start...';
       }
 
-      // Detect if the updater container has finished (running or not)
-      let completed = false;
+      const healthy =
+        logs.includes('Backend API is healthy') ||
+        /successfully updated to version/i.test(logs);
+      const failedMarkers =
+        logs.includes('[UPDATE_FAILED]') ||
+        logs.includes('Update aborted') ||
+        logs.includes('MIGRATION FAILED') ||
+        logs.includes('Docker Compose is not available') ||
+        /\[updater\] exit=[1-9]/.test(logs) ||
+        (logs.includes('Health check timeout') && !healthy);
+
+      let updaterRunning = false;
       try {
         const { stdout } = await execAsync(
           'docker inspect hmpanel-updater --format="{{.State.Status}}"',
         );
-        // If container still exists and is running, it's not done yet
-        completed = stdout.trim() !== 'running';
-      } catch (e) {
-        // Container doesn't exist = it finished and auto-removed (--rm flag)
-        // But only mark completed if we have meaningful log content
-        if (
-          logs.includes('successfully updated') ||
-          logs.includes('Backend API is healthy') ||
-          logs.includes('Total reclaimed space')
-        ) {
-          completed = true;
-        }
+        updaterRunning = stdout.trim() === 'running';
+      } catch {
+        updaterRunning = false;
       }
 
-      return { success: true, logs, completed };
+      // Never treat image-prune lines ("Total reclaimed space") as success.
+      const completed = !updaterRunning && (healthy || failedMarkers);
+      const updateSuccess = Boolean(healthy);
+      const failed = completed && !updateSuccess;
+
+      return {
+        success: true,
+        logs,
+        completed,
+        updateSuccess,
+        failed: completed && !updateSuccess,
+      };
     } catch (error) {
       return {
         success: false,
         error: 'Failed to read logs: ' + error.message,
         completed: false,
+        updateSuccess: false,
+        failed: false,
       };
     }
   }

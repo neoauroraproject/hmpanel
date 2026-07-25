@@ -210,6 +210,25 @@ main() {
   info "Waiting for database to be ready..."
   sleep 5 # Ensure postgres is up
 
+  # Heal password drift from restores that only restarted the panel
+  # (pg_dumpall role password vs .env / create-time DATABASE_URL).
+  if [[ -f "${INSTALL_DIR}/.env" ]]; then
+    set -a
+    # shellcheck disable=SC1091
+    source "${INSTALL_DIR}/.env"
+    set +a
+    local db_user="${POSTGRES_USER:-panel_user}"
+    local db_pass="${POSTGRES_PASSWORD:-}"
+    if [[ -n "$db_pass" ]]; then
+      info "Synchronizing PostgreSQL credentials with .env..."
+      local escaped_pass="${db_pass//\'/\'\'}"
+      docker exec -u postgres hmpanel-postgres \
+        psql -d postgres -v ON_ERROR_STOP=1 \
+        -c "ALTER ROLE \"${db_user}\" WITH PASSWORD '${escaped_pass}';" >/dev/null 2>&1 \
+        || warn "Could not sync DB password (continuing)..."
+    fi
+  fi
+
   info "Applying pre-migration schema fixes for existing clients..."
   docker exec hmpanel-postgres psql -U panel_user -d panel_db -c "
 DO \$\$
@@ -294,6 +313,7 @@ END \$\$;
   fi
 
   info "Recreating containers with latest mounts and images..."
+  compose up -d --remove-orphans --force-recreate panel-app
   compose up -d --remove-orphans
 
   step "[8/8] Verifying Health & Cleaning Up"
@@ -311,41 +331,57 @@ END \$\$;
   done
 
   if [[ $attempt -eq $max_attempts ]]; then
-    warn "Health check timeout. Check logs: $( [[ ${#COMPOSE_BIN[@]} -gt 0 ]] && echo "${COMPOSE_BIN[*]}" || echo "docker compose" ) logs panel-app"
-  else
     echo ""
-    
-    # -------------------------------------------------------------
-    # Post-Update Seamless SSL Auto-Repair & Renewal
-    # -------------------------------------------------------------
-    if [[ -f "${INSTALL_DIR}/.env" ]]; then
-      source "${INSTALL_DIR}/.env"
-      if [[ -n "${PANEL_DOMAIN:-}" && "${PANEL_DOMAIN}" != "localhost" && ! "${PANEL_DOMAIN}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-        info "Running post-update SSL maintenance for domain ${PANEL_DOMAIN}..."
-        
-        local needs_renewal=false
-        local cert_file="${INSTALL_DIR}/nginx/ssl/fullchain.pem"
-        
-        if [[ ! -f "$cert_file" ]]; then
-          needs_renewal=true
-        elif ! openssl x509 -checkend 86400 -noout -in "$cert_file" >/dev/null 2>&1; then
-          # Certificate is expired or expires in < 1 day
-          needs_renewal=true
-        fi
-        
-        if [[ "$needs_renewal" == "true" ]]; then
-          info "SSL certificate is missing or expiring. Attempting automatic issuance..."
-          HEADLESS=true hm ssl issue "${PANEL_DOMAIN}" "admin@${PANEL_DOMAIN}" >/dev/null 2>&1 || warn "Auto SSL issue failed. You can run 'hm ssl issue' later."
-        else
-          info "Valid SSL certificate detected. Re-applying Nginx configuration..."
-          HEADLESS=true hm ssl repair >/dev/null 2>&1 || true
-        fi
-        log "SSL configuration successfully synchronized."
+    error "Health check timeout. Backend did not become healthy."
+    echo "[UPDATE_FAILED] Health check timeout"
+    warn "Attempting rollback to previous image..."
+    if docker image inspect ghcr.io/neoauroraproject/hmpanel:rollback &>/dev/null; then
+      docker tag ghcr.io/neoauroraproject/hmpanel:rollback ghcr.io/neoauroraproject/hmpanel:latest
+      compose up -d --remove-orphans || true
+      sleep 8
+      if docker exec hmpanel-panel curl -sf "http://127.0.0.1:4000/health" &>/dev/null; then
+        warn "Rolled back to previous image. Backend is healthy again."
+      else
+        warn "Rollback image started but health still failing. Check: compose logs panel-app"
       fi
+    else
+      warn "No rollback image available. Check logs: $( [[ ${#COMPOSE_BIN[@]} -gt 0 ]] && echo "${COMPOSE_BIN[*]}" || echo "docker compose" ) logs panel-app"
     fi
-
-    log "HMPanel Panel successfully updated to version $(read_running_app_version)!"
+    die "Update failed: backend health check timed out."
   fi
+
+  echo ""
+
+  # -------------------------------------------------------------
+  # Post-Update Seamless SSL Auto-Repair & Renewal
+  # -------------------------------------------------------------
+  if [[ -f "${INSTALL_DIR}/.env" ]]; then
+    source "${INSTALL_DIR}/.env"
+    if [[ -n "${PANEL_DOMAIN:-}" && "${PANEL_DOMAIN}" != "localhost" && ! "${PANEL_DOMAIN}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+      info "Running post-update SSL maintenance for domain ${PANEL_DOMAIN}..."
+      
+      local needs_renewal=false
+      local cert_file="${INSTALL_DIR}/nginx/ssl/fullchain.pem"
+      
+      if [[ ! -f "$cert_file" ]]; then
+        needs_renewal=true
+      elif ! openssl x509 -checkend 86400 -noout -in "$cert_file" >/dev/null 2>&1; then
+        # Certificate is expired or expires in < 1 day
+        needs_renewal=true
+      fi
+      
+      if [[ "$needs_renewal" == "true" ]]; then
+        info "SSL certificate is missing or expiring. Attempting automatic issuance..."
+        HEADLESS=true hm ssl issue "${PANEL_DOMAIN}" "admin@${PANEL_DOMAIN}" >/dev/null 2>&1 || warn "Auto SSL issue failed. You can run 'hm ssl issue' later."
+      else
+        info "Valid SSL certificate detected. Re-applying Nginx configuration..."
+        HEADLESS=true hm ssl repair >/dev/null 2>&1 || true
+      fi
+      log "SSL configuration successfully synchronized."
+    fi
+  fi
+
+  log "HMPanel Panel successfully updated to version $(read_running_app_version)!"
 
   info "Cleaning up old images..."
   docker image prune -a -f || true

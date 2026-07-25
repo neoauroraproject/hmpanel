@@ -542,6 +542,59 @@ wait_for_panel_health() {
   return 1
 }
 
+# After restore, Postgres role password (inside volume) and panel DATABASE_URL
+# (frozen at container create) can diverge from /opt/hmpanel/.env.
+# Force both to match the final .env — otherwise panel crash-loops with:
+#   FATAL: password authentication failed for user "panel_user"
+sync_credentials_after_restore() {
+  local silent="${1:-false}"
+  if [[ ! -f "${INSTALL_DIR}/.env" ]]; then
+    return 0
+  fi
+
+  set -a
+  # shellcheck disable=SC1091
+  source "${INSTALL_DIR}/.env"
+  set +a
+
+  local db_user="${POSTGRES_USER:-panel_user}"
+  local db_pass="${POSTGRES_PASSWORD:-}"
+
+  if [[ -n "$db_pass" ]]; then
+    if [[ "$silent" != "true" ]]; then
+      echo "Syncing PostgreSQL role password to match .env..."
+    fi
+    # Use postgres OS user to avoid chicken/egg auth failure when role password
+    # already diverged from what panel_user clients expect.
+    local escaped_pass="${db_pass//\'/\'\'}"
+    if ! docker exec -u postgres hmpanel-postgres \
+      psql -d postgres -v ON_ERROR_STOP=1 \
+      -c "ALTER ROLE \"${db_user}\" WITH PASSWORD '${escaped_pass}';" >/dev/null 2>&1; then
+      if [[ "$silent" != "true" ]]; then
+        echo -e "${YELLOW}⚠ Could not ALTER ROLE ${db_user} — trying as panel_user...${NC}"
+      fi
+      docker exec hmpanel-postgres \
+        psql -U panel_user -d postgres -v ON_ERROR_STOP=1 \
+        -c "ALTER ROLE \"${db_user}\" WITH PASSWORD '${escaped_pass}';" >/dev/null 2>&1 || true
+    fi
+  fi
+
+  if [[ "$silent" != "true" ]]; then
+    echo "Recreating panel-app so DATABASE_URL / Redis env reload from .env..."
+  fi
+  cd "$INSTALL_DIR" || return 1
+  # docker restart keeps old create-time env; force-recreate is required.
+  compose up -d --force-recreate --no-deps panel-app >/dev/null 2>&1 || \
+    compose up -d --force-recreate panel-app >/dev/null 2>&1 || true
+
+  # Nginx may need restart if config/domain changed; recreate redis if password changed.
+  if [[ -n "${REDIS_PASSWORD:-}" ]]; then
+    compose up -d --force-recreate --no-deps redis >/dev/null 2>&1 || true
+  fi
+  compose up -d --no-deps nginx >/dev/null 2>&1 || docker restart hmpanel-nginx >/dev/null 2>&1 || true
+  return 0
+}
+
 do_restore() {
   local input_path="$1"
   local silent="${2:-false}"
@@ -613,9 +666,17 @@ do_restore() {
   if [[ $restore_failed -eq 0 && -f "${temp_dir}/config.tar.gz" ]]; then
     if [[ "$silent" != "true" ]]; then echo "Restoring configuration..."; fi
     tar -xzf "${temp_dir}/config.tar.gz" -C "${INSTALL_DIR}"
-    docker restart hmpanel-nginx >/dev/null 2>&1 || true
-    docker restart hmpanel-panel >/dev/null 2>&1 || true
-    sleep 5
+    # Do not docker restart here — credentials sync + force-recreate happens next.
+  fi
+
+  # Critical: pg_dumpall restores role passwords; config restore overwrites .env;
+  # docker restart alone keeps the OLD DATABASE_URL from container create-time.
+  # Sync Postgres role + recreate panel-app BEFORE uploads/premium need a healthy panel.
+  if [[ $restore_failed -eq 0 ]]; then
+    if [[ -f "${temp_dir}/database.sql.gz" || -f "${temp_dir}/config.tar.gz" ]]; then
+      sync_credentials_after_restore "$silent" || true
+      sleep 3
+    fi
   fi
 
   if [[ $restore_failed -eq 0 && -f "${temp_dir}/uploads.tar.gz" ]]; then
@@ -640,7 +701,9 @@ do_restore() {
     wait_for_panel_health 6 || true
     if docker exec hmpanel-panel mkdir -p /opt/hmpanel/premium >/dev/null 2>&1; then
       if docker exec -i hmpanel-panel tar -xzf - -C /opt/hmpanel/premium < "${temp_dir}/premium.tar.gz"; then
-        docker restart hmpanel-panel >/dev/null 2>&1 || true
+        # Reload premium modules — recreate so env stays correct (not plain restart).
+        cd "$INSTALL_DIR" && compose up -d --force-recreate --no-deps panel-app >/dev/null 2>&1 || \
+          docker restart hmpanel-panel >/dev/null 2>&1 || true
         sleep 5
       else
         if [[ "$silent" != "true" ]]; then echo -e "${YELLOW}⚠ Premium restore failed (license DB rows still restored — re-download bundle if needed).${NC}"; fi
@@ -661,7 +724,6 @@ do_restore() {
   # 3. Verify via in-container health endpoint (ports are not published to host)
   if [[ $restore_failed -eq 0 ]]; then
     if [[ "$silent" != "true" ]]; then echo "Verifying panel health..."; fi
-    docker restart hmpanel-panel >/dev/null 2>&1 || true
     if ! wait_for_panel_health 24; then
       if [[ "$silent" != "true" ]]; then echo -e "${RED}✘ Health verification failed!${NC}"; fi
       restore_failed=1
