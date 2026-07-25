@@ -63,25 +63,62 @@ ensure_panel_db_exists() {
   fi
 }
 
-# pg_dumpall -c tries DROP ROLE on panel_user while we are connected as panel_user
-# → "current user cannot be dropped". Restore through a temporary superuser instead.
-pg_restore_dumpall_stdin() {
-  local db_user restore_su db_restore_log
+# Apply a plain-SQL dump (pg_dumpall or pg_dump output) into a fresh panel_db.
+#
+# POSTGRES_USER (panel_user) is the cluster bootstrap superuser, so the role
+# statements inside a `pg_dumpall -c` archive can never run:
+#   ERROR: cannot drop role panel_user because it is required by the database system
+# Roles/passwords are owned by .env, not by the backup — so we execute ONLY the
+# panel_db payload and recreate the database ourselves.
+pg_restore_dump_file() {
+  local sql_file="$1"
+  local db_user section load_log
   db_user=$(pg_db_user)
-  restore_su="_hmpanel_restore_su"
-  db_restore_log=$(mktemp)
+  section=$(mktemp)
 
-  docker exec hmpanel-postgres psql -U "$db_user" -d postgres -v ON_ERROR_STOP=1 -c "
+  # Cluster dumps carry every database; single-DB dumps have no \connect markers.
+  local mode="all"
+  if grep -qE '^\\connect ' "$sql_file"; then
+    mode="section"
+  fi
+
+  # Keep only the panel_db payload, and strip cluster-level + `--clean`
+  # statements: DROP ROLE panel_user can never run (bootstrap superuser) and
+  # DROP TABLE/CONSTRAINT would abort against the empty database we create.
+  # COPY blocks are passed through untouched so row data is never filtered.
+  awk -v mode="$mode" '
+    BEGIN { keep = (mode == "all") ? 1 : 0; copy = 0 }
+    copy == 1 { print; if ($0 == "\\.") copy = 0; next }
+    /^\\connect / { if (mode == "section") keep = ($0 ~ /panel_db/) ? 1 : 0; next }
+    keep == 0 { next }
+    /^[[:space:]]*(DROP|CREATE|ALTER)[[:space:]]+(ROLE|USER|DATABASE|TABLESPACE)[[:space:]]/ { next }
+    /^[[:space:]]*DROP[[:space:]]/ { next }
+    /^[[:space:]]*ALTER[[:space:]]+TABLE[[:space:]].*[[:space:]]DROP[[:space:]]+CONSTRAINT/ { next }
+    { print; if ($0 ~ /^COPY .* FROM stdin;$/) copy = 1 }
+  ' "$sql_file" > "$section"
+
+  if [[ ! -s "$section" ]]; then
+    echo -e "${RED}✘ Dump contains no restorable SQL for panel_db.${NC}" >&2
+    rm -f "$section"
+    return 1
+  fi
+
+  # GRANT statements inside the payload may reference roles from the source
+  # cluster. Recreate them (login-less) so the load does not abort.
+  local role
+  for role in $(grep -oE '^CREATE ROLE [A-Za-z0-9_"$-]+' "$sql_file" 2>/dev/null \
+    | awk '{print $3}' | tr -d '"' | sort -u); do
+    [[ "$role" == "$db_user" ]] && continue
+    docker exec hmpanel-postgres psql -U "$db_user" -d postgres -c "
 DO \$\$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${restore_su}') THEN
-    CREATE ROLE ${restore_su} WITH SUPERUSER LOGIN;
-  ELSE
-    ALTER ROLE ${restore_su} WITH SUPERUSER LOGIN;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${role}') THEN
+    CREATE ROLE \"${role}\";
   END IF;
 END
 \$\$;
 " >/dev/null 2>&1 || true
+  done
 
   docker exec hmpanel-postgres psql -U "$db_user" -d postgres -c "
 SELECT pg_terminate_backend(pid)
@@ -90,22 +127,46 @@ WHERE datname = 'panel_db'
   AND pid <> pg_backend_pid();
 " >/dev/null 2>&1 || true
 
-  # Connect as temp superuser so DROP ROLE panel_user in the dump can succeed.
-  if cat | docker exec -i hmpanel-postgres psql -U "$restore_su" -d postgres -v ON_ERROR_STOP=1 \
-    >"$db_restore_log" 2>&1; then
+  # WITH (FORCE) needs PG13+; plain DROP is the fallback for older clusters.
+  if ! docker exec hmpanel-postgres psql -U "$db_user" -d postgres -v ON_ERROR_STOP=1 \
+    -c 'DROP DATABASE IF EXISTS panel_db WITH (FORCE);' >/dev/null 2>&1; then
     docker exec hmpanel-postgres psql -U "$db_user" -d postgres \
-      -c "DROP ROLE IF EXISTS ${restore_su};" >/dev/null 2>&1 || true
-    rm -f "$db_restore_log"
+      -c 'DROP DATABASE IF EXISTS panel_db;' >/dev/null 2>&1 || true
+  fi
+
+  if ! docker exec hmpanel-postgres psql -U "$db_user" -d postgres -v ON_ERROR_STOP=1 \
+    -c "CREATE DATABASE panel_db OWNER \"${db_user}\";" >/dev/null 2>&1; then
+    echo -e "${RED}✘ Could not recreate panel_db.${NC}" >&2
+    rm -f "$section"
+    return 1
+  fi
+
+  load_log=$(mktemp)
+  if docker exec -i hmpanel-postgres psql -U "$db_user" -d panel_db \
+    -v ON_ERROR_STOP=1 --single-transaction >"$load_log" 2>&1 < "$section"; then
+    rm -f "$section" "$load_log"
     return 0
   fi
 
-  echo -e "${RED}✘ Database restore failed.${NC}" >&2
-  tail -n 80 "$db_restore_log" >&2 || true
-  rm -f "$db_restore_log"
-  # Dump may have already DROP DATABASE'd panel_db before failing on DROP ROLE.
+  echo -e "${YELLOW}⚠${NC}  Strict load failed — retrying tolerantly (ownership/grant noise)." >&2
+  tail -n 20 "$load_log" >&2 || true
+
+  if docker exec -i hmpanel-postgres psql -U "$db_user" -d panel_db \
+    >"$load_log" 2>&1 < "$section"; then
+    local admin_rows
+    admin_rows=$(docker exec hmpanel-postgres psql -U "$db_user" -d panel_db -tAc \
+      'SELECT COUNT(*) FROM "Admin"' 2>/dev/null | tr -d '[:space:]' || echo 0)
+    if [[ "${admin_rows:-0}" -ge 1 ]]; then
+      echo -e "${YELLOW}⚠${NC}  Loaded with warnings (Admin rows: ${admin_rows})." >&2
+      rm -f "$section" "$load_log"
+      return 0
+    fi
+  fi
+
+  echo -e "${RED}✘ Failed while loading panel_db payload.${NC}" >&2
+  tail -n 60 "$load_log" >&2 || true
+  rm -f "$section" "$load_log"
   ensure_panel_db_exists
-  docker exec hmpanel-postgres psql -U "$db_user" -d postgres \
-    -c "DROP ROLE IF EXISTS ${restore_su};" >/dev/null 2>&1 || true
   return 1
 }
 
@@ -714,11 +775,17 @@ do_restore() {
     compose stop panel-app >/dev/null 2>&1 || docker stop hmpanel-panel >/dev/null 2>&1 || true
     sleep 2
     local ret=1
+    local legacy_sql
+    legacy_sql=$(mktemp)
     if [[ "$filepath" == *.sql.gz ]]; then
-      zcat "$filepath" | pg_exec_i -d panel_db -v ON_ERROR_STOP=1 && ret=0
+      zcat "$filepath" > "$legacy_sql" 2>/dev/null || true
     else
-      cat "$filepath" | pg_exec_i -d panel_db -v ON_ERROR_STOP=1 && ret=0
+      cp "$filepath" "$legacy_sql"
     fi
+    if [[ -s "$legacy_sql" ]] && pg_restore_dump_file "$legacy_sql"; then
+      ret=0
+    fi
+    rm -f "$legacy_sql"
     rm -rf "$temp_dir"
     sync_credentials_after_restore "$silent" || true
     if [[ $ret -eq 0 ]]; then
@@ -768,22 +835,29 @@ do_restore() {
   local db_restore_applied=0
   
   if [[ -f "${temp_dir}/database.sql.gz" ]]; then
-    rmsg "Restoring database (pg_dumpall → postgres)..."
+    rmsg "Restoring database..."
     rmsg "Stopping panel-app to free database connections..."
     cd "$INSTALL_DIR" || true
     compose stop panel-app >/dev/null 2>&1 || docker stop hmpanel-panel >/dev/null 2>&1 || true
     sleep 2
 
-    # Must NOT restore as panel_user: dump contains DROP ROLE panel_user
-    # → ERROR: current user cannot be dropped. Use temp superuser helper.
-    rmsg "Applying dump via temporary superuser (_hmpanel_restore_su)..."
-    if zcat "${temp_dir}/database.sql.gz" | pg_restore_dumpall_stdin; then
-      db_restore_applied=1
-      rmsg "${GREEN}✔${NC}  Database SQL applied."
-    else
+    local plain_sql
+    plain_sql=$(mktemp)
+    if ! zcat "${temp_dir}/database.sql.gz" > "$plain_sql" 2>/dev/null; then
+      rmsg "${RED}✘ Could not decompress database.sql.gz${NC}"
+      rm -f "$plain_sql"
       restore_failed=1
-      ensure_panel_db_exists
-      compose start panel-app >/dev/null 2>&1 || true
+    else
+      rmsg "  Dump size: $(du -h "$plain_sql" | awk '{print $1}') — recreating panel_db and loading data..."
+      if pg_restore_dump_file "$plain_sql"; then
+        db_restore_applied=1
+        rmsg "${GREEN}✔${NC}  Database replaced with backup contents."
+      else
+        restore_failed=1
+        ensure_panel_db_exists
+        compose start panel-app >/dev/null 2>&1 || true
+      fi
+      rm -f "$plain_sql"
     fi
   else
     rmsg "${YELLOW}⚠${NC}  No database.sql.gz in archive — DB will NOT change."

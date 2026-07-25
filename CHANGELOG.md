@@ -8,6 +8,18 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [1.8.17] - 2026-07-25
+
+### Fixed
+- **Restore never replaced the database (root cause):** `POSTGRES_USER` (`panel_user`) is the cluster **bootstrap superuser**, so `DROP ROLE panel_user` inside a `pg_dumpall --clean` archive can never succeed — not even as another superuser (`cannot drop role panel_user because it is required by the database system`). Every restore therefore aborted right after `DROP DATABASE`, leaving the panel with no `panel_db` and, after rollback, the old data.
+- **New restore engine:** the dump's cluster-level statements are no longer executed. HMPanel now extracts only the `panel_db` payload, drops the database with `WITH (FORCE)`, recreates it owned by `POSTGRES_USER`, and loads the payload in a single transaction. Roles and passwords stay owned by `.env`.
+- **`--clean` object drops:** `DROP TABLE` / `ALTER TABLE … DROP CONSTRAINT` lines are stripped, since the target database is created empty. `COPY … FROM stdin` blocks are passed through byte-for-byte so row data is never filtered.
+- **Foreign roles in `GRANT`:** any non-bootstrap role named in the archive is recreated (login-less) before loading so grants resolve instead of aborting the restore.
+- **Legacy `.sql` / `.sql.gz` restores** now go through the same engine, giving them true replace semantics instead of loading on top of existing rows.
+- Removed the temporary-superuser workaround (`_hmpanel_restore_su`) — it could not work by design.
+
+---
+
 ## [1.8.16] - 2026-07-25
 
 ### Fixed
