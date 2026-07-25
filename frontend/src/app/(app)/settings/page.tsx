@@ -414,8 +414,8 @@ function BackupRestoreCard() {
         fileName: analysis.fileName,
       });
       toast(t("settings.restoreInitiated"));
-      // Panel restarts during restore — reload after enough time for health
-      setTimeout(() => window.location.reload(), 45000);
+      // Restore stops panel, reloads DB, then restarts — give it enough time
+      setTimeout(() => window.location.reload(), 120000);
     } catch (err) {
       toast(t("settings.restoreFailed"), "error");
       setIsRestoring(false);

@@ -785,12 +785,17 @@ export class BackupsService {
     const basename = path.basename(backupFilePath);
     this.logger.log(`Scheduling HMPanel restore of ${basename}`);
 
+    // Fire-and-forget so HTTP returns before panel stops itself during restore.
+    // Host CLI must stop panel-app, terminate DB sessions, then apply dump.
     setTimeout(() => {
       this.hmctl
         .execute('restore', basename, [], undefined, { timeoutMs: 900_000 })
-        .then((res) =>
-          this.logger.log(`Restore finished: ${JSON.stringify(res)}`),
-        )
+        .then((res) => {
+          this.logger.log(`Restore finished: ${JSON.stringify(res)}`);
+          if (res && res.success === false) {
+            this.logger.error(`Restore reported failure for ${basename}`);
+          }
+        })
         .catch((err) =>
           this.logger.error('Failed to execute restore: ' + err.message),
         );
@@ -799,7 +804,7 @@ export class BackupsService {
     return {
       success: true,
       message:
-        'Restore initiated. The panel will restart shortly. Wait 1–2 minutes.',
+        'Restore started. Panel will stop briefly, replace the database, then restart. Wait 2–3 minutes before refreshing — do not restore again until it is back.',
       file: basename,
       restoreTarget: 'hmpanel' as const,
     };

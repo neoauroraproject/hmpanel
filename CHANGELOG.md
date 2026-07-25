@@ -8,6 +8,15 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [1.8.13] - 2026-07-25
+
+### Fixed
+- **Restore kept old data (critical):** While `panel-app` stayed connected, `pg_dumpall --clean` could not `DROP DATABASE panel_db`. Restore continued and applied **config only** (SSL domain changed) while admins/panels/clients stayed on the old DB. Restore now stops `panel-app`, terminates DB sessions, restores as postgres superuser with `ON_ERROR_STOP`, verifies Admin/Panel/Client counts, and refuses config-only success when a DB dump was present.
+- **Headless `hm restore --json`:** Now returns real success/failure JSON and correct exit codes (previously always `exit 0`).
+- **Heal:** Refreshes host `hm` CLI from GitHub so restore fixes apply without waiting for a Docker image rebuild.
+
+---
+
 ## [1.8.12] - 2026-07-25
 
 ### Fixed

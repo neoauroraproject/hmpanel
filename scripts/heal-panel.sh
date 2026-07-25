@@ -30,6 +30,17 @@ compose() { "${COMPOSE[@]}" "$@"; }
 
 info "Healing HMPanel at $INSTALL_DIR ..."
 
+# Refresh host CLI so restore/update fixes are available immediately
+info "Refreshing hm CLI from GitHub..."
+if curl -fsSL https://raw.githubusercontent.com/neoauroraproject/hmpanel/main/cli.sh -o "${INSTALL_DIR}/cli.sh"; then
+  cp "${INSTALL_DIR}/cli.sh" /usr/local/bin/hmpanel
+  chmod +x /usr/local/bin/hmpanel
+  ln -sf /usr/local/bin/hmpanel /usr/local/bin/hm
+  log "CLI refreshed."
+else
+  warn "Could not refresh CLI (continuing with existing hm)."
+fi
+
 # Ensure compose file exists
 if [[ ! -f docker-compose.yml ]]; then
   info "Downloading docker-compose.yml..."

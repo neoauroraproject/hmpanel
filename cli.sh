@@ -671,19 +671,39 @@ do_restore() {
   
   if [[ -f "${temp_dir}/database.sql.gz" ]]; then
     if [[ "$silent" != "true" ]]; then echo "Restoring database (pg_dumpall → postgres)..."; fi
-    # pg_dumpall must be restored against the postgres DB (not panel_db) so DROP/CREATE DATABASE works.
-    # ON_ERROR_STOP is required — without it psql can exit 0 after partial/failed SQL and leave an empty DB.
+
+    # CRITICAL: panel-app holds open connections to panel_db. pg_dumpall --clean
+    # issues DROP DATABASE which fails while those connections exist. Without a
+    # hard stop, psql used to continue (no ON_ERROR_STOP) → config restored
+    # (SSL domain changes) but business data stayed on the OLD database.
+    if [[ "$silent" != "true" ]]; then echo "Stopping panel-app to free database connections..."; fi
+    cd "$INSTALL_DIR" || true
+    compose stop panel-app >/dev/null 2>&1 || docker stop hmpanel-panel >/dev/null 2>&1 || true
+    sleep 2
+
+    # Kill any leftover sessions (healthchecks, stuck clients, etc.)
+    docker exec -u postgres hmpanel-postgres psql -d postgres -v ON_ERROR_STOP=1 -c "
+SELECT pg_terminate_backend(pid)
+FROM pg_stat_activity
+WHERE datname = 'panel_db'
+  AND pid <> pg_backend_pid();
+" >/dev/null 2>&1 || true
+
+    # Restore as postgres OS superuser via peer auth so mid-dump ALTER ROLE
+    # password changes cannot break the restore session.
     local db_restore_log
     db_restore_log=$(mktemp)
-    if zcat "${temp_dir}/database.sql.gz" | docker exec -i hmpanel-postgres \
-      psql -U panel_user -d postgres -v ON_ERROR_STOP=1 >"$db_restore_log" 2>&1; then
+    if zcat "${temp_dir}/database.sql.gz" | docker exec -i -u postgres hmpanel-postgres \
+      psql -d postgres -v ON_ERROR_STOP=1 >"$db_restore_log" 2>&1; then
       db_restore_applied=1
     else
       if [[ "$silent" != "true" ]]; then
         echo -e "${RED}✘ Database restore failed.${NC}"
-        tail -n 40 "$db_restore_log" 2>/dev/null || true
+        tail -n 60 "$db_restore_log" 2>/dev/null || true
       fi
       restore_failed=1
+      # Try to bring panel back even on failure
+      compose start panel-app >/dev/null 2>&1 || true
     fi
     rm -f "$db_restore_log"
   fi
@@ -716,13 +736,26 @@ do_restore() {
       restore_failed=1
       db_restore_applied=0
     else
-      if [[ "$silent" != "true" ]]; then
-        local client_n=0
+        local client_n=0 panel_n=0
         client_n=$(docker exec -u postgres hmpanel-postgres \
           psql -d panel_db -tAc 'SELECT COUNT(*) FROM "Client"' 2>/dev/null | tr -d '[:space:]' || echo 0)
-        echo "Database verify: Admin=${admin_n} Client=${client_n}"
-      fi
+        panel_n=$(docker exec -u postgres hmpanel-postgres \
+          psql -d panel_db -tAc 'SELECT COUNT(*) FROM "Panel"' 2>/dev/null | tr -d '[:space:]' || echo 0)
+        # Always emit verify line (stderr) so host-agent / UI logs capture it even in silent mode
+        echo "Database verify: Admin=${admin_n} Panel=${panel_n} Client=${client_n}" >&2
+        if [[ "$silent" != "true" ]]; then
+          echo "Database verify: Admin=${admin_n} Panel=${panel_n} Client=${client_n}"
+        fi
     fi
+  fi
+
+  # If archive claimed to include a database but we never applied it, fail hard —
+  # never leave the user with config-only (domain) changes thinking data restored.
+  if [[ $restore_failed -eq 0 && -f "${temp_dir}/database.sql.gz" && $db_restore_applied -ne 1 ]]; then
+    if [[ "$silent" != "true" ]]; then
+      echo -e "${RED}✘ database.sql.gz was present but not applied.${NC}"
+    fi
+    restore_failed=1
   fi
 
   if [[ $restore_failed -eq 0 && -f "${temp_dir}/uploads.tar.gz" ]]; then
@@ -2756,16 +2789,42 @@ if [[ "$JSON_OUTPUT" == "true" || "${1:-}" == "ssl" || "${1:-}" == "doctor" || "
   elif [[ "$MODULE" == "backup" ]]; then
     if [[ "$ACTION" == "create" ]]; then
       btype="${3:-full}"
-      do_backup "$btype" "true"
+      backup_path=""
+      if backup_path=$(do_backup "$btype" "true"); then
+        if [[ "$JSON_OUTPUT" == "true" ]]; then
+          output_json true "BACKUP_OK" "\"path\":\"${backup_path//\"/\\\"}\""
+        else
+          echo "$backup_path"
+        fi
+        exit 0
+      else
+        if [[ "$JSON_OUTPUT" == "true" ]]; then output_json false "BACKUP_FAILED"; fi
+        exit 1
+      fi
     else
       echo "Usage: hm backup create {full|database|config}"
       exit 1
     fi
   elif [[ "$MODULE" == "restore" ]]; then
+    # Strip accidental --json if it landed in ACTION
+    if [[ "$ACTION" == "--json" || "$ACTION" == "--debug" ]]; then
+      ACTION=""
+    fi
     if [[ -n "$ACTION" ]]; then
-      do_restore "$ACTION" "true"
+      if do_restore "$ACTION" "true"; then
+        if [[ "$JSON_OUTPUT" == "true" ]]; then
+          output_json true "RESTORE_OK" "\"file\":\"$ACTION\""
+        fi
+        exit 0
+      else
+        if [[ "$JSON_OUTPUT" == "true" ]]; then
+          output_json false "RESTORE_FAILED" "\"file\":\"$ACTION\""
+        fi
+        exit 1
+      fi
     else
       echo "Usage: hm restore <filepath>"
+      if [[ "$JSON_OUTPUT" == "true" ]]; then output_json false "RESTORE_MISSING_FILE"; fi
       exit 1
     fi
   elif [[ "$MODULE" == "doctor" ]]; then
