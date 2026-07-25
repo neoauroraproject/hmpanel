@@ -26,6 +26,9 @@ chmod +x /usr/local/bin/hmpanel
 ln -sf /usr/local/bin/hmpanel /usr/local/bin/hm
 log "CLI refreshed."
 
+info "Healing stack first (ensure panel_db / credentials)..."
+curl -fsSL https://raw.githubusercontent.com/neoauroraproject/hmpanel/main/scripts/heal-panel.sh | bash || warn "Heal had warnings — continuing restore anyway."
+
 info "Listing backups in ${INSTALL_DIR}/backups ..."
 ls -lt "${INSTALL_DIR}/backups"/*.tar.gz 2>/dev/null | head -20 || true
 

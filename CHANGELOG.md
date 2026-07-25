@@ -8,6 +8,15 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [1.8.16] - 2026-07-25
+
+### Fixed
+- **Restore `current user cannot be dropped`:** `pg_dumpall -c` includes `DROP ROLE panel_user` while restore connected as `panel_user`. Restore now applies the dump via a temporary superuser (`_hmpanel_restore_su`), then drops it.
+- **`panel_db` missing after failed restore:** If DROP DATABASE ran before DROP ROLE failed, heal/restore recreate an empty `panel_db` so the stack can recover and retry.
+- **`BLUE: unbound variable`:** Added missing `BLUE` color in CLI.
+
+---
+
 ## [1.8.15] - 2026-07-25
 
 ### Fixed

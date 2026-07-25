@@ -48,6 +48,67 @@ pg_exec_i() {
   docker exec -i hmpanel-postgres psql -U "$(pg_db_user)" "$@"
 }
 
+# Recreate empty panel_db if a failed pg_dumpall left the cluster without it.
+ensure_panel_db_exists() {
+  local db_user
+  db_user=$(pg_db_user)
+  local exists
+  exists=$(docker exec hmpanel-postgres psql -U "$db_user" -d postgres -tAc \
+    "SELECT 1 FROM pg_database WHERE datname='panel_db'" 2>/dev/null | tr -d '[:space:]' || true)
+  if [[ "$exists" != "1" ]]; then
+    echo -e "${YELLOW}⚠${NC}  panel_db is missing — creating empty database owned by ${db_user}..." >&2
+    docker exec hmpanel-postgres psql -U "$db_user" -d postgres -v ON_ERROR_STOP=1 \
+      -c "CREATE DATABASE panel_db OWNER \"${db_user}\";" >/dev/null 2>&1 \
+      || echo -e "${RED}✘${NC}  Could not CREATE DATABASE panel_db" >&2
+  fi
+}
+
+# pg_dumpall -c tries DROP ROLE on panel_user while we are connected as panel_user
+# → "current user cannot be dropped". Restore through a temporary superuser instead.
+pg_restore_dumpall_stdin() {
+  local db_user restore_su db_restore_log
+  db_user=$(pg_db_user)
+  restore_su="_hmpanel_restore_su"
+  db_restore_log=$(mktemp)
+
+  docker exec hmpanel-postgres psql -U "$db_user" -d postgres -v ON_ERROR_STOP=1 -c "
+DO \$\$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${restore_su}') THEN
+    CREATE ROLE ${restore_su} WITH SUPERUSER LOGIN;
+  ELSE
+    ALTER ROLE ${restore_su} WITH SUPERUSER LOGIN;
+  END IF;
+END
+\$\$;
+" >/dev/null 2>&1 || true
+
+  docker exec hmpanel-postgres psql -U "$db_user" -d postgres -c "
+SELECT pg_terminate_backend(pid)
+FROM pg_stat_activity
+WHERE datname = 'panel_db'
+  AND pid <> pg_backend_pid();
+" >/dev/null 2>&1 || true
+
+  # Connect as temp superuser so DROP ROLE panel_user in the dump can succeed.
+  if cat | docker exec -i hmpanel-postgres psql -U "$restore_su" -d postgres -v ON_ERROR_STOP=1 \
+    >"$db_restore_log" 2>&1; then
+    docker exec hmpanel-postgres psql -U "$db_user" -d postgres \
+      -c "DROP ROLE IF EXISTS ${restore_su};" >/dev/null 2>&1 || true
+    rm -f "$db_restore_log"
+    return 0
+  fi
+
+  echo -e "${RED}✘ Database restore failed.${NC}" >&2
+  tail -n 80 "$db_restore_log" >&2 || true
+  rm -f "$db_restore_log"
+  # Dump may have already DROP DATABASE'd panel_db before failing on DROP ROLE.
+  ensure_panel_db_exists
+  docker exec hmpanel-postgres psql -U "$db_user" -d postgres \
+    -c "DROP ROLE IF EXISTS ${restore_su};" >/dev/null 2>&1 || true
+  return 1
+}
+
 update_env() {
   local key="$1"
   local val="$2"
@@ -246,6 +307,7 @@ reload_nginx_deferred() {
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m'
@@ -712,25 +774,17 @@ do_restore() {
     compose stop panel-app >/dev/null 2>&1 || docker stop hmpanel-panel >/dev/null 2>&1 || true
     sleep 2
 
-    pg_exec -d postgres -v ON_ERROR_STOP=1 -c "
-SELECT pg_terminate_backend(pid)
-FROM pg_stat_activity
-WHERE datname = 'panel_db'
-  AND pid <> pg_backend_pid();
-" >/dev/null 2>&1 || true
-
-    local db_restore_log
-    db_restore_log=$(mktemp)
-    if zcat "${temp_dir}/database.sql.gz" | pg_exec_i -d postgres -v ON_ERROR_STOP=1 >"$db_restore_log" 2>&1; then
+    # Must NOT restore as panel_user: dump contains DROP ROLE panel_user
+    # → ERROR: current user cannot be dropped. Use temp superuser helper.
+    rmsg "Applying dump via temporary superuser (_hmpanel_restore_su)..."
+    if zcat "${temp_dir}/database.sql.gz" | pg_restore_dumpall_stdin; then
       db_restore_applied=1
       rmsg "${GREEN}✔${NC}  Database SQL applied."
     else
-      rmsg "${RED}✘ Database restore failed.${NC}"
-      tail -n 80 "$db_restore_log" >&2 || true
       restore_failed=1
+      ensure_panel_db_exists
       compose start panel-app >/dev/null 2>&1 || true
     fi
-    rm -f "$db_restore_log"
   else
     rmsg "${YELLOW}⚠${NC}  No database.sql.gz in archive — DB will NOT change."
   fi
@@ -833,6 +887,7 @@ WHERE datname = 'panel_db'
     fi
     if [[ -n "$rollback_file" && -f "$rollback_file" ]]; then
       rmsg "${YELLOW}Rolling back to previous state...${NC}"
+      ensure_panel_db_exists
       do_restore "$rollback_file" "false" "true"
     fi
     rmsg "${RED}✘ Restore failed.${NC}"

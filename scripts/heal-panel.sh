@@ -61,6 +61,19 @@ sleep 5
 
 db_user="${POSTGRES_USER:-panel_user}"
 db_pass="${POSTGRES_PASSWORD:-}"
+
+# Recover from a mid-restore failure that dropped panel_db
+info "Ensuring panel_db exists..."
+if ! docker exec hmpanel-postgres psql -U "$db_user" -d postgres -tAc \
+  "SELECT 1 FROM pg_database WHERE datname='panel_db'" 2>/dev/null | grep -q 1; then
+  warn "panel_db missing — recreating..."
+  docker exec hmpanel-postgres psql -U "$db_user" -d postgres -c \
+    "CREATE DATABASE panel_db OWNER \"${db_user}\";" \
+    || warn "CREATE DATABASE failed — check postgres logs"
+else
+  log "panel_db is present."
+fi
+
 if [[ -n "$db_pass" ]]; then
   info "Syncing PostgreSQL password to .env..."
   escaped_pass="${db_pass//\'/\'\'}"
