@@ -8,6 +8,13 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [1.8.10] - 2026-07-25
+
+### Fixed
+- **502 after restore:** Credential sync recreated `panel-app` before Redis, so Nest could crash-loop while nginx stayed up (`502 Bad Gateway`). Now recreates Redis → panel-app → nginx, waits longer for health, and retries sync once if health is slow.
+
+---
+
 ## [1.8.9] - 2026-07-25
 
 ### Fixed

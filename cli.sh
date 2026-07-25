@@ -579,19 +579,23 @@ sync_credentials_after_restore() {
     fi
   fi
 
-  if [[ "$silent" != "true" ]]; then
-    echo "Recreating panel-app so DATABASE_URL / Redis env reload from .env..."
-  fi
   cd "$INSTALL_DIR" || return 1
-  # docker restart keeps old create-time env; force-recreate is required.
-  compose up -d --force-recreate --no-deps panel-app >/dev/null 2>&1 || \
-    compose up -d --force-recreate panel-app >/dev/null 2>&1 || true
 
-  # Nginx may need restart if config/domain changed; recreate redis if password changed.
+  # Order matters: redis must be ready with the restored password BEFORE panel-app
+  # starts, otherwise Nest crash-loops and nginx returns 502.
+  if [[ "$silent" != "true" ]]; then
+    echo "Recreating redis / panel-app / nginx so env matches restored .env..."
+  fi
   if [[ -n "${REDIS_PASSWORD:-}" ]]; then
     compose up -d --force-recreate --no-deps redis >/dev/null 2>&1 || true
+    sleep 2
   fi
-  compose up -d --no-deps nginx >/dev/null 2>&1 || docker restart hmpanel-nginx >/dev/null 2>&1 || true
+  compose up -d --force-recreate --no-deps panel-app >/dev/null 2>&1 || \
+    compose up -d --force-recreate panel-app >/dev/null 2>&1 || true
+  sleep 3
+  compose up -d --force-recreate --no-deps nginx >/dev/null 2>&1 || \
+    compose up -d --no-deps nginx >/dev/null 2>&1 || \
+    docker restart hmpanel-nginx >/dev/null 2>&1 || true
   return 0
 }
 
@@ -724,9 +728,16 @@ do_restore() {
   # 3. Verify via in-container health endpoint (ports are not published to host)
   if [[ $restore_failed -eq 0 ]]; then
     if [[ "$silent" != "true" ]]; then echo "Verifying panel health..."; fi
-    if ! wait_for_panel_health 24; then
-      if [[ "$silent" != "true" ]]; then echo -e "${RED}✘ Health verification failed!${NC}"; fi
-      restore_failed=1
+    # Prisma db push after recreate can take >2 minutes on large DBs.
+    if ! wait_for_panel_health 36; then
+      if [[ "$silent" != "true" ]]; then
+        echo -e "${YELLOW}Health slow — re-syncing credentials and retrying...${NC}"
+      fi
+      sync_credentials_after_restore "$silent" || true
+      if ! wait_for_panel_health 24; then
+        if [[ "$silent" != "true" ]]; then echo -e "${RED}✘ Health verification failed!${NC}"; fi
+        restore_failed=1
+      fi
     fi
   fi
   

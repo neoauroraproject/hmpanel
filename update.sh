@@ -313,6 +313,9 @@ END \$\$;
   fi
 
   info "Recreating containers with latest mounts and images..."
+  # Redis first so panel-app boots against the correct requirepass (avoids 502).
+  compose up -d --remove-orphans --force-recreate redis >/dev/null 2>&1 || true
+  sleep 2
   compose up -d --remove-orphans --force-recreate panel-app
   compose up -d --remove-orphans
 
