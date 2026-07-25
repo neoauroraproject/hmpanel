@@ -30,6 +30,24 @@ compose() {
   "${COMPOSE_BIN[@]}" "$@"
 }
 
+# Official postgres image creates ONLY POSTGRES_USER as superuser (default panel_user).
+# There is no DB role named "postgres" — never connect without -U panel_user.
+pg_db_user() {
+  if [[ -f "${INSTALL_DIR}/.env" ]]; then
+    # shellcheck disable=SC1090
+    POSTGRES_USER=$(grep -E '^POSTGRES_USER=' "${INSTALL_DIR}/.env" 2>/dev/null | head -n1 | cut -d= -f2- | tr -d '\r' || true)
+  fi
+  echo "${POSTGRES_USER:-panel_user}"
+}
+
+pg_exec() {
+  docker exec hmpanel-postgres psql -U "$(pg_db_user)" "$@"
+}
+
+pg_exec_i() {
+  docker exec -i hmpanel-postgres psql -U "$(pg_db_user)" "$@"
+}
+
 update_env() {
   local key="$1"
   local val="$2"
@@ -577,14 +595,13 @@ sync_credentials_after_restore() {
     # Use postgres OS user to avoid chicken/egg auth failure when role password
     # already diverged from what panel_user clients expect.
     local escaped_pass="${db_pass//\'/\'\'}"
-    if ! docker exec -u postgres hmpanel-postgres \
-      psql -d postgres -v ON_ERROR_STOP=1 \
+    if ! pg_exec -d postgres -v ON_ERROR_STOP=1 \
       -c "ALTER ROLE \"${db_user}\" WITH PASSWORD '${escaped_pass}';" >/dev/null 2>&1; then
       if [[ "$silent" != "true" ]]; then
-        echo -e "${YELLOW}⚠ Could not ALTER ROLE ${db_user} — trying as panel_user...${NC}"
+        echo -e "${YELLOW}⚠ Could not ALTER ROLE ${db_user} — retrying...${NC}"
       fi
-      docker exec hmpanel-postgres \
-        psql -U panel_user -d postgres -v ON_ERROR_STOP=1 \
+      sleep 2
+      pg_exec -d postgres -v ON_ERROR_STOP=1 \
         -c "ALTER ROLE \"${db_user}\" WITH PASSWORD '${escaped_pass}';" >/dev/null 2>&1 || true
     fi
   fi
@@ -682,19 +699,19 @@ do_restore() {
     sleep 2
 
     # Kill any leftover sessions (healthchecks, stuck clients, etc.)
-    docker exec -u postgres hmpanel-postgres psql -d postgres -v ON_ERROR_STOP=1 -c "
+    # Use POSTGRES_USER (panel_user) — role "postgres" does not exist in this image.
+    pg_exec -d postgres -v ON_ERROR_STOP=1 -c "
 SELECT pg_terminate_backend(pid)
 FROM pg_stat_activity
 WHERE datname = 'panel_db'
   AND pid <> pg_backend_pid();
 " >/dev/null 2>&1 || true
 
-    # Restore as postgres OS superuser via peer auth so mid-dump ALTER ROLE
-    # password changes cannot break the restore session.
+    # Restore as DB superuser (POSTGRES_USER) via local socket trust so mid-dump
+    # ALTER ROLE password changes cannot break the session.
     local db_restore_log
     db_restore_log=$(mktemp)
-    if zcat "${temp_dir}/database.sql.gz" | docker exec -i -u postgres hmpanel-postgres \
-      psql -d postgres -v ON_ERROR_STOP=1 >"$db_restore_log" 2>&1; then
+    if zcat "${temp_dir}/database.sql.gz" | pg_exec_i -d postgres -v ON_ERROR_STOP=1 >"$db_restore_log" 2>&1; then
       db_restore_applied=1
     else
       if [[ "$silent" != "true" ]]; then
@@ -727,8 +744,7 @@ WHERE datname = 'panel_db'
   # Sanity-check: a successful DB restore must leave at least one Admin row.
   if [[ $restore_failed -eq 0 && $db_restore_applied -eq 1 ]]; then
     local admin_n=0
-    admin_n=$(docker exec -u postgres hmpanel-postgres \
-      psql -d panel_db -tAc 'SELECT COUNT(*) FROM "Admin"' 2>/dev/null | tr -d '[:space:]' || echo 0)
+    admin_n=$(pg_exec -d panel_db -tAc 'SELECT COUNT(*) FROM "Admin"' 2>/dev/null | tr -d '[:space:]' || echo 0)
     if [[ "${admin_n:-0}" -lt 1 ]]; then
       if [[ "$silent" != "true" ]]; then
         echo -e "${RED}✘ Database restore left an empty Admin table — treating as failed.${NC}"
@@ -736,16 +752,14 @@ WHERE datname = 'panel_db'
       restore_failed=1
       db_restore_applied=0
     else
-        local client_n=0 panel_n=0
-        client_n=$(docker exec -u postgres hmpanel-postgres \
-          psql -d panel_db -tAc 'SELECT COUNT(*) FROM "Client"' 2>/dev/null | tr -d '[:space:]' || echo 0)
-        panel_n=$(docker exec -u postgres hmpanel-postgres \
-          psql -d panel_db -tAc 'SELECT COUNT(*) FROM "Panel"' 2>/dev/null | tr -d '[:space:]' || echo 0)
-        # Always emit verify line (stderr) so host-agent / UI logs capture it even in silent mode
-        echo "Database verify: Admin=${admin_n} Panel=${panel_n} Client=${client_n}" >&2
-        if [[ "$silent" != "true" ]]; then
-          echo "Database verify: Admin=${admin_n} Panel=${panel_n} Client=${client_n}"
-        fi
+      local client_n=0 panel_n=0
+      client_n=$(pg_exec -d panel_db -tAc 'SELECT COUNT(*) FROM "Client"' 2>/dev/null | tr -d '[:space:]' || echo 0)
+      panel_n=$(pg_exec -d panel_db -tAc 'SELECT COUNT(*) FROM "Panel"' 2>/dev/null | tr -d '[:space:]' || echo 0)
+      # Always emit verify line (stderr) so host-agent / UI logs capture it even in silent mode
+      echo "Database verify: Admin=${admin_n} Panel=${panel_n} Client=${client_n}" >&2
+      if [[ "$silent" != "true" ]]; then
+        echo "Database verify: Admin=${admin_n} Panel=${panel_n} Client=${client_n}"
+      fi
     fi
   fi
 

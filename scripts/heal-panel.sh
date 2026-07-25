@@ -65,8 +65,8 @@ if [[ -n "$db_pass" ]]; then
   info "Syncing PostgreSQL password to .env..."
   escaped_pass="${db_pass//\'/\'\'}"
   for i in 1 2 3 4 5; do
-    if docker exec -u postgres hmpanel-postgres \
-      psql -d postgres -v ON_ERROR_STOP=1 \
+    if docker exec hmpanel-postgres \
+      psql -U "${db_user}" -d postgres -v ON_ERROR_STOP=1 \
       -c "ALTER ROLE \"${db_user}\" WITH PASSWORD '${escaped_pass}';" >/dev/null 2>&1; then
       log "PostgreSQL password synced."
       break

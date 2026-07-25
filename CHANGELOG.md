@@ -8,6 +8,13 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [1.8.14] - 2026-07-25
+
+### Fixed
+- **Restore `role "postgres" does not exist`:** HMPanel uses `POSTGRES_USER=panel_user` (no DB role named `postgres`). Restore/heal/update now always connect with `-U panel_user` instead of assuming a `postgres` superuser role.
+
+---
+
 ## [1.8.13] - 2026-07-25
 
 ### Fixed

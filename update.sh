@@ -222,7 +222,7 @@ main() {
       break
     fi
     # Superuser socket may work even when role auth is drifted
-    if docker exec -u postgres hmpanel-postgres pg_isready -d postgres &>/dev/null; then
+    if docker exec hmpanel-postgres pg_isready -U "${POSTGRES_USER:-panel_user}" -d postgres &>/dev/null; then
       pg_ready=true
       break
     fi
@@ -239,13 +239,14 @@ main() {
   if [[ -n "$db_pass" ]]; then
     info "Synchronizing PostgreSQL credentials with .env..."
     local escaped_pass="${db_pass//\'/\'\'}"
-    if ! docker exec -u postgres hmpanel-postgres \
-      psql -d postgres -v ON_ERROR_STOP=1 \
+    # Official image has no role "postgres" — connect as POSTGRES_USER (panel_user).
+    if ! docker exec hmpanel-postgres \
+      psql -U "${db_user}" -d postgres -v ON_ERROR_STOP=1 \
       -c "ALTER ROLE \"${db_user}\" WITH PASSWORD '${escaped_pass}';" >/dev/null 2>&1; then
-      warn "Could not sync DB password via OS user — retrying shortly..."
+      warn "Could not sync DB password — retrying shortly..."
       sleep 3
-      docker exec -u postgres hmpanel-postgres \
-        psql -d postgres -v ON_ERROR_STOP=1 \
+      docker exec hmpanel-postgres \
+        psql -U "${db_user}" -d postgres -v ON_ERROR_STOP=1 \
         -c "ALTER ROLE \"${db_user}\" WITH PASSWORD '${escaped_pass}';" >/dev/null 2>&1 \
         || warn "DB password sync still failing (continuing)..."
     else
