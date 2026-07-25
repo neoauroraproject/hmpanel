@@ -630,56 +630,75 @@ do_restore() {
   local input_path="$1"
   local silent="${2:-false}"
   local is_rollback="${3:-false}"
+
+  # Always visible progress/errors on stderr (even when silent/API mode).
+  rmsg() { echo -e "$*" >&2; }
   
   local filepath
   if ! filepath=$(resolve_restore_filepath "$input_path"); then
-    if [[ "$silent" != "true" ]]; then echo -e "${RED}✘ File not found: ${input_path}${NC}"; fi
+    rmsg "${RED}✘ File not found: ${input_path}${NC}"
+    rmsg "  Looked in: ${BACKUP_DIR}/"
+    rmsg "  Available:"
+    ls -1 "${BACKUP_DIR}"/*.tar.gz 2>/dev/null | sed 's|.*/|    |' >&2 || rmsg "    (none)"
     return 1
   fi
+  rmsg "${BLUE}ℹ${NC}  Restoring from: ${filepath}"
   
-  local temp_dir=$(mktemp -d)
+  local temp_dir
+  temp_dir=$(mktemp -d)
   
   if [[ "$filepath" == *.sql || "$filepath" == *.sql.gz ]]; then
-    # Legacy Restore — dump is panel_db only
-    if [[ "$silent" != "true" ]]; then echo "Legacy SQL backup detected. Proceeding with database restore..."; fi
+    rmsg "Legacy SQL backup detected. Proceeding with database restore..."
+    compose stop panel-app >/dev/null 2>&1 || docker stop hmpanel-panel >/dev/null 2>&1 || true
+    sleep 2
+    local ret=1
     if [[ "$filepath" == *.sql.gz ]]; then
-      zcat "$filepath" | docker exec -i hmpanel-postgres psql -U panel_user -d panel_db >/dev/null 2>&1
+      zcat "$filepath" | pg_exec_i -d panel_db -v ON_ERROR_STOP=1 && ret=0
     else
-      cat "$filepath" | docker exec -i hmpanel-postgres psql -U panel_user -d panel_db >/dev/null 2>&1
+      cat "$filepath" | pg_exec_i -d panel_db -v ON_ERROR_STOP=1 && ret=0
     fi
-    local ret=$?
     rm -rf "$temp_dir"
+    sync_credentials_after_restore "$silent" || true
     if [[ $ret -eq 0 ]]; then
-      if [[ "$silent" != "true" ]]; then echo -e "${GREEN}✔ Legacy restore completed successfully!${NC}"; fi
+      rmsg "${GREEN}✔ Legacy restore completed successfully!${NC}"
       return 0
     else
-      if [[ "$silent" != "true" ]]; then echo -e "${RED}✘ Legacy restore failed.${NC}"; fi
+      rmsg "${RED}✘ Legacy restore failed.${NC}"
       return 1
     fi
   fi
   
   # New Tar.gz Restore (Transactional)
-  tar -xzf "$filepath" -C "$temp_dir"
+  if ! tar -xzf "$filepath" -C "$temp_dir"; then
+    rmsg "${RED}✘ Failed to extract archive: ${filepath}${NC}"
+    rm -rf "$temp_dir"
+    return 1
+  fi
   if [[ ! -f "${temp_dir}/manifest.json" ]]; then
-    if [[ "$silent" != "true" ]]; then echo -e "${RED}✘ Invalid backup format: missing manifest.json${NC}"; fi
+    rmsg "${RED}✘ Invalid backup format: missing manifest.json${NC}"
+    rmsg "  Archive contents:"
+    ls -la "$temp_dir" >&2 || true
     rm -rf "$temp_dir"
     return 1
   fi
   
-  local btype=$(sed -n 's/.*"type": *"\([^"]*\)".*/\1/p' "${temp_dir}/manifest.json" | head -n 1)
+  local btype
+  btype=$(sed -n 's/.*"type": *"\([^"]*\)".*/\1/p' "${temp_dir}/manifest.json" | head -n 1)
   btype="${btype:-unknown}"
-  if [[ "$silent" != "true" ]]; then echo "Starting transactional restore ($btype)..."; fi
+  rmsg "Starting transactional restore (${btype})..."
+  rmsg "  Components in archive: $(ls -1 "$temp_dir" | tr '\n' ' ')"
   
   # 1. Create Rollback Backup (skip when we are already rolling back)
   local rollback_file=""
   if [[ "$is_rollback" != "true" ]]; then
-    if [[ "$silent" != "true" ]]; then echo "Creating automatic rollback backup..."; fi
+    rmsg "Creating automatic rollback backup..."
     rollback_file=$(do_backup "full" "true")
     if [[ -z "$rollback_file" || ! -f "$rollback_file" ]]; then
-      if [[ "$silent" != "true" ]]; then echo -e "${RED}✘ Failed to create rollback backup. Restore aborted.${NC}"; fi
+      rmsg "${RED}✘ Failed to create rollback backup. Restore aborted.${NC}"
       rm -rf "$temp_dir"
       return 1
     fi
+    rmsg "  Rollback snapshot: ${rollback_file}"
   fi
   
   # 2. Execute Restore
@@ -687,19 +706,12 @@ do_restore() {
   local db_restore_applied=0
   
   if [[ -f "${temp_dir}/database.sql.gz" ]]; then
-    if [[ "$silent" != "true" ]]; then echo "Restoring database (pg_dumpall → postgres)..."; fi
-
-    # CRITICAL: panel-app holds open connections to panel_db. pg_dumpall --clean
-    # issues DROP DATABASE which fails while those connections exist. Without a
-    # hard stop, psql used to continue (no ON_ERROR_STOP) → config restored
-    # (SSL domain changes) but business data stayed on the OLD database.
-    if [[ "$silent" != "true" ]]; then echo "Stopping panel-app to free database connections..."; fi
+    rmsg "Restoring database (pg_dumpall → postgres)..."
+    rmsg "Stopping panel-app to free database connections..."
     cd "$INSTALL_DIR" || true
     compose stop panel-app >/dev/null 2>&1 || docker stop hmpanel-panel >/dev/null 2>&1 || true
     sleep 2
 
-    # Kill any leftover sessions (healthchecks, stuck clients, etc.)
-    # Use POSTGRES_USER (panel_user) — role "postgres" does not exist in this image.
     pg_exec -d postgres -v ON_ERROR_STOP=1 -c "
 SELECT pg_terminate_backend(pid)
 FROM pg_stat_activity
@@ -707,33 +719,27 @@ WHERE datname = 'panel_db'
   AND pid <> pg_backend_pid();
 " >/dev/null 2>&1 || true
 
-    # Restore as DB superuser (POSTGRES_USER) via local socket trust so mid-dump
-    # ALTER ROLE password changes cannot break the session.
     local db_restore_log
     db_restore_log=$(mktemp)
     if zcat "${temp_dir}/database.sql.gz" | pg_exec_i -d postgres -v ON_ERROR_STOP=1 >"$db_restore_log" 2>&1; then
       db_restore_applied=1
+      rmsg "${GREEN}✔${NC}  Database SQL applied."
     else
-      if [[ "$silent" != "true" ]]; then
-        echo -e "${RED}✘ Database restore failed.${NC}"
-        tail -n 60 "$db_restore_log" 2>/dev/null || true
-      fi
+      rmsg "${RED}✘ Database restore failed.${NC}"
+      tail -n 80 "$db_restore_log" >&2 || true
       restore_failed=1
-      # Try to bring panel back even on failure
       compose start panel-app >/dev/null 2>&1 || true
     fi
     rm -f "$db_restore_log"
+  else
+    rmsg "${YELLOW}⚠${NC}  No database.sql.gz in archive — DB will NOT change."
   fi
   
   if [[ $restore_failed -eq 0 && -f "${temp_dir}/config.tar.gz" ]]; then
-    if [[ "$silent" != "true" ]]; then echo "Restoring configuration..."; fi
+    rmsg "Restoring configuration (.env / nginx / acme)..."
     tar -xzf "${temp_dir}/config.tar.gz" -C "${INSTALL_DIR}"
-    # Do not docker restart here — credentials sync + force-recreate happens next.
   fi
 
-  # Critical: pg_dumpall restores role passwords; config restore overwrites .env;
-  # docker restart alone keeps the OLD DATABASE_URL from container create-time.
-  # Sync Postgres role + recreate panel-app BEFORE uploads/premium need a healthy panel.
   if [[ $restore_failed -eq 0 ]]; then
     if [[ -f "${temp_dir}/database.sql.gz" || -f "${temp_dir}/config.tar.gz" ]]; then
       sync_credentials_after_restore "$silent" || true
@@ -741,123 +747,99 @@ WHERE datname = 'panel_db'
     fi
   fi
 
-  # Sanity-check: a successful DB restore must leave at least one Admin row.
   if [[ $restore_failed -eq 0 && $db_restore_applied -eq 1 ]]; then
     local admin_n=0
     admin_n=$(pg_exec -d panel_db -tAc 'SELECT COUNT(*) FROM "Admin"' 2>/dev/null | tr -d '[:space:]' || echo 0)
     if [[ "${admin_n:-0}" -lt 1 ]]; then
-      if [[ "$silent" != "true" ]]; then
-        echo -e "${RED}✘ Database restore left an empty Admin table — treating as failed.${NC}"
-      fi
+      rmsg "${RED}✘ Database restore left an empty Admin table — treating as failed.${NC}"
       restore_failed=1
       db_restore_applied=0
     else
       local client_n=0 panel_n=0
       client_n=$(pg_exec -d panel_db -tAc 'SELECT COUNT(*) FROM "Client"' 2>/dev/null | tr -d '[:space:]' || echo 0)
       panel_n=$(pg_exec -d panel_db -tAc 'SELECT COUNT(*) FROM "Panel"' 2>/dev/null | tr -d '[:space:]' || echo 0)
-      # Always emit verify line (stderr) so host-agent / UI logs capture it even in silent mode
-      echo "Database verify: Admin=${admin_n} Panel=${panel_n} Client=${client_n}" >&2
-      if [[ "$silent" != "true" ]]; then
-        echo "Database verify: Admin=${admin_n} Panel=${panel_n} Client=${client_n}"
-      fi
+      rmsg "Database verify: Admin=${admin_n} Panel=${panel_n} Client=${client_n}"
     fi
   fi
 
-  # If archive claimed to include a database but we never applied it, fail hard —
-  # never leave the user with config-only (domain) changes thinking data restored.
   if [[ $restore_failed -eq 0 && -f "${temp_dir}/database.sql.gz" && $db_restore_applied -ne 1 ]]; then
-    if [[ "$silent" != "true" ]]; then
-      echo -e "${RED}✘ database.sql.gz was present but not applied.${NC}"
-    fi
+    rmsg "${RED}✘ database.sql.gz was present but not applied.${NC}"
     restore_failed=1
   fi
 
+  # Uploads / premium via named volumes — do NOT require panel-app to be healthy
   if [[ $restore_failed -eq 0 && -f "${temp_dir}/uploads.tar.gz" ]]; then
-    if [[ "$silent" != "true" ]]; then echo "Restoring uploads (branding assets)..."; fi
-    # Ensure panel is up enough for docker exec
-    wait_for_panel_health 6 || true
-    if docker exec hmpanel-panel mkdir -p /app/uploads >/dev/null 2>&1; then
-      if ! docker exec -i hmpanel-panel tar -xzf - -C /app/uploads < "${temp_dir}/uploads.tar.gz"; then
-        if [[ "$silent" != "true" ]]; then echo -e "${YELLOW}⚠ Uploads restore failed (continuing — DB/config already applied).${NC}"; fi
-      fi
+    rmsg "Restoring uploads volume..."
+    if docker run --rm \
+      -v hmpanel_uploads:/dest \
+      -v "${temp_dir}/uploads.tar.gz:/backup.tar.gz:ro" \
+      alpine sh -c 'mkdir -p /dest && tar -xzf /backup.tar.gz -C /dest'; then
+      rmsg "${GREEN}✔${NC}  Uploads restored."
     else
-      if [[ "$silent" != "true" ]]; then echo -e "${YELLOW}⚠ Panel container not ready for uploads restore.${NC}"; fi
+      rmsg "${YELLOW}⚠ Uploads restore failed (continuing).${NC}"
     fi
   elif [[ $restore_failed -eq 0 && "$btype" == "full" ]]; then
-    if [[ "$silent" != "true" ]]; then
-      echo -e "${YELLOW}⚠ This full backup has no uploads.tar.gz — branding logos may be missing.${NC}"
-    fi
+    rmsg "${YELLOW}⚠ This full backup has no uploads.tar.gz${NC}"
   fi
 
   if [[ $restore_failed -eq 0 && -f "${temp_dir}/premium.tar.gz" ]]; then
-    if [[ "$silent" != "true" ]]; then echo "Restoring premium modules..."; fi
-    wait_for_panel_health 6 || true
-    if docker exec hmpanel-panel mkdir -p /opt/hmpanel/premium >/dev/null 2>&1; then
-      if docker exec -i hmpanel-panel tar -xzf - -C /opt/hmpanel/premium < "${temp_dir}/premium.tar.gz"; then
-        # Reload premium modules — recreate so env stays correct (not plain restart).
-        cd "$INSTALL_DIR" && compose up -d --force-recreate --no-deps panel-app >/dev/null 2>&1 || \
-          docker restart hmpanel-panel >/dev/null 2>&1 || true
-        sleep 5
-      else
-        if [[ "$silent" != "true" ]]; then echo -e "${YELLOW}⚠ Premium restore failed (license DB rows still restored — re-download bundle if needed).${NC}"; fi
-      fi
+    rmsg "Restoring premium modules volume (license bundle)..."
+    if docker run --rm \
+      -v hmpanel_premium:/dest \
+      -v "${temp_dir}/premium.tar.gz:/backup.tar.gz:ro" \
+      alpine sh -c 'mkdir -p /dest && tar -xzf /backup.tar.gz -C /dest && ls -la /dest | head'; then
+      rmsg "${GREEN}✔${NC}  Premium modules restored."
     else
-      if [[ "$silent" != "true" ]]; then echo -e "${YELLOW}⚠ Panel container not ready for premium restore.${NC}"; fi
+      rmsg "${YELLOW}⚠ Premium volume restore failed — re-download bundle from License UI if needed.${NC}"
     fi
+  elif [[ $restore_failed -eq 0 && "$btype" == "full" ]]; then
+    rmsg "${YELLOW}⚠ No premium.tar.gz in this backup — premium files on disk were not replaced.${NC}"
   fi
 
   if [[ $restore_failed -eq 0 && -f "${temp_dir}/.hmpanel-instance-id" ]]; then
-    if [[ "$silent" != "true" ]]; then echo "Restoring instance id..."; fi
+    rmsg "Restoring instance id..."
     mkdir -p "${BACKUP_DIR}"
     cp "${temp_dir}/.hmpanel-instance-id" "${BACKUP_DIR}/.hmpanel-instance-id" 2>/dev/null || true
+    # Also into panel backups mount once panel is up
     docker exec -i hmpanel-panel sh -c 'mkdir -p /app/backups && cat > /app/backups/.hmpanel-instance-id' \
       < "${temp_dir}/.hmpanel-instance-id" 2>/dev/null || true
   fi
   
-  # 3. Verify via in-container health endpoint (ports are not published to host)
   if [[ $restore_failed -eq 0 ]]; then
-    if [[ "$silent" != "true" ]]; then echo "Verifying panel health..."; fi
-    # Prisma db push after recreate can take >2 minutes on large DBs.
+    rmsg "Verifying panel health..."
     if ! wait_for_panel_health 36; then
-      if [[ "$silent" != "true" ]]; then
-        echo -e "${YELLOW}Health slow — re-syncing credentials and retrying...${NC}"
-      fi
+      rmsg "${YELLOW}Health slow — re-syncing credentials and retrying...${NC}"
       sync_credentials_after_restore "$silent" || true
       if ! wait_for_panel_health 24; then
-        if [[ "$silent" != "true" ]]; then echo -e "${RED}✘ Health verification failed!${NC}"; fi
+        rmsg "${RED}✘ Health verification failed!${NC}"
         restore_failed=1
       fi
     fi
   fi
   
-  # 4. Commit or Rollback
   if [[ $restore_failed -eq 1 ]]; then
     if [[ "$is_rollback" == "true" ]]; then
-      if [[ "$silent" != "true" ]]; then echo -e "${RED}✘ Rollback restore also failed.${NC}"; fi
+      rmsg "${RED}✘ Rollback restore also failed.${NC}"
       rm -rf "$temp_dir"
       return 1
     fi
-    # NEVER auto-rollback after a successful DB apply + health flake.
-    # That was wiping restored business data and leaving an empty panel.
     if [[ $db_restore_applied -eq 1 ]]; then
-      if [[ "$silent" != "true" ]]; then
-        echo -e "${YELLOW}⚠ Keeping restored database (will NOT roll back).${NC}"
-        echo -e "${YELLOW}  Fix health with: hm update   — then re-check the panel.${NC}"
-        echo -e "${YELLOW}  Rollback snapshot kept at: ${rollback_file}${NC}"
-      fi
+      rmsg "${YELLOW}⚠ Keeping restored database (will NOT roll back).${NC}"
+      rmsg "${YELLOW}  Run: curl -fsSL https://raw.githubusercontent.com/neoauroraproject/hmpanel/main/scripts/heal-panel.sh | bash${NC}"
+      rmsg "${YELLOW}  Rollback snapshot kept at: ${rollback_file}${NC}"
       sync_credentials_after_restore "$silent" || true
       rm -rf "$temp_dir"
       return 1
     fi
     if [[ -n "$rollback_file" && -f "$rollback_file" ]]; then
-      if [[ "$silent" != "true" ]]; then echo -e "${YELLOW}Rolling back to previous state...${NC}"; fi
-      do_restore "$rollback_file" "true" "true"
+      rmsg "${YELLOW}Rolling back to previous state...${NC}"
+      do_restore "$rollback_file" "false" "true"
     fi
-    if [[ "$silent" != "true" ]]; then echo -e "${RED}✘ Restore failed and rollback was applied.${NC}"; fi
+    rmsg "${RED}✘ Restore failed.${NC}"
     rm -rf "$temp_dir"
     return 1
   else
-    if [[ "$silent" != "true" ]]; then echo -e "${GREEN}✔ Restore completed and verified!${NC}"; fi
+    rmsg "${GREEN}✔ Restore completed and verified!${NC}"
     rm -rf "$temp_dir"
     return 0
   fi
@@ -2825,14 +2807,21 @@ if [[ "$JSON_OUTPUT" == "true" || "${1:-}" == "ssl" || "${1:-}" == "doctor" || "
       ACTION=""
     fi
     if [[ -n "$ACTION" ]]; then
-      if do_restore "$ACTION" "true"; then
+      # Human CLI must be verbose. Only API --json stays quiet on stdout.
+      restore_silent="false"
+      if [[ "$JSON_OUTPUT" == "true" ]]; then restore_silent="true"; fi
+      if do_restore "$ACTION" "$restore_silent"; then
         if [[ "$JSON_OUTPUT" == "true" ]]; then
           output_json true "RESTORE_OK" "\"file\":\"$ACTION\""
+        else
+          echo "RESTORE_OK $ACTION"
         fi
         exit 0
       else
         if [[ "$JSON_OUTPUT" == "true" ]]; then
           output_json false "RESTORE_FAILED" "\"file\":\"$ACTION\""
+        else
+          echo "RESTORE_FAILED $ACTION" >&2
         fi
         exit 1
       fi

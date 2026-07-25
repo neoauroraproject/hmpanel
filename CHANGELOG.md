@@ -8,6 +8,15 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [1.8.15] - 2026-07-25
+
+### Fixed
+- **`hm restore` silent no-op:** CLI restore used `silent=true` and printed nothing on failure (looked like it did nothing). Human `hm restore` is now always verbose; errors always go to stderr.
+- **Premium license missing after restore:** Premium/uploads are restored via Docker named volumes directly (no dependency on a healthy panel-app). Instance id is written to the host backups dir.
+- **`scripts/restore-backup.sh`:** One-shot verbose restore that refreshes CLI then runs restore with full logs.
+
+---
+
 ## [1.8.14] - 2026-07-25
 
 ### Fixed
