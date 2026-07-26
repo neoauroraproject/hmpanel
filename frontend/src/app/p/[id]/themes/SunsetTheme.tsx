@@ -1,9 +1,10 @@
 "use client";
 
 import type { CSSProperties } from "react";
-import { Check, Copy, QrCode } from "lucide-react";
+import { QrCode } from "lucide-react";
 import {
   usePortalModel,
+  DualSubCopyButtons,
   QrModal,
   BrandMark,
   ConfigList,
@@ -30,6 +31,7 @@ export default function SunsetTheme({ id, data }: { id: string; data: SubData })
     pct,
     formatBytes,
     systemUrl,
+    nativeUrl,
     copy,
     copied,
     setQrValue,
@@ -125,15 +127,18 @@ export default function SunsetTheme({ id, data }: { id: string; data: SubData })
           />
         </section>
 
-        <div className="flex flex-col gap-3 sm:flex-row">
-          <button
-            type="button"
-            onClick={() => copy(systemUrl, "system")}
-            className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-[#f3b36a] px-5 py-3.5 text-sm font-semibold text-[#1a120c] transition hover:bg-[#f6c48a]"
-          >
-            {copied === "system" ? <Check size={16} /> : <Copy size={16} />}
-            {copied === "system" ? t("copied") : t("copyLink")}
-          </button>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-stretch">
+          <DualSubCopyButtons
+            systemUrl={systemUrl}
+            nativeUrl={nativeUrl}
+            copied={copied}
+            onCopy={copy}
+            t={t}
+            showNative={ps.showNativeQR !== false}
+            className="flex-1"
+            buttonClassName="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#f3b36a] px-5 py-3.5 text-sm font-semibold text-[#1a120c] transition hover:bg-[#f6c48a]"
+            nativeButtonClassName="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-amber-200/20 bg-white/[0.04] px-5 py-3.5 text-sm font-semibold text-amber-50 transition hover:bg-white/[0.07]"
+          />
           {ps.showPlatformQR !== false ? (
             <button
               type="button"

@@ -433,6 +433,24 @@ END \$\$;
 
   log "HMPanel Panel successfully updated to version $(read_running_app_version)!"
 
+  info "Pruning old panel backups to free disk..."
+  # Keep last 5 of each backup_* family (same policy as cli.sh do_backup)
+  keep="${HMPANEL_BACKUP_KEEP:-5}"
+  for pattern in \
+    "${INSTALL_DIR}/backups/backup_full_*.tar.gz" \
+    "${INSTALL_DIR}/backups/backup_database_*.tar.gz" \
+    "${INSTALL_DIR}/backups/backup_config_*.tar.gz" \
+    "${INSTALL_DIR}/backups/rollback_*.tar.gz"; do
+    i=0
+    while IFS= read -r f; do
+      [[ -z "$f" ]] && continue
+      i=$((i + 1))
+      if [[ $i -gt $keep ]]; then
+        rm -f "$f" 2>/dev/null || true
+      fi
+    done < <(ls -1t ${pattern} 2>/dev/null || true)
+  done
+
   info "Cleaning up old images..."
   docker image prune -a -f || true
   docker builder prune -f || true

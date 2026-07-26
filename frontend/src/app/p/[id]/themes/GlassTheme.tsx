@@ -5,7 +5,7 @@ import { BrandMark, LangToggle, useThemeFont, type SubData } from "./portal-kit"
 import {
   NeoAdvanced,
   NeoConfigRows,
-  NeoCopyRow,
+  NeoDualSubCopy,
   NeoFab,
   NeoImportSheet,
   NeoQrOverlay,
@@ -132,12 +132,17 @@ export default function GlassTheme({ id, data }: { id: string; data: SubData }) 
           />
         </section>
 
-        <NeoCopyRow
-          onClick={() => m.copy(m.systemUrl, "system")}
-          copied={m.copied === "system"}
-          label={m.t("copySubLink")}
+        <NeoDualSubCopy
+          systemUrl={m.systemUrl}
+          nativeUrl={m.nativeUrl}
+          copied={m.copied}
+          onCopy={m.copy}
+          panelLabel={m.t("linkPanel")}
+          nativeLabel={m.t("linkNative")}
           copiedLabel={m.t("copied")}
-          className="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/60 bg-white/65 px-4 py-3.5 text-sm font-semibold backdrop-blur-xl"
+          showNative={m.ps.showNativeQR !== false}
+          buttonClassName="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/60 bg-white/65 px-4 py-3.5 text-sm font-semibold backdrop-blur-xl"
+          nativeButtonClassName="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/40 bg-white/40 px-4 py-3.5 text-sm font-semibold text-zinc-700 backdrop-blur-xl"
         />
 
         <p className="pt-1 text-center text-xs text-zinc-500">

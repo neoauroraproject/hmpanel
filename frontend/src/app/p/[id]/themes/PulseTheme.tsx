@@ -1,8 +1,9 @@
 "use client";
 
-import { Check, Copy, QrCode } from "lucide-react";
+import { QrCode } from "lucide-react";
 import {
   usePortalModel,
+  DualSubCopyButtons,
   QrModal,
   BrandMark,
   ConfigList,
@@ -29,6 +30,7 @@ export default function PulseTheme({ id, data }: { id: string; data: SubData }) 
     pct,
     formatBytes,
     systemUrl,
+    nativeUrl,
     copy,
     copied,
     setQrValue,
@@ -38,6 +40,7 @@ export default function PulseTheme({ id, data }: { id: string; data: SubData }) 
     ps,
     connectionOutput,
     outputType,
+    t,
   } = model;
 
   const remPct = total > 0 ? Math.max(0, 100 - pct) : 100;
@@ -109,20 +112,23 @@ export default function PulseTheme({ id, data }: { id: string; data: SubData }) 
           </section>
         ) : (
           <>
-            <section className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => copy(systemUrl, "system")}
-                className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-[#2563eb] px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-500"
-              >
-                {copied === "system" ? <Check size={16} /> : <Copy size={16} />}
-                Copy subscription link
-              </button>
+            <section className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
+              <DualSubCopyButtons
+                systemUrl={systemUrl}
+                nativeUrl={nativeUrl}
+                copied={copied}
+                onCopy={copy}
+                t={t}
+                showNative={ps.showNativeQR !== false}
+                className="flex-1"
+                buttonClassName="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#2563eb] px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-500"
+                nativeButtonClassName="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+              />
               {ps.showPlatformQR !== false ? (
                 <button
                   type="button"
                   onClick={() => setQrValue(systemUrl)}
-                  className="inline-flex h-12 w-12 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm"
+                  className="inline-flex h-12 w-12 shrink-0 items-center justify-center self-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm"
                   aria-label="QR"
                 >
                   <QrCode size={18} />

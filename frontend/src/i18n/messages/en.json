@@ -434,6 +434,8 @@
   "connection": {
     "platformQr": "Platform Sub QR",
     "nativeQr": "Native 3x-ui QR",
+    "panelLink": "Panel link",
+    "nativeLink": "Native link",
     "platformSubHint": "HMPanel subscription link (/s/) — for v2rayNG, Hiddify, etc.",
     "nativeSubHint": "Direct 3x-ui panel subscription link",
     "downloadQr": "Download QR",

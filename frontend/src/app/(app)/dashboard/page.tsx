@@ -579,24 +579,24 @@ function ResellerDashboard() {
 
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => router.push('/clients?filter=traffic-low')} className="flex flex-col items-start p-5 rounded-2xl bg-gradient-to-br from-amber-500/5 to-amber-600/10 border border-amber-500/20 hover:border-amber-500/40 transition-colors relative overflow-hidden">
-            <div className="absolute top-0 right-0 p-4 opacity-10"><HardDrive size={48} /></div>
-            <span className="text-3xl font-extrabold text-amber-600 dark:text-amber-400">{attention.trafficLow}</span>
-            <span className="mt-1 font-semibold text-zinc-700 dark:text-zinc-200">{t("dashboard.trafficLow")}</span>
+            <div className="pointer-events-none absolute top-0 end-0 p-4 opacity-10"><HardDrive size={48} /></div>
+            <span className="relative z-10 text-3xl font-extrabold text-amber-600 dark:text-amber-400">{attention.trafficLow}</span>
+            <span className="relative z-10 mt-1 font-semibold text-zinc-700 dark:text-zinc-200">{t("dashboard.trafficLow")}</span>
           </motion.button>
           <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => router.push('/clients?filter=expiring-soon')} className="flex flex-col items-start p-5 rounded-2xl bg-gradient-to-br from-orange-500/5 to-orange-600/10 border border-orange-500/20 hover:border-orange-500/40 transition-colors relative overflow-hidden">
-            <div className="absolute top-0 right-0 p-4 opacity-10"><CalendarDays size={48} /></div>
-            <span className="text-3xl font-extrabold text-orange-600 dark:text-orange-400">{attention.expiringSoon}</span>
-            <span className="mt-1 font-semibold text-zinc-700 dark:text-zinc-200">{t("clients.filterExpiringSoon")}</span>
+            <div className="pointer-events-none absolute top-0 end-0 p-4 opacity-10"><CalendarDays size={48} /></div>
+            <span className="relative z-10 text-3xl font-extrabold text-orange-600 dark:text-orange-400">{attention.expiringSoon}</span>
+            <span className="relative z-10 mt-1 font-semibold text-zinc-700 dark:text-zinc-200">{t("clients.filterExpiringSoon")}</span>
           </motion.button>
           <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => router.push('/clients?filter=disabled')} className="flex flex-col items-start p-5 rounded-2xl bg-gradient-to-br from-zinc-500/5 to-zinc-600/10 border border-zinc-500/20 hover:border-zinc-500/40 transition-colors relative overflow-hidden">
-            <div className="absolute top-0 right-0 p-4 opacity-10"><UserCog size={48} /></div>
-            <span className="text-3xl font-extrabold text-zinc-600 dark:text-zinc-400">{attention.disabled}</span>
-            <span className="mt-1 font-semibold text-zinc-700 dark:text-zinc-200">{t("common.disabled")}</span>
+            <div className="pointer-events-none absolute top-0 end-0 p-4 opacity-10"><UserCog size={48} /></div>
+            <span className="relative z-10 text-3xl font-extrabold text-zinc-600 dark:text-zinc-400">{attention.disabled}</span>
+            <span className="relative z-10 mt-1 font-semibold text-zinc-700 dark:text-zinc-200">{t("common.disabled")}</span>
           </motion.button>
           <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => router.push('/clients?filter=depleted')} className="flex flex-col items-start p-5 rounded-2xl bg-gradient-to-br from-red-500/5 to-red-600/10 border border-red-500/20 hover:border-red-500/40 transition-colors relative overflow-hidden">
-            <div className="absolute top-0 right-0 p-4 opacity-10"><AlertTriangle size={48} /></div>
-            <span className="text-3xl font-extrabold text-red-600 dark:text-red-400">{attention.depleted}</span>
-            <span className="mt-1 font-semibold text-zinc-700 dark:text-zinc-200">{t("dashboard.trafficFinished")}</span>
+            <div className="pointer-events-none absolute top-0 end-0 p-4 opacity-10"><AlertTriangle size={48} /></div>
+            <span className="relative z-10 text-3xl font-extrabold text-red-600 dark:text-red-400">{attention.depleted}</span>
+            <span className="relative z-10 mt-1 font-semibold text-zinc-700 dark:text-zinc-200">{t("dashboard.trafficFinished")}</span>
           </motion.button>
           {cleanupCandidates > 0 && (
             <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => router.push('/cleanup')} className="flex items-center justify-between p-4 rounded-2xl bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 transition-colors col-span-full lg:col-span-2">

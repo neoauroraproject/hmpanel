@@ -471,42 +471,46 @@ export default function NeoTheme({
         </section>
 
         {/* Actions */}
-        <section className="grid grid-cols-2 gap-3">
-          <button
-            type="button"
-            onClick={() => copyText(primarySubUrl, "sub")}
-            className={`flex items-center justify-center gap-2 px-4 py-3.5 text-sm font-semibold transition ${v.btn} ${v.radius}`}
-          >
-            {copiedText === "sub" ? <Check size={16} /> : <Copy size={16} />}
-            {copiedText === "sub" ? "Copied" : "Copy link"}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setUrlForQR(primarySubUrl);
-              setQrModal(true);
-            }}
-            className={`flex items-center justify-center gap-2 px-4 py-3.5 text-sm font-semibold transition ${v.card} ${v.radius}`}
-          >
-            <QrCode size={16} /> QR code
-          </button>
-          <button
-            type="button"
-            onClick={() => setImportSheet(true)}
-            className={`col-span-2 flex items-center justify-center gap-2 px-4 py-3.5 text-sm font-semibold transition ${v.card} ${v.radius}`}
-          >
-            <MonitorSmartphone size={16} /> Import to app
-          </button>
-          {portalSettings?.showNativeQR !== false ? (
+        <section className="grid gap-3">
+          <div className={`grid gap-3 ${nativeUrl && portalSettings?.showNativeQR !== false ? "grid-cols-2" : "grid-cols-1"}`}>
             <button
               type="button"
-              onClick={() => copyText(nativeUrl, "native")}
-              className={`col-span-2 flex items-center justify-center gap-2 px-4 py-3 text-sm ${v.muted} hover:opacity-80`}
+              onClick={() => copyText(primarySubUrl, "sub")}
+              className={`flex items-center justify-center gap-2 px-4 py-3.5 text-sm font-semibold transition ${v.btn} ${v.radius}`}
             >
-              {copiedText === "native" ? <Check size={14} /> : <Copy size={14} />}
-              {copiedText === "native" ? "Native URL copied" : "Copy native panel URL"}
+              {copiedText === "sub" ? <Check size={16} /> : <Copy size={16} />}
+              {copiedText === "sub" ? "Copied" : "Panel link"}
             </button>
-          ) : null}
+            {nativeUrl && portalSettings?.showNativeQR !== false ? (
+              <button
+                type="button"
+                onClick={() => copyText(nativeUrl, "native")}
+                className={`flex items-center justify-center gap-2 px-4 py-3.5 text-sm font-semibold transition ${v.card} ${v.radius}`}
+              >
+                {copiedText === "native" ? <Check size={16} /> : <Copy size={16} />}
+                {copiedText === "native" ? "Copied" : "Native link"}
+              </button>
+            ) : null}
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setUrlForQR(primarySubUrl);
+                setQrModal(true);
+              }}
+              className={`flex items-center justify-center gap-2 px-4 py-3.5 text-sm font-semibold transition ${v.card} ${v.radius}`}
+            >
+              <QrCode size={16} /> QR code
+            </button>
+            <button
+              type="button"
+              onClick={() => setImportSheet(true)}
+              className={`flex items-center justify-center gap-2 px-4 py-3.5 text-sm font-semibold transition ${v.card} ${v.radius}`}
+            >
+              <MonitorSmartphone size={16} /> Import to app
+            </button>
+          </div>
         </section>
 
         {/* Footer from branding footerText (replaces NeoTemplate copyright) */}

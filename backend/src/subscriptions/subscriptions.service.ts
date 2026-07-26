@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import axios from 'axios';
 import * as https from 'https';
 import { Response, Request } from 'express';
+import { normalizeTelegramLink } from '../common/utils/telegram-link';
 
 @Injectable()
 export class SubscriptionsService {
@@ -80,6 +81,13 @@ export class SubscriptionsService {
       }
     } catch {
       /* Brand table may be absent on some installs */
+    }
+
+    if (portalSettings.telegramLink) {
+      portalSettings = {
+        ...portalSettings,
+        telegramLink: normalizeTelegramLink(String(portalSettings.telegramLink)),
+      };
     }
 
     let totalUp = 0n;
@@ -341,7 +349,7 @@ export class SubscriptionsService {
       if (details.portalSettings?.websiteUrl) {
         res.setHeader('support-url', String(details.portalSettings.websiteUrl));
       } else if (details.portalSettings?.telegramLink) {
-        res.setHeader('support-url', String(details.portalSettings.telegramLink));
+        res.setHeader('support-url', normalizeTelegramLink(String(details.portalSettings.telegramLink)));
       }
 
       const headersToForward = [

@@ -434,6 +434,8 @@
   "connection": {
     "platformQr": "QR اشتراک پنل",
     "nativeQr": "QR مستقیم 3x-ui",
+    "panelLink": "لینک پنل",
+    "nativeLink": "لینک Native",
     "platformSubHint": "لینک اشتراک HMPanel (/s/) — برای v2rayNG، Hiddify و…",
     "nativeSubHint": "لینک مستقیم اشتراک از پنل 3x-ui",
     "downloadQr": "دانلود QR",

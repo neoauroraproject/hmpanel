@@ -259,3 +259,52 @@ export function NeoCopyRow({
     </button>
   );
 }
+
+/** Panel (/s/) + Native (/sub/) copy buttons for Neo-family themes. */
+export function NeoDualSubCopy({
+  systemUrl,
+  nativeUrl,
+  copied,
+  onCopy,
+  panelLabel,
+  nativeLabel,
+  copiedLabel,
+  showNative = true,
+  className = "grid gap-2 sm:grid-cols-2",
+  buttonClassName,
+  nativeButtonClassName,
+}: {
+  systemUrl: string;
+  nativeUrl?: string | null;
+  copied: string | null;
+  onCopy: (text: string, key: string) => void;
+  panelLabel: string;
+  nativeLabel: string;
+  copiedLabel: string;
+  showNative?: boolean;
+  className?: string;
+  buttonClassName: string;
+  nativeButtonClassName?: string;
+}) {
+  const show = showNative !== false && !!nativeUrl;
+  return (
+    <div className={className}>
+      <NeoCopyRow
+        onClick={() => onCopy(systemUrl, "system")}
+        copied={copied === "system"}
+        label={panelLabel}
+        copiedLabel={copiedLabel}
+        className={buttonClassName}
+      />
+      {show ? (
+        <NeoCopyRow
+          onClick={() => onCopy(nativeUrl!, "native")}
+          copied={copied === "native"}
+          label={nativeLabel}
+          copiedLabel={copiedLabel}
+          className={nativeButtonClassName || buttonClassName}
+        />
+      ) : null}
+    </div>
+  );
+}

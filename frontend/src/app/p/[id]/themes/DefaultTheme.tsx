@@ -28,6 +28,7 @@ import {
   buildNativeSubUrl,
   buildSystemSubUrl,
   LangToggle,
+  normalizeTelegramHref,
   PortalConnectionPanel,
   useClientOutput,
   usePortalLocale,
@@ -171,7 +172,7 @@ export default function DefaultTheme({ id, data }: { id: string; data: SubData }
           <LangToggle lang={lang} setLang={setLang} className={toggleClass} />
           <div className="hidden items-center gap-4 md:flex">
             {portalSettings?.showTelegram && (
-              <HeaderAction icon={<MessageCircle size={22} />} href={portalSettings.telegramLink || "#"} />
+              <HeaderAction icon={<MessageCircle size={22} />} href={normalizeTelegramHref(portalSettings.telegramLink) || "#"} />
             )}
             {portalSettings?.showWhatsApp && (
               <HeaderAction icon={<Phone size={22} />} href={portalSettings.whatsappLink || "#"} />
@@ -365,7 +366,7 @@ export default function DefaultTheme({ id, data }: { id: string; data: SubData }
                         <Copy size={18} />
                       )
                     }
-                    label={copiedText === "sub" ? t("copied") : t("copy")}
+                    label={copiedText === "sub" ? t("copied") : t("linkPanel")}
                     onClick={() => copyText(primarySubUrl, "sub")}
                     active={copiedText === "sub"}
                   />
@@ -459,12 +460,20 @@ export default function DefaultTheme({ id, data }: { id: string; data: SubData }
                       </div>
                       <button
                         onClick={() => copyText(nativeUrl, "panel")}
-                        className="rounded-lg bg-zinc-800 p-2.5 text-zinc-400 transition-colors hover:bg-zinc-700"
+                        className="rounded-lg bg-zinc-800 px-3 py-2.5 text-xs font-semibold text-zinc-300 transition-colors hover:bg-zinc-700"
+                        title={t("linkNative")}
+                        aria-label={t("linkNative")}
                       >
                         {copiedText === "panel" ? (
-                          <Check size={14} className={ts.accent} />
+                          <span className={`inline-flex items-center gap-1.5 ${ts.accent}`}>
+                            <Check size={14} />
+                            {t("copied")}
+                          </span>
                         ) : (
-                          <Copy size={14} />
+                          <span className="inline-flex items-center gap-1.5">
+                            <Copy size={14} />
+                            {t("linkNative")}
+                          </span>
                         )}
                       </button>
                     </div>
@@ -479,7 +488,7 @@ export default function DefaultTheme({ id, data }: { id: string; data: SubData }
       {portalSettings?.showSupportSection !== false && (
         <div className={`flex justify-center gap-6 border-t border-zinc-800/50 py-8 md:hidden ${ts.bg}`}>
           {portalSettings?.showTelegram && (
-            <a href={portalSettings.telegramLink} className={`${ts.muted} hover:text-blue-400`}>
+            <a href={normalizeTelegramHref(portalSettings.telegramLink) || "#"} className={`${ts.muted} hover:text-blue-400`}>
               <MessageCircle size={24} />
             </a>
           )}

@@ -8,6 +8,17 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [1.8.19] - 2026-07-26
+
+### Added
+- **Subscription portals:** copy actions now offer both **Panel link** (`/s/…`) and **Native link** (`/sub/…`) across themes and the connection modal.
+- **Store schema:** `StoreProfile.subscriptionLinkMode` (`hmpanel` | `native`) for per-store subscription URL delivery (used by Premium store).
+- **Backup retention:** after each backup and after a successful update, keep only the newest archives (`HMPANEL_BACKUP_KEEP`, default 5) to avoid filling the disk.
+
+### Fixed
+- **Telegram support links:** bare `t.me/…` or `@username` no longer become relative `/p/T.me/…` URLs; branding/portal settings accept `@username` and normalize to `https://t.me/…`.
+- **Reseller dashboard (RTL):** attention card icons no longer sit under the large numbers in Persian layout.
+
 ## [1.8.18] - 2026-07-25
 
 ### Fixed

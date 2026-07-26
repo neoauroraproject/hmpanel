@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { formatBytes, formatDate, formatExpiry } from "@/lib/format";
 import { copyToClipboard } from "@/lib/clipboard";
+import { normalizeTelegramLink } from "@/lib/telegram-link";
 import { LanguageSwitcher, StorefrontLocaleProvider, useStorefrontLocale } from "./locale";
 import {
   StorefrontThemeProvider,
@@ -1145,7 +1146,8 @@ function normalizeSupportLinks(supportLinks: SupportLinks) {
   }> = [];
 
   if (isOn(data.showTelegram) && data.telegramLink) {
-    items.push({ label: "Telegram", href: data.telegramLink, icon: MessageCircle });
+    const tg = normalizeTelegramLink(data.telegramLink);
+    if (tg) items.push({ label: "Telegram", href: tg, icon: MessageCircle });
   }
   if (isOn(data.showWhatsApp) && data.whatsappLink) {
     items.push({ label: "WhatsApp", href: data.whatsappLink, icon: Phone });

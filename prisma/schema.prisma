@@ -542,6 +542,8 @@ model StoreProfile {
   autoDeliverDelayMinutes Int   @default(10)
   /// Next sequential order number to issue for this store (stored as StoreOrder.trackingCode).
   nextOrderNumber     Int      @default(1000)
+  /// Which subscription URL customers receive: "hmpanel" (/s/…) or "native" (3x-ui /sub/…).
+  subscriptionLinkMode String  @default("hmpanel")
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 

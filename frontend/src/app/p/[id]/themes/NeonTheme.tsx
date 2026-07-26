@@ -1,9 +1,10 @@
 "use client";
 
 import type { CSSProperties } from "react";
-import { Check, Copy, QrCode } from "lucide-react";
+import { QrCode } from "lucide-react";
 import {
   usePortalModel,
+  DualSubCopyButtons,
   QrModal,
   BrandMark,
   ConfigList,
@@ -29,6 +30,7 @@ export default function NeonTheme({ id, data }: { id: string; data: SubData }) {
     pct,
     formatBytes,
     systemUrl,
+    nativeUrl,
     copy,
     copied,
     setQrValue,
@@ -36,6 +38,7 @@ export default function NeonTheme({ id, data }: { id: string; data: SubData }) {
     nodes,
     contacts,
     ps,
+    t,
   } = model;
 
   return (
@@ -110,20 +113,23 @@ export default function NeonTheme({ id, data }: { id: string; data: SubData }) {
           </div>
         </section>
 
-        <section className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => copy(systemUrl, "system")}
-            className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg border border-cyan-400/40 bg-cyan-400/10 px-4 py-3 text-sm font-semibold text-cyan-300 transition hover:bg-cyan-400/20"
-          >
-            {copied === "system" ? <Check size={16} /> : <Copy size={16} />}
-            Copy subscription link
-          </button>
+        <section className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
+          <DualSubCopyButtons
+            systemUrl={systemUrl}
+            nativeUrl={nativeUrl}
+            copied={copied}
+            onCopy={copy}
+            t={t}
+            showNative={ps.showNativeQR !== false}
+            className="flex-1"
+            buttonClassName="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-cyan-400/40 bg-cyan-400/10 px-4 py-3 text-sm font-semibold text-cyan-300 transition hover:bg-cyan-400/20"
+            nativeButtonClassName="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-white/10 bg-[#0c0e14] px-4 py-3 text-sm font-semibold text-cyan-300/80 transition hover:border-cyan-400/30 hover:bg-cyan-400/5"
+          />
           {ps.showPlatformQR !== false ? (
             <button
               type="button"
               onClick={() => setQrValue(systemUrl)}
-              className="inline-flex h-12 w-12 items-center justify-center rounded-lg border border-white/10 bg-[#0c0e14] text-cyan-300"
+              className="inline-flex h-12 w-12 shrink-0 items-center justify-center self-center rounded-lg border border-white/10 bg-[#0c0e14] text-cyan-300"
               aria-label="QR"
             >
               <QrCode size={18} />

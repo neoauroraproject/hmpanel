@@ -678,6 +678,9 @@ EOF
 
   tar -czf "$filepath" -C "$temp_dir" .
   rm -rf "$temp_dir"
+
+  # Keep disk usage bounded: drop old backups of the same type (and stale rollbacks)
+  prune_old_backups "$backup_type"
   
   if [[ "$silent" != "true" ]]; then
     echo -e "${GREEN}✔ Backup completed successfully!${NC}"
@@ -685,6 +688,46 @@ EOF
   fi
   echo "$filepath"
   return 0
+}
+
+# Keep the newest N archives per type under BACKUP_DIR (default 5).
+# Also prune ancient rollback_* / pre-update leftovers older than keep window.
+prune_old_backups() {
+  local backup_type="${1:-full}"
+  local keep="${HMPANEL_BACKUP_KEEP:-5}"
+  if ! [[ "$keep" =~ ^[0-9]+$ ]] || [[ "$keep" -lt 1 ]]; then
+    keep=5
+  fi
+  mkdir -p "${BACKUP_DIR}"
+
+  prune_glob() {
+    local pattern="$1"
+    local keep_n="$2"
+    # Newest first (by mtime), delete beyond keep_n
+    local files=()
+    while IFS= read -r line; do
+      [[ -n "$line" ]] && files+=("$line")
+    done < <(ls -1t ${pattern} 2>/dev/null || true)
+    local i=0
+    local f
+    for f in "${files[@]}"; do
+      i=$((i + 1))
+      if [[ $i -gt $keep_n ]]; then
+        rm -f "$f" 2>/dev/null || true
+      fi
+    done
+  }
+
+  prune_glob "${BACKUP_DIR}/backup_${backup_type}_*.tar.gz" "$keep"
+  # Always bound full / database / config families independently when called for full
+  if [[ "$backup_type" == "full" ]]; then
+    prune_glob "${BACKUP_DIR}/backup_database_*.tar.gz" "$keep"
+    prune_glob "${BACKUP_DIR}/backup_config_*.tar.gz" "$keep"
+  fi
+  # SQL dumps and misc rollback tarballs
+  prune_glob "${BACKUP_DIR}/backup_*.sql" "$keep"
+  prune_glob "${BACKUP_DIR}/rollback_*.tar.gz" "$keep"
+  prune_glob "${BACKUP_DIR}/*pre*update*.tar.gz" "$keep"
 }
 
 cmd_backup() {

@@ -9,6 +9,7 @@ import { useToast } from "@/components/toast";
 import { motion } from "framer-motion";
 import { useAuth } from "@/store/auth";
 import { useT } from "@/i18n";
+import { normalizeTelegramLink } from "@/lib/telegram-link";
 
 const THEMES = [
   { id: "Dark", label: "Dark Mode" },
@@ -102,7 +103,13 @@ export default function ResellerSettingsPage() {
     );
   }
 
-  const handleSave = () => updateSettings.mutate(form);
+  const handleSave = () => {
+    const payload = {
+      ...form,
+      telegramLink: normalizeTelegramLink(form.telegramLink),
+    };
+    updateSettings.mutate(payload);
+  };
 
   return (
     <div className="space-y-8 max-w-5xl">
@@ -150,7 +157,7 @@ export default function ResellerSettingsPage() {
           <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-6">Only enabled items will be visible on the client subscription page.</p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <SupportRow icon={<MessageCircle className="text-blue-400"/>} title="Telegram" checked={form.showTelegram} onCheck={(v: boolean) => setForm(f => ({ ...f, showTelegram: v }))} value={form.telegramLink} onChange={(v: string) => setForm(f => ({ ...f, telegramLink: v }))} placeholder="https://t.me/your_channel" />
+            <SupportRow icon={<MessageCircle className="text-blue-400"/>} title="Telegram" checked={form.showTelegram} onCheck={(v: boolean) => setForm(f => ({ ...f, showTelegram: v }))} value={form.telegramLink} onChange={(v: string) => setForm(f => ({ ...f, telegramLink: v }))} onBlur={() => setForm(f => ({ ...f, telegramLink: normalizeTelegramLink(f.telegramLink) }))} placeholder="@hmray" hint="Enter username like @hmray (saved as https://t.me/hmray)" />
             <SupportRow icon={<Phone className="text-emerald-500"/>} title="WhatsApp" checked={form.showWhatsApp} onCheck={(v: boolean) => setForm(f => ({ ...f, showWhatsApp: v }))} value={form.whatsappLink} onChange={(v: string) => setForm(f => ({ ...f, whatsappLink: v }))} placeholder="https://wa.me/1234567890" />
             <SupportRow icon={<Globe className="text-purple-400"/>} title="Website" checked={form.showWebsite} onCheck={(v: boolean) => setForm(f => ({ ...f, showWebsite: v }))} value={form.websiteUrl} onChange={(v: string) => setForm(f => ({ ...f, websiteUrl: v }))} placeholder="https://myvpn.com" />
             <SupportRow icon={<Mail className="text-amber-400"/>} title="Email Address" checked={form.showEmail} onCheck={(v: boolean) => setForm(f => ({ ...f, showEmail: v }))} value={form.emailAddress} onChange={(v: string) => setForm(f => ({ ...f, emailAddress: v }))} placeholder="support@myvpn.com" />
@@ -177,7 +184,7 @@ function Toggle({ label, checked, onChange, desc }: { label: string, checked: bo
   );
 }
 
-function SupportRow({ icon, title, checked, onCheck, value, onChange, placeholder }: any) {
+function SupportRow({ icon, title, checked, onCheck, value, onChange, onBlur, placeholder, hint }: any) {
   return (
     <div className="flex gap-4 items-start bg-white dark:bg-zinc-900/50 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800">
       <label className="flex items-center gap-3 cursor-pointer mt-2">
@@ -190,10 +197,13 @@ function SupportRow({ icon, title, checked, onCheck, value, onChange, placeholde
           type="text" 
           value={value} 
           onChange={e => onChange(e.target.value)}
+          onBlur={onBlur}
           disabled={!checked}
           placeholder={placeholder}
+          dir="ltr"
           className="w-full rounded bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 p-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 disabled:opacity-40"
         />
+        {hint ? <p className="text-[11px] text-zinc-500">{hint}</p> : null}
       </div>
     </div>
   );

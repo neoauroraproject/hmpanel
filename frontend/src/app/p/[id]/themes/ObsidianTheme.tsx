@@ -1,8 +1,9 @@
 "use client";
 
-import { Check, Copy, QrCode } from "lucide-react";
+import { QrCode } from "lucide-react";
 import {
   usePortalModel,
+  DualSubCopyButtons,
   QrModal,
   BrandMark,
   ConfigList,
@@ -28,6 +29,7 @@ export default function ObsidianTheme({ id, data }: { id: string; data: SubData 
     pct,
     formatBytes,
     systemUrl,
+    nativeUrl,
     copy,
     copied,
     setQrValue,
@@ -35,6 +37,7 @@ export default function ObsidianTheme({ id, data }: { id: string; data: SubData 
     nodes,
     contacts,
     ps,
+    t,
   } = model;
 
   return (
@@ -89,20 +92,23 @@ export default function ObsidianTheme({ id, data }: { id: string; data: SubData 
           />
         </section>
 
-        <section className="flex gap-3">
-          <button
-            type="button"
-            onClick={() => copy(systemUrl, "system")}
-            className="inline-flex flex-1 items-center justify-center gap-2 border border-[#c4a35a] px-4 py-3 text-sm font-medium text-[#c4a35a] transition hover:bg-[#c4a35a]/10"
-          >
-            {copied === "system" ? <Check size={16} /> : <Copy size={16} />}
-            Copy subscription link
-          </button>
+        <section className="flex flex-col gap-3 sm:flex-row sm:items-stretch">
+          <DualSubCopyButtons
+            systemUrl={systemUrl}
+            nativeUrl={nativeUrl}
+            copied={copied}
+            onCopy={copy}
+            t={t}
+            showNative={ps.showNativeQR !== false}
+            className="flex-1"
+            buttonClassName="inline-flex w-full items-center justify-center gap-2 border border-[#c4a35a] px-4 py-3 text-sm font-medium text-[#c4a35a] transition hover:bg-[#c4a35a]/10"
+            nativeButtonClassName="inline-flex w-full items-center justify-center gap-2 border border-[#c4a35a]/40 px-4 py-3 text-sm font-medium text-[#a39a88] transition hover:border-[#c4a35a]/70 hover:text-[#c4a35a]"
+          />
           {ps.showPlatformQR !== false ? (
             <button
               type="button"
               onClick={() => setQrValue(systemUrl)}
-              className="inline-flex h-12 w-12 items-center justify-center border border-[#c4a35a]/50 text-[#c4a35a]"
+              className="inline-flex h-12 w-12 shrink-0 items-center justify-center self-center border border-[#c4a35a]/50 text-[#c4a35a]"
               aria-label="QR"
             >
               <QrCode size={18} />

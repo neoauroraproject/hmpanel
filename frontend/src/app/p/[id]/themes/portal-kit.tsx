@@ -95,6 +95,8 @@ const STRINGS = {
   copy: { fa: "کپی", en: "Copy" },
   copyLink: { fa: "کپی لینک ساب", en: "Copy subscription" },
   copied: { fa: "کپی شد", en: "Copied" },
+  linkPanel: { fa: "لینک پنل", en: "Panel link" },
+  linkNative: { fa: "لینک Native", en: "Native link" },
   qr: { fa: "کیوآر", en: "QR" },
   qrCode: { fa: "کیوآر کد", en: "QR Code" },
   scanQr: { fa: "اسکن کیوآر کد", en: "Scan QR Code" },
@@ -117,8 +119,8 @@ const STRINGS = {
     en: "Select your preferred app to automatically configure your connection.",
   },
   cancel: { fa: "انصراف", en: "Cancel" },
-  systemSub: { fa: "لینک سیستم", en: "System Sub" },
-  nativeSub: { fa: "لینک پنل", en: "Panel Native" },
+  systemSub: { fa: "لینک پنل", en: "Panel link" },
+  nativeSub: { fa: "لینک Native", en: "Native link" },
   subLink: { fa: "لینک اشتراک", en: "Subscription Link" },
   client: { fa: "مشتری", en: "Client" },
   remaining: { fa: "باقی‌مانده", en: "Remaining" },
@@ -157,12 +159,49 @@ export function ensurePortalFont(family: string, href: string) {
   document.head.appendChild(link);
 }
 
+export function normalizeTelegramHref(input?: string | null): string {
+  const raw = String(input || "").trim();
+  if (!raw) return "";
+
+  // Already absolute http(s)
+  if (/^https?:\/\//i.test(raw)) {
+    try {
+      const u = new URL(raw);
+      const host = u.hostname.replace(/^www\./i, "").toLowerCase();
+      if (host === "t.me" || host === "telegram.me" || host === "telegram.dog") {
+        const user = u.pathname.replace(/^\/+/, "").split(/[/?#]/)[0];
+        return user ? `https://t.me/${user}` : "https://t.me/";
+      }
+      return raw;
+    } catch {
+      return raw;
+    }
+  }
+
+  // Bare t.me/user or telegram.me/user (no protocol) — was breaking as /p/T.me/...
+  const hostPath = raw.replace(/^\/+/, "");
+  const tm = hostPath.match(/^(?:t\.me|telegram\.me|telegram\.dog)\/+(.+)$/i);
+  if (tm) {
+    const user = tm[1].replace(/^@/, "").split(/[/?#\s]/)[0];
+    return user ? `https://t.me/${user}` : "";
+  }
+
+  // @username or plain username
+  const user = raw.replace(/^@/, "").split(/[/?#\s]/)[0];
+  if (/^[a-zA-Z][a-zA-Z0-9_]{3,31}$/.test(user)) {
+    return `https://t.me/${user}`;
+  }
+
+  return raw;
+}
+
 export function supportContacts(ps?: PortalSettings, t?: (k: PortalStringKey) => string) {
   if (!ps || ps.showSupportSection === false) return [];
   const label = (key: PortalStringKey, fallback: string) => (t ? t(key) : fallback);
   const items: { label: string; href: string; icon: typeof Mail; kind: string }[] = [];
-  if (ps.showTelegram && ps.telegramLink)
-    items.push({ label: label("telegram", "Telegram"), href: ps.telegramLink, icon: MessageCircle, kind: "telegram" });
+  const tg = normalizeTelegramHref(ps.telegramLink);
+  if (ps.showTelegram && tg)
+    items.push({ label: label("telegram", "Telegram"), href: tg, icon: MessageCircle, kind: "telegram" });
   if (ps.showWhatsApp && ps.whatsappLink)
     items.push({ label: label("whatsapp", "WhatsApp"), href: ps.whatsappLink, icon: Phone, kind: "whatsapp" });
   if (ps.showWebsite && ps.websiteUrl)
@@ -175,6 +214,53 @@ export function supportContacts(ps?: PortalSettings, t?: (k: PortalStringKey) =>
       kind: "email",
     });
   return items;
+}
+
+/** Copy both HMPanel (/s/) and native 3x-ui (/sub/) subscription URLs. */
+export function DualSubCopyButtons({
+  systemUrl,
+  nativeUrl,
+  copied,
+  onCopy,
+  t,
+  className = "",
+  buttonClassName = "",
+  nativeButtonClassName,
+  showNative = true,
+}: {
+  systemUrl: string;
+  nativeUrl?: string | null;
+  copied: string | null;
+  onCopy: (text: string, key: string) => void;
+  t: (k: PortalStringKey) => string;
+  className?: string;
+  buttonClassName?: string;
+  nativeButtonClassName?: string;
+  showNative?: boolean;
+}) {
+  const showNativeBtn = showNative !== false && !!nativeUrl;
+  return (
+    <div className={`grid gap-2 ${showNativeBtn ? "sm:grid-cols-2" : ""} ${className}`}>
+      <button
+        type="button"
+        onClick={() => onCopy(systemUrl, "system")}
+        className={buttonClassName}
+      >
+        {copied === "system" ? <Check size={16} /> : <Copy size={16} />}
+        {copied === "system" ? t("copied") : t("linkPanel")}
+      </button>
+      {showNativeBtn ? (
+        <button
+          type="button"
+          onClick={() => onCopy(nativeUrl!, "native")}
+          className={nativeButtonClassName || buttonClassName}
+        >
+          {copied === "native" ? <Check size={16} /> : <Copy size={16} />}
+          {copied === "native" ? t("copied") : t("linkNative")}
+        </button>
+      ) : null}
+    </div>
+  );
 }
 
 export function buildSystemSubUrl(

@@ -6,7 +6,7 @@ import { BrandMark, LangToggle, useThemeFont, type SubData } from "./portal-kit"
 import {
   NeoAdvanced,
   NeoConfigRows,
-  NeoCopyRow,
+  NeoDualSubCopy,
   NeoFab,
   NeoImportSheet,
   NeoQrOverlay,
@@ -129,12 +129,17 @@ export default function EclipseTheme({ id, data }: { id: string; data: SubData }
 
         <section>
           <h2 className="mb-2.5 text-base font-bold">{m.t("appsActions")}</h2>
-          <NeoCopyRow
-            onClick={() => m.copy(m.systemUrl, "system")}
-            copied={m.copied === "system"}
-            label={m.t("copySubLink")}
+          <NeoDualSubCopy
+            systemUrl={m.systemUrl}
+            nativeUrl={m.nativeUrl}
+            copied={m.copied}
+            onCopy={m.copy}
+            panelLabel={m.t("linkPanel")}
+            nativeLabel={m.t("linkNative")}
             copiedLabel={m.t("copied")}
-            className="flex w-full items-center gap-3 rounded-2xl bg-[#e8eaee] px-4 py-3.5 text-sm font-semibold"
+            showNative={m.ps.showNativeQR !== false}
+            buttonClassName="flex w-full items-center gap-3 rounded-2xl bg-[#e8eaee] px-4 py-3.5 text-sm font-semibold"
+            nativeButtonClassName="flex w-full items-center gap-3 rounded-2xl border border-zinc-200 bg-white px-4 py-3.5 text-sm font-semibold text-zinc-700"
           />
         </section>
 

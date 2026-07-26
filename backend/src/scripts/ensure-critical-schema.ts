@@ -33,6 +33,7 @@ export async function ensureCriticalSchema(prisma: PrismaClient): Promise<void> 
 
     // Sequential order numbers (checkout)
     `ALTER TABLE "StoreProfile" ADD COLUMN IF NOT EXISTS "nextOrderNumber" INTEGER NOT NULL DEFAULT 1000`,
+    `ALTER TABLE "StoreProfile" ADD COLUMN IF NOT EXISTS "subscriptionLinkMode" TEXT NOT NULL DEFAULT 'hmpanel'`,
   ];
 
   for (const sql of statements) {
