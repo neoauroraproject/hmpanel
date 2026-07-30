@@ -540,6 +540,8 @@ model StoreProfile {
   telegramWebhookSecret String?
   telegramWelcomeText String?
   telegramAdminChatId String?
+  /// Customer-facing Telegram bot UI language: "fa" | "en"
+  telegramBotLocale   String   @default("fa")
   /// When true, paid orders auto-provision after autoDeliverDelayMinutes but stay tagged for admin confirm.
   autoDeliverEnabled   Boolean  @default(false)
   autoDeliverDelayMinutes Int   @default(10)

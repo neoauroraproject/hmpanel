@@ -13,6 +13,7 @@ export async function ensureCriticalSchema(prisma: PrismaClient): Promise<void> 
     `ALTER TABLE "StoreProfile" ADD COLUMN IF NOT EXISTS "telegramWebhookSecret" TEXT`,
     `ALTER TABLE "StoreProfile" ADD COLUMN IF NOT EXISTS "telegramWelcomeText" TEXT`,
     `ALTER TABLE "StoreProfile" ADD COLUMN IF NOT EXISTS "telegramAdminChatId" TEXT`,
+    `ALTER TABLE "StoreProfile" ADD COLUMN IF NOT EXISTS "telegramBotLocale" TEXT NOT NULL DEFAULT 'fa'`,
     `ALTER TABLE "StoreCustomer" ADD COLUMN IF NOT EXISTS "telegramUserId" TEXT`,
     `ALTER TABLE "StoreCustomer" ADD COLUMN IF NOT EXISTS "telegramUsername" TEXT`,
     `CREATE INDEX IF NOT EXISTS "StoreCustomer_telegramUserId_idx" ON "StoreCustomer"("telegramUserId")`,
