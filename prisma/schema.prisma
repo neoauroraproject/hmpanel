@@ -159,6 +159,7 @@ model Admin {
   storeProducts    StoreProduct[]
   storeCustomers   StoreCustomer[]
   storeCoupons     StoreCoupon[]
+  storeIpLimits    StoreIpLimit[]
   clientTemplates  ClientTemplate[]
   Brand            Brand[]
   operationQueues  OperationQueue[]
@@ -647,7 +648,8 @@ model ClientTemplate {
 model StoreProduct {
   id           String   @id @default(uuid())
   adminId      String
-  categoryId   String
+  /// Null for test SKUs (no storefront category)
+  categoryId   String?
   profileId    String
   templateId   String?
   name         String
@@ -666,15 +668,17 @@ model StoreProduct {
   /// Trial / test SKU — one claim per customer per testCooldownoldownDays
   isTest             Boolean @default(false)
   testCooldownoldownDays Int     @default(30)
-  /// JSON: [{ "limitIp": 1, "priceExtra": 0, "label": "1 user" }, ...]
+  /// Legacy JSON tiers — prefer StoreIpLimit + ipLimitIds
   ipLimitOptions Json? @default("[]")
+  /// Selected StoreIpLimit ids for this product
+  ipLimitIds     Json? @default("[]")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  admin    Admin               @relation(fields: [adminId], references: [id], onDelete: Cascade)
-  category ProductCategory     @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  profile  ProvisioningProfile @relation(fields: [profileId], references: [id], onDelete: Restrict)
-  template ProductTemplate?    @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  admin    Admin                @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  category ProductCategory?     @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  profile  ProvisioningProfile  @relation(fields: [profileId], references: [id], onDelete: Restrict)
+  template ProductTemplate?     @relation(fields: [templateId], references: [id], onDelete: SetNull)
   orders   StoreOrder[]
 
   @@index([adminId])
@@ -918,8 +922,11 @@ model StoreCoupon {
   description     String?
   /// percent | fixed
   discountType    String    @default("percent")
-  discountValue   Float
-  currency        String? // for fixed; optional
+  /// Percent value, or legacy fixed amount (migrated into Usd/Toman)
+  discountValue   Float     @default(0)
+  discountValueUsd   Float  @default(0)
+  discountValueToman Float  @default(0)
+  currency        String? // legacy optional
   maxUses         Int?
   maxUsesPerCustomer Int    @default(1)
   usedCount       Int       @default(0)
@@ -942,6 +949,25 @@ model StoreCoupon {
 
   @@unique([adminId, code])
   @@index([adminId, enabled])
+}
+
+/// Store-wide concurrent IP / user-limit catalog (products multi-select)
+model StoreIpLimit {
+  id              String   @id @default(uuid())
+  adminId         String
+  limitIp         Int
+  label           String
+  priceExtraUsd   Float    @default(0)
+  priceExtraToman Float    @default(0)
+  sortOrder       Int      @default(0)
+  enabled         Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  admin Admin @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@unique([adminId, limitIp])
+  @@index([adminId])
 }
 
 model StoreCouponRedemption {

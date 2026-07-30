@@ -256,10 +256,36 @@ export class SettingsService {
 
       // 7. Clear old log and write initial progress
       const logPath = '/app/logs/updater.log';
+      const appendLog = (line: string) => {
+        try {
+          fs.appendFileSync(logPath, `${line}\n`);
+        } catch {
+          /* ignore */
+        }
+      };
       fs.writeFileSync(
         logPath,
         '[1/7] Checking Versions (Passed)\n[2/7] Creating Backup (Passed)\n[3/7] Initializing Detached Updater...\n',
       );
+
+      // Drop any leftover updater container so docker run --name does not fail silently.
+      try {
+        await execAsync('docker rm -f hmpanel-updater');
+        appendLog('[updater] removed stale hmpanel-updater container');
+      } catch {
+        /* none running */
+      }
+
+      // Best-effort image pull so apk/network issues surface before detach.
+      try {
+        appendLog('[updater] pulling docker:latest (may take a minute)...');
+        await execAsync('docker pull docker:latest', { timeout: 120_000 });
+        appendLog('[updater] docker:latest ready');
+      } catch (pullErr: any) {
+        appendLog(
+          `[updater] warn: docker pull failed (${pullErr?.message || pullErr}) — continuing with local image`,
+        );
+      }
 
       // 8. Run updater on the HOST (nsenter) so docker compose / hm / openssl
       // are available. The previous approach ran update.sh inside docker:latest,
@@ -267,22 +293,37 @@ export class SettingsService {
       // stack never recovered.
       const updateScriptPath = `${installDir}/.update-run.sh`;
       const updaterShell = [
-        'set -e',
-        'apk add --no-cache bash curl util-linux >/dev/null',
-        'echo "[4/7] Running master update.sh on host via nsenter..." >> /updater-logs/updater.log',
-        `curl -fsSL https://raw.githubusercontent.com/neoauroraproject/hmpanel/main/update.sh -o "${updateScriptPath}"`,
+        'LOG=/updater-logs/updater.log',
+        'fail() { echo "[UPDATE_FAILED] $1" >> "$LOG"; exit 1; }',
+        'echo "[3/7] Detached updater started" >> "$LOG"',
+        'echo "[updater] installing apk packages: bash curl util-linux..." >> "$LOG"',
+        'apk add --no-cache bash curl util-linux >> "$LOG" 2>&1 || fail "apk add failed (network/mirror?)"',
+        'echo "[updater] apk packages OK" >> "$LOG"',
+        'echo "[4/7] Running master update.sh on host via nsenter..." >> "$LOG"',
+        `echo "[updater] downloading update.sh..." >> "$LOG"`,
+        `curl -fsSL https://raw.githubusercontent.com/neoauroraproject/hmpanel/main/update.sh -o "${updateScriptPath}" >> "$LOG" 2>&1 || fail "curl update.sh failed (GitHub unreachable?)"`,
         `chmod +x "${updateScriptPath}"`,
-        'set +e',
-        `nsenter -t 1 -m -u -i -n -- bash "${updateScriptPath}" >> /updater-logs/updater.log 2>&1`,
+        'echo "[updater] launching update.sh via nsenter..." >> "$LOG"',
+        `nsenter -t 1 -m -u -i -n -- bash "${updateScriptPath}" >> "$LOG" 2>&1`,
         'EC=$?',
-        'echo "[updater] exit=$EC" >> /updater-logs/updater.log',
+        'echo "[updater] exit=$EC" >> "$LOG"',
+        'if [ "$EC" -ne 0 ]; then echo "[UPDATE_FAILED] update.sh exited $EC" >> "$LOG"; fi',
         `rm -f "${updateScriptPath}"`,
         'exit $EC',
       ].join('\n');
 
       const runCmd = `docker run -d --name hmpanel-updater --rm --privileged --pid=host -v "${installDir}:${installDir}" -v ${logVolumeName}:/updater-logs docker:latest /bin/sh -c ${JSON.stringify(updaterShell)}`;
 
-      await execAsync(runCmd);
+      try {
+        await execAsync(runCmd);
+        appendLog('[updater] hmpanel-updater container started');
+      } catch (runErr: any) {
+        appendLog(`[UPDATE_FAILED] docker run failed: ${runErr?.message || runErr}`);
+        throw new HttpException(
+          'Failed to start detached updater: ' + (runErr?.message || runErr),
+          HttpStatus.INTERNAL_SERVER_ERROR,
+        );
+      }
 
       return {
         success: true,
@@ -380,7 +421,7 @@ export class SettingsService {
       const healthy =
         logs.includes('Backend API is healthy') ||
         /successfully updated to version/i.test(logs);
-      const failedMarkers =
+      let failedMarkers =
         logs.includes('[UPDATE_FAILED]') ||
         logs.includes('Update aborted') ||
         logs.includes('MIGRATION FAILED') ||
@@ -398,10 +439,20 @@ export class SettingsService {
         updaterRunning = false;
       }
 
+      // Stuck at step 3: container died before [4/7] with no success → treat as failed
+      // so the UI leaves "in progress" instead of polling forever.
+      const reachedHostUpdate = logs.includes('[4/7]');
+      if (!updaterRunning && !healthy && !reachedHostUpdate && logs.includes('[3/7]')) {
+        failedMarkers = true;
+        if (!logs.includes('[UPDATE_FAILED]')) {
+          logs +=
+            '\n[UPDATE_FAILED] Detached updater exited before host update started. Check apk/network or docker logs for hmpanel-updater.';
+        }
+      }
+
       // Never treat image-prune lines ("Total reclaimed space") as success.
       const completed = !updaterRunning && (healthy || failedMarkers);
       const updateSuccess = Boolean(healthy);
-      const failed = completed && !updateSuccess;
 
       return {
         success: true,

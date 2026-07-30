@@ -133,6 +133,32 @@ export async function ensureCriticalSchema(prisma: PrismaClient): Promise<void> 
       "amount" DOUBLE PRECISION NOT NULL,
       "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
     )`,
+
+    // Coupon dual-currency fixed amounts
+    `ALTER TABLE "StoreCoupon" ADD COLUMN IF NOT EXISTS "discountValueUsd" DOUBLE PRECISION NOT NULL DEFAULT 0`,
+    `ALTER TABLE "StoreCoupon" ADD COLUMN IF NOT EXISTS "discountValueToman" DOUBLE PRECISION NOT NULL DEFAULT 0`,
+    `UPDATE "StoreCoupon" SET "discountValueUsd" = "discountValue" WHERE "discountType" = 'fixed' AND "discountValueUsd" = 0 AND COALESCE("currency",'') NOT IN ('IRT','IRR','TOMAN','TMN')`,
+    `UPDATE "StoreCoupon" SET "discountValueToman" = "discountValue" WHERE "discountType" = 'fixed' AND "discountValueToman" = 0 AND COALESCE("currency",'') IN ('IRT','IRR','TOMAN','TMN')`,
+
+    // Test products may omit category
+    `ALTER TABLE "StoreProduct" ALTER COLUMN "categoryId" DROP NOT NULL`,
+    `ALTER TABLE "StoreProduct" ADD COLUMN IF NOT EXISTS "ipLimitIds" JSONB DEFAULT '[]'`,
+
+    // Managed IP limit catalog
+    `CREATE TABLE IF NOT EXISTS "StoreIpLimit" (
+      "id" TEXT PRIMARY KEY,
+      "adminId" TEXT NOT NULL,
+      "limitIp" INTEGER NOT NULL,
+      "label" TEXT NOT NULL,
+      "priceExtraUsd" DOUBLE PRECISION NOT NULL DEFAULT 0,
+      "priceExtraToman" DOUBLE PRECISION NOT NULL DEFAULT 0,
+      "sortOrder" INTEGER NOT NULL DEFAULT 0,
+      "enabled" BOOLEAN NOT NULL DEFAULT true,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS "StoreIpLimit_adminId_limitIp_key" ON "StoreIpLimit"("adminId", "limitIp")`,
+    `CREATE INDEX IF NOT EXISTS "StoreIpLimit_adminId_idx" ON "StoreIpLimit"("adminId")`,
   ];
 
   for (const sql of statements) {
