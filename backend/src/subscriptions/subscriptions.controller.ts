@@ -88,6 +88,7 @@ export class PublicSubController {
    * were incorrectly redirected to the HTML portal (import failed; v2box worked).
    */
   private isBrowserNavigation(req: Request): boolean {
+    // Debug escape only — never emit ?raw=1 on shareable QR/copy URLs
     const raw = req.query.raw;
     if (raw != null && String(raw) !== '0' && String(raw).toLowerCase() !== 'false') {
       return false;
@@ -101,9 +102,12 @@ export class PublicSubController {
       'v2ray',
       'v2box',
       'clash',
+      'clashmeta',
+      'flclash',
       'sing-box',
       'singbox',
       'hiddify',
+      'hiddifynext',
       'shadowrocket',
       'streisand',
       'quantumult',
@@ -124,13 +128,18 @@ export class PublicSubController {
       'foxray',
       'happ/',
       'karing',
-      'flclash',
+      'streisand',
+      'v2rayng',
+      'v2rayn',
+      'panelsub',
+      'electron',
     ];
     if (vpnHints.some((h) => uaLower.includes(h))) return false;
 
     const mode = String(req.headers['sec-fetch-mode'] || '').toLowerCase();
     const dest = String(req.headers['sec-fetch-dest'] || '').toLowerCase();
-    if (mode === 'navigate' || dest === 'document') return true;
+    const user = String(req.headers['sec-fetch-user'] || '');
+    if (mode === 'navigate' || dest === 'document' || user === '?1') return true;
 
     const accept = String(req.headers['accept'] || '').toLowerCase();
     const htmlPreferred =
@@ -139,12 +148,13 @@ export class PublicSubController {
         (accept.indexOf('*/*') === -1 ||
           accept.indexOf('text/html') < accept.indexOf('*/*')));
 
-    if (
-      htmlPreferred &&
-      /mozilla|chrome\/|safari\/|firefox\/|edg\//i.test(ua)
-    ) {
-      return true;
-    }
+    // Prefer real browser engines; avoid bare "mozilla" alone (VPN clients spoof it)
+    const browserUa =
+      /chrome\/\d|crios\/\d|firefox\/\d|fxios\/\d|edg\/\d|edgios\/\d|safari\/\d|opr\/\d|samsungbrowser/i.test(
+        ua,
+      );
+
+    if (htmlPreferred && browserUa) return true;
 
     return false;
   }

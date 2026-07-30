@@ -1,7 +1,7 @@
 "use client";
 
-import type { CSSProperties } from "react";
-import { QrCode } from "lucide-react";
+import { useState, type CSSProperties } from "react";
+import { MonitorSmartphone, QrCode } from "lucide-react";
 import {
   usePortalModel,
   DualSubCopyButtons,
@@ -14,12 +14,14 @@ import {
   useThemeFont,
   type SubData,
 } from "./portal-kit";
+import { ClientAppsSheet } from "./client-apps";
 
 /** Horizon Atelier — dusk navy field, warm amber accent, formal & calm. */
 export default function SunsetTheme({ id, data }: { id: string; data: SubData }) {
   const model = usePortalModel(id, data, "Sunset");
   useThemeFont("Sunset", model.isFa);
   const expiry = useExpiryLabel(model.remainingDays, data.expiryTime, model.t);
+  const [importSheet, setImportSheet] = useState(false);
   const {
     brandName,
     logoSrc,
@@ -163,6 +165,17 @@ export default function SunsetTheme({ id, data }: { id: string; data: SubData })
           itemClassName="rounded-2xl border border-white/8 bg-[#121722]/60 px-3 py-2.5"
         />
 
+        {ps.allowDirectImport !== false ? (
+          <button
+            type="button"
+            onClick={() => setImportSheet(true)}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#f3b36a] px-5 py-3.5 text-sm font-semibold text-[#1a120c] transition hover:bg-[#f6c48a]"
+          >
+            <MonitorSmartphone size={16} />
+            {t("importApp")}
+          </button>
+        ) : null}
+
         {contacts.length ? (
           <div className="flex flex-wrap justify-center gap-2">
             {contacts.map((c) => (
@@ -186,6 +199,18 @@ export default function SunsetTheme({ id, data }: { id: string; data: SubData })
       </div>
 
       <QrModal value={qrValue} onClose={() => setQrValue(null)} title={t("scanQr")} />
+      <ClientAppsSheet
+        open={importSheet}
+        onClose={() => setImportSheet(false)}
+        systemUrl={systemUrl}
+        brandName={brandName}
+        title={t("importApp")}
+        cancelLabel={t("cancel")}
+        downloadLabel={t("download")}
+        addLabel={t("addToApp")}
+        subtitle={t("importPick")}
+        panelClassName="bg-[#151a28] text-[#f6efe6] border border-white/10"
+      />
     </div>
   );
 }

@@ -158,6 +158,7 @@ model Admin {
   provisioningProfiles ProvisioningProfile[]
   storeProducts    StoreProduct[]
   storeCustomers   StoreCustomer[]
+  storeCoupons     StoreCoupon[]
   clientTemplates  ClientTemplate[]
   Brand            Brand[]
   operationQueues  OperationQueue[]
@@ -501,6 +502,7 @@ enum StoreOrderStatus {
 
 enum StorePaymentMethod {
   MANUAL_BANK
+  WALLET
 }
 
 enum StorePaymentStatus {
@@ -661,6 +663,11 @@ model StoreProduct {
   visible      Boolean  @default(true)
   renewable    Boolean  @default(true)
   maxQuantity  Int      @default(1)
+  /// Trial / test SKU — one claim per customer per testCooldownoldownDays
+  isTest             Boolean @default(false)
+  testCooldownoldownDays Int     @default(30)
+  /// JSON: [{ "limitIp": 1, "priceExtra": 0, "label": "1 user" }, ...]
+  ipLimitOptions Json? @default("[]")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -673,6 +680,7 @@ model StoreProduct {
   @@index([adminId])
   @@index([categoryId])
   @@index([profileId])
+  @@index([isTest])
 }
 
 model StoreCustomer {
@@ -692,19 +700,29 @@ model StoreCustomer {
   lastSeenAt        DateTime?
   lastLoginAt       DateTime?
   loginCount        Int       @default(0)
+  /// Unique invite code for referral deep-links (t.me/bot?start=ref_CODE)
+  referralCode      String?   @unique
+  referredById      String?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
   admin         Admin                       @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  referredBy    StoreCustomer?              @relation("StoreReferrals", fields: [referredById], references: [id], onDelete: SetNull)
+  referrals     StoreCustomer[]             @relation("StoreReferrals")
   orders        StoreOrder[]
   sessions      StoreCustomerSession[]
   notifications StoreCustomerNotification[]
   activities    StoreCustomerActivity[]
+  wallet        StoreWalletAccount?
+  couponRedemptions StoreCouponRedemption[]
+  walletDeposits StoreWalletDeposit[]
 
   @@unique([adminId, telegramUserId])
   @@index([adminId])
   @@index([token])
   @@index([telegramUserId])
+  @@index([referredById])
+  @@index([referralCode])
 }
 
 model StoreCustomerSession {
@@ -781,6 +799,13 @@ model StoreOrder {
   pendingReview  Boolean          @default(false)
   /// Snapshot before renewal so reject can reverse traffic/expiry.
   renewSnapshot  Json?
+  couponId       String?
+  discountAmount Float            @default(0)
+  /// Chosen concurrent IP limit for this order (0 / null = unlimited)
+  limitIp        Int?
+  telegramAdminChatId     String?
+  telegramAdminMessageId  Int?
+  telegramAdminHasPhoto   Boolean @default(false)
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
 
@@ -789,14 +814,17 @@ model StoreOrder {
   customer    StoreCustomer           @relation(fields: [customerId], references: [id], onDelete: Restrict)
   client      Client?                 @relation("CreatedClient", fields: [clientId], references: [id], onDelete: SetNull)
   renewClient Client?                 @relation("RenewClient", fields: [renewClientId], references: [id], onDelete: SetNull)
+  coupon      StoreCoupon?            @relation(fields: [couponId], references: [id], onDelete: SetNull)
   payment     StorePayment?
   timeline    OrderTimelineEvent[]
   activities  StoreCustomerActivity[]
+  couponRedemption StoreCouponRedemption?
 
   @@index([storeId])
   @@index([customerId])
   @@index([status])
   @@index([createdAt])
+  @@index([couponId])
 }
 
 model StorePayment {
@@ -830,6 +858,106 @@ model OrderTimelineEvent {
   order StoreOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@index([orderId])
+}
+
+model StoreWalletAccount {
+  id         String   @id @default(uuid())
+  customerId String   @unique
+  currency   String   @default("USD")
+  balance    Float    @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  customer StoreCustomer       @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  entries  StoreWalletLedger[]
+}
+
+model StoreWalletLedger {
+  id        String   @id @default(uuid())
+  accountId String
+  type      String // deposit | purchase | refund | adjust
+  amount    Float
+  balanceAfter Float
+  orderId   String?
+  depositId String?
+  note      String?
+  meta      Json?    @default("{}")
+  createdAt DateTime @default(now())
+
+  account StoreWalletAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, createdAt])
+  @@index([orderId])
+}
+
+model StoreWalletDeposit {
+  id           String   @id @default(uuid())
+  customerId   String
+  adminId      String
+  amount       Float
+  currency     String   @default("USD")
+  status       String   @default("PENDING") // PENDING | SUBMITTED | APPROVED | REJECTED
+  receiptText  String?
+  receiptImage String?
+  rejectReason String?
+  reviewedAt   DateTime?
+  reviewedBy   String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  customer StoreCustomer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId, createdAt])
+  @@index([adminId, status])
+}
+
+model StoreCoupon {
+  id              String    @id @default(uuid())
+  adminId         String
+  code            String
+  description     String?
+  /// percent | fixed
+  discountType    String    @default("percent")
+  discountValue   Float
+  currency        String? // for fixed; optional
+  maxUses         Int?
+  maxUsesPerCustomer Int    @default(1)
+  usedCount       Int       @default(0)
+  startsAt        DateTime?
+  endsAt          DateTime?
+  enabled         Boolean   @default(true)
+  /// all | new_customers | min_orders | specific_tokens | min_referrals
+  audience        String    @default("all")
+  audienceMinOrders Int?
+  audienceMinReferrals Int?
+  audienceTokens  Json? // string[]
+  productIds      Json? // string[] optional scope
+  categoryIds     Json?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  admin       Admin                  @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  orders      StoreOrder[]
+  redemptions StoreCouponRedemption[]
+
+  @@unique([adminId, code])
+  @@index([adminId, enabled])
+}
+
+model StoreCouponRedemption {
+  id         String   @id @default(uuid())
+  couponId   String
+  customerId String
+  orderId    String   @unique
+  amount     Float
+  createdAt  DateTime @default(now())
+
+  coupon   StoreCoupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  customer StoreCustomer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  order    StoreOrder    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([couponId])
+  @@index([customerId])
 }
 
 // ---------------------------------------------------------

@@ -6,6 +6,7 @@ import { QRCodeCanvas } from "qrcode.react";
 import type { PortalNode, SubData } from "./portal-kit";
 import { usePortalModel, PortalConnectionPanel } from "./portal-kit";
 import type { ClientOutputModel } from "@/components/connection/types";
+import { ClientAppsSheet } from "./client-apps";
 
 export function useNeoMetrics(id: string, data: SubData, theme: string) {
   const model = usePortalModel(id, data, theme);
@@ -29,6 +30,9 @@ export function NeoImportSheet({
   title,
   cancelLabel,
   panelClassName = "bg-white text-zinc-900",
+  downloadLabel,
+  addLabel,
+  subtitle,
 }: {
   open: boolean;
   onClose: () => void;
@@ -37,42 +41,23 @@ export function NeoImportSheet({
   title: string;
   cancelLabel: string;
   panelClassName?: string;
+  downloadLabel?: string;
+  addLabel?: string;
+  subtitle?: string;
 }) {
-  if (!open) return null;
-  const apps = [
-    { name: "V2rayNG", url: `v2rayng://install-sub?url=${encodeURIComponent(systemUrl)}` },
-    { name: "Hiddify", url: `hiddify://install-sub?url=${encodeURIComponent(systemUrl)}` },
-    {
-      name: "Shadowrocket",
-      url: `shadowrocket://add/sub://${btoa(systemUrl)}?title=${encodeURIComponent(brandName)}`,
-    },
-    { name: "Streisand", url: `streisand://import/${encodeURIComponent(systemUrl)}` },
-  ];
   return (
-    <div className="fixed inset-0 z-[90] flex items-end justify-center sm:items-center sm:p-4">
-      <button type="button" className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} aria-label="Close" />
-      <div className={`relative z-10 w-full max-w-md rounded-t-3xl p-5 shadow-2xl sm:rounded-3xl ${panelClassName}`}>
-        <h3 className="mb-4 text-center text-lg font-bold">{title}</h3>
-        <div className="grid grid-cols-2 gap-3">
-          {apps.map((app) => (
-            <a
-              key={app.name}
-              href={app.url}
-              className="rounded-2xl border border-black/10 bg-black/[0.03] px-3 py-4 text-center text-sm font-semibold"
-            >
-              {app.name}
-            </a>
-          ))}
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="mt-4 w-full rounded-2xl bg-zinc-900 py-3 text-sm font-semibold text-white"
-        >
-          {cancelLabel}
-        </button>
-      </div>
-    </div>
+    <ClientAppsSheet
+      open={open}
+      onClose={onClose}
+      systemUrl={systemUrl}
+      brandName={brandName}
+      title={title}
+      cancelLabel={cancelLabel}
+      panelClassName={panelClassName}
+      downloadLabel={downloadLabel}
+      addLabel={addLabel}
+      subtitle={subtitle}
+    />
   );
 }
 

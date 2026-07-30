@@ -1,7 +1,7 @@
 "use client";
 
-import type { CSSProperties } from "react";
-import { QrCode } from "lucide-react";
+import { useState, type CSSProperties } from "react";
+import { MonitorSmartphone, QrCode } from "lucide-react";
 import {
   usePortalModel,
   DualSubCopyButtons,
@@ -15,11 +15,13 @@ import {
   PortalConnectionPanel,
   type SubData,
 } from "./portal-kit";
+import { ClientAppsSheet } from "./client-apps";
 
 export default function AuroraTheme({ id, data }: { id: string; data: SubData }) {
   useThemeFont("Aurora");
   const model = usePortalModel(id, data, "Aurora");
   const expiry = useExpiryLabel(model.remainingDays, data.expiryTime);
+  const [importSheet, setImportSheet] = useState(false);
   const {
     brandName,
     logoSrc,
@@ -136,6 +138,17 @@ export default function AuroraTheme({ id, data }: { id: string; data: SubData })
               className="rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur-xl"
               itemClassName="rounded-2xl border border-white/5 bg-black/20 px-3 py-2"
             />
+
+            {ps.allowDirectImport !== false ? (
+              <button
+                type="button"
+                onClick={() => setImportSheet(true)}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-teal-400 px-4 py-3 text-sm font-semibold text-[#062018] transition hover:bg-teal-300"
+              >
+                <MonitorSmartphone size={18} />
+                {t("importApp")}
+              </button>
+            ) : null}
           </>
         )}
 
@@ -162,6 +175,18 @@ export default function AuroraTheme({ id, data }: { id: string; data: SubData })
       </div>
 
       <QrModal value={qrValue} onClose={() => setQrValue(null)} />
+      <ClientAppsSheet
+        open={importSheet}
+        onClose={() => setImportSheet(false)}
+        systemUrl={systemUrl}
+        brandName={brandName}
+        title={t("importApp")}
+        cancelLabel={t("cancel")}
+        downloadLabel={t("download")}
+        addLabel={t("addToApp")}
+        subtitle={t("importPick")}
+        panelClassName="bg-[#0c1829] text-slate-100 border border-white/10"
+      />
     </div>
   );
 }

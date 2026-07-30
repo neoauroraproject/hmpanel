@@ -17,7 +17,7 @@ function AppImportInner() {
     try {
       const u = new URL(target);
       const scheme = u.protocol.replace(":", "").toLowerCase();
-      if (["v2box", "streisand", "happ", "v2rayng", "hiddify", "shadowrocket"].includes(scheme)) {
+      if (["v2box", "streisand", "happ", "v2rayng", "v2rayn", "hiddify", "shadowrocket"].includes(scheme)) {
         return target;
       }
     } catch {

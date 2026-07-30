@@ -150,18 +150,23 @@ export default function GlassTheme({ id, data }: { id: string; data: SubData }) 
         </p>
       </div>
 
-      <NeoFab
-        label={m.t("quickActions")}
-        onClick={() => setSheet(true)}
-        className="border border-white/70 bg-white/85 text-zinc-900 shadow-[0_10px_40px_rgba(0,0,0,0.12)] backdrop-blur-xl"
-      />
+      {m.ps.allowDirectImport !== false ? (
+        <NeoFab
+          label={m.t("quickActions")}
+          onClick={() => setSheet(true)}
+          className="border border-white/70 bg-white/85 text-zinc-900 shadow-[0_10px_40px_rgba(0,0,0,0.12)] backdrop-blur-xl"
+        />
+      ) : null}
       <NeoImportSheet
-        open={sheet}
+        open={sheet && m.ps.allowDirectImport !== false}
         onClose={() => setSheet(false)}
         systemUrl={m.systemUrl}
         brandName={m.brandName}
         title={m.t("importApp")}
         cancelLabel={m.isFa ? "بستن" : "Close"}
+        downloadLabel={m.t("download")}
+        addLabel={m.t("addToApp")}
+        subtitle={m.t("importPick")}
       />
       <NeoQrOverlay value={m.qrValue} onClose={() => m.setQrValue(null)} title={m.t("scanQr")} />
     </div>

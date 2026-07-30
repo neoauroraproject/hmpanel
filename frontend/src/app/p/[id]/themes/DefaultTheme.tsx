@@ -34,6 +34,7 @@ import {
   usePortalLocale,
   type SubData,
 } from "./portal-kit";
+import { ClientAppsSheet } from "./client-apps";
 
 export default function DefaultTheme({ id, data }: { id: string; data: SubData }) {
   const { lang, setLang, isFa, t, fontFamily } = usePortalLocale(data);
@@ -125,7 +126,7 @@ export default function DefaultTheme({ id, data }: { id: string; data: SubData }
     logoDark: portalSettings?.logoDarkUrl,
     theme: currentTheme,
   });
-  const primarySubUrl = buildSystemSubUrl(subId, email, { raw: true });
+  const primarySubUrl = buildSystemSubUrl(subId, email);
   const nativeUrl = buildNativeSubUrl(data);
 
   const copyText = async (text: string, key: string) => {
@@ -441,12 +442,14 @@ export default function DefaultTheme({ id, data }: { id: string; data: SubData }
               ) : (
                 <>
                   <p className="mb-4 text-sm text-zinc-400">{t("importHint")}</p>
+                  {portalSettings?.allowDirectImport !== false ? (
                   <button
                     onClick={() => setImportSheet(true)}
                     className={`flex w-full items-center justify-center gap-3 rounded-xl bg-emerald-600 py-4 font-bold shadow-lg shadow-emerald-600/20 transition-colors hover:bg-emerald-500 ${ts.heading}`}
                   >
                     <MonitorSmartphone size={20} /> {t("importApp")}
                   </button>
+                  ) : null}
 
                   <div className="mt-4 border-t border-zinc-800/80 pt-4">
                     <div className={`mb-3 text-xs font-bold uppercase tracking-widest ${ts.muted}`}>
@@ -551,49 +554,20 @@ export default function DefaultTheme({ id, data }: { id: string; data: SubData }
       </AnimatePresence>
 
       <AnimatePresence>
-        {importSheet && (
-          <BottomSheetWrapper onClose={() => setImportSheet(false)}>
-            <div className={`space-y-8 p-6 md:p-8 ${ts.cardBg}`}>
-              <div className="text-center">
-                <h3 className={`mb-2 text-2xl font-black ${ts.heading}`}>{t("importApp")}</h3>
-                <p className="text-sm font-medium text-zinc-400">{t("importPick")}</p>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <AppImportBtn
-                  name="V2rayNG"
-                  icon="🟢"
-                  url={`v2rayng://install-sub?url=${encodeURIComponent(primarySubUrl)}`}
-                />
-                <AppImportBtn
-                  name="Hiddify"
-                  icon="🔵"
-                  url={`hiddify://install-sub?url=${encodeURIComponent(primarySubUrl)}`}
-                />
-                <AppImportBtn
-                  name="V2Box"
-                  icon="📦"
-                  url={`v2box://install-sub?url=${encodeURIComponent(primarySubUrl)}&name=${encodeURIComponent(brandName)}`}
-                />
-                <AppImportBtn
-                  name="Shadowrocket"
-                  icon="🚀"
-                  url={`shadowrocket://add/sub://${btoa(primarySubUrl)}?title=${encodeURIComponent(brandName)}`}
-                />
-                <AppImportBtn
-                  name="Streisand"
-                  icon="⚡"
-                  url={`streisand://import/${encodeURIComponent(primarySubUrl)}`}
-                />
-              </div>
-              <button
-                onClick={() => setImportSheet(false)}
-                className={`mt-4 w-full rounded-xl bg-zinc-800 py-4 font-bold shadow-md transition-colors hover:bg-zinc-700 ${ts.heading}`}
-              >
-                {t("cancel")}
-              </button>
-            </div>
-          </BottomSheetWrapper>
-        )}
+        {importSheet && portalSettings?.allowDirectImport !== false ? (
+          <ClientAppsSheet
+            open={importSheet}
+            onClose={() => setImportSheet(false)}
+            systemUrl={primarySubUrl}
+            brandName={brandName}
+            title={t("importApp")}
+            cancelLabel={t("cancel")}
+            downloadLabel={t("download")}
+            addLabel={t("addToApp")}
+            subtitle={t("importPick")}
+            panelClassName={`${ts.cardBg} text-inherit`}
+          />
+        ) : null}
       </AnimatePresence>
 
       <style
@@ -670,44 +644,3 @@ function ModalWrapper({ children, onClose }: { children: React.ReactNode; onClos
   );
 }
 
-function BottomSheetWrapper({
-  children,
-  onClose,
-}: {
-  children: React.ReactNode;
-  onClose: () => void;
-}) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4">
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        className="absolute inset-0 bg-black/80 backdrop-blur-md"
-        onClick={onClose}
-      />
-      <motion.div
-        initial={{ y: "100%" }}
-        animate={{ y: 0 }}
-        exit={{ y: "100%" }}
-        transition={{ type: "spring", damping: 25, stiffness: 200 }}
-        className="relative w-full overflow-hidden rounded-t-[2.5rem] border border-zinc-800 shadow-[0_-10px_50px_rgba(0,0,0,0.8)] sm:max-w-md sm:rounded-[2rem]"
-      >
-        <div className="absolute left-1/2 top-4 z-10 h-1.5 w-12 -translate-x-1/2 rounded-full bg-zinc-700 sm:hidden" />
-        {children}
-      </motion.div>
-    </div>
-  );
-}
-
-function AppImportBtn({ name, icon, url }: { name: string; icon: string; url: string }) {
-  return (
-    <a
-      href={url}
-      className="group flex flex-col items-center justify-center gap-3 rounded-2xl border border-zinc-700/50 bg-zinc-800/30 p-5 shadow-md transition-all hover:border-zinc-600 hover:bg-zinc-700/80"
-    >
-      <div className="text-4xl transition-transform group-hover:scale-110">{icon}</div>
-      <span className="text-sm font-bold text-zinc-300">{name}</span>
-    </a>
-  );
-}

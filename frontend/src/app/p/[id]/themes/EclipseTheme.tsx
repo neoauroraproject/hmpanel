@@ -148,14 +148,19 @@ export default function EclipseTheme({ id, data }: { id: string; data: SubData }
         </p>
       </div>
 
-      <NeoFab label={m.t("quickActions")} onClick={() => setSheet(true)} />
+      {m.ps.allowDirectImport !== false ? (
+        <NeoFab label={m.t("quickActions")} onClick={() => setSheet(true)} />
+      ) : null}
       <NeoImportSheet
-        open={sheet}
+        open={sheet && m.ps.allowDirectImport !== false}
         onClose={() => setSheet(false)}
         systemUrl={m.systemUrl}
         brandName={m.brandName}
         title={m.t("importApp")}
         cancelLabel={m.isFa ? "بستن" : "Close"}
+        downloadLabel={m.t("download")}
+        addLabel={m.t("addToApp")}
+        subtitle={m.t("importPick")}
       />
       <NeoQrOverlay value={m.qrValue} onClose={() => m.setQrValue(null)} title={m.t("scanQr")} />
     </div>

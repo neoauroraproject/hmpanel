@@ -1635,25 +1635,31 @@ export class StoreService {
       return created;
     });
 
-    await this.customerNotifications.notifyCustomer(customer.id, {
-      type: payload.isRenewal ? 'renewal_submitted' : 'order_submitted',
-      title: payload.isRenewal
-        ? '🔄 درخواست تمدید ثبت شد / Renewal submitted'
-        : '🛒 سفارش ثبت شد / Order submitted',
-      message: hasPayment
-        ? 'رسید دریافت شد — در انتظار بررسی ادمین. / Receipt received — awaiting admin review.'
-        : 'سفارش ساخته شد — منتظر جزئیات پرداخت. / Order created — waiting for payment details.',
-      payload: {
+    try {
+      await this.customerNotifications.notifyCustomer(customer.id, {
+        type: payload.isRenewal ? 'renewal_submitted' : 'order_submitted',
+        title: payload.isRenewal
+          ? '🔄 درخواست تمدید ثبت شد / Renewal submitted'
+          : '🛒 سفارش ثبت شد / Order submitted',
+        message: hasPayment
+          ? 'رسید دریافت شد — در انتظار بررسی ادمین. / Receipt received — awaiting admin review.'
+          : 'سفارش ساخته شد — منتظر جزئیات پرداخت. / Order created — waiting for payment details.',
+        payload: {
+          orderId: order.id,
+          trackingCode: order.trackingCode,
+          status: hasPayment ? 'UNDER_REVIEW' : order.status,
+          isRenewal: !!payload.isRenewal,
+          configName: order.configName,
+          serviceName: product.name,
+          kind: 'order_submitted',
+        },
         orderId: order.id,
-        trackingCode: order.trackingCode,
-        status: hasPayment ? 'UNDER_REVIEW' : order.status,
-        isRenewal: !!payload.isRenewal,
-        configName: order.configName,
-        serviceName: product.name,
-        kind: 'order_submitted',
-      },
-      orderId: order.id,
-    });
+      });
+    } catch (err: any) {
+      this.logger.warn(
+        `Customer notify after checkout failed for ${order.trackingCode}: ${err?.message || err}`,
+      );
+    }
 
     // Always push to the store admin bot chat (receipt optional — caption adapts).
     void this.telegram

@@ -29,8 +29,8 @@ export function buildSubscriptionOutput(ctx: BuildCtx): ClientOutputModel {
   const origin = (ctx.origin || '').replace(/\/$/, '');
 
   const systemSubUrl = origin
-    ? `${origin}/s/${encodeURIComponent(subKey)}?raw=1`
-    : `/s/${encodeURIComponent(subKey)}?raw=1`;
+    ? `${origin}/s/${encodeURIComponent(subKey)}`
+    : `/s/${encodeURIComponent(subKey)}`;
 
   let nativeSubUrl: string | null = null;
   const panel = ctx.inbound?.panel;

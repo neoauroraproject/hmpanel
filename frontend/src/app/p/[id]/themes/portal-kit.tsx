@@ -110,13 +110,14 @@ const STRINGS = {
   website: { fa: "وب‌سایت", en: "Website" },
   email: { fa: "ایمیل", en: "Email" },
   importApp: { fa: "ورود به اپ", en: "Import to App" },
+  addToApp: { fa: "افزودن", en: "Add" },
   importHint: {
     fa: "اشتراک را به‌صورت خودکار وارد اپلیکیشن سازگار کنید.",
     en: "Automatically import your subscription into a compatible VPN client.",
   },
   importPick: {
-    fa: "اپ مورد نظر را برای پیکربندی خودکار انتخاب کنید.",
-    en: "Select your preferred app to automatically configure your connection.",
+    fa: "ابتدا اپ را دانلود کنید؛ اگر نصب است روی افزودن بزنید.",
+    en: "Download the app first; if already installed, tap Add.",
   },
   cancel: { fa: "انصراف", en: "Cancel" },
   systemSub: { fa: "لینک پنل", en: "Panel link" },
@@ -266,14 +267,11 @@ export function DualSubCopyButtons({
 export function buildSystemSubUrl(
   subId?: string,
   email?: string,
-  opts?: { raw?: boolean },
+  _opts?: { raw?: boolean },
 ) {
   const key = encodeURIComponent(subId || email || "");
   const path = `/s/${key}`;
-  const base =
-    typeof window === "undefined" ? path : `${window.location.origin}${path}`;
-  // ?raw=1 bypasses HTML portal redirect for picky VPN clients
-  return opts?.raw === false ? base : `${base}?raw=1`;
+  return typeof window === "undefined" ? path : `${window.location.origin}${path}`;
 }
 
 export function buildNativeSubUrl(data: SubData) {
