@@ -562,11 +562,9 @@ export class ClientsService {
                 'Insufficient traffic balance. Cannot create clients when balance is zero or below.',
               );
           }
-        } else if (totalBytes > 0n) {
-          throw new BadRequestException(
-            'Your account has unlimited traffic. You can only create unlimited-traffic clients.',
-          );
         }
+        // unlimitedTraffic resellers skip balance accounting and may create
+        // metered clients (store products, etc.) without debiting balance.
       } else if (totalBytes === 0n) {
         this.assertUnlimitedClientAllowed(targetAdmin, totalBytes);
       }

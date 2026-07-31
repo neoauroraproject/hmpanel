@@ -31,6 +31,7 @@ export class CreateAdminDto {
   @ApiPropertyOptional() @IsOptional() refundOnDelete?: boolean;
   @ApiPropertyOptional() @IsOptional() refundOnEdit?: boolean;
   @ApiPropertyOptional() @IsOptional() unlimitedTraffic?: boolean;
+  @ApiPropertyOptional() @IsOptional() storeEnabled?: boolean;
 }
 
 export class UpdateAdminDto {
@@ -55,4 +56,5 @@ export class UpdateAdminDto {
   @ApiPropertyOptional() @IsOptional() refundOnDelete?: boolean;
   @ApiPropertyOptional() @IsOptional() refundOnEdit?: boolean;
   @ApiPropertyOptional() @IsOptional() unlimitedTraffic?: boolean;
+  @ApiPropertyOptional() @IsOptional() storeEnabled?: boolean;
 }

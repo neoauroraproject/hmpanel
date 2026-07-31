@@ -58,6 +58,11 @@ export async function ensureCriticalSchema(prisma: PrismaClient): Promise<void> 
     // Referral
     `ALTER TABLE "StoreCustomer" ADD COLUMN IF NOT EXISTS "referralCode" TEXT`,
     `ALTER TABLE "StoreCustomer" ADD COLUMN IF NOT EXISTS "referredById" TEXT`,
+    // Empty-string telegramUserId collides on unique(adminId, telegramUserId) for guest checkouts
+    `UPDATE "StoreCustomer" SET "telegramUserId" = NULL WHERE "telegramUserId" = ''`,
+    // Allow many guests (NULL telegramUserId) per store; unique only when Telegram is linked
+    `DROP INDEX IF EXISTS "StoreCustomer_adminId_telegramUserId_key"`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS "StoreCustomer_adminId_telegramUserId_key" ON "StoreCustomer"("adminId", "telegramUserId") WHERE "telegramUserId" IS NOT NULL`,
     `CREATE UNIQUE INDEX IF NOT EXISTS "StoreCustomer_referralCode_key" ON "StoreCustomer"("referralCode")`,
     `CREATE INDEX IF NOT EXISTS "StoreCustomer_referredById_idx" ON "StoreCustomer"("referredById")`,
 

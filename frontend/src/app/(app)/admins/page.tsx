@@ -748,6 +748,7 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
       if (form.maxClients) payload.maxClients = Number(form.maxClients);
       if (form.password.trim()) payload.password = form.password;
       if (form.expiryDays) payload.expiryTime = Date.now() + Number(form.expiryDays) * 24 * 60 * 60 * 1000;
+      payload.storeEnabled = form.storeEnabled;
       
       const res = await api.patch(`/admins/${adminId}`, payload);
 

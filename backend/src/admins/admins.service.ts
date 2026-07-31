@@ -75,6 +75,7 @@ export class AdminsService implements OnModuleInit {
     refundOnDelete?: boolean;
     refundOnEdit?: boolean;
     unlimitedTraffic?: boolean;
+    storeEnabled?: boolean;
   }) {
     // Allow admin creation regardless of sync state since we enforce selection in the UI.
 
@@ -98,6 +99,7 @@ export class AdminsService implements OnModuleInit {
         expiryTime: data.expiryTime ? BigInt(data.expiryTime) : 0n,
         maxClients: data.maxClients || 0,
         permissions: data.permissions || [],
+        storeEnabled: data.storeEnabled === true,
         refundOnDelete: unlimited ? false : (data.refundOnDelete ?? true),
         refundOnEdit: unlimited ? false : (data.refundOnEdit ?? true),
         unlimitedTraffic: unlimited,
@@ -117,6 +119,7 @@ export class AdminsService implements OnModuleInit {
         refundOnDelete: true,
         refundOnEdit: true,
         unlimitedTraffic: true,
+        storeEnabled: true,
         createdAt: true,
       },
     });
@@ -129,6 +132,10 @@ export class AdminsService implements OnModuleInit {
         })),
         skipDuplicates: true,
       });
+    }
+
+    if (data.storeEnabled === true) {
+      await this.syncStoreModuleAssignment(admin.id, true);
     }
 
     await this.prisma.auditLog.create({
@@ -203,6 +210,7 @@ export class AdminsService implements OnModuleInit {
           refundOnDelete: true,
           refundOnEdit: true,
           unlimitedTraffic: true,
+          storeEnabled: true,
           totalAssigned: true,
           _count: { select: { clients: true } },
         },
@@ -246,6 +254,7 @@ export class AdminsService implements OnModuleInit {
         refundOnDelete: true,
         refundOnEdit: true,
         unlimitedTraffic: true,
+        storeEnabled: true,
         totalAssigned: true,
         _count: { select: { clients: true } },
         adminInbounds: {
@@ -293,6 +302,7 @@ export class AdminsService implements OnModuleInit {
       refundOnDelete?: boolean;
       refundOnEdit?: boolean;
       unlimitedTraffic?: boolean;
+      storeEnabled?: boolean;
     },
   ) {
     const existing = await this.findOne(id);
@@ -307,6 +317,8 @@ export class AdminsService implements OnModuleInit {
       updateData.refundOnDelete = data.refundOnDelete;
     if (data.refundOnEdit !== undefined)
       updateData.refundOnEdit = data.refundOnEdit;
+    if (data.storeEnabled !== undefined)
+      updateData.storeEnabled = data.storeEnabled === true;
     if (data.unlimitedTraffic !== undefined) {
       // Super Admin must always remain unlimited — cannot be capped via UI/API.
       if (existing.role === 'SUPER_ADMIN') {
@@ -372,8 +384,13 @@ export class AdminsService implements OnModuleInit {
         refundOnDelete: true,
         refundOnEdit: true,
         unlimitedTraffic: true,
+        storeEnabled: true,
       },
     });
+
+    if (data.storeEnabled !== undefined) {
+      await this.syncStoreModuleAssignment(id, data.storeEnabled === true);
+    }
 
     await this.prisma.auditLog.create({
       data: {
@@ -578,5 +595,21 @@ export class AdminsService implements OnModuleInit {
       suspiciousAccounts: report.filter((r) => r.suspicious).length,
       report,
     };
+  }
+
+  /** Keep Admin.storeEnabled in sync with premium module assignment (reseller store access). */
+  private async syncStoreModuleAssignment(adminId: string, enabled: boolean) {
+    try {
+      await this.prisma.adminModuleAssignment.upsert({
+        where: { adminId_moduleId: { adminId, moduleId: 'store' } },
+        create: { adminId, moduleId: 'store', enabled, settings: {} },
+        update: { enabled },
+      });
+    } catch (err: any) {
+      // Table may be missing on Community-only installs before premium migrate
+      this.logger.warn(
+        `syncStoreModuleAssignment skipped for ${adminId}: ${err?.message || err}`,
+      );
+    }
   }
 }
