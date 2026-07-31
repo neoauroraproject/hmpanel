@@ -17,7 +17,7 @@ export async function ensureCriticalSchema(prisma: PrismaClient): Promise<void> 
     `ALTER TABLE "StoreCustomer" ADD COLUMN IF NOT EXISTS "telegramUserId" TEXT`,
     `ALTER TABLE "StoreCustomer" ADD COLUMN IF NOT EXISTS "telegramUsername" TEXT`,
     `CREATE INDEX IF NOT EXISTS "StoreCustomer_telegramUserId_idx" ON "StoreCustomer"("telegramUserId")`,
-    `CREATE UNIQUE INDEX IF NOT EXISTS "StoreCustomer_adminId_telegramUserId_key" ON "StoreCustomer"("adminId", "telegramUserId")`,
+    // Unique (adminId, telegramUserId) is created AFTER empty-string cleanup below
 
     // Client extras
     `ALTER TABLE "Client" ADD COLUMN IF NOT EXISTS "connectionExtras" JSONB DEFAULT '{}'`,
@@ -58,11 +58,13 @@ export async function ensureCriticalSchema(prisma: PrismaClient): Promise<void> 
     // Referral
     `ALTER TABLE "StoreCustomer" ADD COLUMN IF NOT EXISTS "referralCode" TEXT`,
     `ALTER TABLE "StoreCustomer" ADD COLUMN IF NOT EXISTS "referredById" TEXT`,
-    // Empty-string telegramUserId collides on unique(adminId, telegramUserId) for guest checkouts
-    `UPDATE "StoreCustomer" SET "telegramUserId" = NULL WHERE "telegramUserId" = ''`,
-    // Allow many guests (NULL telegramUserId) per store; unique only when Telegram is linked
+    // Guest checkouts send telegram="" which used to be stored as '' and collide on
+    // unique(adminId, telegramUserId). Null out empties first, then ensure the
+    // Prisma-compatible FULL unique index (never a partial index under this name —
+    // that caused: relation "StoreCustomer_adminId_telegramUserId_key" already exists).
+    `UPDATE "StoreCustomer" SET "telegramUserId" = NULL WHERE "telegramUserId" IS NOT NULL AND btrim("telegramUserId") = ''`,
     `DROP INDEX IF EXISTS "StoreCustomer_adminId_telegramUserId_key"`,
-    `CREATE UNIQUE INDEX IF NOT EXISTS "StoreCustomer_adminId_telegramUserId_key" ON "StoreCustomer"("adminId", "telegramUserId") WHERE "telegramUserId" IS NOT NULL`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS "StoreCustomer_adminId_telegramUserId_key" ON "StoreCustomer"("adminId", "telegramUserId")`,
     `CREATE UNIQUE INDEX IF NOT EXISTS "StoreCustomer_referralCode_key" ON "StoreCustomer"("referralCode")`,
     `CREATE INDEX IF NOT EXISTS "StoreCustomer_referredById_idx" ON "StoreCustomer"("referredById")`,
 
