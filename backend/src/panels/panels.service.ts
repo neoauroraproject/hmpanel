@@ -2753,6 +2753,77 @@ export class PanelsService implements OnModuleInit {
   }
 
   /**
+   * Protocol share URLs for a client via authenticated panel API.
+   * Preferred when the public /sub/ host is unreachable from HMPanel
+   * (common CDN/geo split) — same strings as 3x-ui "Copy URL".
+   */
+  async getClientProtocolLinks(
+    panelId: string,
+    opts: { email?: string; subId?: string | null },
+  ): Promise<string[]> {
+    const email = String(opts.email || '').trim();
+    const subId = String(opts.subId || '').trim();
+    if (!email && !subId) return [];
+
+    const { base, headers, agent } = await this.getPanelHttpContext(panelId);
+    const endpoints: string[] = [];
+    if (email) {
+      endpoints.push(
+        `${base}/panel/api/clients/links/${encodeURIComponent(email)}`,
+      );
+    }
+    if (subId) {
+      endpoints.push(
+        `${base}/panel/api/clients/subLinks/${encodeURIComponent(subId)}`,
+      );
+    }
+
+    const extractLinks = (obj: any): string[] => {
+      const rows = Array.isArray(obj)
+        ? obj
+        : Array.isArray(obj?.links)
+          ? obj.links
+          : Array.isArray(obj?.urls)
+            ? obj.urls
+            : [];
+      return rows
+        .map((l: any) => String(l || '').trim())
+        .filter((l: string) => /^[a-z0-9+.-]+:\/\//i.test(l));
+    };
+
+    for (const endpoint of endpoints) {
+      try {
+        const res = await axios.get(endpoint, {
+          headers,
+          httpsAgent: agent,
+          timeout: PANEL_REQUEST_TIMEOUT_MS,
+        });
+        if (res.data?.success) {
+          const links = extractLinks(res.data.obj);
+          if (links.length > 0) {
+            this.logger.log(
+              `[CLIENT_LINKS] ${endpoint} → ${links.length} URI(s)`,
+            );
+            return links;
+          }
+          this.logger.warn(
+            `[CLIENT_LINKS] ${endpoint} success but empty obj`,
+          );
+        } else {
+          this.logger.warn(
+            `[CLIENT_LINKS] ${endpoint} success=${res.data?.success} msg=${res.data?.msg || ''}`,
+          );
+        }
+      } catch (err: any) {
+        this.logger.warn(
+          `[CLIENT_LINKS] ${endpoint} failed: ${err.message}`,
+        );
+      }
+    }
+    return [];
+  }
+
+  /**
    * VERIFY CLIENT EXISTS using GET /panel/api/clients/get/{email}
    * Returns { exists: true, data } when found.
    * Returns { exists: false } when success:false (record not found).
