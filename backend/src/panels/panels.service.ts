@@ -797,6 +797,7 @@ export class PanelsService implements OnModuleInit {
         protocol: true,
         panelInboundId: true,
         nodeId: true,
+        nodeName: true,
         originNodeGuid: true,
         panel: { select: { id: true, name: true } },
       },
@@ -1197,6 +1198,31 @@ export class PanelsService implements OnModuleInit {
         `[DIAGNOSTIC] Starting Database operations: ${apiInbounds.length} inbounds, ${unifiedClients.length} clients`,
       );
 
+      // Map nodeId → display name for badges (local inbounds have nodeId null/0).
+      const nodeNameById = new Map<number, string>();
+      try {
+        const nodesRes = await axios.get(`${apiBaseUrl}/panel/api/nodes/list`, {
+          headers,
+          httpsAgent: this.getHttpsAgent(),
+          timeout: PANEL_REQUEST_TIMEOUT_MS,
+        });
+        if (nodesRes.data?.success && Array.isArray(nodesRes.data.obj)) {
+          for (const n of nodesRes.data.obj) {
+            const nid = Number(n?.id);
+            if (!Number.isFinite(nid) || nid <= 0) continue;
+            const label = String(n?.name || n?.remark || `Node ${nid}`).trim();
+            if (label) nodeNameById.set(nid, label);
+          }
+          this.logger.debug(
+            `[DIAGNOSTIC] Loaded ${nodeNameById.size} node name(s) for inbound attribution`,
+          );
+        }
+      } catch (err: any) {
+        this.logger.warn(
+          `Failed to fetch nodes list for panel ${panel.name}: ${err.message}`,
+        );
+      }
+
       let totalSyncedInbounds = 0;
       let totalSyncedClients = 0;
       let panelUpDelta = 0n;
@@ -1250,11 +1276,15 @@ export class PanelsService implements OnModuleInit {
           apiInbound.nodeId !== undefined && apiInbound.nodeId !== null
             ? Number(apiInbound.nodeId)
             : null;
+        // Local master xray ⇒ null/0. Remote node ⇒ nodeId > 0.
+        // Do not treat originNodeGuid as proof of remote hosting: newer 3x-ui
+        // fills local inbounds with the master's own panelGuid at API read time.
         const nodeId =
           nodeIdRaw != null && !Number.isNaN(nodeIdRaw) && nodeIdRaw > 0
             ? nodeIdRaw
             : null;
         const originNodeGuid = String(apiInbound.originNodeGuid || '').trim() || null;
+        const nodeName = nodeId ? nodeNameById.get(nodeId) || null : null;
 
         let dbInbound =
           remoteId != null && !Number.isNaN(remoteId)
@@ -1300,6 +1330,7 @@ export class PanelsService implements OnModuleInit {
           settings,
           streamSettings,
           nodeId,
+          nodeName,
           originNodeGuid,
         };
 
@@ -1322,6 +1353,7 @@ export class PanelsService implements OnModuleInit {
               settings,
               streamSettings,
               nodeId,
+              nodeName,
               originNodeGuid,
             },
           });

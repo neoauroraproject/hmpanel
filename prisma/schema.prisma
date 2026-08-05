@@ -94,7 +94,10 @@ model Inbound {
   streamSettings Json?
   /// 3x-ui node id hosting this inbound (null/0 = local master panel xray)
   nodeId         Int?
-  /// Origin node GUID when inbound was synced from a node (#4983); empty on local
+  /// Display name of the hosting node from /panel/api/nodes/list (null when local)
+  nodeName       String?
+  /// Origin node GUID when inbound was synced from a node (#4983); may equal
+  /// master panelGuid for local inbounds on newer 3x-ui (filled at API read time)
   originNodeGuid String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt

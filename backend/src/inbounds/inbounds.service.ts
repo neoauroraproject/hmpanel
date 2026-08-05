@@ -21,6 +21,7 @@ export class InboundsService {
         streamSettings: true,
         panelInboundId: true,
         nodeId: true,
+        nodeName: true,
         originNodeGuid: true,
         panel: { select: { id: true, name: true, url: true } },
         _count: { select: { clientInbounds: true } },
