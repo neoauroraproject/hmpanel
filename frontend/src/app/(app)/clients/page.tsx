@@ -21,6 +21,7 @@ import { io } from "socket.io-client";
 import { ConnectionDetailsModal } from "@/components/ConnectionDetailsModal";
 import { BulkCreateModal } from "./BulkCreateModal";
 import { PluginSlot } from "@/components/PluginSlot";
+import { NodeInboundBadge } from "@/components/NodeInboundBadge";
 
 const GB = 1024 ** 3;
 
@@ -51,6 +52,8 @@ interface InboundRow {
   port: number;
   protocol: string;
   remark?: string;
+  nodeId?: number | null;
+  originNodeGuid?: string | null;
   streamSettings?: any;
   panel: { id: string; name: string; url: string; subUrl?: string | null };
 }
@@ -1455,7 +1458,8 @@ export default function ClientsPage() {
                     </div>
                     <div>
                       <div className="font-medium text-sm text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
-                        {inbound.remark || inbound.tag}
+                        <span>{inbound.remark || inbound.tag}</span>
+                        <NodeInboundBadge inbound={inbound} />
                         <span className="text-[10px] uppercase font-bold text-zinc-400 bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded">{inbound.protocol}</span>
                       </div>
                       <div className="text-xs text-zinc-500 mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5">
@@ -1981,8 +1985,9 @@ function AddClientModal({
                           />
                           <div className="flex-1 min-w-0">
                             <div className="flex justify-between items-center gap-2">
-                              <span className="font-semibold text-zinc-800 dark:text-zinc-100 truncate">
-                                {i.remark ? i.remark : i.tag}
+                              <span className="font-semibold text-zinc-800 dark:text-zinc-100 truncate inline-flex items-center gap-1.5 min-w-0">
+                                <span className="truncate">{i.remark ? i.remark : i.tag}</span>
+                                <NodeInboundBadge inbound={i} />
                               </span>
                               <span className="text-[10px] uppercase tracking-wider text-zinc-400 dark:text-zinc-500 font-bold shrink-0">
                                 {i.protocol} : {i.port}

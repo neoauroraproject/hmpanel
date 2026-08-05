@@ -167,6 +167,12 @@ export async function ensureCriticalSchema(prisma: PrismaClient): Promise<void> 
     )`,
     `CREATE UNIQUE INDEX IF NOT EXISTS "StoreIpLimit_adminId_limitIp_key" ON "StoreIpLimit"("adminId", "limitIp")`,
     `CREATE INDEX IF NOT EXISTS "StoreIpLimit_adminId_idx" ON "StoreIpLimit"("adminId")`,
+
+    // 3x-ui node-hosted inbounds (same port as master is allowed; distinct panelInboundId)
+    `ALTER TABLE "Inbound" ADD COLUMN IF NOT EXISTS "nodeId" INTEGER`,
+    `ALTER TABLE "Inbound" ADD COLUMN IF NOT EXISTS "originNodeGuid" TEXT`,
+    `CREATE INDEX IF NOT EXISTS "Inbound_panelId_panelInboundId_idx" ON "Inbound"("panelId", "panelInboundId")`,
+    `CREATE INDEX IF NOT EXISTS "Inbound_panelId_port_idx" ON "Inbound"("panelId", "port")`,
   ];
 
   for (const sql of statements) {

@@ -5,6 +5,7 @@ import { X, Check, AlertTriangle, Users, Loader2 } from "lucide-react";
 import { useToast } from "@/components/toast";
 import { motion } from "framer-motion";
 import { useT } from "@/i18n";
+import { NodeInboundBadge } from "@/components/NodeInboundBadge";
 
 interface BulkCreateModalProps {
   onClose: () => void;
@@ -286,8 +287,9 @@ export function BulkCreateModal({ onClose, inboundsList }: BulkCreateModalProps)
                             />
                             <div className="flex-1 min-w-0">
                               <div className="flex justify-between items-center gap-2">
-                                <span className="font-semibold text-zinc-800 dark:text-zinc-100 truncate">
-                                  {i.remark ? i.remark : i.tag}
+                                <span className="font-semibold text-zinc-800 dark:text-zinc-100 truncate inline-flex items-center gap-1.5 min-w-0">
+                                  <span className="truncate">{i.remark ? i.remark : i.tag}</span>
+                                  <NodeInboundBadge inbound={i} />
                                 </span>
                                 <span className="text-[10px] uppercase tracking-wider text-zinc-400 dark:text-zinc-500 font-bold shrink-0">
                                   {i.protocol} : {i.port}

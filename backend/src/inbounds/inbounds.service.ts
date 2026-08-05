@@ -19,10 +19,13 @@ export class InboundsService {
         port: true,
         protocol: true,
         streamSettings: true,
+        panelInboundId: true,
+        nodeId: true,
+        originNodeGuid: true,
         panel: { select: { id: true, name: true, url: true } },
         _count: { select: { clientInbounds: true } },
       },
-      orderBy: { tag: 'asc' },
+      orderBy: [{ nodeId: 'asc' }, { tag: 'asc' }],
     });
   }
 

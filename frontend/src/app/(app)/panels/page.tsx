@@ -13,6 +13,7 @@ import { useToast } from "@/components/toast";
 import { useT } from "@/i18n";
 import { motion, AnimatePresence } from "framer-motion";
 import { MOTION_CONFIG } from "@/lib/motion";
+import { NodeInboundBadge } from "@/components/NodeInboundBadge";
 
 interface PanelForm {
   name: string;
@@ -625,7 +626,12 @@ function InboundsModal({ panel, onClose }: { panel: any; onClose: () => void }) 
               <tbody className="divide-y divide-zinc-800">
                 {inbounds.map((ib) => (
                   <tr key={ib.id} className="hover:bg-zinc-100 dark:hover:bg-zinc-800/50">
-                    <td className="px-3 py-2 font-medium text-zinc-700 dark:text-zinc-200">{ib.tag}</td>
+                    <td className="px-3 py-2 font-medium text-zinc-700 dark:text-zinc-200">
+                      <span className="inline-flex items-center gap-1.5">
+                        <span>{ib.tag}</span>
+                        <NodeInboundBadge inbound={ib} />
+                      </span>
+                    </td>
                     <td className="px-3 py-2 text-zinc-500 dark:text-zinc-400">{ib.protocol}</td>
                     <td className="px-3 py-2 text-zinc-500 dark:text-zinc-400">{ib.port}</td>
                     <td className="px-3 py-2 text-zinc-600 dark:text-zinc-300">

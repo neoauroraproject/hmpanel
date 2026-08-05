@@ -92,12 +92,19 @@ model Inbound {
   protocol       String
   settings       Json
   streamSettings Json?
+  /// 3x-ui node id hosting this inbound (null/0 = local master panel xray)
+  nodeId         Int?
+  /// Origin node GUID when inbound was synced from a node (#4983); empty on local
+  originNodeGuid String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
   panel       Panel          @relation(fields: [panelId], references: [id], onDelete: Cascade)
   clientInbounds ClientInbound[]
   adminAccess AdminInbound[]
+
+  @@index([panelId, panelInboundId])
+  @@index([panelId, port])
 }
 
 // ---------------------------------------------------------

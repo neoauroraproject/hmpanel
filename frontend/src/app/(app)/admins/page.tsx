@@ -10,6 +10,7 @@ import { useT } from "@/i18n";
 import { Plus, Power, Edit2, Shield, Activity, HardDrive, Cpu, CreditCard, ChevronDown, Check, X, ShieldCheck, Download, Upload, Trash2, Eye, EyeOff, Server, Database, Save, ArrowRight, Store, Users, Clock, Settings2, Zap, Lock, AlertCircle, Infinity } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { MOTION_CONFIG } from "@/lib/motion";
+import { NodeInboundBadge } from "@/components/NodeInboundBadge";
 
 interface Admin {
   id: string;
@@ -520,8 +521,11 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
                                         else setForm(f => ({ ...f, selectedInbounds: f.selectedInbounds.filter(id => id !== i.id) }));
                                       }}
                                       className="w-4 h-4 rounded text-blue-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-blue-500" />
-                                    <div className="flex flex-col">
-                                      <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{i.remark || i.tag}</span>
+                                      <div className="flex flex-col">
+                                      <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200 inline-flex items-center gap-1.5">
+                                        <span>{i.remark || i.tag}</span>
+                                        <NodeInboundBadge inbound={i} />
+                                      </span>
                                       <span className="text-xs text-zinc-500">{t("admins.inboundProtocolLine", { protocol: i.protocol, port: i.port })}</span>
                                     </div>
                                   </label>
@@ -1009,9 +1013,12 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
                                         }}
                                         className="w-4 h-4 rounded text-blue-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-blue-500" />
                                       <div className="flex flex-col">
-                                        <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{i.remark || i.tag}</span>
-                                        <span className="text-xs text-zinc-500">{t("admins.inboundProtocolLine", { protocol: i.protocol, port: i.port })}</span>
-                                      </div>
+                                      <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200 inline-flex items-center gap-1.5">
+                                        <span>{i.remark || i.tag}</span>
+                                        <NodeInboundBadge inbound={i} />
+                                      </span>
+                                      <span className="text-xs text-zinc-500">{t("admins.inboundProtocolLine", { protocol: i.protocol, port: i.port })}</span>
+                                    </div>
                                     </label>
                                   ))}
                                   {inbounds?.length === 0 && <div className="text-xs text-zinc-500 p-2 text-center border rounded-lg border-dashed border-zinc-300 dark:border-zinc-700">{t("common.noInboundsOnPanel")}</div>}

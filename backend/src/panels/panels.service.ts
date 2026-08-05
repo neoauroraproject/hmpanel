@@ -754,10 +754,15 @@ export class PanelsService implements OnModuleInit {
       select: {
         id: true,
         tag: true,
+        remark: true,
         port: true,
         protocol: true,
+        panelInboundId: true,
+        nodeId: true,
+        originNodeGuid: true,
         panel: { select: { id: true, name: true } },
       },
+      orderBy: [{ nodeId: 'asc' }, { tag: 'asc' }],
     });
     return dbInbounds;
   }
@@ -1179,8 +1184,11 @@ export class PanelsService implements OnModuleInit {
       const apiInboundIdToDbId = new Map<number, string>();
       const syncedLocalInboundIds = new Set<string>();
 
-      // 1. Sync Inbounds — prefer remote panelInboundId (survives port changes),
-      // then fall back to port for legacy rows. Prune locals missing from API.
+      // 1. Sync Inbounds — ALWAYS prefer remote panelInboundId.
+      // Same port on master + node is valid (distinct remote ids). Port fallback
+      // only reclaims legacy local rows that still have null panelInboundId.
+      // When a node/inbound disappears from the Sanaei API list, stale prune below
+      // deletes the local row (matches panel API truth).
       this.logger.debug(
         `[DIAGNOSTIC] Syncing ${apiInbounds.length} inbounds into Database`,
       );
@@ -1200,6 +1208,16 @@ export class PanelsService implements OnModuleInit {
             ? Number(apiInbound.id)
             : null;
 
+        const nodeIdRaw =
+          apiInbound.nodeId !== undefined && apiInbound.nodeId !== null
+            ? Number(apiInbound.nodeId)
+            : null;
+        const nodeId =
+          nodeIdRaw != null && !Number.isNaN(nodeIdRaw) && nodeIdRaw > 0
+            ? nodeIdRaw
+            : null;
+        const originNodeGuid = String(apiInbound.originNodeGuid || '').trim() || null;
+
         let dbInbound =
           remoteId != null && !Number.isNaN(remoteId)
             ? await this.prisma.inbound.findFirst({
@@ -1207,29 +1225,51 @@ export class PanelsService implements OnModuleInit {
               })
             : null;
 
-        const byPort = await this.prisma.inbound.findFirst({
-          where: { panelId: panel.id, port: apiInbound.port },
-        });
-
-        // Port moved onto a slot that still has a ghost — merge ghost into ID match.
-        if (dbInbound && byPort && byPort.id !== dbInbound.id) {
-          await this.mergeInboundInto(byPort.id, dbInbound.id);
+        // Legacy reclaim: only a row with NO remote id yet may bind by port.
+        if (!dbInbound) {
+          const byPortLegacy = await this.prisma.inbound.findFirst({
+            where: {
+              panelId: panel.id,
+              port: apiInbound.port,
+              panelInboundId: null,
+            },
+          });
+          if (byPortLegacy) {
+            dbInbound = byPortLegacy;
+          }
+        } else if (remoteId != null && !Number.isNaN(remoteId)) {
+          // Absorb pure legacy ghosts on this port into the ID-matched row.
+          const ghosts = await this.prisma.inbound.findMany({
+            where: {
+              panelId: panel.id,
+              port: apiInbound.port,
+              panelInboundId: null,
+              id: { not: dbInbound.id },
+            },
+            select: { id: true },
+          });
+          for (const ghost of ghosts) {
+            await this.mergeInboundInto(ghost.id, dbInbound.id);
+          }
         }
 
-        if (!dbInbound && byPort) {
-          dbInbound = byPort;
-        }
+        const inboundData = {
+          panelInboundId: remoteId,
+          tag: apiInbound.remark || `inbound-${apiInbound.port}`,
+          remark: apiInbound.remark || null,
+          port: apiInbound.port,
+          protocol: apiInbound.protocol,
+          settings,
+          streamSettings,
+          nodeId,
+          originNodeGuid,
+        };
 
         if (!dbInbound) {
           dbInbound = await this.prisma.inbound.create({
             data: {
               panelId: panel.id,
-              panelInboundId: remoteId,
-              tag: apiInbound.remark || `inbound-${apiInbound.port}`,
-              port: apiInbound.port,
-              protocol: apiInbound.protocol,
-              settings,
-              streamSettings,
+              ...inboundData,
             },
           });
         } else {
@@ -1237,11 +1277,14 @@ export class PanelsService implements OnModuleInit {
             where: { id: dbInbound.id },
             data: {
               panelInboundId: remoteId ?? dbInbound.panelInboundId,
-              tag: apiInbound.remark || dbInbound.tag,
+              tag: inboundData.tag || dbInbound.tag,
+              remark: inboundData.remark ?? dbInbound.remark,
               port: apiInbound.port,
               protocol: apiInbound.protocol,
               settings,
               streamSettings,
+              nodeId,
+              originNodeGuid,
             },
           });
         }
@@ -1611,7 +1654,7 @@ export class PanelsService implements OnModuleInit {
           version,
           lastOnline: new Date(),
           lastSync: new Date(),
-          inboundCount: totalSyncedInbounds,
+          inboundCount: syncedLocalInboundIds.size,
           clientCount: apiEmails.size,
           syncState: {
             upsert: {
@@ -1637,7 +1680,7 @@ export class PanelsService implements OnModuleInit {
           entityId: id,
           details: {
             message: 'Panel synchronization completed successfully',
-            inboundCount: totalSyncedInbounds,
+            inboundCount: syncedLocalInboundIds.size,
             clientCount: apiEmails.size,
           },
         },
@@ -1672,7 +1715,7 @@ export class PanelsService implements OnModuleInit {
           entity: 'Panel',
           entityId: id,
           details: {
-            syncedInbounds: totalSyncedInbounds,
+            syncedInbounds: syncedLocalInboundIds.size,
             syncedClients: totalSyncedClients,
             latencyMs,
           },
@@ -1684,7 +1727,7 @@ export class PanelsService implements OnModuleInit {
       return {
         success: true,
         version,
-        syncedInbounds: totalSyncedInbounds,
+        syncedInbounds: syncedLocalInboundIds.size,
         syncedClients: totalSyncedClients,
         dbClientCount,
         discrepancyMsg,
