@@ -1,5 +1,6 @@
 import type { ClientOutputModel } from '../client-output.types';
 import { getCapabilitiesForOutputType } from '../output-type.resolver';
+import { buildNativeSubscriptionUrl } from '../../../common/utils/native-sub-url';
 
 type BuildCtx = {
   clientId: string;
@@ -32,13 +33,12 @@ export function buildSubscriptionOutput(ctx: BuildCtx): ClientOutputModel {
     ? `${origin}/s/${encodeURIComponent(subKey)}`
     : `/s/${encodeURIComponent(subKey)}`;
 
-  let nativeSubUrl: string | null = null;
   const panel = ctx.inbound?.panel;
-  if (panel?.subUrl) {
-    nativeSubUrl = `${panel.subUrl.replace(/\/$/, '')}/${subKey}`;
-  } else if (panel?.url) {
-    nativeSubUrl = `${panel.url.replace(/\/$/, '')}/sub/${subKey}`;
-  }
+  const nativeSubUrl = buildNativeSubscriptionUrl(
+    panel?.subUrl,
+    panel?.url,
+    subKey || '',
+  );
 
   if (!subKey) warnings.push('Missing subscription identifier');
 

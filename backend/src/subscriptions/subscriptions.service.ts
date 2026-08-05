@@ -4,6 +4,7 @@ import axios from 'axios';
 import * as https from 'https';
 import { Response, Request } from 'express';
 import { normalizeTelegramLink } from '../common/utils/telegram-link';
+import { collectNativeSubscriptionUrls } from '../common/utils/native-sub-url';
 
 @Injectable()
 export class SubscriptionsService {
@@ -126,43 +127,52 @@ export class SubscriptionsService {
     };
   }
 
+  private looksLikeClash(s: string) {
+    return (
+      /^\s*(proxies|proxy-groups|rules|mixed-port|port)\s*:/m.test(s) ||
+      s.includes('proxy-groups:') ||
+      s.includes('\nproxies:')
+    );
+  }
+
+  private tryDecodeSubBody(content: string): string {
+    const trimmed = content.trim();
+    if (!trimmed) return '';
+    if (this.looksLikeClash(trimmed) || /:\/\//.test(trimmed)) return trimmed;
+    try {
+      const decoded = Buffer.from(trimmed, 'base64').toString('utf-8');
+      if (this.looksLikeClash(decoded) || /:\/\//.test(decoded)) return decoded;
+    } catch {
+      /* keep original */
+    }
+    return trimmed;
+  }
+
   async getSubscriptionNodes(id: string) {
     const details = await this.getSubscriptionDetails(id);
     const { email, subId, inbounds } = details;
 
     if (!inbounds || inbounds.length === 0) {
+      this.logger.warn(
+        `[SUB_NODES] No ClientInbound links for sub key=${id} email=${email}`,
+      );
       return [];
     }
 
-    const panelSubUrls = new Set<string>();
-    for (const ib of inbounds) {
-      if (ib.panel) {
-        const url = ib.panel.subUrl || ib.panel.url;
-        if (url) panelSubUrls.add(url);
-      }
+    const nativeUrls = collectNativeSubscriptionUrls(
+      inbounds,
+      subId || email,
+    );
+    if (nativeUrls.length === 0) {
+      this.logger.warn(
+        `[SUB_NODES] No native sub URLs for email=${email} (check panel subUrl)`,
+      );
+      return [];
     }
 
-    const nativeUrls: string[] = [];
-    for (const pUrl of panelSubUrls) {
-      let nativeUrl = '';
-      try {
-        const u = new URL(pUrl);
-        const pathname = u.pathname.endsWith('/sub/')
-          ? u.pathname
-          : `${u.pathname.replace(/\/$/, '')}/sub/`;
-        nativeUrl = `${u.origin}${pathname}${encodeURIComponent(subId || email)}`;
-      } catch {
-        const base = pUrl.endsWith('/') ? pUrl : `${pUrl}/`;
-        if (base.includes('/sub/')) {
-          nativeUrl = `${base}${encodeURIComponent(subId || email)}`;
-        } else {
-          nativeUrl = `${base}sub/${encodeURIComponent(subId || email)}`;
-        }
-      }
-      nativeUrls.push(nativeUrl);
-    }
-
-    if (nativeUrls.length === 0) return [];
+    this.logger.debug(
+      `[SUB_NODES] Fetching ${nativeUrls.length} native feed(s) for email=${email}`,
+    );
 
     try {
       const fetchPromises = nativeUrls.map((url) =>
@@ -170,6 +180,8 @@ export class SubscriptionsService {
           .get(url, {
             httpsAgent: new https.Agent({ rejectUnauthorized: false }),
             timeout: 10000,
+            responseType: 'text',
+            transformResponse: [(d) => d],
           })
           .catch((err) => {
             this.logger.error(
@@ -182,36 +194,34 @@ export class SubscriptionsService {
 
       const responses = await Promise.all(fetchPromises);
       const nodes = [];
+      const seen = new Set<string>();
 
       for (const response of responses) {
-        if (!response || !response.data) continue;
+        if (!response || response.data == null) continue;
 
         let content = response.data;
         if (typeof content !== 'string') {
           content = JSON.stringify(content);
         }
 
-        let decoded = content;
-        try {
-          decoded = Buffer.from(content, 'base64').toString('utf-8');
-          if (!decoded.includes('://')) {
-            decoded = content;
-          }
-        } catch (e) {
-          decoded = content;
-        }
-
+        const decoded = this.tryDecodeSubBody(content);
         const lines = String(decoded)
-          .split('\n')
+          .split(/\r?\n/)
           .map((l: string) => l.trim())
           .filter((l: string) => l.length > 0);
         for (const line of lines) {
-          if (!line.includes('://')) continue;
+          if (!/^[a-z0-9+.-]+:\/\//i.test(line)) continue;
+          if (seen.has(line)) continue;
+          seen.add(line);
           const [protocol, rest] = line.split('://');
 
           let tag = 'Unknown';
           if (rest && rest.includes('#')) {
-            tag = decodeURIComponent(rest.split('#')[1]);
+            try {
+              tag = decodeURIComponent(rest.split('#').slice(1).join('#'));
+            } catch {
+              tag = rest.split('#').slice(1).join('#');
+            }
           }
 
           nodes.push({
@@ -220,6 +230,12 @@ export class SubscriptionsService {
             tag,
           });
         }
+      }
+
+      if (nodes.length === 0) {
+        this.logger.warn(
+          `[SUB_NODES] Empty URI list for email=${email} urls=${nativeUrls.join(' | ')}`,
+        );
       }
 
       return nodes;
@@ -238,32 +254,12 @@ export class SubscriptionsService {
         return res.status(404).send('Subscription not found');
       }
 
-      const panelSubUrls = new Set<string>();
-      for (const ib of inbounds) {
-        if (ib.panel) {
-          const url = ib.panel.subUrl || ib.panel.url;
-          if (url) panelSubUrls.add(url);
-        }
-      }
-
-      const nativeUrls: string[] = [];
-      for (const pUrl of panelSubUrls) {
-        let nativeUrl = '';
-        try {
-          const u = new URL(pUrl);
-          const pathname = u.pathname.endsWith('/sub/')
-            ? u.pathname
-            : `${u.pathname.replace(/\/$/, '')}/sub/`;
-          nativeUrl = `${u.origin}${pathname}${encodeURIComponent(subId || email)}`;
-        } catch {
-          const base = pUrl.endsWith('/') ? pUrl : `${pUrl}/`;
-          if (base.includes('/sub/')) {
-            nativeUrl = `${base}${encodeURIComponent(subId || email)}`;
-          } else {
-            nativeUrl = `${base}sub/${encodeURIComponent(subId || email)}`;
-          }
-        }
-        nativeUrls.push(nativeUrl);
+      const nativeUrls = collectNativeSubscriptionUrls(
+        inbounds,
+        subId || email,
+      );
+      if (nativeUrls.length === 0) {
+        return res.status(502).send('Bad Gateway - Panel subscription URL missing');
       }
 
       const headers: any = {};
@@ -279,6 +275,8 @@ export class SubscriptionsService {
             headers,
             httpsAgent: new https.Agent({ rejectUnauthorized: false }),
             timeout: 10000,
+            responseType: 'text',
+            transformResponse: [(d) => d],
           })
           .catch((err) => {
             this.logger.error(
@@ -294,26 +292,8 @@ export class SubscriptionsService {
       let firstValidResponse: any = null;
       let sawClashYaml = false;
 
-      const looksLikeClash = (s: string) =>
-        /^\s*(proxies|proxy-groups|rules|mixed-port|port)\s*:/m.test(s) ||
-        s.includes('proxy-groups:') ||
-        s.includes('\nproxies:');
-
-      const tryDecodeSubBody = (content: string): string => {
-        const trimmed = content.trim();
-        if (!trimmed) return '';
-        if (looksLikeClash(trimmed) || /:\/\//.test(trimmed)) return trimmed;
-        try {
-          const decoded = Buffer.from(trimmed, 'base64').toString('utf-8');
-          if (looksLikeClash(decoded) || /:\/\//.test(decoded)) return decoded;
-        } catch {
-          /* keep original */
-        }
-        return trimmed;
-      };
-
       for (const response of responses) {
-        if (!response || !response.data) continue;
+        if (!response || response.data == null) continue;
         if (!firstValidResponse) firstValidResponse = response;
 
         let content = response.data;
@@ -321,8 +301,8 @@ export class SubscriptionsService {
           content = JSON.stringify(content);
         }
 
-        const decoded = tryDecodeSubBody(content);
-        if (looksLikeClash(decoded)) sawClashYaml = true;
+        const decoded = this.tryDecodeSubBody(content);
+        if (this.looksLikeClash(decoded)) sawClashYaml = true;
         combinedData += decoded + '\n';
       }
 

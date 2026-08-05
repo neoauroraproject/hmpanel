@@ -302,10 +302,19 @@ export class PanelsService implements OnModuleInit {
   ): Promise<
     { id: string; panelId: string; panelInboundId: number; port: number }[]
   > {
+    const uniqueIds = [...new Set(inboundDbIds.filter(Boolean))];
     const inbounds = await this.prisma.inbound.findMany({
-      where: { id: { in: inboundDbIds } },
+      where: { id: { in: uniqueIds } },
       select: { id: true, panelId: true, panelInboundId: true, port: true },
     });
+    if (inbounds.length !== uniqueIds.length) {
+      const found = new Set(inbounds.map((i) => i.id));
+      const missingIds = uniqueIds.filter((id) => !found.has(id));
+      throw new BadRequestException(
+        `Some selected inbounds no longer exist (${missingIds.length}). ` +
+          `Sync the panel and re-select inbounds before updating the client.`,
+      );
+    }
     const missing = inbounds.filter((i) => i.panelInboundId === null);
     if (missing.length > 0) {
       throw new BadRequestException(
@@ -319,6 +328,35 @@ export class PanelsService implements OnModuleInit {
       panelInboundId: number;
       port: number;
     }[];
+  }
+
+  /**
+   * Normalize 3x-ui GET /clients/get/{email} body.
+   * Older panels: { client, inboundIds }. Newer may return a flat client object.
+   */
+  private parseClientGetObj(obj: any): {
+    client: Record<string, any> | null;
+    inboundIds: number[];
+  } {
+    if (!obj || typeof obj !== 'object') {
+      return { client: null, inboundIds: [] };
+    }
+    const nested = obj.client;
+    const client =
+      nested && typeof nested === 'object'
+        ? nested
+        : obj.email || obj.uuid || obj.id != null
+          ? obj
+          : null;
+    const rawIds = Array.isArray(obj.inboundIds)
+      ? obj.inboundIds
+      : Array.isArray(nested?.inboundIds)
+        ? nested.inboundIds
+        : [];
+    const inboundIds = rawIds
+      .map((id: any) => Number(id))
+      .filter((id: number) => Number.isFinite(id) && id > 0);
+    return { client, inboundIds };
   }
 
   async onModuleInit() {
@@ -1388,9 +1426,15 @@ export class PanelsService implements OnModuleInit {
               adminMap.get(unifiedClient.group.toLowerCase()) || null;
           }
 
-          const localInboundIds = (unifiedClient.inboundIds || [])
+          const remoteInboundIds = (unifiedClient.inboundIds || [])
+            .map((id: any) => Number(id))
+            .filter((id: number) => Number.isFinite(id) && id > 0);
+          const localInboundIds = remoteInboundIds
             .map((id: number) => apiInboundIdToDbId.get(id))
             .filter(Boolean) as string[];
+          const unmappedRemoteInboundIds = remoteInboundIds.filter(
+            (id: number) => !apiInboundIdToDbId.has(id),
+          );
 
           const connectionExtras = buildConnectionExtrasEnvelope({
             protocol: unifiedClient._protocol,
@@ -1539,26 +1583,39 @@ export class PanelsService implements OnModuleInit {
             }
 
             // Sync ClientInbound relations
+            // If the panel reports inbound IDs we cannot map yet, do NOT wipe
+            // existing local links (common right after inbound prune/resync).
             const existingInbounds = dbClient.inbounds.map((i) => i.inboundId);
-            const toAdd = localInboundIds.filter(
-              (id: string) => !existingInbounds.includes(id),
-            );
-            const toRemove = existingInbounds.filter(
-              (id) => !localInboundIds.includes(id),
-            );
+            if (
+              localInboundIds.length === 0 &&
+              remoteInboundIds.length > 0 &&
+              unmappedRemoteInboundIds.length > 0
+            ) {
+              this.logger.warn(
+                `[SYNC] Preserving ClientInbound links for ${trimmedEmail}: ` +
+                  `remote inboundIds=[${remoteInboundIds.join(',')}] could not be mapped locally`,
+              );
+            } else {
+              const toAdd = localInboundIds.filter(
+                (id: string) => !existingInbounds.includes(id),
+              );
+              const toRemove = existingInbounds.filter(
+                (id) => !localInboundIds.includes(id),
+              );
 
-            if (toRemove.length > 0) {
-              await this.prisma.clientInbound.deleteMany({
-                where: { clientId: dbClient.id, inboundId: { in: toRemove } },
-              });
-            }
-            if (toAdd.length > 0) {
-              await this.prisma.clientInbound.createMany({
-                data: toAdd.map((id: string) => ({
-                  clientId: dbClient.id,
-                  inboundId: id,
-                })),
-              });
+              if (toRemove.length > 0) {
+                await this.prisma.clientInbound.deleteMany({
+                  where: { clientId: dbClient.id, inboundId: { in: toRemove } },
+                });
+              }
+              if (toAdd.length > 0) {
+                await this.prisma.clientInbound.createMany({
+                  data: toAdd.map((id: string) => ({
+                    clientId: dbClient.id,
+                    inboundId: id,
+                  })),
+                });
+              }
             }
           }
         } catch (clientErr: any) {
@@ -2345,8 +2402,22 @@ export class PanelsService implements OnModuleInit {
           }),
         `GET_CLIENT email=${email}`,
       );
-      if (getRes.data?.success && getRes.data?.obj?.client) {
-        existingClientObj = getRes.data.obj.client;
+      if (getRes.data?.success && getRes.data?.obj != null) {
+        const parsed = this.parseClientGetObj(getRes.data.obj);
+        if (parsed.client) {
+          existingClientObj = parsed.client;
+        } else {
+          return {
+            success: false,
+            error: {
+              code: 'CLIENT_NOT_FOUND',
+              message: getRes.data?.msg || 'Client not found',
+              httpStatus: getRes.status,
+              endpoint: getEndpoint,
+              durationMs: 0,
+            },
+          };
+        }
       } else {
         return {
           success: false,
@@ -2715,7 +2786,10 @@ export class PanelsService implements OnModuleInit {
       });
       const durationMs = Date.now() - startMs;
       const exists = res.data?.success === true && res.data?.obj !== null;
-      const inboundIds = exists ? res.data?.obj?.inboundIds || [] : [];
+      const parsed = exists
+        ? this.parseClientGetObj(res.data.obj)
+        : { client: null, inboundIds: [] as number[] };
+      const inboundIds = parsed.inboundIds;
 
       this.logger.log(
         `[VERIFY_CLIENT] RESPONSE HTTP=${res.status} success=${res.data?.success} ` +
@@ -2740,7 +2814,13 @@ export class PanelsService implements OnModuleInit {
           : res.data?.msg || 'Client not found on panel',
       });
 
-      return { exists, data: exists ? res.data.obj : undefined, inboundIds };
+      return {
+        exists: exists && !!parsed.client,
+        data: exists
+          ? { ...res.data.obj, client: parsed.client, inboundIds }
+          : undefined,
+        inboundIds,
+      };
     } catch (err: any) {
       const durationMs = Date.now() - startMs;
       this.logger.error(

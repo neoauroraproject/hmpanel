@@ -14,6 +14,7 @@ import { randomUUID } from 'crypto';
 import * as QRCode from 'qrcode';
 import { PanelsService } from '../panels/panels.service';
 import { BulkCreateClientDto, BulkClientDto } from './dto/client.dto';
+import { buildNativeSubscriptionUrl } from '../common/utils/native-sub-url';
 
 const GB = 1024 ** 3;
 
@@ -1073,25 +1074,13 @@ export class ClientsService {
 
   async getQrCode(id: string, adminId: string, role: string) {
     const client = await this.findOne(id, adminId, role);
-    const subUrlBase =
-      client.inbound?.panel?.subUrl ||
-      client.inbound?.panel?.url ||
-      'http://localhost';
-
-    let subUrl = '';
-    try {
-      const pUrl = new URL(subUrlBase);
-      const pathname = pUrl.pathname.endsWith('/sub/')
-        ? pUrl.pathname
-        : `${pUrl.pathname.replace(/\/$/, '')}/sub/`;
-      subUrl = `${pUrl.origin}${pathname}${encodeURIComponent(client.subId || client.email)}`;
-    } catch {
-      const base = subUrlBase.endsWith('/') ? subUrlBase : `${subUrlBase}/`;
-      if (base.includes('/sub/')) {
-        subUrl = `${base}${encodeURIComponent(client.subId || client.email)}`;
-      } else {
-        subUrl = `${base}sub/${encodeURIComponent(client.subId || client.email)}`;
-      }
+    const subUrl = buildNativeSubscriptionUrl(
+      client.inbound?.panel?.subUrl,
+      client.inbound?.panel?.url,
+      client.subId || client.email,
+    );
+    if (!subUrl) {
+      throw new BadRequestException('Panel subscription URL is not configured');
     }
 
     try {
@@ -1154,13 +1143,22 @@ export class ClientsService {
     }
 
     // ── Step 2: Calculate Differences and Apply Attach/Detach ──────────────
-    const remoteInbounds = preCheck.inboundIds || [];
-    const toAttach = newNumericInboundIds.filter(
-      (id) => !remoteInbounds.includes(id),
-    );
-    const toDetach = remoteInbounds.filter(
-      (id) => !newNumericInboundIds.includes(id),
-    );
+    const remoteInbounds = (preCheck.inboundIds || [])
+      .map((id) => Number(id))
+      .filter((id) => Number.isFinite(id) && id > 0);
+    const desiredInbounds = newNumericInboundIds
+      .map((id) => Number(id))
+      .filter((id) => Number.isFinite(id) && id > 0);
+    const remoteSet = new Set(remoteInbounds);
+    const desiredSet = new Set(desiredInbounds);
+    const toAttach = desiredInbounds.filter((id) => !remoteSet.has(id));
+    const toDetach = remoteInbounds.filter((id) => !desiredSet.has(id));
+
+    if (toAttach.length === 0 && toDetach.length === 0) {
+      this.logger.log(
+        `[SYNC_INBOUNDS] Inbound set already matches for ${email}; skipping attach/detach`,
+      );
+    }
 
     if (toDetach.length > 0) {
       this.logger.log(
@@ -1239,10 +1237,11 @@ export class ClientsService {
       };
     }
 
-    const postRemoteInbounds = [...(postCheck.inboundIds || [])].sort(
-      (a, b) => a - b,
-    );
-    const expectedInbounds = [...newNumericInboundIds].sort((a, b) => a - b);
+    const postRemoteInbounds = [...(postCheck.inboundIds || [])]
+      .map((id) => Number(id))
+      .filter((id) => Number.isFinite(id) && id > 0)
+      .sort((a, b) => a - b);
+    const expectedInbounds = [...desiredInbounds].sort((a, b) => a - b);
 
     const inboundsMatch =
       postRemoteInbounds.length === expectedInbounds.length &&
@@ -1416,7 +1415,9 @@ export class ClientsService {
       // Resolve numeric panel inbound IDs for the COMPLETE new set
       const resolvedInbounds =
         await this.panelsService.resolveNumericInboundIds(newInboundIds);
-      newNumericInboundIds = resolvedInbounds.map((ib) => ib.panelInboundId);
+      newNumericInboundIds = resolvedInbounds
+        .map((ib) => Number(ib.panelInboundId))
+        .filter((id) => Number.isFinite(id) && id > 0);
 
       this.logger.log(
         `[CLIENT_UPDATE] email=${existing.email} ` +

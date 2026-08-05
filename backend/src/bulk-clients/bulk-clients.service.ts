@@ -5,6 +5,7 @@ import { PanelsService } from '../panels/panels.service';
 import { ClientsService } from '../clients/clients.service';
 import axios from 'axios';
 import { supportsBulkClientApi } from '../common/utils/panel-version.util';
+import { buildNativeSubscriptionUrl } from '../common/utils/native-sub-url';
 
 /**
  * BulkClientsService — Dedicated service for optimized bulk operations.
@@ -27,22 +28,16 @@ export class BulkClientsService {
 
   /**
    * Build subscription URL for a client, reusing the same logic as
-   * ClientsService.getQrCode().
+   * native portal / QR code builders.
    */
-  private buildSubUrl(subUrlBase: string, subIdOrEmail: string): string {
-    try {
-      const pUrl = new URL(subUrlBase);
-      const pathname = pUrl.pathname.endsWith('/sub/')
-        ? pUrl.pathname
-        : `${pUrl.pathname.replace(/\/$/, '')}/sub/`;
-      return `${pUrl.origin}${pathname}${encodeURIComponent(subIdOrEmail)}`;
-    } catch {
-      const base = subUrlBase.endsWith('/') ? subUrlBase : `${subUrlBase}/`;
-      if (base.includes('/sub/')) {
-        return `${base}${encodeURIComponent(subIdOrEmail)}`;
-      }
-      return `${base}sub/${encodeURIComponent(subIdOrEmail)}`;
-    }
+  private buildSubUrl(
+    panelSubUrl: string | null | undefined,
+    panelUrl: string | null | undefined,
+    subIdOrEmail: string,
+  ): string {
+    return (
+      buildNativeSubscriptionUrl(panelSubUrl, panelUrl, subIdOrEmail) || ''
+    );
   }
 
   /**
@@ -463,8 +458,11 @@ export class BulkClientsService {
         continue;
       }
 
-      const subUrlBase = panel.subUrl || panel.url || 'http://localhost';
-      const subUrl = this.buildSubUrl(subUrlBase, c.subId || c.email);
+      const subUrl = this.buildSubUrl(
+        panel.subUrl,
+        panel.url,
+        c.subId || c.email,
+      );
 
       lines.push(c.email);
       lines.push(subUrl);
