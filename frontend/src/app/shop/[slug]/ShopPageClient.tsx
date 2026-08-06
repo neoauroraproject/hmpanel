@@ -416,8 +416,6 @@ function ShopBody(props: {
             onBuy={() => startBuy()}
             onLogin={() => router.push(portalPathForSlug(store.slug, "login"))}
             onTrack={() => setShowTrack(true)}
-            categories={categories}
-            onSelectCategory={(category) => startBuy(category)}
           />
           <AnimatePresence>
             {showTrack ? (

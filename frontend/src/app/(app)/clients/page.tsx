@@ -53,6 +53,7 @@ interface InboundRow {
   protocol: string;
   remark?: string;
   nodeId?: number | null;
+  nodeName?: string | null;
   originNodeGuid?: string | null;
   streamSettings?: any;
   panel: { id: string; name: string; url: string; subUrl?: string | null };

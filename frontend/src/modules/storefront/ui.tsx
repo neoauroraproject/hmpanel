@@ -158,20 +158,15 @@ export function WelcomeHero({
   onBuy,
   onLogin,
   onTrack,
-  categories,
-  onSelectCategory,
 }: {
   store?: StorefrontStore;
   onBuy: () => void;
   onLogin: () => void;
   onTrack?: () => void;
-  categories?: StorefrontCategory[];
-  onSelectCategory?: (category: StorefrontCategory) => void;
 }) {
   const { t, isFa } = useStorefrontLocale();
   const logoLight = store?.logoUrl || store?.branding?.logo || null;
   const logoDark = store?.logoDarkUrl || store?.branding?.logoDark || null;
-  const visibleCategories = (categories || []).filter((c) => c?.id && c?.name);
 
   return (
     <motion.section
@@ -222,27 +217,6 @@ export function WelcomeHero({
         <PrimaryButton onClick={onBuy}>{t("سفارش جدید", "New Order")}</PrimaryButton>
         <SecondaryButton onClick={onLogin}>{t("ورود", "Login")}</SecondaryButton>
       </div>
-      {visibleCategories.length ? (
-        <div className="mt-10 w-full text-start">
-          <div className="mb-3 flex items-end justify-between gap-3">
-            <div>
-              <div className="text-[13px] font-semibold uppercase tracking-[0.14em] text-zinc-400">
-                {t("دسته‌بندی", "Categories")}
-              </div>
-              <p className="mt-1 text-sm text-zinc-500">
-                {t("اول دسته را انتخاب کنید، بعد پلن.", "Pick a category first, then a plan.")}
-              </p>
-            </div>
-          </div>
-          <CategoryGrid
-            categories={visibleCategories}
-            onSelect={(category) => {
-              if (onSelectCategory) onSelectCategory(category);
-              else onBuy();
-            }}
-          />
-        </div>
-      ) : null}
       {onTrack ? (
         <button
           type="button"

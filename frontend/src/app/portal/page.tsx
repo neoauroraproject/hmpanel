@@ -7,7 +7,7 @@ import { KeyRound, ArrowRight, LoaderCircle, ShoppingBag } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { publicApi } from "@/lib/api";
 import { useCustomerSession } from "@/modules/storefront/session";
-import { StoreShell, PrimaryButton, SecondaryButton, CategoryGrid } from "@/modules/storefront/ui";
+import { StoreShell, PrimaryButton, SecondaryButton } from "@/modules/storefront/ui";
 import { usePortalTelegramGate } from "@/modules/storefront/tma/usePortalTelegramGate";
 import { StorefrontLocaleProvider, useStorefrontLocale } from "@/modules/storefront/locale";
 import { fadeUp, fadeUpTransition, Surface } from "@/modules/storefront/design";
@@ -17,20 +17,13 @@ import {
   resolveStoreSlug,
   shopPathForSlug,
 } from "@/modules/storefront/store-slug";
-import type { StorefrontCategory, StorefrontStore } from "@/modules/storefront/types";
+import type { StorefrontStore } from "@/modules/storefront/types";
 
-function PortalLoginForm({
-  store,
-  categories,
-}: {
-  store?: StorefrontStore | null;
-  categories?: StorefrontCategory[];
-}) {
+function PortalLoginForm({ store }: { store?: StorefrontStore | null }) {
   const router = useRouter();
   const { t, isFa } = useStorefrontLocale();
   const [token, setToken] = useState("");
   const { data, login, isLoading } = useCustomerSession();
-  const visibleCategories = (categories || []).filter((c) => c?.id && c?.name);
 
   useEffect(() => {
     const incomingToken =
@@ -50,14 +43,8 @@ function PortalLoginForm({
     }
   }, [data, router]);
 
-  const goShop = (categoryId?: string) => {
-    const slug = store?.slug || resolveStoreSlug();
-    const base = shopPathForSlug(slug);
-    if (categoryId) {
-      router.push(`${base}?flow=buy&categoryId=${encodeURIComponent(categoryId)}`);
-      return;
-    }
-    router.push(base);
+  const goShop = () => {
+    router.push(shopPathForSlug(store?.slug || resolveStoreSlug()));
   };
 
   return (
@@ -108,7 +95,7 @@ function PortalLoginForm({
               </span>
             )}
           </PrimaryButton>
-          <SecondaryButton onClick={() => goShop()}>
+          <SecondaryButton onClick={goShop}>
             <span className="inline-flex items-center justify-center gap-2">
               <ShoppingBag size={16} />
               {t("بازگشت به فروشگاه", "Back to store")}
@@ -120,22 +107,6 @@ function PortalLoginForm({
             </p>
           ) : null}
         </div>
-        {visibleCategories.length ? (
-          <div className="mt-8 border-t border-black/[0.05] pt-6 text-start dark:border-white/10">
-            <div className="text-[12px] font-semibold uppercase tracking-[0.14em] text-zinc-400">
-              {t("دسته‌بندی‌ها", "Categories")}
-            </div>
-            <p className="mt-1 text-sm text-zinc-500">
-              {t("بدون ورود هم می‌توانید سفارش دهید.", "You can order without logging in.")}
-            </p>
-            <div className="mt-3">
-              <CategoryGrid
-                categories={visibleCategories}
-                onSelect={(category) => goShop(category.id)}
-              />
-            </div>
-          </div>
-        ) : null}
       </Surface>
     </motion.div>
   );
@@ -183,11 +154,10 @@ function PortalLoginBody() {
     | StorefrontStore
     | null
     | undefined;
-  const categories = (publicStore?.categories || []) as StorefrontCategory[];
 
   return (
     <StoreShell store={store || undefined} topBar={slug || undefined}>
-      <PortalLoginForm store={store} categories={categories} />
+      <PortalLoginForm store={store} />
     </StoreShell>
   );
 }

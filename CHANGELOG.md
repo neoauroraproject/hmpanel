@@ -8,6 +8,12 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [1.8.23] - 2026-08-07
+
+### Fixed
+- **Every inbound showed a blue "NODE" badge:** the badge now checks `nodeId > 0` only — local master-panel inbounds no longer show a badge, and remote node inbounds show the resolved node name (synced from `/panel/api/nodes/list`) instead of a generic label. `Inbound.nodeId` / `nodeName` / `originNodeGuid` are now persisted from the 3x-ui sync so the frontend can tell local and node-hosted inbounds apart.
+- **Storefront categories appeared before "New Order":** the customer portal login page and the store landing page (before the customer even clicks سفارش جدید) both rendered a full category grid. Categories now only appear inside the actual order/renew flow, once the customer has started a new order.
+
 ## [1.8.19] - 2026-07-26
 
 ### Added
