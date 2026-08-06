@@ -1198,8 +1198,14 @@ export class PanelsService implements OnModuleInit {
         `[DIAGNOSTIC] Starting Database operations: ${apiInbounds.length} inbounds, ${unifiedClients.length} clients`,
       );
 
-      // Map nodeId → display name for badges (local inbounds have nodeId null/0).
+      // Node registry used to attribute inbounds to their physical host.
+      // nodeId → name for the common case, guid → node for inbounds that report
+      // no nodeId of their own (transitive sub-nodes are surfaced with id 0).
       const nodeNameById = new Map<number, string>();
+      const nodeByGuid = new Map<string, { id: number; name: string }>();
+      // Only true when the panel actually answered; a failed call must not be
+      // read as "this panel has no nodes".
+      let nodeRegistryKnown = false;
       try {
         const nodesRes = await axios.get(`${apiBaseUrl}/panel/api/nodes/list`, {
           headers,
@@ -1207,14 +1213,19 @@ export class PanelsService implements OnModuleInit {
           timeout: PANEL_REQUEST_TIMEOUT_MS,
         });
         if (nodesRes.data?.success && Array.isArray(nodesRes.data.obj)) {
+          nodeRegistryKnown = true;
           for (const n of nodesRes.data.obj) {
             const nid = Number(n?.id);
-            if (!Number.isFinite(nid) || nid <= 0) continue;
-            const label = String(n?.name || n?.remark || `Node ${nid}`).trim();
-            if (label) nodeNameById.set(nid, label);
+            const id = Number.isFinite(nid) && nid > 0 ? nid : 0;
+            const label = String(
+              n?.name || n?.remark || (id ? `Node ${id}` : ''),
+            ).trim();
+            if (id && label) nodeNameById.set(id, label);
+            const guid = String(n?.guid || '').trim();
+            if (guid) nodeByGuid.set(guid, { id, name: label });
           }
           this.logger.debug(
-            `[DIAGNOSTIC] Loaded ${nodeNameById.size} node name(s) for inbound attribution`,
+            `[DIAGNOSTIC] Loaded ${nodeNameById.size} node name(s) / ${nodeByGuid.size} node guid(s) for inbound attribution`,
           );
         }
       } catch (err: any) {
@@ -1222,6 +1233,10 @@ export class PanelsService implements OnModuleInit {
           `Failed to fetch nodes list for panel ${panel.name}: ${err.message}`,
         );
       }
+      // A panel with no registered nodes cannot host node inbounds, whatever the
+      // list API reports per inbound.
+      const panelHasNodes =
+        !nodeRegistryKnown || nodeByGuid.size > 0 || nodeNameById.size > 0;
 
       let totalSyncedInbounds = 0;
       let totalSyncedClients = 0;
@@ -1276,15 +1291,29 @@ export class PanelsService implements OnModuleInit {
           apiInbound.nodeId !== undefined && apiInbound.nodeId !== null
             ? Number(apiInbound.nodeId)
             : null;
-        // Local master xray ⇒ null/0. Remote node ⇒ nodeId > 0.
-        // Do not treat originNodeGuid as proof of remote hosting: newer 3x-ui
-        // fills local inbounds with the master's own panelGuid at API read time.
-        const nodeId =
+        // Local master xray ⇒ null/0. Remote node ⇒ nodeId > 0 (same rule 3x-ui's
+        // own inbound list uses). originNodeGuid is never proof of remote hosting
+        // on its own: newer 3x-ui stamps local inbounds with the master's own
+        // panelGuid at API read time, so it only counts when it matches the guid
+        // of a node this panel actually has registered.
+        const originNodeGuid =
+          String(apiInbound.originNodeGuid || '').trim() || null;
+        const guidNode = originNodeGuid
+          ? nodeByGuid.get(originNodeGuid) || null
+          : null;
+        let nodeId =
           nodeIdRaw != null && !Number.isNaN(nodeIdRaw) && nodeIdRaw > 0
             ? nodeIdRaw
             : null;
-        const originNodeGuid = String(apiInbound.originNodeGuid || '').trim() || null;
-        const nodeName = nodeId ? nodeNameById.get(nodeId) || null : null;
+        // Transitive sub-nodes are projected with id 0, so their inbounds carry no
+        // usable nodeId — the origin guid is the only handle on the real host.
+        if (!nodeId && guidNode && guidNode.id > 0) nodeId = guidNode.id;
+        let nodeName =
+          (nodeId ? nodeNameById.get(nodeId) : null) || guidNode?.name || null;
+        if (!panelHasNodes) {
+          nodeId = null;
+          nodeName = null;
+        }
 
         let dbInbound =
           remoteId != null && !Number.isNaN(remoteId)
@@ -1321,6 +1350,13 @@ export class PanelsService implements OnModuleInit {
           }
         }
 
+        // Keep the last known node label when the inbound is still node-hosted but
+        // /nodes/list was unreachable this round, so the badge does not degrade to
+        // a nameless one on a transient failure.
+        const isNodeHosted = panelHasNodes && Boolean(nodeId || guidNode);
+        const persistedNodeName =
+          nodeName ?? (isNodeHosted ? (dbInbound?.nodeName ?? null) : null);
+
         const inboundData = {
           panelInboundId: remoteId,
           tag: apiInbound.remark || `inbound-${apiInbound.port}`,
@@ -1330,7 +1366,7 @@ export class PanelsService implements OnModuleInit {
           settings,
           streamSettings,
           nodeId,
-          nodeName,
+          nodeName: persistedNodeName,
           originNodeGuid,
         };
 
@@ -1353,7 +1389,7 @@ export class PanelsService implements OnModuleInit {
               settings,
               streamSettings,
               nodeId,
-              nodeName,
+              nodeName: persistedNodeName,
               originNodeGuid,
             },
           });

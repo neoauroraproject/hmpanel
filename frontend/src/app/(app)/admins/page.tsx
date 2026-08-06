@@ -40,6 +40,9 @@ interface InboundRow {
   tag: string;
   port: number;
   protocol: string;
+  nodeId?: number | null;
+  nodeName?: string | null;
+  originNodeGuid?: string | null;
   panel: { id: string; name: string };
 }
 

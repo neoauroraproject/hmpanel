@@ -8,6 +8,11 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [1.8.24] - 2026-08-07
+
+### Fixed
+- **Inbound NODE attribution:** sync now resolves node names by both `nodeId` and node `guid`, correctly attributes transitive sub-nodes (projected with id 0), preserves the last known node name when `/panel/api/nodes/list` fails, and clears node fields when the panel reports zero registered nodes — so local master inbounds stay badge-free and remote nodes show real names (Turkey/Dubai/…) instead of a generic NODE label.
+
 ## [1.8.23] - 2026-08-07
 
 ### Fixed
