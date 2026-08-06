@@ -8,6 +8,15 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [1.8.25] - 2026-08-07
+
+### Fixed
+- **Cleanup / bulk delete:** expired-client cleanup and bulk delete now call 3x-ui `POST /panel/api/clients/bulkDel` **once per panel** (emails grouped by `Client.panelId`) instead of one HTTP delete per user. Legacy panels without `bulkDel` still fall back to sequential deletes. Cleanup remains no-refund.
+
+### Added
+- **Clients panel selector:** a clear chip/tab bar above the clients list for All panels + each accessible panel (super-admin and reseller). Create / bulk-create modals require choosing a panel when more than one is available, then show only that panel’s inbounds.
+- **Admin multi-panel access:** create/edit reseller can enable multiple panels and tick inbounds under each panel (stored via existing `AdminInbound`).
+
 ## [1.8.24] - 2026-08-07
 
 ### Fixed

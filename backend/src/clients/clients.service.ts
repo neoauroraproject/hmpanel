@@ -30,7 +30,10 @@ export interface ClientFilters {
 
 import { MonitoringService } from '../stats/monitoring.service';
 import { RedisLockService } from '../common/utils/redis-lock.service';
-import { supportsBulkClientApi } from '../common/utils/panel-version.util';
+import {
+  supportsBulkClientApi,
+  supportsBulkDelete,
+} from '../common/utils/panel-version.util';
 
 @Injectable()
 export class ClientsService {
@@ -105,6 +108,22 @@ export class ClientsService {
     }
 
     return true;
+  }
+
+  /**
+   * A client lives on a single panel, so every selected inbound must belong to
+   * the same one. Callers pass inbounds already resolved to their panel.
+   */
+  private assertSinglePanelInbounds(
+    resolvedInbounds: Array<{ panelId: string }>,
+  ): void {
+    const panelIds = new Set(resolvedInbounds.map((ib) => ib.panelId));
+    if (panelIds.size > 1) {
+      throw new BadRequestException(
+        'All selected inbounds must belong to the same panel. ' +
+          'Create a separate client for each panel.',
+      );
+    }
   }
 
   /** Net bytes charged to the owner for this client (DEBIT − CREDIT). */
@@ -585,7 +604,10 @@ export class ClientsService {
       const resolvedInbounds =
         await this.panelsService.resolveNumericInboundIds(data.inboundIds);
 
-      // Group by panelId (a client can span multiple panels)
+      // A client belongs to exactly one panel (Client.panelId) — update() also
+      // rejects inbounds from another panel, so creation must match.
+      this.assertSinglePanelInbounds(resolvedInbounds);
+
       const byPanel = new Map<
         string,
         { dbIds: string[]; numericIds: number[] }
@@ -1901,6 +1923,14 @@ export class ClientsService {
         'Bulk creation limit is 1000 clients per request',
       );
 
+    if (dto.inboundIds?.length) {
+      const selected = await this.prisma.inbound.findMany({
+        where: { id: { in: dto.inboundIds } },
+        select: { panelId: true },
+      });
+      this.assertSinglePanelInbounds(selected);
+    }
+
     const emails = [];
     const sep = dto.separator === 'None' ? '' : dto.separator || '';
     for (let i = dto.startNumber; i <= dto.endNumber; i++) {
@@ -2024,6 +2054,8 @@ export class ClientsService {
     const resolvedInbounds = await this.panelsService.resolveNumericInboundIds(
       dto.inboundIds,
     );
+    this.assertSinglePanelInbounds(resolvedInbounds);
+
     const byPanel = new Map<
       string,
       { dbIds: string[]; numericIds: number[] }
@@ -2545,6 +2577,209 @@ export class ClientsService {
     }
   }
 
+  /**
+   * Delete/cleanup many clients using one POST /panel/api/clients/bulkDel per
+   * panel instead of one request per client. Panels that predate the bulk API
+   * fall back to the sequential remove() path.
+   */
+  private async bulkDeleteOps(
+    adminId: string,
+    role: string,
+    targets: Array<{ id: string }>,
+    skipRefund: boolean,
+  ): Promise<{ success: number; failed: number; errors: string[] }> {
+    const results = { success: 0, failed: 0, errors: [] as string[] };
+
+    const clients = await this.prisma.client.findMany({
+      where: { id: { in: targets.map((t) => t.id) }, isDeleting: false },
+      include: { panel: true },
+    });
+
+    const inFlight = targets.length - clients.length;
+    if (inFlight > 0) {
+      results.failed += inFlight;
+      results.errors.push(
+        `${inFlight} client(s) skipped — deletion already in progress`,
+      );
+    }
+
+    const byPanel = new Map<string, typeof clients>();
+    for (const c of clients) {
+      if (!byPanel.has(c.panelId)) byPanel.set(c.panelId, []);
+      byPanel.get(c.panelId)!.push(c);
+    }
+
+    for (const [panelId, group] of byPanel) {
+      const panel = group[0].panel;
+      const panelName = panel?.name || panelId;
+
+      if (
+        !panel ||
+        !supportsBulkDelete({
+          apiVersion: panel.apiVersion,
+          capabilities: panel.capabilities,
+        })
+      ) {
+        this.logger.log(
+          `[BULK_DELETE] panel=${panelName} does not support bulkDel — ` +
+            `falling back to ${group.length} sequential deletes`,
+        );
+        for (const c of group) {
+          try {
+            await this.remove(c.id, adminId, role, skipRefund);
+            results.success++;
+          } catch (err: any) {
+            results.failed++;
+            results.errors.push(`${c.email}: ${err.message}`);
+          }
+        }
+        continue;
+      }
+
+      // FAILED clients were never provisioned — never send them to the panel
+      const onPanel = group.filter((c) => c.provisioningStatus !== 'FAILED');
+      const deletable = group.filter((c) => c.provisioningStatus === 'FAILED');
+
+      if (onPanel.length) {
+        const emails = onPanel.map((c) => c.email);
+        // Claim the rows so a concurrent request cannot delete them twice
+        await this.prisma.client.updateMany({
+          where: { id: { in: onPanel.map((c) => c.id) } },
+          data: { isDeleting: true },
+        });
+
+        const res = await this.panelsService.bulkDeleteClientsOnPanel(
+          panelId,
+          emails,
+          { keepTraffic: false },
+          adminId,
+        );
+
+        if (!res.success) {
+          this.logger.error(
+            `[BULK_DELETE] panel=${panelName} emails=${emails.length} failed: ${res.error?.message}`,
+          );
+          await this.prisma.client.updateMany({
+            where: { id: { in: onPanel.map((c) => c.id) } },
+            data: { isDeleting: false },
+          });
+          results.failed += onPanel.length;
+          results.errors.push(`${panelName}: ${res.error?.message}`);
+        } else {
+          const skipped: Array<{ email: string; reason: string }> =
+            res.data?.skipped ?? [];
+          // "not found" means the client is already gone from the panel — the
+          // local row still has to be removed, same as deleteClientOnPanel().
+          const blocked = new Map(
+            skipped
+              .filter((s) => !/not found/i.test(s.reason || ''))
+              .map((s) => [s.email, s.reason]),
+          );
+
+          this.logger.log(
+            `[BULK_DELETE] panel=${panelName} emails=${emails.length} ` +
+              `deleted=${res.data?.deleted ?? 0} skipped=${skipped.length} ` +
+              `blocked=${blocked.size} skipRefund=${skipRefund}`,
+          );
+
+          const blockedIds: string[] = [];
+          for (const c of onPanel) {
+            if (blocked.has(c.email)) {
+              blockedIds.push(c.id);
+              results.failed++;
+              results.errors.push(`${c.email}: ${blocked.get(c.email)}`);
+              continue;
+            }
+            deletable.push(c);
+          }
+          if (blockedIds.length) {
+            await this.prisma.client.updateMany({
+              where: { id: { in: blockedIds } },
+              data: { isDeleting: false },
+            });
+          }
+        }
+      } else {
+        this.logger.log(
+          `[BULK_DELETE] panel=${panelName} all ${group.length} targets were ` +
+            `never provisioned — local delete only`,
+        );
+      }
+
+      for (const c of deletable) {
+        try {
+          await this.applyClientDeletionLocal(adminId, c.id, skipRefund);
+          results.success++;
+        } catch (err: any) {
+          // Panel side is already done; the row stays flagged isDeleting so a
+          // retry does not re-issue a panel delete for a client that is gone.
+          results.failed++;
+          results.errors.push(`${c.email}: ${err.message}`);
+        }
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Remove a client row (+ refund) after the panel-side delete already
+   * succeeded. Never touches the panel again.
+   */
+  private async applyClientDeletionLocal(
+    adminId: string,
+    clientId: string,
+    skipRefund: boolean,
+  ) {
+    const existing = await this.prisma.client.findUnique({
+      where: { id: clientId },
+      include: { admin: { select: { username: true } } },
+    });
+    if (!existing) return;
+
+    await this.prisma.$transaction(async (tx) => {
+      const refundResult = await this.applyClientDeletionRefund(
+        tx,
+        {
+          id: existing.id,
+          uuid: existing.uuid,
+          email: existing.email,
+          adminId: existing.adminId,
+          enable: existing.enable,
+          disableReason: existing.disableReason,
+          total: existing.total,
+          up: existing.up,
+          down: existing.down,
+          expiryTime: existing.expiryTime,
+          createdWithTrafficMode: existing.createdWithTrafficMode,
+          balanceDeducted: existing.balanceDeducted === true,
+          provisioningStatus: existing.provisioningStatus,
+        },
+        skipRefund,
+      );
+
+      await tx.client.delete({ where: { id: existing.id } });
+      await tx.auditLog.create({
+        data: {
+          action: skipRefund ? 'CLIENT_CLEANUP' : 'CLIENT_DELETED',
+          entity: 'Client',
+          entityId: existing.id,
+          adminId,
+          details: {
+            clientEmail: existing.email,
+            adminUsername: existing.admin?.username,
+            trafficBefore: existing.total.toString(),
+            trafficRefunded: refundResult.refundedAmount.toString(),
+            verified: true,
+            bulkDeleted: true,
+            refundGranted: refundResult.refundGranted,
+            refundSkippedReason: refundResult.refundSkippedReason,
+          },
+        },
+      });
+    });
+  }
+
   /** Bulk operations, scoped to the caller's ownership when a reseller. */
   async bulk(adminId: string, role: string, dto: BulkClientDto) {
     if (!dto.ids?.length) throw new BadRequestException('No clients selected');
@@ -2669,6 +2904,16 @@ export class ClientsService {
           results.errors.push(`Panel ${panelId}: ${err.message}`);
         }
       }
+    } else if (dto.action === 'delete' || dto.action === 'cleanup') {
+      const deleteResults = await this.bulkDeleteOps(
+        adminId,
+        role,
+        targets,
+        dto.action === 'cleanup',
+      );
+      results.success = deleteResults.success;
+      results.failed = deleteResults.failed;
+      results.errors = deleteResults.errors;
     } else {
       // Process sequential operations in parallel batches of 10
       const batchSize = 10;
@@ -2683,12 +2928,6 @@ export class ClientsService {
                   break;
                 case 'disable':
                   await this.update(t.id, adminId, role, { enable: false });
-                  break;
-                case 'delete':
-                  await this.remove(t.id, adminId, role);
-                  break;
-                case 'cleanup':
-                  await this.remove(t.id, adminId, role, true);
                   break;
                 case 'assignInbounds': {
                   if (!dto.inboundIds || dto.inboundIds.length === 0)

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { X, Check, AlertTriangle, Users, Loader2 } from "lucide-react";
@@ -38,28 +38,65 @@ export function BulkCreateModal({ onClose, inboundsList }: BulkCreateModalProps)
   } | null>(null);
   const [isValidating, setIsValidating] = useState(false);
 
+  // Every client in a batch lands on one panel, so inbounds are panel-scoped.
+  const panels = useMemo(() => {
+    const byId = new Map<string, { id: string; name: string }>();
+    (inboundsList ?? []).forEach((i) => {
+      const id = i.panel?.id || i.panelId;
+      if (!id) return;
+      byId.set(id, { id, name: i.panel?.name || id });
+    });
+    return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [inboundsList]);
+
+  const [selectedPanelId, setSelectedPanelId] = useState<string>("");
+
+  useEffect(() => {
+    if (panels.length === 0) return;
+    if (!panels.some((p) => p.id === selectedPanelId)) {
+      setSelectedPanelId(panels[0].id);
+    }
+  }, [panels, selectedPanelId]);
+
+  const availableInbounds = useMemo(
+    () =>
+      selectedPanelId
+        ? (inboundsList ?? []).filter(
+            (i) => (i.panel?.id || i.panelId) === selectedPanelId,
+          )
+        : inboundsList ?? [],
+    [inboundsList, selectedPanelId],
+  );
+
   // Fetch groups
   const { data: groups } = useQuery<string[]>({
     queryKey: ["xui-groups"],
     queryFn: async () => (await api.get<string[]>("/clients/groups")).data,
   });
 
-  // Populate default inbound if empty
+  // Keep the selection inside the active panel, defaulting to the last used one
   useEffect(() => {
-    if (inboundsList?.length > 0 && form.inboundIds.length === 0) {
-      try {
-        const cached = JSON.parse(localStorage.getItem("lastSelectedInboundIds") || "[]");
-        const validCached = cached.filter((id: string) => inboundsList.some(i => i.id === id));
-        if (validCached.length > 0) {
-          setTimeout(() => setForm(f => ({ ...f, inboundIds: validCached })), 0);
-        } else {
-          setTimeout(() => setForm(f => ({ ...f, inboundIds: [inboundsList[0].id] })), 0);
-        }
-      } catch {
-        setTimeout(() => setForm(f => ({ ...f, inboundIds: [inboundsList[0].id] })), 0);
-      }
+    if (availableInbounds.length === 0) return;
+    const stillAvailable = form.inboundIds.filter((id) =>
+      availableInbounds.some((i) => i.id === id),
+    );
+    if (stillAvailable.length === form.inboundIds.length && stillAvailable.length > 0) {
+      return;
     }
-  }, [inboundsList]);
+    if (stillAvailable.length > 0) {
+      setForm((f) => ({ ...f, inboundIds: stillAvailable }));
+      return;
+    }
+    let next = [availableInbounds[0].id];
+    try {
+      const cached = JSON.parse(localStorage.getItem("lastSelectedInboundIds") || "[]");
+      const validCached = cached.filter((id: string) =>
+        availableInbounds.some((i) => i.id === id),
+      );
+      if (validCached.length > 0) next = validCached;
+    } catch {}
+    setForm((f) => ({ ...f, inboundIds: next }));
+  }, [availableInbounds, form.inboundIds]);
 
   // Validation & Preview effect
   useEffect(() => {
@@ -258,15 +295,31 @@ export function BulkCreateModal({ onClose, inboundsList }: BulkCreateModalProps)
             {/* Config Section */}
             <div className="space-y-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/50 p-4">
               <h4 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">{t("clients.configuration")}</h4>
-              
+
+              {panels.length > 1 && (
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-zinc-500">{t("clients.panelServer")}</label>
+                  <select
+                    value={selectedPanelId}
+                    onChange={(e) => setSelectedPanelId(e.target.value)}
+                    className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500"
+                  >
+                    {panels.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-[10px] text-zinc-500 dark:text-zinc-400">{t("clients.panelServerHint")}</p>
+                </div>
+              )}
+
               <div>
                 <label className="mb-1 block text-xs font-medium text-zinc-500">{t("clients.assignedInbounds")}</label>
                 <div className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 overflow-hidden">
                   <div className="max-h-[160px] overflow-y-auto divide-y divide-zinc-200 dark:divide-zinc-800">
-                    {inboundsList?.length === 0 ? (
+                    {availableInbounds.length === 0 ? (
                       <div className="px-3 py-4 text-center text-sm text-zinc-500">{t("common.noInboundsAvailable")}</div>
                     ) : (
-                      inboundsList?.map((i) => {
+                      availableInbounds.map((i) => {
                         const isChecked = form.inboundIds.includes(i.id);
                         return (
                           <label

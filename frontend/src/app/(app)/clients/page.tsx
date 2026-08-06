@@ -382,8 +382,40 @@ export default function ClientsPage() {
     [t],
   );
 
+  // Panels the caller can reach: /panels is super-admin only, so resellers get
+  // theirs from the inbounds they are assigned to.
+  const accessiblePanels = useMemo(() => {
+    const byId = new Map<string, { id: string; name: string }>();
+    (panelsList ?? []).forEach((p) => byId.set(p.id, { id: p.id, name: p.name }));
+    (inboundsList ?? []).forEach((i) => {
+      if (i.panel && !byId.has(i.panel.id)) {
+        byId.set(i.panel.id, { id: i.panel.id, name: i.panel.name });
+      }
+    });
+    return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [panelsList, inboundsList]);
+
+  // Inbound filter options follow the selected panel
+  const filterInbounds = useMemo(
+    () =>
+      panelId
+        ? (inboundsList ?? []).filter((i) => i.panel?.id === panelId)
+        : inboundsList ?? [],
+    [inboundsList, panelId],
+  );
+
   if (isLoading) return <Spinner />;
   if (error) return <ErrorBox message={t("clients.loadFailed")} />;
+
+  const selectPanel = (nextPanelId: string) => {
+    setPanelId(nextPanelId);
+    // Drop an inbound filter that belongs to another panel
+    if (inboundId && nextPanelId) {
+      const inbound = (inboundsList ?? []).find((i) => i.id === inboundId);
+      if (inbound && inbound.panel?.id !== nextPanelId) setInboundId("");
+    }
+    setPage(1);
+  };
 
   const clients = data?.data ?? [];
   const totalItems = data?.total ?? 0;
@@ -602,6 +634,41 @@ export default function ClientsPage() {
         </div>
       </div>
 
+      {/* Panel selector — visible to super-admins and resellers alike */}
+      {accessiblePanels.length > 1 && (
+        <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 p-3">
+          <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+            <Network size={14} /> {t("clients.panelSelectorLabel")}
+          </div>
+          <div className="flex overflow-x-auto hide-scrollbar items-center gap-2">
+            <button
+              onClick={() => selectPanel("")}
+              className={`whitespace-nowrap px-4 py-2 rounded-xl text-sm font-semibold transition-colors border ${
+                panelId === ""
+                  ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/20"
+                  : "bg-zinc-50 dark:bg-zinc-950 text-zinc-600 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+              }`}
+            >
+              {t("clients.allPanels")}
+            </button>
+            {accessiblePanels.map((p) => (
+              <button
+                key={p.id}
+                onClick={() => selectPanel(p.id)}
+                className={`whitespace-nowrap px-4 py-2 rounded-xl text-sm font-semibold transition-colors border inline-flex items-center gap-2 ${
+                  panelId === p.id
+                    ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/20"
+                    : "bg-zinc-50 dark:bg-zinc-950 text-zinc-600 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                }`}
+              >
+                <Database size={14} className={panelId === p.id ? "text-white" : "text-zinc-400"} />
+                {p.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div>
         <div className="flex overflow-x-auto hide-scrollbar items-center gap-2 pb-2 -mx-4 px-4 sm:mx-0 sm:px-0">
           <div className="hidden sm:flex items-center gap-2 me-2 text-sm text-zinc-500 dark:text-zinc-400 font-medium">
@@ -656,28 +723,7 @@ export default function ClientsPage() {
             </div>
           )}
 
-          {/* Panel Filter */}
-          {isSuperAdmin && (
-            <div>
-              <select
-                value={panelId}
-                onChange={(e) => {
-                  setPanelId(e.target.value);
-                  setPage(1);
-                }}
-                className="w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-sm text-zinc-600 dark:text-zinc-300 outline-none focus:border-blue-500"
-              >
-                <option value="">{t("clients.allPanels")}</option>
-                {panelsList?.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {/* Inbound Filter */}
+          {/* Inbound Filter — scoped to the selected panel */}
           <div>
             <select
               value={inboundId}
@@ -688,7 +734,7 @@ export default function ClientsPage() {
               className="w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-sm text-zinc-600 dark:text-zinc-300 outline-none focus:border-blue-500"
             >
               <option value="">{t("clients.allInbounds")}</option>
-              {inboundsList?.map((i) => (
+              {filterInbounds.map((i) => (
                 <option key={i.id} value={i.id}>
                   {i.remark ? `${i.remark} — ` : ''}{i.tag} ({i.protocol})
                 </option>
@@ -818,6 +864,11 @@ export default function ClientsPage() {
                         </div>
                         {c.remark && (
                           <div className="text-xs text-zinc-500 mt-1 md:mt-0">{c.email}</div>
+                        )}
+                        {!panelId && accessiblePanels.length > 1 && c.inbound?.panel?.name && (
+                          <div className="mt-1 inline-flex items-center gap-1 rounded bg-zinc-100 dark:bg-zinc-800/60 px-1.5 py-0.5 text-[10px] font-medium text-zinc-500 dark:text-zinc-400">
+                            <Database size={10} /> {c.inbound.panel.name}
+                          </div>
                         )}
                       </td>
                       <td className="hidden md:table-cell px-4 py-3 text-zinc-600 dark:text-zinc-300">
@@ -1350,7 +1401,6 @@ export default function ClientsPage() {
             inbounds={inboundsList ?? []}
             isLoadingInbounds={isLoadingInbounds}
             panels={panelsList ?? []}
-            isSuperAdmin={isSuperAdmin}
             onClose={() => setAddOpen(false)}
             onSaved={(client) => {
               setAddOpen(false);
@@ -1738,40 +1788,49 @@ function AddClientModal({
   inbounds,
   isLoadingInbounds,
   panels,
-  isSuperAdmin,
   onClose,
   onSaved,
 }: {
   inbounds: InboundRow[];
   isLoadingInbounds?: boolean;
   panels?: PanelRow[];
-  isSuperAdmin?: boolean;
   onClose: () => void;
   onSaved: (client?: any) => void;
 }) {
   const t = useT();
   const toast = useToast((s) => s.push);
   
+  // Only panels that actually expose inbounds to this user are selectable —
+  // a client is always created on exactly one panel.
   const derivedPanels = useMemo(() => {
-    if (panels && panels.length > 0) return panels;
-    const pMap = new Map();
-    inbounds.forEach(i => {
-      if (i.panel) pMap.set(i.panel.id, { id: i.panel.id, name: i.panel.name });
+    const names = new Map((panels ?? []).map((p) => [p.id, p.name]));
+    const byId = new Map<string, { id: string; name: string }>();
+    inbounds.forEach((i) => {
+      const id = i.panel?.id || (i as any).panelId;
+      if (!id) return;
+      byId.set(id, { id, name: names.get(id) || i.panel?.name || id });
     });
-    return Array.from(pMap.values());
+    return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name));
   }, [panels, inbounds]);
 
   const [selectedPanelId, setSelectedPanelId] = useState<string>("");
-  
+
   useEffect(() => {
-    if (!selectedPanelId && derivedPanels.length > 0) {
+    if (derivedPanels.length === 0) return;
+    if (!derivedPanels.some((p) => p.id === selectedPanelId)) {
       setSelectedPanelId(derivedPanels[0].id);
     }
   }, [derivedPanels, selectedPanelId]);
-  
-  const availableInbounds = (isSuperAdmin && selectedPanelId)
-    ? inbounds.filter(i => i.panel?.id === selectedPanelId || (i as any).panelId === selectedPanelId)
-    : inbounds;
+
+  const availableInbounds = useMemo(
+    () =>
+      selectedPanelId
+        ? inbounds.filter(
+            i => i.panel?.id === selectedPanelId || (i as any).panelId === selectedPanelId,
+          )
+        : inbounds,
+    [inbounds, selectedPanelId],
+  );
 
   const [form, setForm] = useState<AddClientForm>({
     email: "",
@@ -1941,7 +2000,7 @@ function AddClientModal({
               />
             </div>
             
-            {isSuperAdmin && derivedPanels.length > 0 && (
+            {derivedPanels.length > 1 && (
               <div>
                 <label className="mb-1 block text-xs text-zinc-500">{t("clients.panelServer")}</label>
                 <select
@@ -1953,6 +2012,7 @@ function AddClientModal({
                     <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
                 </select>
+                <p className="mt-1 text-[10px] text-zinc-500 dark:text-zinc-400">{t("clients.panelServerHint")}</p>
               </div>
             )}
 

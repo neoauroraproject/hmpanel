@@ -2397,6 +2397,105 @@ export class PanelsService implements OnModuleInit {
   }
 
   /**
+   * BULK DELETE via POST /panel/api/clients/bulkDel
+   * Body: { emails: string[], keepTraffic?: boolean } — per docs/api350.json.
+   * The panel processes the list sequentially and reports per-email failures in
+   * `obj.skipped`, so a successful response can still contain skipped emails.
+   */
+  async bulkDeleteClientsOnPanel(
+    panelId: string,
+    emails: string[],
+    opts?: { keepTraffic?: boolean },
+    adminId?: string,
+  ): Promise<PanelApiResult> {
+    const { panel, base, headers, agent } =
+      await this.getPanelHttpContext(panelId);
+    const endpoint = `${base}/panel/api/clients/bulkDel`;
+    const startMs = Date.now();
+
+    this.logger.log(
+      `[BULK_DELETE] PANEL_BASE=${base} METHOD=POST URL=${endpoint} COUNT=${emails.length}`,
+    );
+
+    try {
+      const res = await this.retryRequest(
+        () =>
+          axios.post(
+            endpoint,
+            { emails, keepTraffic: opts?.keepTraffic === true },
+            {
+              headers: { ...headers, 'Content-Type': 'application/json' },
+              httpsAgent: agent,
+              timeout: Math.max(
+                PANEL_REQUEST_TIMEOUT_MS,
+                PANEL_REQUEST_TIMEOUT_MS * Math.ceil(emails.length / 25),
+              ),
+            },
+          ),
+        `BULK_DELETE emails=${emails.length}`,
+      );
+
+      const durationMs = Date.now() - startMs;
+      const ok = res.data?.success === true;
+      const obj = res.data?.obj ?? {};
+
+      this.logger.log(
+        `[BULK_DELETE] RESPONSE HTTP=${res.status} success=${res.data?.success} ` +
+          `deleted=${obj?.deleted ?? 0} skipped=${obj?.skipped?.length ?? 0} duration=${durationMs}ms`,
+      );
+
+      await this.logProvisioningEvent({
+        operation: 'DELETE_CLIENT',
+        adminId,
+        panelId,
+        panelName: panel.name,
+        email: `bulk:${emails.length}`,
+        endpoint,
+        requestSizeBytes: JSON.stringify(emails).length,
+        httpStatus: res.status,
+        durationMs,
+        success: ok,
+        errorCode: ok ? undefined : 'PANEL_ERROR',
+        errorMessage: ok ? undefined : res.data?.msg,
+      });
+
+      if (!ok) {
+        return {
+          success: false,
+          error: {
+            code: 'PANEL_ERROR',
+            message: res.data?.msg || 'Bulk delete failed',
+            httpStatus: res.status,
+            panelMessage: res.data?.msg,
+            endpoint,
+            durationMs,
+          },
+        };
+      }
+
+      return { success: true, data: obj };
+    } catch (err: any) {
+      const apiError = this.classifyError(err, endpoint, startMs);
+      this.logger.error(
+        `[BULK_DELETE] FAILED count=${emails.length} error=${apiError.code}: ${apiError.message}`,
+      );
+      await this.logProvisioningEvent({
+        operation: 'DELETE_CLIENT',
+        adminId,
+        panelId,
+        panelName: panel.name,
+        email: `bulk:${emails.length}`,
+        endpoint,
+        durationMs: apiError.durationMs,
+        success: false,
+        errorCode: apiError.code,
+        errorMessage: apiError.message,
+      });
+      return { success: false, error: apiError };
+    }
+  }
+
+  /**
    * BULK RESET TRAFFIC via POST /panel/api/clients/bulkResetTraffic
    */
   async bulkResetTrafficOnPanel(

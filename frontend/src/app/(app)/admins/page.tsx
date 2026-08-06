@@ -362,6 +362,168 @@ export default function AdminsPage() {
   );
 }
 
+/**
+ * Multi-panel inbound assignment. A reseller may be granted inbounds on several
+ * panels at once; every checked inbound is saved through the flat `inboundIds`
+ * list (AdminInbound already bridges admin ↔ inbound across panels).
+ */
+function PanelInboundPicker({
+  panels,
+  inbounds,
+  isLoading,
+  enabledPanels,
+  selectedInbounds,
+  onChange,
+}: {
+  panels: PanelRow[];
+  inbounds: InboundRow[];
+  isLoading?: boolean;
+  enabledPanels: string[];
+  selectedInbounds: string[];
+  onChange: (next: { enabledPanels: string[]; selectedInbounds: string[] }) => void;
+}) {
+  const t = useT();
+  const [expanded, setExpanded] = useState<string[]>([]);
+
+  const inboundsByPanel = React.useMemo(() => {
+    const map = new Map<string, InboundRow[]>();
+    inbounds.forEach((i) => {
+      const panelId = i.panel?.id;
+      if (!panelId) return;
+      if (!map.has(panelId)) map.set(panelId, []);
+      map.get(panelId)!.push(i);
+    });
+    return map;
+  }, [inbounds]);
+
+  const togglePanel = (panelId: string) => {
+    const panelInboundIds = (inboundsByPanel.get(panelId) ?? []).map((i) => i.id);
+    if (enabledPanels.includes(panelId)) {
+      onChange({
+        enabledPanels: enabledPanels.filter((id) => id !== panelId),
+        selectedInbounds: selectedInbounds.filter((id) => !panelInboundIds.includes(id)),
+      });
+    } else {
+      setExpanded((prev) => (prev.includes(panelId) ? prev : [...prev, panelId]));
+      onChange({
+        enabledPanels: [...enabledPanels, panelId],
+        selectedInbounds: Array.from(new Set([...selectedInbounds, ...panelInboundIds])),
+      });
+    }
+  };
+
+  const toggleInbound = (inboundId: string) => {
+    onChange({
+      enabledPanels,
+      selectedInbounds: selectedInbounds.includes(inboundId)
+        ? selectedInbounds.filter((id) => id !== inboundId)
+        : [...selectedInbounds, inboundId],
+    });
+  };
+
+  if (isLoading) {
+    return <div className="text-xs text-zinc-500">{t("common.loadingInbounds")}</div>;
+  }
+
+  if (panels.length === 0) {
+    return (
+      <div className="text-xs text-zinc-500 p-2 text-center border rounded-lg border-dashed border-zinc-300 dark:border-zinc-700">
+        {t("common.noInboundsAvailable")}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2 max-h-72 overflow-y-auto pe-2 custom-scrollbar">
+      {panels.map((p) => {
+        const panelInbounds = inboundsByPanel.get(p.id) ?? [];
+        const isEnabled = enabledPanels.includes(p.id);
+        const isExpanded = expanded.includes(p.id);
+        const checkedCount = panelInbounds.filter((i) => selectedInbounds.includes(i.id)).length;
+
+        return (
+          <div key={p.id} className="rounded-lg border border-zinc-200 dark:border-zinc-800 overflow-hidden">
+            <div className="flex items-center gap-3 p-3 bg-zinc-50 dark:bg-zinc-950/50">
+              <input
+                type="checkbox"
+                checked={isEnabled}
+                onChange={() => togglePanel(p.id)}
+                className="w-4 h-4 rounded text-blue-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-blue-500"
+              />
+              <button
+                type="button"
+                onClick={() => setExpanded((prev) => (isExpanded ? prev.filter((id) => id !== p.id) : [...prev, p.id]))}
+                className="flex flex-1 items-center justify-between gap-2 text-start"
+              >
+                <span className="flex flex-col">
+                  <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200 inline-flex items-center gap-2">
+                    <Server size={14} className="text-blue-400" /> {p.name}
+                  </span>
+                  <span className="text-xs text-zinc-500">
+                    {t("admins.panelInboundCount", { selected: checkedCount, total: panelInbounds.length })}
+                  </span>
+                </span>
+                <ChevronDown size={16} className={`text-zinc-500 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
+              </button>
+            </div>
+
+            {isEnabled && isExpanded && (
+              <div className="p-2 space-y-2 border-t border-zinc-200 dark:border-zinc-800">
+                {panelInbounds.length === 0 ? (
+                  <div className="text-xs text-zinc-500 p-2 text-center border rounded-lg border-dashed border-zinc-300 dark:border-zinc-700">
+                    {t("common.noInboundsOnPanel")}
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onChange({
+                            enabledPanels,
+                            selectedInbounds: Array.from(
+                              new Set([...selectedInbounds, ...panelInbounds.map((i) => i.id)]),
+                            ),
+                          })
+                        }
+                        className="text-xs text-blue-500 hover:underline"
+                      >
+                        {t("common.selectAll")}
+                      </button>
+                    </div>
+                    {panelInbounds.map((i) => (
+                      <label
+                        key={i.id}
+                        className="flex items-center gap-3 p-2 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedInbounds.includes(i.id)}
+                          onChange={() => toggleInbound(i.id)}
+                          className="w-4 h-4 rounded text-blue-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-blue-500"
+                        />
+                        <div className="flex flex-col">
+                          <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200 inline-flex items-center gap-1.5">
+                            <span>{(i as any).remark || i.tag}</span>
+                            <NodeInboundBadge inbound={i} />
+                          </span>
+                          <span className="text-xs text-zinc-500">
+                            {t("admins.inboundProtocolLine", { protocol: i.protocol, port: i.port })}
+                          </span>
+                        </div>
+                      </label>
+                    ))}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const t = useT();
   const toast = useToast((s) => s.push);
@@ -375,7 +537,7 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
     balanceGb: "",
     expiryDays: "",
     maxClients: "",
-    selectedPanel: "",
+    enabledPanels: [] as string[],
     selectedInbounds: [] as string[],
     canCustomizeBranding: true,
     storeEnabled: false,
@@ -386,17 +548,9 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
   });
 
   const { data: inbounds, isLoading: inboundsLoading } = useQuery<InboundRow[]>({
-    queryKey: ["inbounds", form.selectedPanel],
-    queryFn: async () => form.selectedPanel ? (await api.get<InboundRow[]>(`/panels/${form.selectedPanel}/inbounds`)).data : [],
-    enabled: !!form.selectedPanel,
+    queryKey: ["inbounds-all"],
+    queryFn: async () => (await api.get<InboundRow[]>("/inbounds")).data,
   });
-
-  // Auto-select all inbounds on initial load
-  useEffect(() => {
-    if (inbounds && inbounds.length > 0 && form.selectedInbounds.length === 0) {
-      setForm(f => ({ ...f, selectedInbounds: inbounds.map(i => i.id) }));
-    }
-  }, [inbounds]);
 
   const { data: panels } = useQuery<PanelRow[]>({
     queryKey: ["panels"],
@@ -436,11 +590,9 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
     e.preventDefault();
     if (!form.username || !form.password) return toast(t("admins.usernamePasswordRequired"), "error");
     if (form.password.length < 8) return toast(t("admins.passwordMinLength"), "error");
-    if (!form.selectedPanel) return toast(t("admins.panelRequired"), "error");
+    if (form.selectedInbounds.length === 0) return toast(t("admins.inboundRequired"), "error");
     create.mutate();
   };
-
-  const filteredInbounds = (inbounds ?? []).filter(i => i.panel.id === form.selectedPanel);
 
   return (
     <motion.div {...MOTION_CONFIG.modalOverlay} className="fixed inset-0 z-[100] flex items-start sm:items-center justify-center bg-black/60 pt-[10dvh] px-4 sm:pt-0 sm:p-4 backdrop-blur-sm">
@@ -477,16 +629,8 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
                           {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                         </button>
                       </div>
-                      <div className="col-span-2">
-                        <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.selectPanelNode")}</label>
-                        <select required value={form.selectedPanel} onChange={(e) => setForm({ ...form, selectedPanel: e.target.value, selectedInbounds: [] })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors">
-                          <option value="" disabled>{t("common.choosePanel")}</option>
-                          {(panels ?? []).map(p => (
-                            <option key={p.id} value={p.id} disabled={p.status !== 'online'}>
-                              {p.name} ({p.status === 'online' ? `v${p.version}` : t("common.offline")})
-                            </option>
-                          ))}
-                        </select>
+                      <div className="col-span-2 text-xs text-zinc-500 dark:text-zinc-400">
+                        {t("admins.panelAssignmentMovedHint")}
                       </div>
                     </div>
                   </motion.div>
@@ -508,37 +652,21 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
                         <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.maxClients")} <span className="text-zinc-500 text-xs">{t("admins.maxClientsHint")}</span></label>
                         <input type="number" min={0} placeholder="0" value={form.maxClients} onChange={(e) => setForm({ ...form, maxClients: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
                       </div>
-                        {form.selectedPanel ? (
-                          <div className="mt-4">
-                            <label className="mb-2 flex text-sm font-medium text-zinc-800 dark:text-zinc-100 justify-between">
-                              <span>{t("admins.allowedInbounds")}</span>
-                              <button type="button" onClick={() => setForm(f => ({...f, selectedInbounds: inbounds?.map((i: any) => i.id) || []}))} className="text-xs text-blue-500 hover:underline">{t("common.selectAll")}</button>
-                            </label>
-                            {inboundsLoading ? <div className="text-xs text-zinc-500">{t("common.loadingInbounds")}</div> : (
-                              <div className="space-y-2 max-h-48 overflow-y-auto pe-2 custom-scrollbar">
-                                {(inbounds ?? []).map((i: any) => (
-                                  <label key={i.id} className="flex items-center gap-3 p-2 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer">
-                                    <input type="checkbox" checked={form.selectedInbounds.includes(i.id)} 
-                                      onChange={(e) => {
-                                        if (e.target.checked) setForm(f => ({ ...f, selectedInbounds: [...f.selectedInbounds, i.id] }));
-                                        else setForm(f => ({ ...f, selectedInbounds: f.selectedInbounds.filter(id => id !== i.id) }));
-                                      }}
-                                      className="w-4 h-4 rounded text-blue-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-blue-500" />
-                                      <div className="flex flex-col">
-                                      <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200 inline-flex items-center gap-1.5">
-                                        <span>{i.remark || i.tag}</span>
-                                        <NodeInboundBadge inbound={i} />
-                                      </span>
-                                      <span className="text-xs text-zinc-500">{t("admins.inboundProtocolLine", { protocol: i.protocol, port: i.port })}</span>
-                                    </div>
-                                  </label>
-                                ))}
-                                {inbounds?.length === 0 && <div className="text-xs text-zinc-500 p-2 text-center border rounded-lg border-dashed border-zinc-300 dark:border-zinc-700">{t("common.noInboundsOnPanel")}</div>}
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="mt-4 p-3 rounded-lg border border-amber-500/20 bg-amber-500/10 text-sm text-amber-600 dark:text-amber-400 flex items-start gap-2">
+                      <div className="mt-4">
+                        <label className="mb-2 block text-sm font-medium text-zinc-800 dark:text-zinc-100">
+                          {t("admins.allowedPanelsInbounds")}
+                          <span className="block text-xs font-normal text-zinc-500 mt-0.5">{t("admins.allowedPanelsInboundsHint")}</span>
+                        </label>
+                        <PanelInboundPicker
+                          panels={panels ?? []}
+                          inbounds={inbounds ?? []}
+                          isLoading={inboundsLoading}
+                          enabledPanels={form.enabledPanels}
+                          selectedInbounds={form.selectedInbounds}
+                          onChange={(next) => setForm(f => ({ ...f, ...next }))}
+                        />
+                        {form.selectedInbounds.length === 0 && (
+                          <div className="mt-3 p-3 rounded-lg border border-amber-500/20 bg-amber-500/10 text-sm text-amber-600 dark:text-amber-400 flex items-start gap-2">
                             <AlertCircle size={18} className="shrink-0 mt-0.5" />
                             <div>
                               <strong>{t("admins.noPanelSelected")}</strong>
@@ -546,6 +674,7 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
                             </div>
                           </div>
                         )}
+                      </div>
                     </div>
                   </motion.div>
                 )}
@@ -649,7 +778,7 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
 
           <div className="flex justify-end gap-3 pt-6 mt-6 border-t border-zinc-200 dark:border-zinc-800">
             <button type="button" onClick={onClose} className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">{t("common.cancel")}</button>
-            <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} type="submit" disabled={create.isPending || !form.selectedPanel} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50 transition-colors shadow-lg shadow-blue-900/20">
+            <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} type="submit" disabled={create.isPending || form.selectedInbounds.length === 0} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50 transition-colors shadow-lg shadow-blue-900/20">
               {create.isPending ? t("common.creating") : t("admins.createAdmin")}
             </motion.button>
           </div>
@@ -683,7 +812,7 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
     customTrafficDelta: "",
     customExpiryDelta: "",
     customClientsDelta: "",
-    selectedPanel: "",
+    enabledPanels: [] as string[],
     selectedInbounds: [] as string[],
     canCustomizeBranding: true,
     storeEnabled: false,
@@ -698,13 +827,13 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
   });
 
   const { data: inbounds, isLoading: inboundsLoading } = useQuery<InboundRow[]>({
-    queryKey: ["inbounds", form.selectedPanel],
-    queryFn: async () => form.selectedPanel ? (await api.get<InboundRow[]>(`/panels/${form.selectedPanel}/inbounds`)).data : [],
-    enabled: !!form.selectedPanel,
+    queryKey: ["inbounds-all"],
+    queryFn: async () => (await api.get<InboundRow[]>("/inbounds")).data,
   });
 
   useEffect(() => {
     if (admin) {
+      const assigned = admin.adminInbounds ?? [];
       setForm((prev) => ({
         ...prev,
         status: admin.status || "active",
@@ -712,8 +841,14 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
         balanceGb: "",
         trafficDeltaGb: "",
         maxClients: admin.maxClients ? String(admin.maxClients) : "",
-        selectedInbounds: admin.adminInbounds?.map((ai: any) => ai.inbound.id) || [],
-        selectedPanel: admin.adminInbounds?.[0]?.inbound?.panel?.id || "",
+        selectedInbounds: assigned.map((ai: any) => ai.inbound.id),
+        enabledPanels: Array.from(
+          new Set(
+            assigned
+              .map((ai: any) => ai.inbound?.panel?.id)
+              .filter((id: string | undefined): id is string => !!id),
+          ),
+        ),
         canCustomizeBranding: admin.permissions ? admin.permissions.includes("canCustomizeBranding") : true,
         storeEnabled: admin.storeEnabled || false,
         refundOnDelete: (admin as any).refundOnDelete ?? true,
@@ -722,15 +857,6 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
       }));
     }
   }, [admin]);
-
-  // Auto-select all inbounds if none were originally assigned (legacy migration fallback)
-  useEffect(() => {
-    if (inbounds && inbounds.length > 0 && form.selectedPanel) {
-      if (form.selectedInbounds.length === 0) {
-        setForm(f => ({ ...f, selectedInbounds: inbounds.map(i => i.id) }));
-      }
-    }
-  }, [inbounds]);
 
   const directEdit = useMutation({
     mutationFn: async () => {
@@ -774,7 +900,7 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
   const fixMigration = useMutation({
     mutationFn: async () => (
       await api.post(`/admins/${adminId}/fix-migration`, {
-        inboundIds: inbounds ? inbounds.map((i: any) => i.id) : undefined,
+        inboundIds: form.selectedInbounds.length ? form.selectedInbounds : undefined,
       })
     ).data,
     onSuccess: () => {
@@ -965,19 +1091,25 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
                         </div>
                         <div className="col-span-2">
                           <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.activePanelNode")}</label>
-                          {isMigrated && !form.selectedPanel && (
+                          {isMigrated && form.enabledPanels.length === 0 && (
                             <div className="mb-2 text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg p-2">
                               ⚠️ {t("admins.noPanelAssigned")}
                             </div>
                           )}
-                          <select value={form.selectedPanel} onChange={(e) => setForm({ ...form, selectedPanel: e.target.value, selectedInbounds: [] })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors">
-                            <option value="">{t("common.choosePanel")}</option>
-                            {(panels ?? []).map(p => (
-                              <option key={p.id} value={p.id}>
-                                {p.name} ({p.status === 'online' ? `v${p.version}` : t("common.offline")})
-                              </option>
-                            ))}
-                          </select>
+                          <div className="flex flex-wrap gap-2">
+                            {form.enabledPanels.length === 0 ? (
+                              <span className="text-xs text-zinc-500">{t("admins.noPanelSelected")}</span>
+                            ) : (
+                              (panels ?? [])
+                                .filter(p => form.enabledPanels.includes(p.id))
+                                .map(p => (
+                                  <span key={p.id} className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/50 px-2.5 py-1 text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                                    <Server size={12} className="text-blue-400" /> {p.name}
+                                  </span>
+                                ))
+                            )}
+                          </div>
+                          <p className="mt-2 text-xs text-zinc-500">{t("admins.panelAssignmentMovedHint")}</p>
                         </div>
                       </div>
                     </motion.div>
@@ -999,37 +1131,21 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
                           <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.maxClients")} <span className="text-zinc-500 text-xs">{t("admins.maxClientsHint")}</span></label>
                           <input type="number" min={0} value={form.maxClients} onChange={(e) => setForm({ ...form, maxClients: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
                         </div>
-                          {form.selectedPanel ? (
-                            <div className="mt-4">
-                              <label className="mb-2 flex text-sm font-medium text-zinc-800 dark:text-zinc-100 justify-between">
-                                <span>{t("admins.allowedInbounds")}</span>
-                                <button type="button" onClick={() => setForm(f => ({...f, selectedInbounds: inbounds?.map((i: any) => i.id) || []}))} className="text-xs text-blue-500 hover:underline">{t("common.selectAll")}</button>
-                              </label>
-                              {inboundsLoading ? <div className="text-xs text-zinc-500">{t("common.loadingInbounds")}</div> : (
-                                <div className="space-y-2 max-h-48 overflow-y-auto pe-2 custom-scrollbar">
-                                  {(inbounds ?? []).map((i: any) => (
-                                    <label key={i.id} className="flex items-center gap-3 p-2 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer">
-                                      <input type="checkbox" checked={form.selectedInbounds.includes(i.id)} 
-                                        onChange={(e) => {
-                                          if (e.target.checked) setForm(f => ({ ...f, selectedInbounds: [...f.selectedInbounds, i.id] }));
-                                          else setForm(f => ({ ...f, selectedInbounds: f.selectedInbounds.filter(id => id !== i.id) }));
-                                        }}
-                                        className="w-4 h-4 rounded text-blue-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-blue-500" />
-                                      <div className="flex flex-col">
-                                      <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200 inline-flex items-center gap-1.5">
-                                        <span>{i.remark || i.tag}</span>
-                                        <NodeInboundBadge inbound={i} />
-                                      </span>
-                                      <span className="text-xs text-zinc-500">{t("admins.inboundProtocolLine", { protocol: i.protocol, port: i.port })}</span>
-                                    </div>
-                                    </label>
-                                  ))}
-                                  {inbounds?.length === 0 && <div className="text-xs text-zinc-500 p-2 text-center border rounded-lg border-dashed border-zinc-300 dark:border-zinc-700">{t("common.noInboundsOnPanel")}</div>}
-                                </div>
-                              )}
-                            </div>
-                          ) : (
-                            <div className="mt-4 p-3 rounded-lg border border-amber-500/20 bg-amber-500/10 text-sm text-amber-600 dark:text-amber-400 flex items-start gap-2">
+                        <div className="mt-4">
+                          <label className="mb-2 block text-sm font-medium text-zinc-800 dark:text-zinc-100">
+                            {t("admins.allowedPanelsInbounds")}
+                            <span className="block text-xs font-normal text-zinc-500 mt-0.5">{t("admins.allowedPanelsInboundsHint")}</span>
+                          </label>
+                          <PanelInboundPicker
+                            panels={panels ?? []}
+                            inbounds={inbounds ?? []}
+                            isLoading={inboundsLoading}
+                            enabledPanels={form.enabledPanels}
+                            selectedInbounds={form.selectedInbounds}
+                            onChange={(next) => setForm(f => ({ ...f, ...next }))}
+                          />
+                          {form.selectedInbounds.length === 0 && (
+                            <div className="mt-3 p-3 rounded-lg border border-amber-500/20 bg-amber-500/10 text-sm text-amber-600 dark:text-amber-400 flex items-start gap-2">
                               <AlertCircle size={18} className="shrink-0 mt-0.5" />
                               <div>
                                 <strong>{t("admins.noPanelSelected")}</strong>
@@ -1037,6 +1153,7 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
                               </div>
                             </div>
                           )}
+                        </div>
                       </div>
                     </motion.div>
                   )}

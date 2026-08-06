@@ -42,6 +42,20 @@ export function supportsBulkClientApi(panel: {
   );
 }
 
+/**
+ * 3x-ui bulk client delete (POST /panel/api/clients/bulkDel), 3.4.2+.
+ * A resolved `bulkDelete` capability wins over the version heuristic because it
+ * is read from the panel's own OpenAPI paths.
+ */
+export function supportsBulkDelete(panel: {
+  apiVersion?: string | null;
+  capabilities?: unknown;
+}): boolean {
+  const caps = panel.capabilities as Record<string, boolean> | undefined;
+  if (typeof caps?.bulkDelete === 'boolean') return caps.bulkDelete;
+  return supportsBulkClientApi(panel);
+}
+
 /** WireGuard peer fields on Client + InboundOption (3.4.2+). */
 export function supportsWireGuardFields(panel: {
   apiVersion?: string | null;
