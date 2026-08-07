@@ -7,11 +7,12 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { publicApi, setCustomerSessionToken, getCustomerSessionToken } from "@/lib/api";
 import {
   forceTelegramMiniApp,
-  hasTelegramInitData,
   isTelegramUserAgent,
   loadTelegramScript,
   applyTelegramFullscreen,
   applyTelegramSafeArea,
+  waitForTelegramInitData,
+  withTgQuery,
 } from "@/modules/storefront/tma/useTelegramWebApp";
 import { portalPathForSlug } from "@/modules/storefront/store-slug";
 import ShopPage from "./ShopPageClient";
@@ -28,6 +29,7 @@ function ShopRouter() {
   const forceTg = searchParams.get("tg") === "1";
   const queryClient = useQueryClient();
   const [ready, setReady] = useState(false);
+  const [bootError, setBootError] = useState<string | null>(null);
 
   const silentLogin = useMutation({
     mutationFn: async (payload: { slug: string; initData: string }) =>
@@ -69,28 +71,43 @@ function ShopRouter() {
         }, 1000);
       }
 
-      if (!getCustomerSessionToken()) {
-        let tries = 0;
-        while (!cancelled && tries < 40) {
-          if (hasTelegramInitData()) {
-            const initData = window.Telegram?.WebApp?.initData || "";
-            if (initData) {
-              try {
-                await silentLogin.mutateAsync({ slug, initData });
-              } catch {
-                /* show web shop anyway */
-              }
+      // Always refresh TG session when we can — signed initData string is required.
+      let initData = "";
+      try {
+        initData = await waitForTelegramInitData({
+          timeoutMs: forceTg ? 5500 : 2500,
+          isCancelled: () => cancelled,
+        });
+      } catch {
+        initData = window.Telegram?.WebApp?.initData || "";
+      }
+      if (cancelled) return;
+
+      if (initData) {
+        try {
+          await silentLogin.mutateAsync({ slug, initData });
+        } catch (err: any) {
+          if (forceTg && !getCustomerSessionToken()) {
+            if (!cancelled) {
+              setBootError(
+                err?.response?.data?.message ||
+                  err?.message ||
+                  "Telegram sign-in failed. Close and reopen from the bot menu.",
+              );
             }
-            break;
+            return;
           }
-          tries += 1;
-          await new Promise((r) => window.setTimeout(r, 100));
         }
+      } else if (forceTg && !getCustomerSessionToken()) {
+        if (!cancelled) {
+          setBootError("Open this Mini App from the store bot inside Telegram.");
+        }
+        return;
       }
 
       // Same destination as web: customer portal dashboard when session exists
       if (!cancelled && getCustomerSessionToken()) {
-        router.replace(portalPathForSlug(slug, "dashboard"));
+        router.replace(withTgQuery(portalPathForSlug(slug, "dashboard")));
         return;
       }
 
@@ -104,10 +121,33 @@ function ShopRouter() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug, forceTg]);
 
+  if (bootError) {
+    return (
+      <div className="flex min-h-[100dvh] flex-col items-center justify-center gap-3 bg-[#F5F5F7] px-6 text-center dark:bg-[#0B0B0F]">
+        <p className="max-w-sm text-sm text-zinc-600 dark:text-zinc-300">{bootError}</p>
+        <p className="text-xs text-zinc-400">
+          مینی‌اپ را از دکمه منوی ربات فروشگاه دوباره باز کنید.
+        </p>
+        <button
+          type="button"
+          className="mt-2 rounded-xl bg-zinc-900 px-4 py-2 text-sm text-white dark:bg-zinc-100 dark:text-zinc-900"
+          onClick={() => {
+            setBootError(null);
+            setReady(false);
+            window.location.href = withTgQuery(`/shop/${encodeURIComponent(slug)}`);
+          }}
+        >
+          تلاش مجدد
+        </button>
+      </div>
+    );
+  }
+
   if (!ready) {
     return (
-      <div className="flex min-h-[100dvh] items-center justify-center bg-zinc-50 dark:bg-zinc-950">
+      <div className="flex min-h-[100dvh] flex-col items-center justify-center gap-3 bg-[#F5F5F7] dark:bg-[#0B0B0F]">
         <LoaderCircle className="animate-spin text-zinc-500" />
+        <p className="text-sm text-zinc-500">ورود با تلگرام…</p>
       </div>
     );
   }
@@ -119,8 +159,9 @@ export default function ShopPageEntry() {
   return (
     <Suspense
       fallback={
-        <div className="flex min-h-[100dvh] items-center justify-center bg-zinc-50 dark:bg-zinc-950">
+        <div className="flex min-h-[100dvh] flex-col items-center justify-center gap-3 bg-[#F5F5F7] dark:bg-[#0B0B0F]">
           <LoaderCircle className="animate-spin text-zinc-500" />
+          <p className="text-sm text-zinc-500">ورود با تلگرام…</p>
         </div>
       }
     >

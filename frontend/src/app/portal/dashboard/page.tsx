@@ -19,7 +19,7 @@ import {
   X,
 } from "lucide-react";
 import { copyToClipboard } from "@/lib/clipboard";
-import { publicApi } from "@/lib/api";
+import { publicApi, setCustomerSessionToken, getCustomerSessionToken } from "@/lib/api";
 import { useCustomerSession } from "@/modules/storefront/session";
 import { buildSubscriptionLink, parseSubscriptionToken } from "@/modules/storefront/subscription";
 import { compressReceiptImage } from "@/modules/storefront/receipt-image";
@@ -48,6 +48,11 @@ import {
 } from "@/modules/storefront/design";
 import { BankCardVisual, resolvePaymentCards } from "@/modules/storefront/BankCardVisual";
 import { usePortalTelegramGate } from "@/modules/storefront/tma/usePortalTelegramGate";
+import {
+  forceTelegramMiniApp,
+  isTelegramUserAgent,
+  withTgQuery,
+} from "@/modules/storefront/tma/useTelegramWebApp";
 import { StorefrontLocaleProvider, useStorefrontLocale } from "@/modules/storefront/locale";
 import { rememberStoreSlug, portalPathForSlug, shopPathForSlug } from "@/modules/storefront/store-slug";
 
@@ -140,10 +145,42 @@ function CustomerDashboardInner() {
   useEffect(() => {
     if (gate.isBusy) return;
     if (gate.phase === "error") return;
-    if (!isLoading && (error || !data) && gate.phase === "skip") {
-      router.replace(portalPathForSlug(gate.slug, "login"));
+    if (gate.phase === "checking" || gate.phase === "authing") return;
+    if (isLoading) return;
+    if (data) return;
+
+    // Token present but session not ready yet (e.g. refetch after TG re-auth)
+    if (!error && getCustomerSessionToken()) return;
+
+    // Never stay on a blank frame — recover from bad/expired sessions.
+    // Guard against shop ↔ dashboard bounce if the API keeps failing.
+    if (typeof window !== "undefined") {
+      const key = "hm-tma-recover-at";
+      const last = Number(window.sessionStorage.getItem(key) || 0);
+      if (Date.now() - last < 8000) {
+        router.replace(withTgQuery(portalPathForSlug(slug, "login")));
+        return;
+      }
+      window.sessionStorage.setItem(key, String(Date.now()));
     }
-  }, [data, error, isLoading, router, gate.isBusy, gate.phase]);
+
+    if (error) setCustomerSessionToken(null);
+
+    const slug = gate.slug;
+    const inTg =
+      forceTelegramMiniApp() ||
+      isTelegramUserAgent() ||
+      gate.phase === "done" ||
+      gate.inTelegram;
+
+    if (inTg && slug) {
+      router.replace(withTgQuery(`/shop/${encodeURIComponent(slug)}`));
+      return;
+    }
+    if (gate.phase === "skip" || gate.phase === "done") {
+      router.replace(withTgQuery(portalPathForSlug(slug, "login")));
+    }
+  }, [data, error, isLoading, router, gate.isBusy, gate.phase, gate.slug, gate.inTelegram]);
 
   useEffect(() => {
     scrollToTop();
@@ -206,7 +243,7 @@ function CustomerDashboardInner() {
 
   if (gate.isBusy) {
     return (
-      <div className="flex min-h-[100dvh] flex-col items-center justify-center gap-3 bg-zinc-50 dark:bg-zinc-950">
+      <div className="flex min-h-[100dvh] flex-col items-center justify-center gap-3 bg-[#F5F5F7] dark:bg-[#0B0B0F]">
         <LoaderCircle className="animate-spin text-zinc-400" />
         <p className="text-sm text-zinc-500">ورود با تلگرام…</p>
       </div>
@@ -221,14 +258,16 @@ function CustomerDashboardInner() {
     );
   }
 
-  if (isLoading) {
+  if (isLoading || error || !data) {
     return (
-      <div className="flex min-h-[100dvh] items-center justify-center bg-zinc-50 dark:bg-zinc-950">
+      <div className="flex min-h-[100dvh] flex-col items-center justify-center gap-3 bg-[#F5F5F7] dark:bg-[#0B0B0F]">
         <LoaderCircle className="animate-spin text-zinc-400" />
+        <p className="text-sm text-zinc-500">
+          {error ? "در حال ورود مجدد…" : "در حال بارگذاری…"}
+        </p>
       </div>
     );
   }
-  if (error || !data) return null;
 
   const primary = data.branding?.primaryColor || "#2563eb";
   const products = data.products || [];

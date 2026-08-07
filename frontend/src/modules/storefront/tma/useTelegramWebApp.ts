@@ -71,34 +71,145 @@ declare global {
   }
 }
 
-const SCRIPT_SRC = "https://telegram.org/js/telegram-web-app.js";
+const CDN_SCRIPT_SRC = "https://telegram.org/js/telegram-web-app.js";
+/** Optional self-hosted copy — put file at frontend/public/js/telegram-web-app.js if CDN is blocked. */
+const LOCAL_SCRIPT_SRC = "/js/telegram-web-app.js";
+
+function scriptCandidates(): string[] {
+  // Prefer CDN (always present). Local only if previously injected / available.
+  if (typeof document !== "undefined") {
+    const localTag = document.querySelector(`script[src="${LOCAL_SCRIPT_SRC}"]`);
+    if (localTag) return [LOCAL_SCRIPT_SRC, CDN_SCRIPT_SRC];
+  }
+  return [CDN_SCRIPT_SRC];
+}
+
+function injectScript(src: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector(`script[src="${src}"]`) as HTMLScriptElement | null;
+    if (existing) {
+      if (window.Telegram?.WebApp) {
+        resolve();
+        return;
+      }
+      const onLoad = () => {
+        cleanup();
+        resolve();
+      };
+      const onError = () => {
+        cleanup();
+        reject(new Error(`Failed to load ${src}`));
+      };
+      const cleanup = () => {
+        existing.removeEventListener("load", onLoad);
+        existing.removeEventListener("error", onError);
+      };
+      existing.addEventListener("load", onLoad);
+      existing.addEventListener("error", onError);
+      // Already finished loading before listeners attached
+      window.setTimeout(() => {
+        if (window.Telegram?.WebApp) {
+          cleanup();
+          resolve();
+        }
+      }, 0);
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src = src;
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = () => {
+      script.remove();
+      reject(new Error(`Failed to load ${src}`));
+    };
+    document.head.appendChild(script);
+  });
+}
 
 export function loadTelegramScript(): Promise<void> {
   if (typeof window === "undefined") return Promise.resolve();
   if (window.Telegram?.WebApp) return Promise.resolve();
-  const existing = document.querySelector(`script[src="${SCRIPT_SRC}"]`);
-  if (existing) {
-    return new Promise((resolve) => {
-      existing.addEventListener("load", () => resolve());
-      if (window.Telegram?.WebApp) resolve();
-      window.setTimeout(() => resolve(), 300);
-    });
-  }
+
+  const tryNext = async (index: number): Promise<void> => {
+    const sources = scriptCandidates();
+    if (index >= sources.length) {
+      throw new Error("Failed to load Telegram WebApp SDK");
+    }
+    try {
+      await injectScript(sources[index]);
+      for (let i = 0; i < 30; i += 1) {
+        if (window.Telegram?.WebApp) return;
+        await new Promise((r) => window.setTimeout(r, 50));
+      }
+      if (window.Telegram?.WebApp) return;
+      await tryNext(index + 1);
+    } catch {
+      await tryNext(index + 1);
+    }
+  };
+
+  return tryNext(0);
+}
+
+/** Wait until Telegram populates signed initData (string required for backend HMAC). */
+export function waitForTelegramInitData(opts?: {
+  timeoutMs?: number;
+  isCancelled?: () => boolean;
+}): Promise<string> {
+  const timeoutMs = opts?.timeoutMs ?? 5000;
+  const started = Date.now();
   return new Promise((resolve, reject) => {
-    const script = document.createElement("script");
-    script.src = SCRIPT_SRC;
-    script.async = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error("Failed to load Telegram WebApp SDK"));
-    document.head.appendChild(script);
+    const tick = () => {
+      if (opts?.isCancelled?.()) return;
+      const wa = window.Telegram?.WebApp;
+      if (wa) {
+        try {
+          wa.ready();
+        } catch {
+          /* ignore */
+        }
+        const data = wa.initData || "";
+        if (data) {
+          resolve(data);
+          return;
+        }
+      }
+      if (Date.now() - started >= timeoutMs) {
+        reject(new Error("Open this Mini App from the store bot inside Telegram."));
+        return;
+      }
+      window.setTimeout(tick, 100);
+    };
+    tick();
   });
+}
+
+/** Keep Mini App intent across client-side navigations. */
+export function withTgQuery(path: string): string {
+  if (!path) return path;
+  if (typeof window === "undefined") return path;
+  if (/[?&]tg=1(?:&|$)/.test(path)) return path;
+  const keep =
+    forceTelegramMiniApp() ||
+    Boolean(window.Telegram?.WebApp?.initData) ||
+    isTelegramUserAgent();
+  if (!keep) return path;
+  return path.includes("?") ? `${path}&tg=1` : `${path}?tg=1`;
 }
 
 /** Mobile Telegram clients only — desktop/web keep the compact Mini App size. */
 export function isTelegramMobilePlatform(wa?: TelegramWebApp | null) {
   const platform = String(wa?.platform || "").toLowerCase();
   if (platform === "ios" || platform === "android" || platform === "android_x") return true;
-  if (platform === "tdesktop" || platform === "macos" || platform === "web" || platform === "weba" || platform === "webk") {
+  if (
+    platform === "tdesktop" ||
+    platform === "macos" ||
+    platform === "web" ||
+    platform === "weba" ||
+    platform === "webk"
+  ) {
     return false;
   }
   if (typeof window === "undefined") return false;

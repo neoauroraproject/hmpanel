@@ -9,6 +9,7 @@ import { publicApi } from "@/lib/api";
 import { useCustomerSession } from "@/modules/storefront/session";
 import { StoreShell, PrimaryButton, SecondaryButton } from "@/modules/storefront/ui";
 import { usePortalTelegramGate } from "@/modules/storefront/tma/usePortalTelegramGate";
+import { withTgQuery } from "@/modules/storefront/tma/useTelegramWebApp";
 import { StorefrontLocaleProvider, useStorefrontLocale } from "@/modules/storefront/locale";
 import { fadeUp, fadeUpTransition, Surface } from "@/modules/storefront/design";
 import {
@@ -39,7 +40,9 @@ function PortalLoginForm({ store }: { store?: StorefrontStore | null }) {
   useEffect(() => {
     if (data) {
       if (data.store?.slug) rememberStoreSlug(data.store.slug);
-      router.replace(portalPathForSlug(data.store?.slug || resolveStoreSlug(), "dashboard"));
+      router.replace(
+        withTgQuery(portalPathForSlug(data.store?.slug || resolveStoreSlug(), "dashboard")),
+      );
     }
   }, [data, router]);
 
@@ -169,7 +172,7 @@ export default function PortalEntryPage() {
   useEffect(() => {
     if (gate.phase === "done") {
       if (gate.slug) rememberStoreSlug(gate.slug);
-      router.replace(portalPathForSlug(gate.slug || resolveStoreSlug(), "dashboard"));
+      router.replace(withTgQuery(portalPathForSlug(gate.slug || resolveStoreSlug(), "dashboard")));
     }
   }, [gate.phase, gate.slug, router]);
 
