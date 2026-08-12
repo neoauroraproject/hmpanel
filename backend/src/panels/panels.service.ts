@@ -12,6 +12,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { PanelCapabilitiesService } from './panel-capabilities.service';
 import { buildConnectionExtrasEnvelope } from '../clients/output/connection-extras';
 import { ClientsService } from '../clients/clients.service';
+import { AdminQuotaService } from '../traffic/admin-quota.service';
 import axios, { AxiosError } from 'axios';
 import * as https from 'https';
 import * as crypto from 'crypto';
@@ -90,6 +91,7 @@ export class PanelsService implements OnModuleInit {
     private panelCapabilitiesService: PanelCapabilitiesService,
     @Inject(forwardRef(() => ClientsService))
     private clientsService: ClientsService,
+    private adminQuota: AdminQuotaService,
   ) {}
 
   // ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -1557,9 +1559,10 @@ export class PanelsService implements OnModuleInit {
               dbClient.admin.trafficMode === 'USAGE' &&
               dbClient.adminId
             ) {
+              const chargeKey = `${dbClient.adminId}:${panel.id}`;
               const currentCharge =
-                adminUsageCharges.get(dbClient.adminId) || 0n;
-              adminUsageCharges.set(dbClient.adminId, currentCharge + delta);
+                adminUsageCharges.get(chargeKey) || 0n;
+              adminUsageCharges.set(chargeKey, currentCharge + delta);
             }
 
             // Conflict Detection (Ignore up/down normal usage)
@@ -1699,46 +1702,11 @@ export class PanelsService implements OnModuleInit {
       );
 
       // Apply Usage Charges for USAGE mode admins
-      for (const [adminId, totalDelta] of adminUsageCharges.entries()) {
-        if (totalDelta < 1048576n) continue; // Ignore extremely small entries (< 1MB)
-
-        const admin = await this.prisma.admin.findUnique({
-          where: { id: adminId },
-        });
-        if (admin) {
-          await this.prisma.admin.update({
-            where: { id: adminId },
-            data: { balance: { decrement: Number(totalDelta) } },
-          });
-
-          const ONE_DAY = 24 * 60 * 60 * 1000;
-          const latestTx = await this.prisma.trafficTransaction.findFirst({
-            where: { adminId, type: 'USAGE_CHARGE' },
-            orderBy: { createdAt: 'desc' },
-          });
-
-          if (latestTx && Date.now() - latestTx.createdAt.getTime() < ONE_DAY) {
-            await this.prisma.trafficTransaction.update({
-              where: { id: latestTx.id },
-              data: {
-                amount: latestTx.amount + totalDelta,
-                balanceAfter: admin.balance - Number(totalDelta),
-              },
-            });
-          } else {
-            await this.prisma.trafficTransaction.create({
-              data: {
-                adminId,
-                amount: totalDelta,
-                type: 'USAGE_CHARGE',
-                action: 'DAILY_USAGE_CHARGE',
-                description: `Daily Summarized Usage Charge`,
-                balanceBefore: admin.balance,
-                balanceAfter: admin.balance - Number(totalDelta),
-              },
-            });
-          }
-        }
+      for (const [chargeKey, totalDelta] of adminUsageCharges.entries()) {
+        if (totalDelta < 1048576n) continue;
+        const [adminId, panelId] = chargeKey.split(':');
+        if (!adminId || !panelId) continue;
+        await this.adminQuota.applyUsageCharge(adminId, panelId, totalDelta);
       }
 
       // Orphan Cleanup

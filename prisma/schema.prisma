@@ -80,6 +80,8 @@ model Panel {
   metrics       PanelMetric[]
   actionLogs    ActionLog[]
   outboundMetrics OutboundMetric[]
+  adminPanelQuotas AdminPanelQuota[]
+  adminRechargeOrders AdminRechargeOrder[]
 }
 
 model Inbound {
@@ -132,6 +134,11 @@ enum TrafficMode {
   USAGE
 }
 
+enum QuotaMode {
+  GLOBAL
+  PER_PANEL
+}
+
 model Admin {
   id               String      @id @default(uuid())
   username         String      @unique
@@ -140,7 +147,7 @@ model Admin {
   role             AdminRole   @default(RESELLER)
   balance          Float       @default(0.0)
   trafficMode      TrafficMode @default(ALLOCATION)
-  status           String      @default("active") // active | suspended | disabled
+  status           String      @default("active") // active | disabled
   expiryTime       BigInt      @default(0)
   maxClients       Int         @default(0)
   permissions      Json?
@@ -150,6 +157,7 @@ model Admin {
   refundOnDelete   Boolean     @default(true)
   refundOnEdit     Boolean     @default(true)
   unlimitedTraffic Boolean     @default(false)
+  quotaMode        QuotaMode   @default(GLOBAL)
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
 
@@ -158,6 +166,7 @@ model Admin {
   transactions     TrafficTransaction[]
   auditLogs        AuditLog[]
   adminInbounds    AdminInbound[]
+  panelQuotas      AdminPanelQuota[]
   domains          Domain[]
   remoteBackups    RemoteBackupTarget[]
   alerts           AlertConfiguration[]
@@ -175,6 +184,7 @@ model Admin {
   operationQueues  OperationQueue[]
   moduleAssignments AdminModuleAssignment[]
   actionLogs          ActionLog[]
+  adminRechargeOrders AdminRechargeOrder[]
 }
 
 // Bridging table for Admin <-> Inbound access
@@ -187,6 +197,20 @@ model AdminInbound {
   inbound Inbound @relation(fields: [inboundId], references: [id], onDelete: Cascade)
 
   @@id([adminId, inboundId])
+}
+
+model AdminPanelQuota {
+  adminId       String
+  panelId       String
+  balance       Float    @default(0)
+  totalAssigned Float    @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  admin Admin @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  panel Panel @relation(fields: [panelId], references: [id], onDelete: Cascade)
+
+  @@id([adminId, panelId])
 }
 
 // Client entity strictly tied to an Admin for "ownership tracking"
@@ -285,6 +309,7 @@ model TrafficTransaction {
   description      String?
   balanceBefore    Float? // Admin balance before transaction
   balanceAfter     Float? // Admin balance after transaction
+  panelId          String? // Per-panel quota bucket when quotaMode=PER_PANEL
   createdAt        DateTime        @default(now())
 
   admin  Admin   @relation(fields: [adminId], references: [id], onDelete: Cascade)
@@ -1156,4 +1181,79 @@ model SystemMigration {
   executedAt      DateTime @default(now())
   status          String   // SUCCESS, FAILED
   integrityReport Json?
+}
+
+// ---------------------------------------------------------
+// Admin recharge store (Premium module: admin-recharge)
+// ---------------------------------------------------------
+
+enum AdminRechargeOrderStatus {
+  PENDING_PAYMENT
+  PAYMENT_SUBMITTED
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+model AdminRechargePlan {
+  id              String   @id @default(uuid())
+  name            String
+  description     String?
+  price           Float
+  currency        String   @default("IRT")
+  trafficBytes    BigInt   @default(0)
+  expiryDays      Int      @default(0)
+  maxClientsDelta Int      @default(0)
+  sortOrder       Int      @default(0)
+  enabled         Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  orders AdminRechargeOrder[]
+}
+
+model AdminRechargeOrder {
+  id               String                   @id @default(uuid())
+  trackingCode     String                   @unique
+  adminId          String
+  planId           String
+  status           AdminRechargeOrderStatus @default(PENDING_PAYMENT)
+  amount           Float
+  currency         String                   @default("IRT")
+  trafficBytes     BigInt                   @default(0)
+  expiryDays       Int                      @default(0)
+  maxClientsDelta  Int                      @default(0)
+  panelId          String?
+  paymentMethod    String                   @default("manual_bank")
+  paymentMeta      Json?
+  receiptImage     String?
+  receiptText      String?
+  reviewedBy       String?
+  reviewedAt       DateTime?
+  rejectReason     String?
+  creditedAt       DateTime?
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+
+  admin    Admin                      @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  plan     AdminRechargePlan          @relation(fields: [planId], references: [id], onDelete: Restrict)
+  panel    Panel?                     @relation(fields: [panelId], references: [id], onDelete: SetNull)
+  timeline AdminRechargeTimeline[]
+
+  @@index([adminId, createdAt])
+  @@index([status, createdAt])
+}
+
+model AdminRechargeTimeline {
+  id        String   @id @default(uuid())
+  orderId   String
+  status    String
+  message   String?
+  actor     String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  order AdminRechargeOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, createdAt])
 }

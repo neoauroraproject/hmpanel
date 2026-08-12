@@ -6,9 +6,14 @@ import { PanelCapabilitiesService } from './panel-capabilities.service';
 import { ApiCapabilityResolver } from './api-capability.resolver';
 import { SettingsModule } from '../settings/settings.module';
 import { ClientsModule } from '../clients/clients.module';
+import { TrafficModule } from '../traffic/traffic.module';
 
 @Module({
-  imports: [forwardRef(() => SettingsModule), forwardRef(() => ClientsModule)],
+  imports: [
+    forwardRef(() => SettingsModule),
+    forwardRef(() => ClientsModule),
+    TrafficModule,
+  ],
   controllers: [PanelsController],
   providers: [
     PanelsService,

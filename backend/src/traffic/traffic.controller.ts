@@ -27,12 +27,13 @@ export class TrafficController {
   @ApiOperation({ summary: 'Top-up admin balance' })
   topUp(
     @Param('adminId') adminId: string,
-    @Body() dto: { amount: number; description?: string },
+    @Body() dto: { amount: number; description?: string; panelId?: string },
   ) {
     return this.trafficService.topUp(
       adminId,
       BigInt(dto.amount),
       dto.description,
+      dto.panelId,
     );
   }
 

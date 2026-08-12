@@ -49,7 +49,9 @@ export default function TrafficPage() {
     enabled: !!basePath,
   });
 
-  const resellers = adminsQuery.data?.data.filter((a) => a.role === "RESELLER") ?? [];
+  const resellers = (adminsQuery.data?.data ?? []).filter(
+    (a) => a.role === "RESELLER" && a.status === "active",
+  );
   const totalPages = Math.ceil((ledger.data?.total || 0) / 15) || 1;
 
   const handleSearch = (e: React.FormEvent) => {

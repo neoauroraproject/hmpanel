@@ -12,6 +12,13 @@ import { motion, AnimatePresence } from "framer-motion";
 import { MOTION_CONFIG } from "@/lib/motion";
 import { NodeInboundBadge } from "@/components/NodeInboundBadge";
 
+interface AdminPanelQuotaRow {
+  panelId: string;
+  panelName?: string;
+  balance: number;
+  totalAssigned?: number;
+}
+
 interface Admin {
   id: string;
   username: string;
@@ -33,6 +40,9 @@ interface Admin {
   unlimitedTraffic?: boolean;
   refundOnDelete?: boolean;
   refundOnEdit?: boolean;
+  quotaMode?: "GLOBAL" | "PER_PANEL";
+  panelQuotas?: AdminPanelQuotaRow[];
+  panelQuotaSummary?: string | null;
 }
 
 interface InboundRow {
@@ -56,8 +66,7 @@ interface PanelRow {
 
 function adminStatusLabel(status: string, t: (key: string, params?: Record<string, string | number>) => string) {
   if (status === "active") return t("admins.statusActive");
-  if (status === "suspended") return t("admins.statusSuspended");
-  if (status === "disabled") return t("admins.statusDisabled");
+  if (status === "disabled" || status === "suspended") return t("admins.statusDisabled");
   return status;
 }
 
@@ -221,14 +230,14 @@ export default function AdminsPage() {
                       <div className="text-xs text-zinc-500">{a.role === "SUPER_ADMIN" ? t("nav.superAdmin") : t("nav.reseller")}</div>
                     </div>
                     <div className="md:hidden">
-                      <Badge tone={a.status === "active" ? "green" : a.status === "suspended" ? "amber" : "red"}>
+                      <Badge tone={a.status === "active" ? "green" : "red"}>
                         {adminStatusLabel(a.status, t)}
                       </Badge>
                     </div>
                   </div>
                 </td>
                 <td className="hidden md:table-cell px-4 py-3">
-                  <Badge tone={a.status === "active" ? "green" : a.status === "suspended" ? "amber" : "red"}>
+                  <Badge tone={a.status === "active" ? "green" : "red"}>
                     {adminStatusLabel(a.status, t)}
                   </Badge>
                 </td>
@@ -238,6 +247,16 @@ export default function AdminsPage() {
                     <div className="text-xs">
                       <div className="font-medium text-emerald-400">{t("admins.unlimitedTrafficLabel")}</div>
                       <div className="text-zinc-500 mt-0.5">{t("admins.noTrafficLimits")}</div>
+                    </div>
+                  ) : a.quotaMode === "PER_PANEL" ? (
+                    <div className="text-xs">
+                      <div className="font-medium text-violet-400">{t("admins.quotaModePerPanel")}</div>
+                      {a.panelQuotaSummary ? (
+                        <div className="text-zinc-500 mt-0.5">{a.panelQuotaSummary}</div>
+                      ) : (
+                        <div className="text-zinc-500 mt-0.5">{t("admins.perPanelQuotaSummary", { panels: 0, total: "0 GB" })}</div>
+                      )}
+                      <div className="text-zinc-500 mt-0.5">{t("admins.usedTraffic", { amount: formatBytes(a.usedTraffic || 0) })}</div>
                     </div>
                   ) : (
                     <div className="text-xs">
@@ -524,6 +543,93 @@ function PanelInboundPicker({
   );
 }
 
+type QuotaMode = "GLOBAL" | "PER_PANEL";
+
+function buildPanelQuotasPayload(
+  enabledPanels: string[],
+  panelQuotaGb: Record<string, string>,
+) {
+  return enabledPanels.map((panelId) => ({
+    panelId,
+    balanceBytes: Math.round(Number(panelQuotaGb[panelId] || 0) * 1024 ** 3),
+  }));
+}
+
+function QuotaModeToggle({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: QuotaMode;
+  onChange: (mode: QuotaMode) => void;
+  disabled?: boolean;
+}) {
+  const t = useT();
+  return (
+    <div className="col-span-2 space-y-2">
+      <label className="block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.quotaMode")}</label>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${value === "GLOBAL" ? "border-blue-500/50 bg-blue-500/5" : "border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50"} ${disabled ? "opacity-50 pointer-events-none" : ""}`}>
+          <input type="radio" name="quotaMode" checked={value === "GLOBAL"} onChange={() => onChange("GLOBAL")} className="mt-1" disabled={disabled} />
+          <div>
+            <div className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{t("admins.quotaModeGlobal")}</div>
+            <div className="text-xs text-zinc-500">{t("admins.quotaModeGlobalHint")}</div>
+          </div>
+        </label>
+        <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${value === "PER_PANEL" ? "border-violet-500/50 bg-violet-500/5" : "border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50"} ${disabled ? "opacity-50 pointer-events-none" : ""}`}>
+          <input type="radio" name="quotaMode" checked={value === "PER_PANEL"} onChange={() => onChange("PER_PANEL")} className="mt-1" disabled={disabled} />
+          <div>
+            <div className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{t("admins.quotaModePerPanel")}</div>
+            <div className="text-xs text-zinc-500">{t("admins.quotaModePerPanelHint")}</div>
+          </div>
+        </label>
+      </div>
+    </div>
+  );
+}
+
+function PerPanelQuotaFields({
+  panels,
+  enabledPanels,
+  values,
+  onChange,
+  disabled,
+}: {
+  panels: PanelRow[];
+  enabledPanels: string[];
+  values: Record<string, string>;
+  onChange: (panelId: string, gb: string) => void;
+  disabled?: boolean;
+}) {
+  const t = useT();
+  if (enabledPanels.length === 0) return null;
+  return (
+    <div className="col-span-2 space-y-2">
+      <label className="block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.currentPanelQuotas")}</label>
+      <div className="space-y-2 rounded-lg border border-zinc-200 dark:border-zinc-800 p-3 bg-zinc-50/50 dark:bg-zinc-950/30">
+        {enabledPanels.map((panelId) => {
+          const panel = panels.find((p) => p.id === panelId);
+          return (
+            <div key={panelId} className="flex items-center gap-3">
+              <span className="text-sm flex-1 min-w-0 truncate text-zinc-700 dark:text-zinc-300">{panel?.name || panelId}</span>
+              <input
+                type="number"
+                min={0}
+                placeholder="0"
+                disabled={disabled}
+                value={values[panelId] ?? ""}
+                onChange={(e) => onChange(panelId, e.target.value)}
+                className="w-28 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3 py-1.5 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500"
+              />
+              <span className="text-xs text-zinc-500 shrink-0">GB</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const t = useT();
   const toast = useToast((s) => s.push);
@@ -545,6 +651,8 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
     refundOnDelete: true,
     refundOnEdit: true,
     unlimitedTraffic: false,
+    quotaMode: "GLOBAL" as QuotaMode,
+    panelQuotaGb: {} as Record<string, string>,
   });
 
   const { data: inbounds, isLoading: inboundsLoading } = useQuery<InboundRow[]>({
@@ -566,7 +674,13 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
         role: "RESELLER",
         status: form.status,
         trafficMode: form.trafficMode,
-        balance: form.unlimitedTraffic ? 0 : (form.balanceGb ? Math.round(Number(form.balanceGb) * 1024 * 1024 * 1024) : 0),
+        quotaMode: form.unlimitedTraffic ? "GLOBAL" : form.quotaMode,
+        balance: form.unlimitedTraffic || form.quotaMode === "PER_PANEL"
+          ? 0
+          : (form.balanceGb ? Math.round(Number(form.balanceGb) * 1024 * 1024 * 1024) : 0),
+        panelQuotas: !form.unlimitedTraffic && form.quotaMode === "PER_PANEL"
+          ? buildPanelQuotasPayload(form.enabledPanels, form.panelQuotaGb)
+          : undefined,
         expiryTime: form.expiryDays ? Date.now() + Number(form.expiryDays) * 24 * 60 * 60 * 1000 : 0,
         maxClients: form.maxClients ? Number(form.maxClients) : 0,
         inboundIds: form.selectedInbounds,
@@ -711,6 +825,12 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
                           </div>
                         </label>
                       </div>
+                      <QuotaModeToggle
+                        value={form.quotaMode}
+                        onChange={(quotaMode) => setForm({ ...form, quotaMode })}
+                        disabled={form.unlimitedTraffic}
+                      />
+                      {form.quotaMode === "GLOBAL" ? (
                       <div>
                         <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.trafficLimitGb")} <span className="text-zinc-500 text-xs">{t("admins.noneValue")}</span></label>
                         {form.unlimitedTraffic ? (
@@ -721,6 +841,18 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
                           <input type="number" min={0} placeholder="0" value={form.balanceGb} onChange={(e) => setForm({ ...form, balanceGb: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
                         )}
                       </div>
+                      ) : (
+                        <PerPanelQuotaFields
+                          panels={panels ?? []}
+                          enabledPanels={form.enabledPanels}
+                          values={form.panelQuotaGb}
+                          onChange={(panelId, gb) => setForm((f) => ({
+                            ...f,
+                            panelQuotaGb: { ...f.panelQuotaGb, [panelId]: gb },
+                          }))}
+                          disabled={form.unlimitedTraffic}
+                        />
+                      )}
                       <div>
                         <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.expiryDays")} <span className="text-zinc-500 text-xs">{t("admins.unlimitedHint")}</span></label>
                         <input type="number" min={0} placeholder="0" value={form.expiryDays} onChange={(e) => setForm({ ...form, expiryDays: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
@@ -819,6 +951,8 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
     refundOnDelete: true,
     refundOnEdit: true,
     unlimitedTraffic: false,
+    quotaMode: "GLOBAL" as QuotaMode,
+    panelQuotaGb: {} as Record<string, string>,
   });
 
   const { data: panels } = useQuery<PanelRow[]>({
@@ -834,6 +968,19 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
   useEffect(() => {
     if (admin) {
       const assigned = admin.adminInbounds ?? [];
+      const enabledPanels = Array.from(
+        new Set(
+          assigned
+            .map((ai: any) => ai.inbound?.panel?.id)
+            .filter((id: string | undefined): id is string => !!id),
+        ),
+      );
+      const panelQuotaGb = Object.fromEntries(
+        (admin.panelQuotas || []).map((q) => [
+          q.panelId,
+          q.balance ? (q.balance / (1024 ** 3)).toFixed(2).replace(/\.?0+$/, "") : "0",
+        ]),
+      );
       setForm((prev) => ({
         ...prev,
         status: admin.status || "active",
@@ -842,18 +989,14 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
         trafficDeltaGb: "",
         maxClients: admin.maxClients ? String(admin.maxClients) : "",
         selectedInbounds: assigned.map((ai: any) => ai.inbound.id),
-        enabledPanels: Array.from(
-          new Set(
-            assigned
-              .map((ai: any) => ai.inbound?.panel?.id)
-              .filter((id: string | undefined): id is string => !!id),
-          ),
-        ),
+        enabledPanels,
         canCustomizeBranding: admin.permissions ? admin.permissions.includes("canCustomizeBranding") : true,
         storeEnabled: admin.storeEnabled || false,
         refundOnDelete: (admin as any).refundOnDelete ?? true,
         refundOnEdit: (admin as any).refundOnEdit ?? true,
         unlimitedTraffic: (admin as any).unlimitedTraffic ?? false,
+        quotaMode: (admin.quotaMode as QuotaMode) || "GLOBAL",
+        panelQuotaGb,
       }));
     }
   }, [admin]);
@@ -871,7 +1014,10 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
         unlimitedTraffic: form.unlimitedTraffic,
       };
       if (!form.unlimitedTraffic) {
-        if (form.balanceGb) {
+        payload.quotaMode = form.quotaMode;
+        if (form.quotaMode === "PER_PANEL") {
+          payload.panelQuotas = buildPanelQuotasPayload(form.enabledPanels, form.panelQuotaGb);
+        } else if (form.balanceGb) {
           payload.balance = Math.round(Number(form.balanceGb) * 1024 * 1024 * 1024);
         } else if (form.trafficDeltaGb) {
           const delta = Math.round(Number(form.trafficDeltaGb) * 1024 * 1024 * 1024);
@@ -979,6 +1125,12 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
                               </div>
                             </label>
                           </div>
+                          <QuotaModeToggle
+                            value={form.quotaMode}
+                            onChange={(quotaMode) => setForm({ ...form, quotaMode })}
+                            disabled={form.unlimitedTraffic}
+                          />
+                          {form.quotaMode === "GLOBAL" ? (
                           <div className="grid grid-cols-2 gap-4">
                             <div>
                               <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.setAvailableTraffic")}</label>
@@ -1004,6 +1156,20 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
                                 </>
                               )}
                             </div>
+                          </div>
+                          ) : (
+                            <PerPanelQuotaFields
+                              panels={panels ?? []}
+                              enabledPanels={form.enabledPanels}
+                              values={form.panelQuotaGb}
+                              onChange={(panelId, gb) => setForm((f) => ({
+                                ...f,
+                                panelQuotaGb: { ...f.panelQuotaGb, [panelId]: gb },
+                              }))}
+                              disabled={form.unlimitedTraffic}
+                            />
+                          )}
+                          <div className="grid grid-cols-2 gap-4">
                             <div className="col-span-2">
                               <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.addExpiryDays")}</label>
                               <input type="number" placeholder={t("admins.leaveEmptyNoChange")} value={form.expiryDays} onChange={(e) => setForm({ ...form, expiryDays: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors placeholder:text-zinc-600" />
@@ -1013,6 +1179,16 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
                           {admin && !admin.unlimitedTraffic && !form.unlimitedTraffic && (
                             <div className="bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 mt-2">
                               <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-3">{t("admins.currentTraffic")}</h3>
+                              {admin.quotaMode === "PER_PANEL" && admin.panelQuotas?.length ? (
+                                <div className="space-y-2">
+                                  {admin.panelQuotas.map((q) => (
+                                    <div key={q.panelId} className="flex justify-between items-center text-sm">
+                                      <span className="text-zinc-500 truncate">{q.panelName || q.panelId}</span>
+                                      <span className="font-medium text-blue-400 shrink-0 ms-2">{(q.balance / (1024 ** 3)).toFixed(2)} GB</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
                               <div className="grid grid-cols-3 gap-4">
                                 <div className="flex flex-col">
                                   <span className="text-[10px] text-zinc-500 mb-0.5">{t("admins.totalAllocated")}</span>
@@ -1027,6 +1203,7 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
                                   <span className="text-sm font-medium text-amber-400">{admin.usedTraffic ? (admin.usedTraffic / (1024 * 1024 * 1024)).toFixed(2) : "0"} GB</span>
                                 </div>
                               </div>
+                              )}
                             </div>
                           )}
                           
@@ -1034,7 +1211,6 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
                             <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("common.status")}</label>
                             <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors mb-4">
                               <option value="active">{t("admins.statusActive")}</option>
-                              <option value="suspended">{t("admins.statusSuspended")}</option>
                               <option value="disabled">{t("admins.statusDisabled")}</option>
                             </select>
                             
@@ -1183,7 +1359,19 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
             {!admin.unlimitedTraffic && (
               <>
                 <SummaryStat icon={<Activity size={16} />} label={t("admins.usedTrafficLabel")} value={formatBytes(admin.usedTraffic || 0)} />
-                <SummaryStat icon={<Database size={16} />} label={t("admins.availableTraffic")} value={remaining} highlight={!admin.unlimitedTraffic && admin.balance === 0} />
+                {admin.quotaMode === "PER_PANEL" && admin.panelQuotas?.length ? (
+                  <div className="rounded-lg bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800/50 p-3 space-y-2">
+                    <div className="text-xs text-zinc-500">{t("admins.currentPanelQuotas")}</div>
+                    {admin.panelQuotas.map((q) => (
+                      <div key={q.panelId} className="flex justify-between text-sm gap-2">
+                        <span className="text-zinc-500 truncate">{q.panelName || q.panelId}</span>
+                        <span className="font-medium text-zinc-800 dark:text-zinc-100 shrink-0">{formatBytes(q.balance)}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <SummaryStat icon={<Database size={16} />} label={t("admins.availableTraffic")} value={remaining} highlight={!admin.unlimitedTraffic && admin.balance === 0} />
+                )}
               </>
             )}
             {admin.unlimitedTraffic && (

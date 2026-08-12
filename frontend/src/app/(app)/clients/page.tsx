@@ -571,7 +571,7 @@ export default function ClientsPage() {
             </div>
             <div className="bg-white dark:bg-zinc-900/50 rounded-2xl p-4 border border-zinc-200 dark:border-zinc-800 flex items-center gap-4">
               <div className="p-3 bg-blue-500/10 text-blue-400 rounded-xl"><HardDrive size={20} /></div>
-              <div>
+              <div className="min-w-0 flex-1">
                 <div className="text-xs text-zinc-500 font-medium">{t("clients.availableTraffic")}</div>
                 <div className="text-xl font-bold text-zinc-900 dark:text-white">
                   {overviewData.admin.unlimitedTraffic
@@ -583,6 +583,16 @@ export default function ClientsPage() {
                     ? t("common.unlimited")
                     : t("clients.outOf", { total: formatBytes(overviewData.admin.allTimeTraffic || 0) })}
                 </div>
+                {!overviewData.admin.unlimitedTraffic && overviewData.admin.quotaMode === "PER_PANEL" && overviewData.admin.panelQuotas?.length > 0 && (
+                  <div className="mt-2 pt-2 border-t border-zinc-200 dark:border-zinc-800 space-y-1">
+                    {overviewData.admin.panelQuotas.map((p: { panelId: string; name: string; availableTraffic: number }) => (
+                      <div key={p.panelId} className="flex justify-between text-[11px] gap-2">
+                        <span className="text-zinc-500 truncate">{p.name}</span>
+                        <span className="font-medium text-zinc-700 dark:text-zinc-300 shrink-0">{formatBytes(p.availableTraffic)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
             <div className="bg-white dark:bg-zinc-900/50 rounded-2xl p-4 border border-zinc-200 dark:border-zinc-800 flex items-center gap-4">
@@ -634,14 +644,15 @@ export default function ClientsPage() {
         </div>
       </div>
 
-      {/* Panel selector — visible to super-admins and resellers alike */}
-      {accessiblePanels.length > 1 && (
+      {/* Panel selector — All + each accessible panel */}
+      {accessiblePanels.length >= 1 && (
         <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 p-3">
           <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
             <Network size={14} /> {t("clients.panelSelectorLabel")}
           </div>
           <div className="flex overflow-x-auto hide-scrollbar items-center gap-2">
             <button
+              type="button"
               onClick={() => selectPanel("")}
               className={`whitespace-nowrap px-4 py-2 rounded-xl text-sm font-semibold transition-colors border ${
                 panelId === ""
@@ -653,6 +664,7 @@ export default function ClientsPage() {
             </button>
             {accessiblePanels.map((p) => (
               <button
+                type="button"
                 key={p.id}
                 onClick={() => selectPanel(p.id)}
                 className={`whitespace-nowrap px-4 py-2 rounded-xl text-sm font-semibold transition-colors border inline-flex items-center gap-2 ${
@@ -1815,6 +1827,15 @@ function AddClientModal({
 
   const [selectedPanelId, setSelectedPanelId] = useState<string>("");
 
+  const { data: panelOverview } = useQuery({
+    queryKey: ["reseller-overview", selectedPanelId],
+    queryFn: async () => (await api.get<any>(`/stats/reseller-overview?panelId=${selectedPanelId}`)).data,
+    enabled: !!selectedPanelId,
+  });
+
+  const panelAvailableTraffic = panelOverview?.admin?.availableTraffic ?? null;
+  const panelUnlimited = panelOverview?.admin?.unlimitedTraffic === true;
+
   useEffect(() => {
     if (derivedPanels.length === 0) return;
     if (!derivedPanels.some((p) => p.id === selectedPanelId)) {
@@ -1841,6 +1862,14 @@ function AddClientModal({
     flow: "",
     limitIp: "",
   });
+
+  const requestedBytes = form.totalGB && Number(form.totalGB) > 0
+    ? Math.floor(Number(form.totalGB) * 1024 ** 3)
+    : 0;
+  const panelInsufficient = !panelUnlimited
+    && panelAvailableTraffic != null
+    && requestedBytes > 0
+    && requestedBytes > panelAvailableTraffic;
 
   useEffect(() => {
     if (availableInbounds.length > 0) {
@@ -2013,7 +2042,18 @@ function AddClientModal({
                   ))}
                 </select>
                 <p className="mt-1 text-[10px] text-zinc-500 dark:text-zinc-400">{t("clients.panelServerHint")}</p>
+                {!panelUnlimited && panelAvailableTraffic != null && (
+                  <p className={`mt-1 text-[11px] font-medium ${panelAvailableTraffic <= 0 ? "text-red-400" : "text-blue-500"}`}>
+                    {t("clients.panelRemainingTraffic", { amount: formatBytes(panelAvailableTraffic) })}
+                  </p>
+                )}
               </div>
+            )}
+
+            {(derivedPanels.length <= 1 && selectedPanelId && !panelUnlimited && panelAvailableTraffic != null) && (
+              <p className={`text-[11px] font-medium ${panelAvailableTraffic <= 0 ? "text-red-400" : "text-blue-500"}`}>
+                {t("clients.panelRemainingTraffic", { amount: formatBytes(panelAvailableTraffic) })}
+              </p>
             )}
 
             <div>
@@ -2086,6 +2126,9 @@ function AddClientModal({
                   className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors"
                 />
                 <p className="mt-1 text-[10px] text-zinc-500 dark:text-zinc-400">{t("clients.allocationDeductHint")}</p>
+                {panelInsufficient && (
+                  <p className="mt-1 text-[11px] text-red-400 font-medium">{t("clients.insufficientPanelBalance")}</p>
+                )}
               </div>
               <div className="mt-4">
                 <label className="mb-1 block text-xs text-zinc-500">{t("clients.ipLimit")}</label>
@@ -2156,7 +2199,7 @@ function AddClientModal({
             </button>
             <button
               type="submit"
-              disabled={create.isPending}
+              disabled={create.isPending || panelInsufficient}
               className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
             >
               {create.isPending ? t("common.creating") : t("common.create")}
@@ -2202,6 +2245,14 @@ export function EditClientModal({
     ? inboundsList.filter(i => (i as any).panelId === clientPanelId || i.panel?.id === clientPanelId)
     : inboundsList;
 
+  const { data: panelOverview } = useQuery({
+    queryKey: ["reseller-overview", clientPanelId],
+    queryFn: async () => (await api.get<any>(`/stats/reseller-overview?panelId=${clientPanelId}`)).data,
+    enabled: !!clientPanelId && sessionAdmin?.role !== "SUPER_ADMIN",
+  });
+  const adminPanelAvailable = panelOverview?.admin?.availableTraffic ?? null;
+  const adminPanelUnlimited = panelOverview?.admin?.unlimitedTraffic === true;
+
   const [form, setForm] = useState({
     expiryDays: "",
     remark: client.remark || "",
@@ -2234,6 +2285,12 @@ export function EditClientModal({
   }
 
   const isTrafficDecrease = previewDiffBytes < 0;
+  const adminPanelInsufficient = trafficMode === "add"
+    && !!trafficInput
+    && previewDiffBytes > 0
+    && !adminPanelUnlimited
+    && adminPanelAvailable != null
+    && previewDiffBytes > adminPanelAvailable;
 
   const update = useMutation({
     mutationFn: async () => {
@@ -2390,6 +2447,15 @@ export function EditClientModal({
                 </div>
               )}
 
+              {!adminPanelUnlimited && adminPanelAvailable != null && trafficMode === "add" && (
+                <p className={`text-[11px] font-medium ${adminPanelAvailable <= 0 ? "text-red-400" : "text-blue-500"}`}>
+                  {t("clients.panelRemainingTraffic", { amount: formatBytes(adminPanelAvailable) })}
+                </p>
+              )}
+              {adminPanelInsufficient && (
+                <p className="text-[11px] text-red-400 font-medium">{t("clients.insufficientPanelBalance")}</p>
+              )}
+
               <div className="mt-4">
                 <label className="mb-1 block text-xs text-zinc-500">{t("clients.ipLimit")}</label>
                 <input
@@ -2536,7 +2602,7 @@ export function EditClientModal({
             </button>
             <button
               type="submit"
-              disabled={update.isPending || form.inboundIds.length === 0}
+              disabled={update.isPending || form.inboundIds.length === 0 || adminPanelInsufficient}
               className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {update.isPending ? t("common.saving") : t("common.saveChanges")}

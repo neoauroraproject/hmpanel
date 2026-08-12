@@ -104,7 +104,7 @@ export interface Paginated<T> {
 
 export interface Overview {
   panels: { total: number; online: number; offline: number };
-  admins: { total: number; active: number; suspended: number };
+  admins: { total: number; active: number; disabled?: number; suspended?: number };
   clients: { total: number; active: number; expired: number };
   traffic: { today: string; month: string; sold: string };
 }

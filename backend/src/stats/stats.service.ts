@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { calculateAdminTrafficSummary } from '../common/utils/traffic.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { PanelsService } from '../panels/panels.service';
+import { AdminQuotaService } from '../traffic/admin-quota.service';
 import * as os from 'os';
 import * as fs from 'fs';
 
@@ -13,6 +14,7 @@ export class StatsService {
   constructor(
     private prisma: PrismaService,
     private panelsService: PanelsService,
+    private adminQuota: AdminQuotaService,
   ) {}
 
   /** Super-admin KPI cards. */
@@ -28,7 +30,7 @@ export class StatsService {
       panelsOnline,
       adminsTotal,
       adminsActive,
-      adminsSuspended,
+      adminsDisabled,
       clientsTotal,
       clientsEnabled,
       clientsExpired,
@@ -41,7 +43,7 @@ export class StatsService {
       this.prisma.panel.count({ where: { status: 'online' } }),
       this.prisma.admin.count(),
       this.prisma.admin.count({ where: { status: 'active' } }),
-      this.prisma.admin.count({ where: { status: 'suspended' } }),
+      this.prisma.admin.count({ where: { status: 'disabled' } }),
       this.prisma.panel.aggregate({ _sum: { clientCount: true } }),
       this.prisma.client.count({
         where: { enable: true, adminId: { not: null } },
@@ -121,7 +123,9 @@ export class StatsService {
       admins: {
         total: adminsTotal,
         active: adminsActive,
-        suspended: adminsSuspended,
+        disabled: adminsDisabled,
+        /** @deprecated use disabled — kept for older frontends */
+        suspended: adminsDisabled,
       },
       clients: {
         total: clientsTotal._sum?.clientCount ?? 0,
@@ -297,19 +301,26 @@ export class StatsService {
       admin.balance,
     );
 
+    const quotaOverview = await this.adminQuota.buildResellerOverview(
+      adminId,
+      panelId,
+    );
+
     const unlimitedTraffic =
       admin.unlimitedTraffic === true || admin.role === 'SUPER_ADMIN';
 
     return {
       admin: {
         unlimitedTraffic,
-        availableTraffic: unlimitedTraffic ? 0 : summary.availableTraffic,
-        allTimeTraffic: unlimitedTraffic ? 0 : summary.totalAllocated,
+        quotaMode: quotaOverview.quotaMode,
+        availableTraffic: unlimitedTraffic ? 0 : quotaOverview.availableTraffic,
+        allTimeTraffic: unlimitedTraffic ? 0 : quotaOverview.allTimeTraffic,
         clientCapacity: admin.maxClients,
         expiryTime: Number(admin.expiryTime),
         trafficMode: admin.trafficMode,
-        usedTraffic: unlimitedTraffic ? 0 : summary.usedTraffic,
+        usedTraffic: unlimitedTraffic ? 0 : quotaOverview.usedTraffic,
         gracePeriodStart: unlimitedTraffic ? null : admin.gracePeriodStart,
+        panelQuotas: unlimitedTraffic ? [] : quotaOverview.panels,
       },
       usage: {
         today: todayUsage.toString(),

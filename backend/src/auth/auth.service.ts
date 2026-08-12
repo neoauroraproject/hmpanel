@@ -25,7 +25,7 @@ export class AuthService {
 
     if (!admin) throw new UnauthorizedException('Invalid credentials');
     if (admin.status !== 'active')
-      throw new UnauthorizedException('Account suspended');
+      throw new UnauthorizedException('Account disabled');
 
     const valid = await bcrypt.compare(password, admin.passwordHash);
     if (!valid) throw new UnauthorizedException('Invalid credentials');

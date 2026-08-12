@@ -174,6 +174,84 @@ export async function ensureCriticalSchema(prisma: PrismaClient): Promise<void> 
     `ALTER TABLE "Inbound" ADD COLUMN IF NOT EXISTS "nodeName" TEXT`,
     `CREATE INDEX IF NOT EXISTS "Inbound_panelId_panelInboundId_idx" ON "Inbound"("panelId", "panelInboundId")`,
     `CREATE INDEX IF NOT EXISTS "Inbound_panelId_port_idx" ON "Inbound"("panelId", "port")`,
+
+    // Per-panel admin traffic quotas
+    `DO $$ BEGIN
+      CREATE TYPE "QuotaMode" AS ENUM ('GLOBAL', 'PER_PANEL');
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END $$`,
+    `ALTER TABLE "Admin" ADD COLUMN IF NOT EXISTS "quotaMode" "QuotaMode" NOT NULL DEFAULT 'GLOBAL'`,
+    `CREATE TABLE IF NOT EXISTS "AdminPanelQuota" (
+      "adminId" TEXT NOT NULL,
+      "panelId" TEXT NOT NULL,
+      "balance" DOUBLE PRECISION NOT NULL DEFAULT 0,
+      "totalAssigned" DOUBLE PRECISION NOT NULL DEFAULT 0,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "AdminPanelQuota_pkey" PRIMARY KEY ("adminId","panelId")
+    )`,
+    `ALTER TABLE "TrafficTransaction" ADD COLUMN IF NOT EXISTS "panelId" TEXT`,
+
+    // Legacy: suspended → disabled (admin status is only active | disabled)
+    `UPDATE "Admin" SET status = 'disabled' WHERE status = 'suspended'`,
+
+    // Admin recharge store
+    `DO $$ BEGIN
+      CREATE TYPE "AdminRechargeOrderStatus" AS ENUM (
+        'PENDING_PAYMENT','PAYMENT_SUBMITTED','APPROVED','REJECTED','CANCELLED'
+      );
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END $$`,
+    `CREATE TABLE IF NOT EXISTS "AdminRechargePlan" (
+      "id" TEXT NOT NULL,
+      "name" TEXT NOT NULL,
+      "description" TEXT,
+      "price" DOUBLE PRECISION NOT NULL,
+      "currency" TEXT NOT NULL DEFAULT 'IRT',
+      "trafficBytes" BIGINT NOT NULL DEFAULT 0,
+      "expiryDays" INTEGER NOT NULL DEFAULT 0,
+      "maxClientsDelta" INTEGER NOT NULL DEFAULT 0,
+      "sortOrder" INTEGER NOT NULL DEFAULT 0,
+      "enabled" BOOLEAN NOT NULL DEFAULT true,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "AdminRechargePlan_pkey" PRIMARY KEY ("id")
+    )`,
+    `CREATE TABLE IF NOT EXISTS "AdminRechargeOrder" (
+      "id" TEXT NOT NULL,
+      "trackingCode" TEXT NOT NULL,
+      "adminId" TEXT NOT NULL,
+      "planId" TEXT NOT NULL,
+      "status" "AdminRechargeOrderStatus" NOT NULL DEFAULT 'PENDING_PAYMENT',
+      "amount" DOUBLE PRECISION NOT NULL,
+      "currency" TEXT NOT NULL DEFAULT 'IRT',
+      "trafficBytes" BIGINT NOT NULL DEFAULT 0,
+      "expiryDays" INTEGER NOT NULL DEFAULT 0,
+      "maxClientsDelta" INTEGER NOT NULL DEFAULT 0,
+      "panelId" TEXT,
+      "paymentMethod" TEXT NOT NULL DEFAULT 'manual_bank',
+      "paymentMeta" JSONB,
+      "receiptImage" TEXT,
+      "receiptText" TEXT,
+      "reviewedBy" TEXT,
+      "reviewedAt" TIMESTAMP(3),
+      "rejectReason" TEXT,
+      "creditedAt" TIMESTAMP(3),
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "AdminRechargeOrder_pkey" PRIMARY KEY ("id")
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS "AdminRechargeOrder_trackingCode_key" ON "AdminRechargeOrder"("trackingCode")`,
+    `CREATE TABLE IF NOT EXISTS "AdminRechargeTimeline" (
+      "id" TEXT NOT NULL,
+      "orderId" TEXT NOT NULL,
+      "status" TEXT NOT NULL,
+      "message" TEXT,
+      "actor" TEXT,
+      "metadata" JSONB,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "AdminRechargeTimeline_pkey" PRIMARY KEY ("id")
+    )`,
   ];
 
   for (const sql of statements) {

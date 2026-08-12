@@ -34,6 +34,7 @@ import {
   supportsBulkClientApi,
   supportsBulkDelete,
 } from '../common/utils/panel-version.util';
+import { AdminQuotaService } from '../traffic/admin-quota.service';
 
 @Injectable()
 export class ClientsService {
@@ -45,6 +46,7 @@ export class ClientsService {
     private panelsService: PanelsService,
     private monitoringService: MonitoringService,
     private lockService: RedisLockService,
+    private adminQuota: AdminQuotaService,
   ) {}
 
   /** Only admins with unlimitedTraffic (or Super Admin) may own/create unlimited clients. */
@@ -164,6 +166,7 @@ export class ClientsService {
       expiryTime: bigint;
       createdWithTrafficMode: string | null;
       balanceDeducted: boolean;
+      panelId?: string;
       provisioningStatus?: string | null;
     },
     skipRefund: boolean,
@@ -233,6 +236,16 @@ export class ClientsService {
 
     const admin = await tx.admin.findUnique({
       where: { id: existing.adminId },
+      select: {
+        id: true,
+        role: true,
+        balance: true,
+        totalAssigned: true,
+        trafficMode: true,
+        unlimitedTraffic: true,
+        quotaMode: true,
+        refundOnDelete: true,
+      },
     });
     if (!admin) {
       return {
@@ -316,23 +329,18 @@ export class ClientsService {
       };
     }
 
-    await tx.admin.update({
-      where: { id: admin.id },
-      data: { balance: admin.balance + Number(refundAmount) },
-    });
-    await tx.trafficTransaction.create({
-      data: {
-        adminId: admin.id,
+    await this.adminQuota.credit(
+      tx,
+      admin as any,
+      existing.panelId || null,
+      refundAmount,
+      {
         clientId: existing.id,
         targetClientUuid: existing.uuid,
-        amount: refundAmount,
-        type: 'CREDIT',
         action: 'CLIENT_DELETION_REFUND',
         description: `Client Deletion Refund (${existing.email})`,
-        balanceBefore: admin.balance,
-        balanceAfter: admin.balance + Number(refundAmount),
       },
-    });
+    );
 
     return { refundGranted: true, refundedAmount: refundAmount };
   }
@@ -354,6 +362,7 @@ export class ClientsService {
     expiryTime: bigint;
     createdWithTrafficMode: string | null;
     balanceDeducted?: boolean | null;
+    panelId?: string;
     provisioningStatus?: string | null;
   }): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
@@ -561,31 +570,7 @@ export class ClientsService {
 
       this.assertUnlimitedClientAllowed(targetAdmin, totalBytes);
 
-      if (caller.role !== 'SUPER_ADMIN') {
-        const callerSkipsTraffic = this.skipTrafficAccounting(caller);
-        if (!callerSkipsTraffic) {
-          if (caller.balance > 0 && totalBytes === 0n) {
-            throw new BadRequestException(
-              'Cannot create an unlimited client when your account has a traffic limit.',
-            );
-          }
-          if (caller.trafficMode === 'ALLOCATION') {
-            if (caller.balance <= 0)
-              throw new BadRequestException(
-                'Insufficient traffic balance. Cannot create clients when balance is zero or below.',
-              );
-            if (caller.balance < Number(totalBytes))
-              throw new BadRequestException('Insufficient traffic balance');
-          } else if (caller.trafficMode === 'USAGE') {
-            if (caller.balance <= 0)
-              throw new BadRequestException(
-                'Insufficient traffic balance. Cannot create clients when balance is zero or below.',
-              );
-          }
-        }
-        // unlimitedTraffic resellers skip balance accounting and may create
-        // metered clients (store products, etc.) without debiting balance.
-      } else if (totalBytes === 0n) {
+      if (caller.role === 'SUPER_ADMIN' && totalBytes === 0n) {
         this.assertUnlimitedClientAllowed(targetAdmin, totalBytes);
       }
 
@@ -617,6 +602,30 @@ export class ClientsService {
           byPanel.set(ib.panelId, { dbIds: [], numericIds: [] });
         byPanel.get(ib.panelId)!.dbIds.push(ib.id);
         byPanel.get(ib.panelId)!.numericIds.push(ib.panelInboundId);
+      }
+
+      const targetPanelId = [...byPanel.keys()][0];
+
+      if (caller.role !== 'SUPER_ADMIN') {
+        const callerSkipsTraffic = this.skipTrafficAccounting(caller);
+        if (!callerSkipsTraffic) {
+          const callerCtx = await this.adminQuota.loadAdmin(callerId);
+          const bucket = await this.adminQuota.getPanelBalance(
+            callerCtx,
+            targetPanelId,
+          );
+          if (bucket.balance > 0 && totalBytes === 0n) {
+            throw new BadRequestException(
+              'Cannot create an unlimited client when your account has a traffic limit.',
+            );
+          }
+          await this.adminQuota.assertCanAllocate(
+            callerCtx,
+            totalBytes,
+            targetPanelId,
+            { usageMode: caller.trafficMode === 'USAGE' },
+          );
+        }
       }
 
       for (const [panelId] of byPanel) {
@@ -771,27 +780,17 @@ export class ClientsService {
           });
           if (!lockedCaller) throw new BadRequestException('Admin not found');
 
+          const callerCtx = await this.adminQuota.loadAdmin(callerId, tx);
           if (
             lockedCaller.role !== 'SUPER_ADMIN' &&
             !this.skipTrafficAccounting(lockedCaller)
           ) {
-            if (lockedCaller.trafficMode === 'ALLOCATION') {
-              if (lockedCaller.balance < Number(totalBytes)) {
-                throw new BadRequestException(
-                  'Insufficient traffic balance (changed between check and commit)',
-                );
-              }
-              await tx.admin.update({
-                where: { id: callerId },
-                data: { balance: lockedCaller.balance - Number(totalBytes) },
-              });
-            } else if (lockedCaller.trafficMode === 'USAGE') {
-              if (lockedCaller.balance <= 0) {
-                throw new BadRequestException(
-                  'Insufficient traffic balance (changed between check and commit)',
-                );
-              }
-            }
+            await this.adminQuota.assertCanAllocate(
+              callerCtx,
+              totalBytes,
+              targetPanelId,
+              { usageMode: lockedCaller.trafficMode === 'USAGE' },
+            );
           }
 
           const createdClients = [];
@@ -854,19 +853,18 @@ export class ClientsService {
             !this.skipTrafficAccounting(lockedCaller) &&
             lockedCaller.trafficMode === 'ALLOCATION'
           ) {
-            await tx.trafficTransaction.create({
-              data: {
-                adminId: callerId,
+            await this.adminQuota.debit(
+              tx,
+              callerCtx,
+              targetPanelId,
+              totalBytes,
+              {
                 clientId: createdClients[0].id,
                 targetClientUuid: createdClients[0].uuid,
-                amount: totalBytes,
-                type: 'DEBIT',
                 action: `CLIENT_CREATION_ALLOCATION_${Date.now()}`,
                 description: 'Client Creation Allocation',
-                balanceBefore: lockedCaller.balance,
-                balanceAfter: lockedCaller.balance - Number(totalBytes),
               },
-            });
+            );
           }
 
           await tx.auditLog.create({
@@ -1528,8 +1526,17 @@ export class ClientsService {
           if (existing.adminId) {
             const admin = await tx.admin.findUnique({
               where: { id: existing.adminId },
+              select: {
+                id: true,
+                role: true,
+                balance: true,
+                totalAssigned: true,
+                trafficMode: true,
+                unlimitedTraffic: true,
+                quotaMode: true,
+                refundOnEdit: true,
+              },
             });
-            // Super Admin operations never debit/credit traffic balances.
             const skipOwnerAccounting =
               role === 'SUPER_ADMIN' || this.skipTrafficAccounting(admin ?? {});
             if (
@@ -1538,51 +1545,30 @@ export class ClientsService {
               admin.trafficMode === 'ALLOCATION'
             ) {
               if (diff > 0n) {
-                if (admin.balance < Number(diff))
-                  throw new BadRequestException('Insufficient traffic balance');
-                await tx.admin.update({
-                  where: { id: admin.id },
-                  data: { balance: admin.balance - Number(diff) },
+                await this.adminQuota.assertCanAllocate(
+                  admin as any,
+                  diff,
+                  existing.panelId,
+                );
+                await this.adminQuota.debit(tx, admin as any, existing.panelId, diff, {
+                  clientId: id,
+                  targetClientUuid: existing.uuid,
+                  action: `CLIENT_TRAFFIC_INCREASE_${Date.now()}`,
+                  description: 'Client Traffic Increase',
                 });
-              } else if (diff < 0n) {
-                if (admin.refundOnEdit) {
-                  await tx.admin.update({
-                    where: { id: admin.id },
-                    data: { balance: admin.balance + Math.abs(Number(diff)) },
-                  });
-                }
-              }
-            }
-
-            if (
-              admin &&
-              !skipOwnerAccounting &&
-              admin.trafficMode === 'ALLOCATION' &&
-              diff !== 0n
-            ) {
-              if (!(diff < 0n && !admin.refundOnEdit)) {
-                await tx.trafficTransaction.create({
-                  data: {
-                    adminId: admin.id,
+              } else if (diff < 0n && admin.refundOnEdit) {
+                await this.adminQuota.credit(
+                  tx,
+                  admin as any,
+                  existing.panelId,
+                  -diff,
+                  {
                     clientId: id,
                     targetClientUuid: existing.uuid,
-                    amount: diff > 0n ? diff : -diff,
-                    type: diff > 0n ? 'DEBIT' : 'CREDIT',
-                    action:
-                      diff > 0n
-                        ? `CLIENT_TRAFFIC_INCREASE_${Date.now()}`
-                        : `CLIENT_TRAFFIC_DECREASE_${Date.now()}`,
-                    description:
-                      diff > 0n
-                        ? 'Client Traffic Increase'
-                        : 'Client Traffic Decrease',
-                    balanceBefore: admin.balance,
-                    balanceAfter:
-                      diff > 0n
-                        ? admin.balance - Number(diff)
-                        : admin.balance + Math.abs(Number(diff)),
+                    action: `CLIENT_TRAFFIC_DECREASE_${Date.now()}`,
+                    description: 'Client Traffic Decrease',
                   },
-                });
+                );
               }
             }
           }
@@ -1737,6 +1723,7 @@ export class ClientsService {
                 expiryTime: existing.expiryTime,
                 createdWithTrafficMode: existing.createdWithTrafficMode,
                 balanceDeducted: (existing as any).balanceDeducted === true,
+                panelId: existing.panelId,
                 provisioningStatus: (existing as any).provisioningStatus,
               },
               skipRefund,
@@ -1829,6 +1816,15 @@ export class ClientsService {
         if (used > 0n && existing.adminId) {
           const admin = await tx.admin.findUnique({
             where: { id: existing.adminId },
+            select: {
+              id: true,
+              role: true,
+              balance: true,
+              totalAssigned: true,
+              trafficMode: true,
+              unlimitedTraffic: true,
+              quotaMode: true,
+            },
           });
           if (
             admin &&
@@ -1836,32 +1832,28 @@ export class ClientsService {
             !this.skipTrafficAccounting(admin)
           ) {
             if (admin.trafficMode === 'ALLOCATION') {
-              if (admin.balance < Number(used)) {
-                throw new BadRequestException(
-                  `Insufficient traffic balance to reset this client. You need ${used} bytes.`,
-                );
-              }
-              await tx.admin.update({
-                where: { id: admin.id },
-                data: { balance: admin.balance - Number(used) },
-              });
-              await tx.trafficTransaction.create({
-                data: {
-                  adminId: admin.id,
+              await this.adminQuota.assertCanAllocate(
+                admin as any,
+                used,
+                existing.panelId,
+              );
+              await this.adminQuota.debit(
+                tx,
+                admin as any,
+                existing.panelId,
+                used,
+                {
                   clientId: id,
                   targetClientUuid: existing.uuid,
-                  amount: used,
-                  type: 'DEBIT',
                   action: `CLIENT_USAGE_RESET_CHARGE_${Date.now()}`,
                   description: `Client Usage Reset Charge (${existing.email})`,
-                  balanceBefore: admin.balance,
-                  balanceAfter: admin.balance - Number(used),
                 },
-              });
+              );
             } else if (admin.trafficMode === 'USAGE') {
               await tx.trafficTransaction.create({
                 data: {
                   adminId: admin.id,
+                  panelId: existing.panelId,
                   clientId: id,
                   targetClientUuid: existing.uuid,
                   amount: used,
@@ -2011,34 +2003,7 @@ export class ClientsService {
     this.assertUnlimitedClientAllowed(targetAdmin, totalBytesPerClient);
 
     if (caller.role !== 'SUPER_ADMIN') {
-      const callerSkipsTraffic = this.skipTrafficAccounting(caller);
-      if (!callerSkipsTraffic) {
-        if (caller.balance > 0 && totalBytesPerClient === 0n) {
-          throw new BadRequestException(
-            'Cannot create unlimited clients when your account has a traffic limit.',
-          );
-        }
-        if (caller.trafficMode === 'ALLOCATION') {
-          if (caller.balance <= 0) {
-            throw new BadRequestException(
-              'Insufficient traffic balance. Cannot create clients when balance is zero or below.',
-            );
-          }
-          if (caller.balance < Number(totalBytesRequired)) {
-            throw new BadRequestException('Insufficient traffic balance');
-          }
-        } else if (caller.trafficMode === 'USAGE') {
-          if (caller.balance <= 0) {
-            throw new BadRequestException(
-              'Insufficient traffic balance. Cannot create clients when balance is zero or below.',
-            );
-          }
-        }
-      } else if (totalBytesPerClient > 0n) {
-        throw new BadRequestException(
-          'Your account has unlimited traffic. You can only create unlimited-traffic clients.',
-        );
-      }
+      // Per-panel balance check runs after inbounds resolve to a target panel.
     } else if (totalBytesPerClient === 0n) {
       this.assertUnlimitedClientAllowed(targetAdmin, totalBytesPerClient);
     }
@@ -2065,6 +2030,34 @@ export class ClientsService {
         byPanel.set(ib.panelId, { dbIds: [], numericIds: [] });
       byPanel.get(ib.panelId)!.dbIds.push(ib.id);
       byPanel.get(ib.panelId)!.numericIds.push(ib.panelInboundId);
+    }
+
+    const bulkTargetPanelId = [...byPanel.keys()][0];
+
+    if (caller.role !== 'SUPER_ADMIN') {
+      const callerSkipsTraffic = this.skipTrafficAccounting(caller);
+      if (!callerSkipsTraffic) {
+        const callerCtx = await this.adminQuota.loadAdmin(callerId);
+        const bucket = await this.adminQuota.getPanelBalance(
+          callerCtx,
+          bulkTargetPanelId,
+        );
+        if (bucket.balance > 0 && totalBytesPerClient === 0n) {
+          throw new BadRequestException(
+            'Cannot create unlimited clients when your account has a traffic limit.',
+          );
+        }
+        await this.adminQuota.assertCanAllocate(
+          callerCtx,
+          totalBytesRequired,
+          bulkTargetPanelId,
+          { usageMode: caller.trafficMode === 'USAGE' },
+        );
+      } else if (totalBytesPerClient > 0n) {
+        throw new BadRequestException(
+          'Your account has unlimited traffic. You can only create unlimited-traffic clients.',
+        );
+      }
     }
 
     for (const [panelId] of byPanel) {
@@ -2230,23 +2223,17 @@ export class ClientsService {
     try {
       // 3. Save to local DB in transaction
       const createdClients = await this.prisma.$transaction(async (tx) => {
+        const callerCtx = await this.adminQuota.loadAdmin(callerId, tx);
         if (
           caller.role !== 'SUPER_ADMIN' &&
+          !this.skipTrafficAccounting(caller) &&
           caller.trafficMode === 'ALLOCATION'
         ) {
-          const lockedCaller = await tx.admin.findUnique({
-            where: { id: callerId },
-          });
-          if (!lockedCaller) throw new BadRequestException('Admin not found');
-          if (lockedCaller.balance < Number(totalBytesRequired)) {
-            throw new BadRequestException('Insufficient traffic balance');
-          }
-          await tx.admin.update({
-            where: { id: callerId },
-            data: {
-              balance: lockedCaller.balance - Number(totalBytesRequired),
-            },
-          });
+          await this.adminQuota.assertCanAllocate(
+            callerCtx,
+            totalBytesRequired,
+            bulkTargetPanelId,
+          );
         }
 
         const result = [];
@@ -2278,17 +2265,21 @@ export class ClientsService {
         if (
           totalBytesRequired > 0n &&
           caller.role !== 'SUPER_ADMIN' &&
+          !this.skipTrafficAccounting(caller) &&
           caller.trafficMode === 'ALLOCATION'
         ) {
-          // Find distinct client emails to bill them once per bulk operation
-          await tx.trafficTransaction.create({
-            data: {
-              adminId: callerId,
-              amount: totalBytesRequired,
-              type: 'DEBIT',
+          await this.adminQuota.debit(
+            tx,
+            callerCtx,
+            bulkTargetPanelId,
+            totalBytesRequired,
+            {
+              clientId: result[0]?.id,
+              targetClientUuid: result[0]?.uuid,
+              action: `BULK_CLIENT_CREATION_${Date.now()}`,
               description: `Bulk Client Creation (${count} clients)`,
             },
-          });
+          );
         }
 
         await tx.auditLog.create({
@@ -2502,6 +2493,7 @@ export class ClientsService {
       total: bigint;
       expiryTime: bigint;
       adminId: string | null;
+      panelId: string;
       up: bigint;
       down: bigint;
     },
@@ -2515,6 +2507,15 @@ export class ClientsService {
         if (client.adminId) {
           const admin = await tx.admin.findUnique({
             where: { id: client.adminId },
+            select: {
+              id: true,
+              role: true,
+              balance: true,
+              totalAssigned: true,
+              trafficMode: true,
+              unlimitedTraffic: true,
+              quotaMode: true,
+            },
           });
           if (
             admin &&
@@ -2522,25 +2523,16 @@ export class ClientsService {
             !this.skipTrafficAccounting(admin) &&
             admin.trafficMode === 'ALLOCATION'
           ) {
-            if (admin.balance < Number(bytes)) {
-              throw new BadRequestException('Insufficient traffic balance');
-            }
-            await tx.admin.update({
-              where: { id: admin.id },
-              data: { balance: admin.balance - Number(bytes) },
-            });
-            await tx.trafficTransaction.create({
-              data: {
-                adminId: admin.id,
-                clientId: client.id,
-                targetClientUuid: client.uuid,
-                amount: bytes,
-                type: 'DEBIT',
-                action: `CLIENT_TRAFFIC_INCREASE_${Date.now()}`,
-                description: 'Bulk Client Traffic Increase',
-                balanceBefore: admin.balance,
-                balanceAfter: admin.balance - Number(bytes),
-              },
+            await this.adminQuota.assertCanAllocate(
+              admin as any,
+              bytes,
+              client.panelId,
+            );
+            await this.adminQuota.debit(tx, admin as any, client.panelId, bytes, {
+              clientId: client.id,
+              targetClientUuid: client.uuid,
+              action: `CLIENT_TRAFFIC_INCREASE_${Date.now()}`,
+              description: 'Bulk Client Traffic Increase',
             });
           }
         }
@@ -2753,6 +2745,7 @@ export class ClientsService {
           expiryTime: existing.expiryTime,
           createdWithTrafficMode: existing.createdWithTrafficMode,
           balanceDeducted: existing.balanceDeducted === true,
+          panelId: existing.panelId,
           provisioningStatus: existing.provisioningStatus,
         },
         skipRefund,
@@ -2795,12 +2788,20 @@ export class ClientsService {
     // Up-front balance checks for traffic addition (per owning admin)
     if (dto.action === 'addTraffic') {
       const bytesToAddPerClient = BigInt(Math.round((dto.value ?? 0) * GB));
-      const requiredByOwner = new Map<string, bigint>();
+      const requiredByOwnerPanel = new Map<string, bigint>();
 
       for (const t of targets) {
         if (!t.adminId) continue;
         const owner = await this.prisma.admin.findUnique({
           where: { id: t.adminId },
+          select: {
+            id: true,
+            role: true,
+            unlimitedTraffic: true,
+            trafficMode: true,
+            quotaMode: true,
+            balance: true,
+          },
         });
         if (
           !owner ||
@@ -2809,19 +2810,20 @@ export class ClientsService {
         ) {
           continue;
         }
-        requiredByOwner.set(
-          t.adminId,
-          (requiredByOwner.get(t.adminId) ?? 0n) + bytesToAddPerClient,
+        const key = `${t.adminId}:${t.panelId}`;
+        requiredByOwnerPanel.set(
+          key,
+          (requiredByOwnerPanel.get(key) ?? 0n) + bytesToAddPerClient,
         );
       }
 
-      for (const [ownerId, totalRequired] of requiredByOwner) {
-        const owner = await this.prisma.admin.findUnique({
-          where: { id: ownerId },
-        });
-        if (owner && owner.balance < Number(totalRequired)) {
+      for (const [key, totalRequired] of requiredByOwnerPanel) {
+        const [ownerId, panelId] = key.split(':');
+        const owner = await this.adminQuota.loadAdmin(ownerId);
+        const bucket = await this.adminQuota.getPanelBalance(owner, panelId);
+        if (bucket.balance < Number(totalRequired)) {
           throw new BadRequestException(
-            `Insufficient balance to add traffic. Required: ${Number(totalRequired) / GB} GB, Available: ${owner.balance / GB} GB`,
+            `Insufficient balance to add traffic. Required: ${Number(totalRequired) / GB} GB, Available: ${bucket.balance / GB} GB`,
           );
         }
       }

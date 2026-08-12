@@ -179,7 +179,7 @@ export class MigrationService {
               email: `${a.username}@migration.local`,
               passwordHash: a.hashed_password,
               role: 'RESELLER',
-              status: a.is_active ? 'active' : 'suspended',
+              status: a.is_active ? 'active' : 'disabled',
               expiryTime: a.expiry_date
                 ? BigInt(new Date(a.expiry_date).getTime())
                 : 0n,

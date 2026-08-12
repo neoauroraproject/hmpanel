@@ -221,7 +221,7 @@ function SuperDashboard() {
         <Kpi icon={Server} tone="text-amber-400" label={t("nav.panels")} value={o.panels.total}
           parts={[{ label: t("common.online"), value: o.panels.online, tone: "text-emerald-400" }, { label: t("common.offline"), value: o.panels.offline, tone: "text-red-400" }]} />
         <Kpi icon={UserCog} tone="text-emerald-400" label={t("nav.admins")} value={o.admins.total}
-          parts={[{ label: t("common.active"), value: o.admins.active, tone: "text-emerald-400" }, { label: t("dashboard.suspended"), value: o.admins.suspended, tone: "text-red-400" }]} />
+          parts={[{ label: t("common.active"), value: o.admins.active, tone: "text-emerald-400" }, { label: t("common.disabled"), value: o.admins.disabled ?? o.admins.suspended ?? 0, tone: "text-red-400" }]} />
         <Kpi icon={Users} tone="text-blue-400" label={t("nav.clients")} value={o.clients.total}
           parts={[{ label: t("common.active"), value: o.clients.active, tone: "text-emerald-400" }, { label: t("common.expired"), value: o.clients.expired, tone: "text-red-400" }]} />
         <Kpi icon={Activity} tone="text-cyan-400" label={t("dashboard.todaysUsage")} value={o.usage?.today != null ? formatBytes(Number(o.usage.today)) : t("dashboard.unknown")} />
@@ -525,6 +525,17 @@ function ResellerDashboard() {
             <div className="mt-3 text-sm text-zinc-500 dark:text-zinc-400 font-medium relative z-10">
               {a.unlimitedTraffic ? t("dashboard.unlimitedTrafficNote") : t("clients.outOf", { total: formatBytes(a.allTimeTraffic) })}
             </div>
+            {!a.unlimitedTraffic && a.quotaMode === "PER_PANEL" && a.panelQuotas?.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-800 relative z-10 space-y-1.5">
+                <div className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">{t("dashboard.perPanelTrafficBreakdown")}</div>
+                {a.panelQuotas.map((p: { panelId: string; name: string; availableTraffic: number }) => (
+                  <div key={p.panelId} className="flex justify-between text-xs gap-2">
+                    <span className="text-zinc-500 truncate">{p.name}</span>
+                    <span className="font-semibold text-zinc-800 dark:text-zinc-200 shrink-0">{formatBytes(p.availableTraffic)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </motion.div>
 

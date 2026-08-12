@@ -9,6 +9,8 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { PanelsService } from '../panels/panels.service';
 import { calculateAdminTrafficSummary } from '../common/utils/traffic.util';
+import { AdminQuotaService } from '../traffic/admin-quota.service';
+import { QuotaMode } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 
 @Injectable()
@@ -17,6 +19,7 @@ export class AdminsService implements OnModuleInit {
   constructor(
     private prisma: PrismaService,
     private panelsService: PanelsService,
+    private adminQuota: AdminQuotaService,
   ) {}
 
   async onModuleInit() {
@@ -56,6 +59,16 @@ export class AdminsService implements OnModuleInit {
           `Enabled unlimitedTraffic for ${fixed.count} SUPER_ADMIN account(s).`,
         );
       }
+
+      const migrated = await this.prisma.admin.updateMany({
+        where: { status: 'suspended' },
+        data: { status: 'disabled' },
+      });
+      if (migrated.count > 0) {
+        this.logger.log(
+          `Migrated ${migrated.count} suspended admin(s) to disabled.`,
+        );
+      }
     } catch (error) {
       this.logger.error('Failed to seed initial admin', error);
     }
@@ -76,6 +89,8 @@ export class AdminsService implements OnModuleInit {
     refundOnEdit?: boolean;
     unlimitedTraffic?: boolean;
     storeEnabled?: boolean;
+    quotaMode?: string;
+    panelQuotas?: Array<{ panelId: string; balanceBytes: number }>;
   }) {
     // Allow admin creation regardless of sync state since we enforce selection in the UI.
 
@@ -87,6 +102,8 @@ export class AdminsService implements OnModuleInit {
 
     const hash = await bcrypt.hash(data.password, 10);
     const unlimited = data.unlimitedTraffic === true;
+    const quotaMode = (data.quotaMode as QuotaMode) || 'GLOBAL';
+    const usePerPanel = quotaMode === 'PER_PANEL' && !unlimited;
     const admin = await this.prisma.admin.create({
       data: {
         username: data.username,
@@ -94,8 +111,9 @@ export class AdminsService implements OnModuleInit {
         passwordHash: hash,
         role: (data.role as any) || 'RESELLER',
         trafficMode: (data.trafficMode as any) || 'ALLOCATION',
-        balance: unlimited ? 0 : data.balance || 0,
-        totalAssigned: unlimited ? 0 : data.balance || 0,
+        balance: unlimited || usePerPanel ? 0 : data.balance || 0,
+        totalAssigned: unlimited || usePerPanel ? 0 : data.balance || 0,
+        quotaMode,
         expiryTime: data.expiryTime ? BigInt(data.expiryTime) : 0n,
         maxClients: data.maxClients || 0,
         permissions: data.permissions || [],
@@ -120,6 +138,7 @@ export class AdminsService implements OnModuleInit {
         refundOnEdit: true,
         unlimitedTraffic: true,
         storeEnabled: true,
+        quotaMode: true,
         createdAt: true,
       },
     });
@@ -147,7 +166,14 @@ export class AdminsService implements OnModuleInit {
       },
     });
 
-    if (data.balance && data.balance > 0 && !unlimited) {
+    if (usePerPanel && data.inboundIds?.length) {
+      await this.adminQuota.syncPanelQuotas(admin.id, {
+        quotaMode: 'PER_PANEL',
+        unlimited: false,
+        inboundIds: data.inboundIds,
+        panelQuotas: data.panelQuotas,
+      });
+    } else if (data.balance && data.balance > 0 && !unlimited && !usePerPanel) {
       await this.prisma.trafficTransaction.create({
         data: {
           adminId: admin.id,
@@ -212,6 +238,7 @@ export class AdminsService implements OnModuleInit {
           unlimitedTraffic: true,
           storeEnabled: true,
           totalAssigned: true,
+          quotaMode: true,
           _count: { select: { clients: true } },
         },
         orderBy: { createdAt: 'desc' },
@@ -219,18 +246,27 @@ export class AdminsService implements OnModuleInit {
       this.prisma.admin.count({ where }),
     ]);
 
-    const mappedData = data.map((admin) => {
-      const summary = calculateAdminTrafficSummary(
-        admin.totalAssigned,
-        admin.balance,
-      );
-      return {
-        ...admin,
-        expiryTime: Number(admin.expiryTime),
-        usedTraffic: summary.usedTraffic,
-        totalAssigned: summary.totalAllocated,
-      };
-    });
+    const mappedData = await Promise.all(
+      data.map(async (admin) => {
+        const summary = calculateAdminTrafficSummary(
+          admin.totalAssigned,
+          admin.balance,
+        );
+        let panelQuotaSummary: string | null = null;
+        if (admin.quotaMode === 'PER_PANEL' && !admin.unlimitedTraffic) {
+          const quotas = await this.adminQuota.listPanelQuotas(admin.id);
+          const totalAvail = quotas.reduce((s, q) => s + q.availableTraffic, 0);
+          panelQuotaSummary = `${quotas.length} panels · ${(totalAvail / (1024 ** 3)).toFixed(2)} GB`;
+        }
+        return {
+          ...admin,
+          expiryTime: Number(admin.expiryTime),
+          usedTraffic: summary.usedTraffic,
+          totalAssigned: summary.totalAllocated,
+          panelQuotaSummary,
+        };
+      }),
+    );
 
     return { data: mappedData, total, page, limit };
   }
@@ -256,6 +292,7 @@ export class AdminsService implements OnModuleInit {
         unlimitedTraffic: true,
         storeEnabled: true,
         totalAssigned: true,
+        quotaMode: true,
         _count: { select: { clients: true } },
         adminInbounds: {
           select: {
@@ -278,11 +315,16 @@ export class AdminsService implements OnModuleInit {
       admin.totalAssigned,
       admin.balance,
     );
+    const panelQuotas =
+      admin.quotaMode === 'PER_PANEL'
+        ? await this.adminQuota.listPanelQuotas(admin.id)
+        : [];
     return {
       ...admin,
       expiryTime: Number(admin.expiryTime),
       usedTraffic: summary.usedTraffic,
       totalAssigned: summary.totalAllocated,
+      panelQuotas,
     };
   }
 
@@ -303,13 +345,20 @@ export class AdminsService implements OnModuleInit {
       refundOnEdit?: boolean;
       unlimitedTraffic?: boolean;
       storeEnabled?: boolean;
+      quotaMode?: string;
+      panelQuotas?: Array<{ panelId: string; balanceBytes: number }>;
     },
   ) {
     const existing = await this.findOne(id);
     const updateData: any = {};
     if (data.email !== undefined) updateData.email = data.email;
-    if (data.balance !== undefined) updateData.balance = data.balance;
-    if (data.status !== undefined) updateData.status = data.status;
+    if (data.balance !== undefined && existing.quotaMode !== 'PER_PANEL') {
+      updateData.balance = data.balance;
+    }
+    if (data.status !== undefined) {
+      updateData.status =
+        data.status === 'suspended' ? 'disabled' : data.status;
+    }
     if (data.maxClients !== undefined) updateData.maxClients = data.maxClients;
     if (data.permissions !== undefined)
       updateData.permissions = data.permissions;
@@ -346,6 +395,20 @@ export class AdminsService implements OnModuleInit {
       updateData.trafficMode = data.trafficMode as never;
     if (data.portalSettings !== undefined)
       updateData.portalSettings = data.portalSettings;
+    if (data.quotaMode !== undefined && existing.role !== 'SUPER_ADMIN') {
+      updateData.quotaMode = data.quotaMode as QuotaMode;
+    }
+
+    const nextInboundIds =
+      data.inboundIds !== undefined
+        ? data.inboundIds
+        : existing.adminInbounds?.map((ai: any) => ai.inbound.id) ?? [];
+    const nextQuotaMode =
+      (data.quotaMode as QuotaMode) || existing.quotaMode || 'GLOBAL';
+    const switchingToPerPanel =
+      nextQuotaMode === 'PER_PANEL' && existing.quotaMode !== 'PER_PANEL';
+    const switchingToGlobal =
+      nextQuotaMode === 'GLOBAL' && existing.quotaMode === 'PER_PANEL';
 
     if (data.inboundIds !== undefined) {
       await this.prisma.adminInbound.deleteMany({ where: { adminId: id } });
@@ -360,7 +423,12 @@ export class AdminsService implements OnModuleInit {
       }
     }
 
-    if (data.balance !== undefined && data.balance !== existing.balance && !existing.unlimitedTraffic) {
+    if (
+      data.balance !== undefined &&
+      data.balance !== existing.balance &&
+      !existing.unlimitedTraffic &&
+      existing.quotaMode !== 'PER_PANEL'
+    ) {
       const diff = data.balance - existing.balance;
       if (diff > 0) {
         updateData.totalAssigned = { increment: Math.round(diff) };
@@ -385,8 +453,47 @@ export class AdminsService implements OnModuleInit {
         refundOnEdit: true,
         unlimitedTraffic: true,
         storeEnabled: true,
+        quotaMode: true,
       },
     });
+
+    const unlimitedNow =
+      data.unlimitedTraffic !== undefined
+        ? data.unlimitedTraffic
+        : existing.unlimitedTraffic;
+
+    if (switchingToPerPanel || switchingToGlobal || data.quotaMode !== undefined) {
+      await this.adminQuota.syncPanelQuotas(id, {
+        quotaMode: nextQuotaMode,
+        unlimited: unlimitedNow === true,
+        inboundIds: nextInboundIds,
+        panelQuotas: data.panelQuotas,
+        previousMode: existing.quotaMode as QuotaMode,
+      });
+    } else if (
+      nextQuotaMode === 'PER_PANEL' &&
+      data.panelQuotas?.length &&
+      !unlimitedNow
+    ) {
+      await this.adminQuota.updatePanelQuotaBalances(id, data.panelQuotas);
+    } else if (
+      nextQuotaMode === 'PER_PANEL' &&
+      data.inboundIds !== undefined &&
+      !unlimitedNow
+    ) {
+      await this.adminQuota.syncPanelQuotas(id, {
+        quotaMode: 'PER_PANEL',
+        unlimited: false,
+        inboundIds: nextInboundIds,
+        panelQuotas:
+          data.panelQuotas ??
+          (existing.panelQuotas || []).map((q: any) => ({
+            panelId: q.panelId,
+            balanceBytes: q.balance,
+          })),
+        previousMode: 'PER_PANEL',
+      });
+    }
 
     if (data.storeEnabled !== undefined) {
       await this.syncStoreModuleAssignment(id, data.storeEnabled === true);
@@ -401,7 +508,12 @@ export class AdminsService implements OnModuleInit {
       },
     });
 
-    if (data.balance !== undefined && data.balance !== existing.balance && !existing.unlimitedTraffic) {
+    if (
+      data.balance !== undefined &&
+      data.balance !== existing.balance &&
+      !existing.unlimitedTraffic &&
+      existing.quotaMode !== 'PER_PANEL'
+    ) {
       const diff = data.balance - existing.balance;
       await this.prisma.trafficTransaction.create({
         data: {
@@ -416,7 +528,7 @@ export class AdminsService implements OnModuleInit {
       });
     }
 
-    return { ...admin, expiryTime: Number(admin.expiryTime) };
+    return this.findOne(id);
   }
 
   async remove(id: string) {

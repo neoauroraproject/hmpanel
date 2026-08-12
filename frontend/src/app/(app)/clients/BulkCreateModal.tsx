@@ -4,6 +4,7 @@ import { api } from "@/lib/api";
 import { X, Check, AlertTriangle, Users, Loader2 } from "lucide-react";
 import { useToast } from "@/components/toast";
 import { motion } from "framer-motion";
+import { formatBytes } from "@/lib/format";
 import { useT } from "@/i18n";
 import { NodeInboundBadge } from "@/components/NodeInboundBadge";
 
@@ -50,6 +51,15 @@ export function BulkCreateModal({ onClose, inboundsList }: BulkCreateModalProps)
   }, [inboundsList]);
 
   const [selectedPanelId, setSelectedPanelId] = useState<string>("");
+
+  const { data: panelOverview } = useQuery({
+    queryKey: ["reseller-overview", selectedPanelId],
+    queryFn: async () => (await api.get<any>(`/stats/reseller-overview?panelId=${selectedPanelId}`)).data,
+    enabled: !!selectedPanelId,
+  });
+
+  const panelAvailableTraffic = panelOverview?.admin?.availableTraffic ?? null;
+  const panelUnlimited = panelOverview?.admin?.unlimitedTraffic === true;
 
   useEffect(() => {
     if (panels.length === 0) return;
@@ -190,6 +200,12 @@ export function BulkCreateModal({ onClose, inboundsList }: BulkCreateModalProps)
   };
 
   const count = form.endNumber - form.startNumber + 1;
+  const bytesPerClient = form.trafficGB ? Number(form.trafficGB) * 1024 ** 3 : 0;
+  const totalRequiredBytes = bytesPerClient * Math.max(0, count);
+  const panelInsufficient = !panelUnlimited
+    && panelAvailableTraffic != null
+    && totalRequiredBytes > 0
+    && totalRequiredBytes > panelAvailableTraffic;
 
   return (
     <motion.div
@@ -309,7 +325,18 @@ export function BulkCreateModal({ onClose, inboundsList }: BulkCreateModalProps)
                     ))}
                   </select>
                   <p className="mt-1 text-[10px] text-zinc-500 dark:text-zinc-400">{t("clients.panelServerHint")}</p>
+                  {!panelUnlimited && panelAvailableTraffic != null && (
+                    <p className={`mt-1 text-[11px] font-medium ${panelAvailableTraffic <= 0 ? "text-red-400" : "text-blue-500"}`}>
+                      {t("clients.panelRemainingTraffic", { amount: formatBytes(panelAvailableTraffic) })}
+                    </p>
+                  )}
                 </div>
+              )}
+
+              {(panels.length <= 1 && selectedPanelId && !panelUnlimited && panelAvailableTraffic != null) && (
+                <p className={`text-[11px] font-medium ${panelAvailableTraffic <= 0 ? "text-red-400" : "text-blue-500"}`}>
+                  {t("clients.panelRemainingTraffic", { amount: formatBytes(panelAvailableTraffic) })}
+                </p>
               )}
 
               <div>
@@ -458,7 +485,7 @@ export function BulkCreateModal({ onClose, inboundsList }: BulkCreateModalProps)
             </button>
             <button
               type="submit"
-              disabled={createMutation.isPending || !validation?.valid || count <= 0}
+              disabled={createMutation.isPending || !validation?.valid || count <= 0 || panelInsufficient}
               className="rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-medium text-white shadow-lg shadow-blue-500/30 hover:bg-blue-500 disabled:opacity-50 disabled:shadow-none transition-all flex items-center gap-2"
             >
               {createMutation.isPending && <Loader2 size={16} className="animate-spin" />}

@@ -1,74 +1,56 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { AdminQuotaService } from './admin-quota.service';
 
 @Injectable()
 export class TrafficService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private adminQuota: AdminQuotaService,
+  ) {}
 
   /** Top-up an admin's balance (SUPER_ADMIN action) */
-  async topUp(adminId: string, amountBytes: bigint, description?: string) {
-    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      const admin = await tx.admin.update({
-        where: { id: adminId },
-        data: { balance: { increment: Number(amountBytes) } },
-        select: { id: true, balance: true },
-      });
-
-      await tx.trafficTransaction.create({
-        data: {
-          adminId,
-          amount: amountBytes,
-          type: 'CREDIT',
-          action: 'BALANCE_TOPUP',
-          description: description || 'Balance top-up',
-          balanceBefore: admin.balance - Number(amountBytes),
-          balanceAfter: admin.balance,
-        },
-      });
-
-      return admin;
-    });
+  async topUp(
+    adminId: string,
+    amountBytes: bigint,
+    description?: string,
+    panelId?: string,
+  ) {
+    return this.adminQuota.topUp(adminId, amountBytes, panelId, description);
   }
 
   /** Deduct quota when creating a client (Allocation mode) */
-  async provision(adminId: string, clientId: string, amountBytes: bigint) {
+  async provision(
+    adminId: string,
+    clientId: string,
+    amountBytes: bigint,
+    panelId?: string,
+  ) {
     return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const client = await tx.client.findUnique({
         where: { id: clientId },
-        select: { uuid: true },
+        select: { uuid: true, panelId: true },
       });
-      const admin = await tx.admin.findUniqueOrThrow({
-        where: { id: adminId },
-        select: { balance: true, trafficMode: true },
-      });
-
-      if (admin.trafficMode === 'ALLOCATION') {
-        if (admin.balance < Number(amountBytes)) {
-          throw new BadRequestException('Insufficient balance');
-        }
-        await tx.admin.update({
-          where: { id: adminId },
-          data: { balance: { decrement: Number(amountBytes) } },
-        });
+      const admin = await this.adminQuota.loadAdmin(adminId, tx);
+      const resolvedPanelId = panelId || client?.panelId;
+      if (!resolvedPanelId) {
+        throw new Error('panelId required for traffic provision');
       }
 
-      await tx.trafficTransaction.create({
-        data: {
-          adminId,
+      if (admin.trafficMode === 'ALLOCATION') {
+        await this.adminQuota.assertCanAllocate(
+          admin,
+          amountBytes,
+          resolvedPanelId,
+        );
+        await this.adminQuota.debit(tx, admin, resolvedPanelId, amountBytes, {
           clientId,
           targetClientUuid: client?.uuid ?? clientId,
-          amount: amountBytes,
-          type: 'DEBIT',
           action: 'CLIENT_PROVISIONING',
           description: 'Client provisioned',
-          balanceBefore: admin.balance,
-          balanceAfter:
-            admin.trafficMode === 'ALLOCATION'
-              ? admin.balance - Number(amountBytes)
-              : admin.balance,
-        },
-      });
+        });
+      }
     });
   }
 
@@ -78,32 +60,25 @@ export class TrafficService {
     clientId: string,
     totalBytes: bigint,
     usedBytes: bigint,
+    panelId?: string,
   ) {
     const remaining = totalBytes - usedBytes;
-    if (remaining <= 0n) return; // Nothing to refund — all consumed
+    if (remaining <= 0n) return;
 
     return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const client = await tx.client.findUnique({
         where: { id: clientId },
-        select: { uuid: true },
+        select: { uuid: true, panelId: true },
       });
-      const admin = await tx.admin.update({
-        where: { id: adminId },
-        data: { balance: { increment: Number(remaining) } },
-      });
+      const admin = await this.adminQuota.loadAdmin(adminId, tx);
+      const resolvedPanelId = panelId || client?.panelId;
+      if (!resolvedPanelId) return;
 
-      await tx.trafficTransaction.create({
-        data: {
-          adminId,
-          clientId,
-          targetClientUuid: client?.uuid ?? clientId,
-          amount: remaining,
-          type: 'CREDIT',
-          action: 'CLIENT_DELETION_REFUND',
-          description: 'Client deleted — remaining traffic refunded',
-          balanceBefore: admin.balance - Number(remaining),
-          balanceAfter: admin.balance,
-        },
+      await this.adminQuota.credit(tx, admin, resolvedPanelId, remaining, {
+        clientId,
+        targetClientUuid: client?.uuid ?? clientId,
+        action: 'CLIENT_DELETION_REFUND',
+        description: 'Client deleted — remaining traffic refunded',
       });
     });
   }
@@ -144,6 +119,7 @@ export class TrafficService {
           balanceAfter: true,
           action: true,
           targetClientUuid: true,
+          panelId: true,
           client: { select: { id: true, email: true, uuid: true } },
         },
         orderBy: { createdAt: 'desc' },

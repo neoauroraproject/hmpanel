@@ -61,6 +61,7 @@ const PREMIUM_MENU_ICONS: Record<string, typeof Diamond> = {
   "custom-domains": Globe,
   "client-templates": Diamond,
   store: Store,
+  "admin-recharge": Wallet,
   "monitoring-pro": Activity,
   "backup-center": DatabaseBackup,
 };

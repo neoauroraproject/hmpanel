@@ -3,12 +3,17 @@ import { ClientsService } from './clients.service';
 import { ClientsController } from './clients.controller';
 import { PanelsModule } from '../panels/panels.module';
 import { StatsModule } from '../stats/stats.module';
+import { TrafficModule } from '../traffic/traffic.module';
 import { RedisLockService } from '../common/utils/redis-lock.service';
 import { ClientOutputService } from './output/client-output.service';
 import { OutputCacheService } from './output/output-cache.service';
 
 @Module({
-  imports: [forwardRef(() => PanelsModule), forwardRef(() => StatsModule)],
+  imports: [
+    forwardRef(() => PanelsModule),
+    forwardRef(() => StatsModule),
+    TrafficModule,
+  ],
   controllers: [ClientsController],
   providers: [
     ClientsService,
