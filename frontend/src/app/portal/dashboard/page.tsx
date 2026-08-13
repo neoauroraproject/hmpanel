@@ -154,6 +154,7 @@ function CustomerDashboardInner() {
 
     // Never stay on a blank frame — recover from bad/expired sessions.
     // Guard against shop ↔ dashboard bounce if the API keeps failing.
+    const slug = gate.slug;
     if (typeof window !== "undefined") {
       const key = "hm-tma-recover-at";
       const last = Number(window.sessionStorage.getItem(key) || 0);
@@ -166,7 +167,6 @@ function CustomerDashboardInner() {
 
     if (error) setCustomerSessionToken(null);
 
-    const slug = gate.slug;
     const inTg =
       forceTelegramMiniApp() ||
       isTelegramUserAgent() ||
