@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Check, ChevronLeft, LoaderCircle, Upload, X } from "lucide-react";
 import { publicApi } from "@/lib/api";
+import { formatQuotaLabel } from "@/lib/format";
 import { compressReceiptImage } from "../receipt-image";
 import { useStorefrontLocale } from "../locale";
 import type { CustomerService, StorefrontProduct, StorefrontStore } from "../types";
@@ -293,7 +294,7 @@ export function TmaCheckoutSheet({
                     <div className="min-w-0 flex-1">
                       <div className="font-semibold">{p.name}</div>
                       <div className="mt-0.5 text-[12px]" style={{ color: LIGHT.hint }}>
-                        {p.traffic} · {p.durationDays} {t("روز", "days")}
+                        {formatQuotaLabel(p.traffic, p.durationDays, { locale: isFa ? "fa" : "en" })}
                       </div>
                     </div>
                     <div className="text-end">

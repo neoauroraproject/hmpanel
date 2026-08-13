@@ -13,6 +13,77 @@ export function formatBytes(value: string | number | bigint): string {
   return `${n.toFixed(n >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
+export type UiLocale = "fa" | "en";
+
+export function resolveUiLocale(explicit?: string | null): UiLocale {
+  if (explicit && explicit.toLowerCase().startsWith("fa")) return "fa";
+  if (typeof document !== "undefined") {
+    const lang = document.documentElement.lang || "";
+    if (lang.toLowerCase().startsWith("fa")) return "fa";
+  }
+  return "en";
+}
+
+/** Localized traffic size — Persian uses گیگ/ترابایت so RTL doesn't scramble "GB". */
+export function formatBytesLocalized(
+  value: string | number | bigint,
+  locale: UiLocale | string = "en",
+): string {
+  const bytes = typeof value === "string" ? Number(value) : Number(value);
+  if (!bytes || bytes <= 0) return resolveUiLocale(locale) === "fa" ? "۰ بایت" : "0 B";
+  const isFa = resolveUiLocale(locale) === "fa";
+  const units = isFa
+    ? ["بایت", "کیلوبایت", "مگابایت", "گیگ", "ترابایت", "پتابایت"]
+    : ["B", "KB", "MB", "GB", "TB", "PB"];
+  const i = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
+  const n = bytes / Math.pow(1024, i);
+  const num = n.toFixed(n >= 10 || i === 0 ? 0 : 1);
+  return `${num} ${units[i]}`;
+}
+
+export function formatDaysLocalized(
+  days: number,
+  locale: UiLocale | string = "en",
+): string {
+  const n = Math.max(0, Math.round(Number(days) || 0));
+  if (resolveUiLocale(locale) === "fa") return `${n} روز`;
+  return n === 1 ? "1 day" : `${n} days`;
+}
+
+/**
+ * Bidi-safe plan/product quota line.
+ * Always traffic first, then days (e.g. "500 گیگ · 90 روز" / "500 GB · 90 days").
+ * Each segment is wrapped in Unicode isolates so RTL layouts don't reorder units.
+ */
+export function formatQuotaLabel(
+  trafficBytes?: string | number | bigint | null,
+  durationDays?: number | null,
+  opts?: {
+    locale?: string | null;
+    maxClients?: number | null;
+    clientsLabelFa?: string;
+    clientsLabelEn?: string;
+  },
+): string {
+  const locale = resolveUiLocale(opts?.locale);
+  const parts: string[] = [];
+  const bytes = Number(trafficBytes || 0);
+  if (bytes > 0) parts.push(formatBytesLocalized(bytes, locale));
+  const days = Number(durationDays || 0);
+  if (days > 0) parts.push(formatDaysLocalized(days, locale));
+  const clients = Number(opts?.maxClients || 0);
+  if (clients > 0) {
+    parts.push(
+      locale === "fa"
+        ? `${clients} ${opts?.clientsLabelFa || "کاربر"}`
+        : `+${clients} ${opts?.clientsLabelEn || "clients"}`,
+    );
+  }
+  if (!parts.length) return "—";
+  // FSI … PDI keeps each segment visually ordered inside RTL paragraphs.
+  return parts.map((p) => `\u2068${p}\u2069`).join(" · ");
+}
+
 let cachedDisplayTz: string = DEFAULT_DISPLAY_TIMEZONE;
 
 /** Called when settings load so UI dates follow panel timezone. */
