@@ -175,6 +175,7 @@ model Admin {
   productTemplates ProductTemplate[]
   productCategories ProductCategory[]
   provisioningProfiles ProvisioningProfile[]
+  storeAddonConnections StoreAddonConnection[]
   storeProducts    StoreProduct[]
   storeCustomers   StoreCustomer[]
   storeCoupons     StoreCoupon[]
@@ -591,6 +592,7 @@ model StoreProfile {
   panel  Panel?       @relation(fields: [panelId], references: [id], onDelete: SetNull)
   domain Domain?      @relation(fields: [domainId], references: [id], onDelete: SetNull)
   orders StoreOrder[]
+  addonConnections StoreAddonConnection[]
 }
 
 model ProductCategory {
@@ -616,8 +618,11 @@ model ProvisioningProfile {
   adminId       String
   name          String
   description   String?
-  panelId       String
-  inboundIds    Json
+  /// panel_3xui (default) | eylan | future store plugins
+  providerId    String   @default("panel_3xui")
+  /// Required for panel_3xui; null for plugin providers (eylan, …)
+  panelId       String?
+  inboundIds    Json     @default("[]")
   protocol      String?
   settings      Json?
   renewalPolicy Json?
@@ -627,12 +632,39 @@ model ProvisioningProfile {
   updatedAt     DateTime @updatedAt
 
   admin     Admin             @relation(fields: [adminId], references: [id], onDelete: Cascade)
-  panel     Panel             @relation(fields: [panelId], references: [id], onDelete: Restrict)
+  panel     Panel?            @relation(fields: [panelId], references: [id], onDelete: Restrict)
   products  StoreProduct[]
   templates ProductTemplate[]
 
   @@index([adminId])
   @@index([panelId])
+  @@index([providerId])
+}
+
+/// External store fulfillment plugin connection (Eylan, future addons).
+model StoreAddonConnection {
+  id              String    @id @default(uuid())
+  adminId         String
+  storeId         String
+  providerId      String
+  enabled         Boolean   @default(false)
+  apiBaseUrl      String    @default("")
+  apiKeyEnc       String    @default("")
+  deliveryDomain  String?
+  settings        Json?
+  optionsCache    Json?
+  optionsCachedAt DateTime?
+  lastTestAt      DateTime?
+  lastTestOk      Boolean?
+  lastTestError   String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  admin Admin        @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  store StoreProfile @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([adminId, providerId])
+  @@index([storeId])
 }
 
 model ProductTemplate {
@@ -847,6 +879,8 @@ model StoreOrder {
   telegramAdminChatId     String?
   telegramAdminMessageId  Int?
   telegramAdminHasPhoto   Boolean @default(false)
+  /// Plugin delivery snapshot: { providerId, username, subUrl, subToken, renewOfOrderId }
+  fulfillment    Json?
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
 
