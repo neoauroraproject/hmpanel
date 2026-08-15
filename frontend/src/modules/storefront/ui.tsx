@@ -32,6 +32,7 @@ import type {
   CustomerNotification,
   CustomerOrder,
   CustomerService,
+  StorefrontCategory,
   StorefrontProduct,
   StorefrontStore,
 } from "./types";

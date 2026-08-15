@@ -61,14 +61,31 @@ export function useCustomerSession() {
   });
 
   const claimService = useMutation({
-    mutationFn: async (subscriptionLink: string) =>
+    mutationFn: async (input: { subscriptionLink: string; categoryId: string }) =>
       (
         await publicApi.post("/store/customer/services/claim", {
-          subscriptionLink,
+          subscriptionLink: input.subscriptionLink,
+          categoryId: input.categoryId,
         })
       ).data as { service: CustomerDashboard["services"][0]; dashboard: CustomerDashboard },
     onSuccess: async (data) => {
       queryClient.setQueryData(["customer-session"], data.dashboard);
+      await queryClient.invalidateQueries({ queryKey: ["customer-session"] });
+    },
+  });
+
+  const assignServiceCategory = useMutation({
+    mutationFn: async (input: { clientId: string; categoryId: string }) =>
+      (
+        await publicApi.post(
+          `/store/customer/services/${encodeURIComponent(input.clientId)}/category`,
+          { categoryId: input.categoryId },
+        )
+      ).data as CustomerDashboard,
+    onSuccess: async (dashboard) => {
+      if (dashboard?.token) {
+        queryClient.setQueryData(["customer-session"], dashboard);
+      }
       await queryClient.invalidateQueries({ queryKey: ["customer-session"] });
     },
   });
@@ -94,6 +111,7 @@ export function useCustomerSession() {
     markAllNotificationsRead,
     cancelOrder,
     claimService,
+    assignServiceCategory,
     hideService,
   };
 }
