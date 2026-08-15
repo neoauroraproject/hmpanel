@@ -1,13 +1,5 @@
 "use client";
 
-export type StorefrontCategory = {
-  id: string;
-  name: string;
-  description?: string | null;
-  icon?: string | null;
-  sortOrder?: number;
-};
-
 export type StorefrontProduct = {
   id: string;
   categoryId: string;
@@ -20,6 +12,9 @@ export type StorefrontProduct = {
   badge?: string | null;
   featured?: boolean;
   renewable?: boolean;
+  /** Fulfillment provider — used to keep Eylan renewals on Eylan plans. */
+  providerId?: string | null;
+  ipLimitOptions?: Array<{ limitIp: number; priceExtra: number; label: string }>;
 };
 
 export type StorefrontStore = {
@@ -84,21 +79,38 @@ export type CustomerNotification = {
   createdAt: string;
 };
 
+export type StorefrontCategory = {
+  id: string;
+  name: string;
+  description?: string | null;
+  icon?: string | null;
+  sortOrder?: number;
+};
+
 export type CustomerService = {
   id: string;
   email: string;
   remark?: string | null;
   subId?: string | null;
   subToken?: string | null;
+  subUrl?: string | null;
+  providerId?: string | null;
   status: "active" | "expired" | "disabled" | "pending" | "depleted";
   /** True when provisioned but no traffic used yet (still “active”, ready to connect). */
   unused?: boolean;
+  /** Category chosen at purchase / claim — required for renew filtering. */
+  categoryId?: string | null;
   total: string;
   up: string;
   down: string;
   expiryTime: string;
-  /** Category of the last fulfilled order for this service (renew lock). */
-  categoryId?: string | null;
+  /** Eylan: purchased product title */
+  productName?: string | null;
+  /** Eylan: e.g. "20 GB · 30 days" */
+  planLabel?: string | null;
+  durationDays?: number | null;
+  /** Eylan delivery UX marker */
+  deliveryHint?: string | null;
 };
 
 export type CustomerOrder = {

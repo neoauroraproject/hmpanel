@@ -32,7 +32,6 @@ import type {
   CustomerNotification,
   CustomerOrder,
   CustomerService,
-  StorefrontCategory,
   StorefrontProduct,
   StorefrontStore,
 } from "./types";
@@ -209,7 +208,7 @@ export function WelcomeHero({
         {store?.title || store?.branding?.name || "VPN Store"}
       </h1>
       {store?.description ? (
-        <p className="mt-3 max-w-md text-[15px] leading-relaxed text-zinc-500 sm:text-base">
+        <p className="mt-3 max-w-md whitespace-pre-line text-[15px] leading-relaxed text-zinc-500 sm:text-base">
           {store.description}
         </p>
       ) : null}
@@ -231,145 +230,6 @@ export function WelcomeHero({
   );
 }
 
-export function CategoryCard({
-  category,
-  selected = false,
-  onSelect,
-  locked = false,
-}: {
-  category: StorefrontCategory;
-  productCount?: number;
-  selected?: boolean;
-  onSelect: () => void;
-  locked?: boolean;
-}) {
-  const { t } = useStorefrontLocale();
-  const initial = (category.name || "?").trim().slice(0, 1).toUpperCase();
-
-  return (
-    <motion.button
-      type="button"
-      onClick={onSelect}
-      disabled={locked && !selected}
-      layout
-      whileHover={locked ? undefined : { y: -3, scale: 1.01 }}
-      whileTap={locked ? undefined : { scale: 0.98 }}
-      animate={
-        selected
-          ? { scale: 1.02, boxShadow: "0 16px 40px -18px color-mix(in srgb, var(--store-primary) 55%, transparent)" }
-          : { scale: 1, boxShadow: "0 10px 28px -20px rgba(15,23,42,0.28)" }
-      }
-      transition={{ type: "spring", stiffness: 380, damping: 26 }}
-      className={`group relative flex h-full min-h-[5.5rem] w-full items-center overflow-hidden rounded-[1.65rem] border p-4 text-start sm:min-h-[6rem] sm:p-5 ${
-        selected
-          ? "border-[color:var(--store-primary)] bg-[color:var(--store-primary)]/[0.1] ring-2 ring-[color:var(--store-primary)]/35"
-          : "border-black/[0.05] bg-white/90 hover:border-black/[0.1] dark:border-white/[0.07] dark:bg-zinc-900/90"
-      } ${locked && !selected ? "cursor-default opacity-60" : "cursor-pointer"}`}
-    >
-      <AnimatePresence>
-        {selected ? (
-          <motion.div
-            key="cat-glow"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            aria-hidden
-            className="pointer-events-none absolute inset-0"
-            style={{
-              background:
-                "radial-gradient(ellipse 80% 70% at 100% 0%, color-mix(in srgb, var(--store-primary) 22%, transparent), transparent 65%)",
-            }}
-          />
-        ) : null}
-      </AnimatePresence>
-      <div className="relative flex w-full items-center gap-3.5">
-        <motion.div
-          animate={selected ? { scale: 1.06, rotate: -4 } : { scale: 1, rotate: 0 }}
-          transition={{ type: "spring", stiffness: 400, damping: 18 }}
-          className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-[1.1rem] text-lg font-black text-white shadow-sm sm:h-14 sm:w-14 sm:text-xl ${
-            selected ? "" : "bg-zinc-900 dark:bg-zinc-100 dark:text-zinc-900"
-          }`}
-          style={selected ? { background: "var(--store-primary)" } : undefined}
-        >
-          {category.icon?.trim() ? (
-            <span className="text-[1.35rem] leading-none">{category.icon.trim()}</span>
-          ) : (
-            initial
-          )}
-        </motion.div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <div className="text-[15px] font-bold leading-snug tracking-tight sm:text-[16px]">
-              {category.name}
-            </div>
-            <AnimatePresence>
-              {selected ? (
-                <motion.span
-                  initial={{ scale: 0.6, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  exit={{ scale: 0.6, opacity: 0 }}
-                  className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[color:var(--store-primary)] px-2 py-0.5 text-[10px] font-bold text-white"
-                >
-                  <Check size={11} strokeWidth={3} />
-                  {locked ? t("قفل", "Locked") : t("انتخاب شد", "Selected")}
-                </motion.span>
-              ) : null}
-            </AnimatePresence>
-          </div>
-        </div>
-        <AnimatePresence>
-          {selected ? (
-            <motion.div
-              initial={{ scale: 0, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0, opacity: 0 }}
-              transition={{ type: "spring", stiffness: 500, damping: 22 }}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[color:var(--store-primary)] text-white shadow-md"
-            >
-              <Check size={16} strokeWidth={3} />
-            </motion.div>
-          ) : null}
-        </AnimatePresence>
-      </div>
-    </motion.button>
-  );
-}
-
-export function CategoryGrid({
-  categories,
-  selectedId,
-  productCounts,
-  onSelect,
-  lockedId,
-}: {
-  categories: StorefrontCategory[];
-  selectedId?: string | null;
-  productCounts?: Record<string, number>;
-  onSelect: (category: StorefrontCategory) => void;
-  lockedId?: string | null;
-}) {
-  return (
-    <div className="grid grid-cols-1 items-stretch gap-3 sm:grid-cols-2">
-      {categories.map((category, index) => (
-        <motion.div
-          key={category.id}
-          className="h-full min-h-0"
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: index * 0.04, duration: 0.28 }}
-        >
-          <CategoryCard
-            category={category}
-            selected={selectedId === category.id}
-            locked={!!lockedId && lockedId !== category.id}
-            onSelect={() => onSelect(category)}
-          />
-        </motion.div>
-      ))}
-    </div>
-  );
-}
-
 export function ProductCard({
   product,
   onSelect,
@@ -379,7 +239,6 @@ export function ProductCard({
   product: StorefrontProduct;
   onSelect: () => void;
   selected?: boolean;
-  /** Store default currency — show one price, prefer this currency. */
   currency?: string | null;
 }) {
   const { formatProductPrice, t } = useStorefrontLocale();
@@ -389,41 +248,16 @@ export function ProductCard({
     <motion.button
       type="button"
       onClick={onSelect}
-      layout
-      whileHover={{ y: -3 }}
+      whileHover={{ y: -2 }}
       whileTap={{ scale: 0.985 }}
-      animate={
+      transition={{ type: "spring", stiffness: 320, damping: 24 }}
+      className={`relative w-full cursor-pointer rounded-[1.75rem] border bg-white p-5 text-start shadow-[0_8px_30px_-18px_rgba(15,23,42,0.28)] transition dark:bg-zinc-900 sm:p-5 ${
         selected
-          ? {
-              scale: 1.015,
-              boxShadow: "0 18px 44px -16px color-mix(in srgb, var(--store-primary) 50%, transparent)",
-            }
-          : { scale: 1, boxShadow: "0 8px 30px -18px rgba(15,23,42,0.28)" }
-      }
-      transition={{ type: "spring", stiffness: 360, damping: 24 }}
-      className={`relative w-full cursor-pointer overflow-hidden rounded-[1.75rem] border bg-white p-5 text-start dark:bg-zinc-900 sm:p-5 ${
-        selected
-          ? "border-[color:var(--store-primary)] ring-2 ring-[color:var(--store-primary)]/40"
+          ? "border-[color:var(--store-primary)] ring-2 ring-[color:var(--store-primary)]/25"
           : "border-black/[0.04] hover:border-black/[0.08] dark:border-white/[0.06]"
       }`}
     >
-      <AnimatePresence>
-        {selected ? (
-          <motion.div
-            key="plan-glow"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            aria-hidden
-            className="pointer-events-none absolute inset-0"
-            style={{
-              background:
-                "radial-gradient(ellipse 90% 80% at 0% 0%, color-mix(in srgb, var(--store-primary) 18%, transparent), transparent 60%)",
-            }}
-          />
-        ) : null}
-      </AnimatePresence>
-      <div className="relative mb-3 flex flex-wrap items-center gap-2">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
         {product.featured ? (
           <span className="inline-flex rounded-full bg-amber-500/15 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-400">
             {t("ویژه", "Featured")}
@@ -434,34 +268,35 @@ export function ProductCard({
             {product.badge}
           </span>
         ) : null}
-        <AnimatePresence>
-          {selected ? (
-            <motion.span
-              initial={{ scale: 0.7, opacity: 0, x: 8 }}
-              animate={{ scale: 1, opacity: 1, x: 0 }}
-              exit={{ scale: 0.7, opacity: 0 }}
-              className="ms-auto inline-flex items-center gap-1 rounded-full bg-[color:var(--store-primary)] px-2.5 py-1 text-[11px] font-bold text-white shadow-sm"
-            >
-              <Check size={12} strokeWidth={3} />
-              {t("انتخاب شد", "Selected")}
-            </motion.span>
-          ) : null}
-        </AnimatePresence>
+        {Array.isArray(product.ipLimitOptions) && product.ipLimitOptions.length === 1 ? (
+          <span className="inline-flex rounded-full bg-sky-500/10 px-2.5 py-1 text-xs font-semibold text-sky-700 dark:text-sky-300">
+            {product.ipLimitOptions[0].label || `${product.ipLimitOptions[0].limitIp} users`}
+          </span>
+        ) : null}
+        {selected ? (
+          <span className="ms-auto inline-flex rounded-full bg-[color:var(--store-primary)] px-2.5 py-1 text-[11px] font-bold text-white">
+            {t("انتخاب شد", "Selected")}
+          </span>
+        ) : null}
       </div>
-      <div className="relative text-lg font-bold">{product.name}</div>
+      <div className="text-lg font-bold">{product.name}</div>
       {product.description ? (
-        <p className="relative mt-2 min-h-10 text-sm text-zinc-500 dark:text-zinc-400">
+        <p
+          className={`mt-2 whitespace-pre-line text-sm leading-relaxed text-zinc-500 dark:text-zinc-400 ${
+            selected ? "" : "line-clamp-3"
+          }`}
+        >
           {product.description}
         </p>
       ) : null}
-      <div className="relative mt-5 space-y-1">
+      <div className="mt-5 space-y-1">
         {price ? (
           <div className="text-2xl font-black text-[color:var(--store-primary)]">{price}</div>
         ) : (
           <div className="text-lg font-bold text-zinc-400">{t("تماس برای قیمت", "Contact for price")}</div>
         )}
       </div>
-      <div className="relative mt-4 space-y-2 text-sm text-zinc-600 dark:text-zinc-400">
+      <div className="mt-4 space-y-2 text-sm text-zinc-600 dark:text-zinc-400">
         <div className="flex justify-between gap-3">
           <span>{t("ترافیک", "Traffic")}</span>
           <span>{formatBytes(product.traffic)}</span>
@@ -473,179 +308,33 @@ export function ProductCard({
           </span>
         </div>
       </div>
-      <AnimatePresence>
-        {selected ? (
-          <motion.div
-            initial={{ scale: 0, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0, opacity: 0 }}
-            transition={{ type: "spring", stiffness: 520, damping: 20 }}
-            className="absolute end-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-[color:var(--store-primary)] text-white shadow-lg"
-          >
-            <Check size={18} strokeWidth={3} />
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
     </motion.button>
   );
 }
 
-/** Compact selectable plan row for portal checkout sheet */
-export function PlanPickRow({
-  product,
-  selected = false,
-  onSelect,
-  currency,
-}: {
-  product: StorefrontProduct;
-  selected?: boolean;
-  onSelect: () => void;
-  currency?: string | null;
-}) {
-  const { formatProductPrice, t } = useStorefrontLocale();
-  const price = formatProductPrice(product, currency) || "—";
-
-  return (
-    <motion.button
-      type="button"
-      onClick={onSelect}
-      layout
-      whileHover={{ y: -2, scale: 1.012 }}
-      whileTap={{ scale: 0.98 }}
-      animate={
-        selected
-          ? {
-              scale: 1.025,
-              boxShadow: "0 16px 40px -14px color-mix(in srgb, var(--store-primary) 58%, transparent)",
-            }
-          : { scale: 1, boxShadow: "0 0 0 transparent" }
-      }
-      transition={{ type: "spring", stiffness: 420, damping: 24 }}
-      className={`relative flex w-full items-center justify-between gap-3 overflow-hidden rounded-[1.35rem] border px-3.5 py-3.5 text-start ${
-        selected
-          ? "border-[color:var(--store-primary)] bg-[color:var(--store-primary)]/[0.12] ring-2 ring-[color:var(--store-primary)]/40"
-          : "border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950"
-      }`}
-    >
-      <AnimatePresence>
-        {selected ? (
-          <motion.div
-            key="row-glow"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            aria-hidden
-            className="pointer-events-none absolute inset-0"
-            style={{
-              background:
-                "radial-gradient(ellipse 80% 100% at 0% 50%, color-mix(in srgb, var(--store-primary) 22%, transparent), transparent 70%)",
-            }}
-          />
-        ) : null}
-      </AnimatePresence>
-      <div className="relative flex min-w-0 flex-1 items-center gap-3">
-        <motion.div
-          animate={selected ? { scale: 1.08 } : { scale: 1 }}
-          transition={{ type: "spring", stiffness: 500, damping: 20 }}
-          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 ${
-            selected
-              ? "border-[color:var(--store-primary)] bg-[color:var(--store-primary)] text-white"
-              : "border-zinc-200 bg-zinc-50 text-transparent dark:border-zinc-700 dark:bg-zinc-900"
-          }`}
-        >
-          <AnimatePresence mode="wait">
-            {selected ? (
-              <motion.span
-                key="on"
-                initial={{ scale: 0, rotate: -50 }}
-                animate={{ scale: 1, rotate: 0 }}
-                exit={{ scale: 0 }}
-                transition={{ type: "spring", stiffness: 560, damping: 18 }}
-              >
-                <Check size={17} strokeWidth={3} className="text-white" />
-              </motion.span>
-            ) : (
-              <motion.span key="off" className="h-2.5 w-2.5 rounded-full bg-zinc-300 dark:bg-zinc-600" />
-            )}
-          </AnimatePresence>
-        </motion.div>
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <div className={`truncate font-semibold ${selected ? "text-[color:var(--store-primary)]" : ""}`}>
-              {product.name}
-            </div>
-            <AnimatePresence>
-              {selected ? (
-                <motion.span
-                  initial={{ opacity: 0, scale: 0.7 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.7 }}
-                  className="shrink-0 rounded-full bg-[color:var(--store-primary)] px-2 py-0.5 text-[10px] font-bold text-white"
-                >
-                  {t("انتخاب شد", "Selected")}
-                </motion.span>
-              ) : null}
-            </AnimatePresence>
-          </div>
-          <div className="mt-0.5 text-xs text-zinc-500">
-            {formatBytes(product.traffic)} · {product.durationDays} {t("روز", "days")}
-          </div>
-        </div>
-      </div>
-      <motion.div
-        animate={selected ? { scale: 1.05 } : { scale: 1 }}
-        className="relative shrink-0 text-sm font-bold text-[color:var(--store-primary)]"
-      >
-        {price}
-      </motion.div>
-    </motion.button>
-  );
-}
-
-export function Stepper({ step, renew = false }: { step: number; renew?: boolean }) {
+export function Stepper({ step }: { step: number }) {
   const { t } = useStorefrontLocale();
-  const labels = renew
-    ? [
-        t("پلن", "Plan"),
-        t("پروفایل", "Profile"),
-        t("پرداخت", "Payment"),
-        t("تأیید", "Confirm"),
-      ]
-    : [
-        t("دسته", "Category"),
-        t("پلن", "Plan"),
-        t("کانفیگ", "Config"),
-        t("پروفایل", "Profile"),
-        t("پرداخت", "Payment"),
-        t("تأیید", "Confirm"),
-      ];
-  // Map absolute checkout step (1..) onto the visible label index
-  const activeIndex = renew
-    ? step === 1
-      ? 0
-      : step === 3
-        ? 1
-        : step === 4
-          ? 2
-          : step >= 5
-            ? 3
-            : Math.max(0, step - 1)
-    : Math.max(0, step - 1);
-
+  const labels = [
+    t("پلن", "Plan"),
+    t("کانفیگ", "Config"),
+    t("پروفایل", "Profile"),
+    t("پرداخت", "Payment"),
+    t("تأیید", "Confirm"),
+  ];
   return (
     <div className="mb-6 flex items-center justify-between gap-1 overflow-x-auto pb-1 text-[10px] font-semibold uppercase tracking-wide sm:mb-8 sm:justify-center sm:gap-2 sm:text-xs">
       {labels.map((label, index) => (
         <div key={label} className="flex shrink-0 items-center gap-1.5 sm:gap-2">
           <div
             className={`flex h-7 w-7 items-center justify-center rounded-full border transition-colors sm:h-8 sm:w-8 ${
-              index <= activeIndex
+              index + 1 <= step
                 ? "border-[color:var(--store-primary)] bg-[color:var(--store-primary)] text-white"
                 : "border-zinc-200 bg-white text-zinc-400 dark:border-zinc-800 dark:bg-zinc-900"
             }`}
           >
             {index + 1}
           </div>
-          <span className={index <= activeIndex ? "text-zinc-800 dark:text-zinc-200" : "text-zinc-400"}>
+          <span className={index + 1 <= step ? "text-zinc-800 dark:text-zinc-200" : "text-zinc-400"}>
             {label}
           </span>
         </div>
@@ -776,7 +465,8 @@ export function ServiceCard({
   onHide?: () => void;
   hiding?: boolean;
 }) {
-  const { t } = useStorefrontLocale();
+  const { t, isFa } = useStorefrontLocale();
+  const isEylan = service.providerId === "eylan";
   const used = Number(service.up) + Number(service.down);
   const total = Number(service.total);
   const pct = total > 0 ? Math.min(100, (used / total) * 100) : 0;
@@ -784,6 +474,11 @@ export function ServiceCard({
   const [copied, setCopied] = useState(false);
   const [showQr, setShowQr] = useState(false);
   const qrValue = String(subLink || "").trim();
+  // Belt-and-suspenders: id / deliveryHint even if older API omitted providerId.
+  const treatAsEylan =
+    isEylan ||
+    service.deliveryHint === "eylan_download" ||
+    String(service.id || "").startsWith("eylan:");
 
   const statusTone =
     service.status === "active" || service.status === "pending"
@@ -806,6 +501,162 @@ export function ServiceCard({
   const barColor =
     pct >= 90 ? "bg-rose-500" : pct >= 75 ? "bg-amber-500" : "bg-emerald-500";
 
+  const planLabelFa = (() => {
+    if (!service.planLabel) return null;
+    return service.planLabel
+      .replace("Unlimited", "نامحدود")
+      .replace("No expiry", "بدون انقضا")
+      .replace(/(\d+)\s*days?/i, "$1 روز")
+      .replace("1 month", "۱ ماهه");
+  })();
+
+  if (treatAsEylan) {
+    return (
+      <motion.div
+        {...fadeUp}
+        transition={{ duration: 0.35 }}
+        className="overflow-hidden rounded-2xl border border-violet-200/80 bg-gradient-to-b from-violet-50/80 to-white shadow-[0_8px_30px_rgba(91,33,182,0.06)] dark:border-violet-900/50 dark:from-violet-950/40 dark:to-zinc-950"
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-violet-100/80 px-5 py-4 dark:border-violet-900/40">
+          <div className="min-w-0">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <span className="truncate text-base font-semibold tracking-tight">
+                {service.productName || service.remark || service.email}
+              </span>
+              <span className="rounded-full bg-violet-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-700 dark:text-violet-300">
+                Eylan
+              </span>
+            </div>
+            <div className="mt-1 font-mono text-xs text-zinc-500" dir="ltr">
+              {service.email}
+            </div>
+            {(isFa ? planLabelFa : service.planLabel) ? (
+              <div className="mt-2 inline-flex rounded-full bg-white/80 px-2.5 py-1 text-xs font-semibold text-violet-800 ring-1 ring-violet-200 dark:bg-zinc-900 dark:text-violet-200 dark:ring-violet-800">
+                {isFa ? planLabelFa : service.planLabel}
+              </div>
+            ) : null}
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${statusTone}`}>
+              {statusLabel}
+            </span>
+            {onHide ? (
+              <button
+                type="button"
+                disabled={hiding}
+                onClick={onHide}
+                className="rounded-lg px-2 py-1 text-[10px] font-semibold text-zinc-400 transition hover:bg-zinc-100 hover:text-rose-500 disabled:opacity-50 dark:hover:bg-zinc-800"
+              >
+                {t("حذف از لیست", "Hide")}
+              </button>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="space-y-3 px-5 py-4">
+          <p className="text-sm leading-relaxed text-zinc-600 dark:text-zinc-300">
+            {t(
+              "لینک ساب را باز کنید و فایل کانفیگ (OpenVPN / WireGuard و …) را دانلود کنید.",
+              "Open the subscription link and download your OpenVPN / WireGuard config files.",
+            )}
+          </p>
+          <div className="flex items-end justify-between gap-3">
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-400">
+                {t("ترافیک", "Traffic")}
+              </div>
+              <div className="mt-1 text-lg font-semibold tabular-nums">
+                {formatBytes(used)}
+                <span className="ms-1 text-sm font-normal text-zinc-400">
+                  / {total > 0 ? formatBytes(total) : t("نامحدود", "Unlimited")}
+                </span>
+              </div>
+            </div>
+            <div className="text-end text-xs text-zinc-500">
+              {t("انقضا", "Expires")}: {formatExpiry(service.expiryTime)}
+            </div>
+          </div>
+          {total > 0 ? (
+            <div className="h-1.5 overflow-hidden rounded-full bg-violet-100 dark:bg-violet-950">
+              <div className={`h-full rounded-full ${barColor}`} style={{ width: `${pct}%` }} />
+            </div>
+          ) : null}
+          {qrValue ? (
+            <code className="block break-all rounded-xl bg-white/90 px-3 py-2 font-mono text-[11px] text-zinc-600 ring-1 ring-violet-100 dark:bg-zinc-900 dark:text-zinc-300 dark:ring-violet-900" dir="ltr">
+              {qrValue}
+            </code>
+          ) : null}
+        </div>
+
+        <div className="flex flex-col gap-2 border-t border-violet-100/80 px-5 py-4 dark:border-violet-900/40">
+          <PrimaryButton onClick={onOpen} disabled={!qrValue}>
+            {t("📥 باز کردن لینک ساب / دانلود", "📥 Open sub & download")}
+          </PrimaryButton>
+          <div className="grid grid-cols-3 gap-2">
+            <SecondaryButton
+              onClick={() => qrValue && setShowQr(true)}
+              disabled={!qrValue}
+            >
+              <span className="inline-flex items-center justify-center gap-1">
+                <QrCode size={14} />
+                QR
+              </span>
+            </SecondaryButton>
+            <SecondaryButton
+              onClick={async () => {
+                onCopy();
+                setCopied(true);
+                window.setTimeout(() => setCopied(false), 1600);
+              }}
+              disabled={!qrValue}
+            >
+              {copied ? t("کپی شد", "Copied") : t("کپی لینک", "Copy")}
+            </SecondaryButton>
+            <SecondaryButton onClick={onRenew}>{t("تمدید", "Renew")}</SecondaryButton>
+          </div>
+        </div>
+
+        {showQr && qrValue && typeof document !== "undefined"
+          ? createPortal(
+              <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50 p-4">
+                <button
+                  type="button"
+                  className="absolute inset-0 cursor-pointer"
+                  aria-label={t("بستن", "Close")}
+                  onClick={() => setShowQr(false)}
+                />
+                <div className="relative z-10 w-full max-w-sm rounded-3xl bg-white p-5 shadow-2xl dark:bg-zinc-950">
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-base font-bold">{t("QR لینک ساب", "Subscription QR")}</div>
+                      <div className="mt-0.5 truncate text-xs text-zinc-500">
+                        {service.productName || service.email}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowQr(false)}
+                      className="rounded-xl border border-zinc-200 p-2 dark:border-zinc-700"
+                      aria-label={t("بستن", "Close")}
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                  <div className="mx-auto flex w-fit rounded-2xl bg-white p-3 ring-1 ring-zinc-200">
+                    <QRCode value={qrValue} size={200} />
+                  </div>
+                  <p className="mt-3 break-all text-center font-mono text-[11px] text-zinc-500" dir="ltr">
+                    {qrValue}
+                  </p>
+                </div>
+              </div>,
+              document.body,
+            )
+          : null}
+      </motion.div>
+    );
+  }
+
   return (
     <motion.div
       {...fadeUp}
@@ -814,8 +665,10 @@ export function ServiceCard({
     >
       <div className="flex items-start justify-between gap-3 border-b border-zinc-100 px-5 py-4 dark:border-zinc-800">
         <div className="min-w-0">
-          <div className="truncate text-base font-semibold tracking-tight">
-            {service.remark || service.email}
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <span className="truncate text-base font-semibold tracking-tight">
+              {service.remark || service.email}
+            </span>
           </div>
           <div className="mt-1 text-xs text-zinc-400">
             {t("انقضا", "Expires")}: {formatExpiry(service.expiryTime)}
@@ -957,9 +810,7 @@ export function OrderCard({
   const label = order.status.replaceAll("_", " ");
   const cur = String(order.currency || "").toUpperCase();
   const isToman = ["TOMAN", "IRT", "IRR", "TMN"].includes(cur);
-  const amount = isToman
-    ? formatToman(order.amount)
-    : formatUsd(order.amount);
+  const amount = isToman ? formatToman(order.amount) : formatUsd(order.amount);
 
   return (
     <div className="rounded-2xl border border-zinc-200/90 bg-white p-4 transition hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700">

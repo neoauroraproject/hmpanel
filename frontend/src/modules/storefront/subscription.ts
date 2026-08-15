@@ -3,8 +3,14 @@
 import { portalPathForSlug } from "./store-slug";
 
 /** Same System Sub link as Clients page: /s/{subId} */
-export function buildSubscriptionLink(subId?: string | null, fallback?: string | null) {
+export function buildSubscriptionLink(
+  subId?: string | null,
+  fallback?: string | null,
+  nativeUrl?: string | null,
+) {
+  if (nativeUrl && /^https?:\/\//i.test(nativeUrl)) return nativeUrl;
   const key = subId || fallback;
+  if (key && /^https?:\/\//i.test(key)) return key;
   if (!key) return "";
   if (typeof window === "undefined") return `/s/${key}`;
   return `${window.location.origin}/s/${key}`;
