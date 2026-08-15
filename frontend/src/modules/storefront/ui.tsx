@@ -230,6 +230,145 @@ export function WelcomeHero({
   );
 }
 
+export function CategoryCard({
+  category,
+  selected = false,
+  onSelect,
+  locked = false,
+}: {
+  category: StorefrontCategory;
+  productCount?: number;
+  selected?: boolean;
+  onSelect: () => void;
+  locked?: boolean;
+}) {
+  const { t } = useStorefrontLocale();
+  const initial = (category.name || "?").trim().slice(0, 1).toUpperCase();
+
+  return (
+    <motion.button
+      type="button"
+      onClick={onSelect}
+      disabled={locked && !selected}
+      layout
+      whileHover={locked ? undefined : { y: -3, scale: 1.01 }}
+      whileTap={locked ? undefined : { scale: 0.98 }}
+      animate={
+        selected
+          ? { scale: 1.02, boxShadow: "0 16px 40px -18px color-mix(in srgb, var(--store-primary) 55%, transparent)" }
+          : { scale: 1, boxShadow: "0 10px 28px -20px rgba(15,23,42,0.28)" }
+      }
+      transition={{ type: "spring", stiffness: 380, damping: 26 }}
+      className={`group relative flex h-full min-h-[5.5rem] w-full items-center overflow-hidden rounded-[1.65rem] border p-4 text-start sm:min-h-[6rem] sm:p-5 ${
+        selected
+          ? "border-[color:var(--store-primary)] bg-[color:var(--store-primary)]/[0.1] ring-2 ring-[color:var(--store-primary)]/35"
+          : "border-black/[0.05] bg-white/90 hover:border-black/[0.1] dark:border-white/[0.07] dark:bg-zinc-900/90"
+      } ${locked && !selected ? "cursor-default opacity-60" : "cursor-pointer"}`}
+    >
+      <AnimatePresence>
+        {selected ? (
+          <motion.div
+            key="cat-glow"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            aria-hidden
+            className="pointer-events-none absolute inset-0"
+            style={{
+              background:
+                "radial-gradient(ellipse 80% 70% at 100% 0%, color-mix(in srgb, var(--store-primary) 22%, transparent), transparent 65%)",
+            }}
+          />
+        ) : null}
+      </AnimatePresence>
+      <div className="relative flex w-full items-center gap-3.5">
+        <motion.div
+          animate={selected ? { scale: 1.06, rotate: -4 } : { scale: 1, rotate: 0 }}
+          transition={{ type: "spring", stiffness: 400, damping: 18 }}
+          className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-[1.1rem] text-lg font-black text-white shadow-sm sm:h-14 sm:w-14 sm:text-xl ${
+            selected ? "" : "bg-zinc-900 dark:bg-zinc-100 dark:text-zinc-900"
+          }`}
+          style={selected ? { background: "var(--store-primary)" } : undefined}
+        >
+          {category.icon?.trim() ? (
+            <span className="text-[1.35rem] leading-none">{category.icon.trim()}</span>
+          ) : (
+            initial
+          )}
+        </motion.div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <div className="text-[15px] font-bold leading-snug tracking-tight sm:text-[16px]">
+              {category.name}
+            </div>
+            <AnimatePresence>
+              {selected ? (
+                <motion.span
+                  initial={{ scale: 0.6, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  exit={{ scale: 0.6, opacity: 0 }}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[color:var(--store-primary)] px-2 py-0.5 text-[10px] font-bold text-white"
+                >
+                  <Check size={11} strokeWidth={3} />
+                  {locked ? t("قفل", "Locked") : t("انتخاب شد", "Selected")}
+                </motion.span>
+              ) : null}
+            </AnimatePresence>
+          </div>
+        </div>
+        <AnimatePresence>
+          {selected ? (
+            <motion.div
+              initial={{ scale: 0, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 500, damping: 22 }}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[color:var(--store-primary)] text-white shadow-md"
+            >
+              <Check size={16} strokeWidth={3} />
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+      </div>
+    </motion.button>
+  );
+}
+
+export function CategoryGrid({
+  categories,
+  selectedId,
+  productCounts,
+  onSelect,
+  lockedId,
+}: {
+  categories: StorefrontCategory[];
+  selectedId?: string | null;
+  productCounts?: Record<string, number>;
+  onSelect: (category: StorefrontCategory) => void;
+  lockedId?: string | null;
+}) {
+  return (
+    <div className="grid grid-cols-1 items-stretch gap-3 sm:grid-cols-2">
+      {categories.map((category, index) => (
+        <motion.div
+          key={category.id}
+          className="h-full min-h-0"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: index * 0.04, duration: 0.28 }}
+        >
+          <CategoryCard
+            category={category}
+            selected={selectedId === category.id}
+            locked={!!lockedId && lockedId !== category.id}
+            onSelect={() => onSelect(category)}
+          />
+        </motion.div>
+      ))}
+    </div>
+  );
+}
+
 export function ProductCard({
   product,
   onSelect,
@@ -308,6 +447,117 @@ export function ProductCard({
           </span>
         </div>
       </div>
+    </motion.button>
+  );
+}
+
+export function PlanPickRow({
+  product,
+  selected = false,
+  onSelect,
+  currency,
+}: {
+  product: StorefrontProduct;
+  selected?: boolean;
+  onSelect: () => void;
+  currency?: string | null;
+}) {
+  const { formatProductPrice, t } = useStorefrontLocale();
+  const price = formatProductPrice(product, currency) || "—";
+
+  return (
+    <motion.button
+      type="button"
+      onClick={onSelect}
+      layout
+      whileHover={{ y: -2, scale: 1.012 }}
+      whileTap={{ scale: 0.98 }}
+      animate={
+        selected
+          ? {
+              scale: 1.025,
+              boxShadow: "0 16px 40px -14px color-mix(in srgb, var(--store-primary) 58%, transparent)",
+            }
+          : { scale: 1, boxShadow: "0 0 0 transparent" }
+      }
+      transition={{ type: "spring", stiffness: 420, damping: 24 }}
+      className={`relative flex w-full items-center justify-between gap-3 overflow-hidden rounded-[1.35rem] border px-3.5 py-3.5 text-start ${
+        selected
+          ? "border-[color:var(--store-primary)] bg-[color:var(--store-primary)]/[0.12] ring-2 ring-[color:var(--store-primary)]/40"
+          : "border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950"
+      }`}
+    >
+      <AnimatePresence>
+        {selected ? (
+          <motion.div
+            key="row-glow"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            aria-hidden
+            className="pointer-events-none absolute inset-0"
+            style={{
+              background:
+                "radial-gradient(ellipse 80% 100% at 0% 50%, color-mix(in srgb, var(--store-primary) 22%, transparent), transparent 70%)",
+            }}
+          />
+        ) : null}
+      </AnimatePresence>
+      <div className="relative flex min-w-0 flex-1 items-center gap-3">
+        <motion.div
+          animate={selected ? { scale: 1.08 } : { scale: 1 }}
+          transition={{ type: "spring", stiffness: 500, damping: 20 }}
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 ${
+            selected
+              ? "border-[color:var(--store-primary)] bg-[color:var(--store-primary)] text-white"
+              : "border-zinc-200 bg-zinc-50 text-transparent dark:border-zinc-700 dark:bg-zinc-900"
+          }`}
+        >
+          <AnimatePresence mode="wait">
+            {selected ? (
+              <motion.span
+                key="on"
+                initial={{ scale: 0, rotate: -50 }}
+                animate={{ scale: 1, rotate: 0 }}
+                exit={{ scale: 0 }}
+                transition={{ type: "spring", stiffness: 560, damping: 18 }}
+              >
+                <Check size={17} strokeWidth={3} className="text-white" />
+              </motion.span>
+            ) : (
+              <motion.span key="off" className="h-2.5 w-2.5 rounded-full bg-zinc-300 dark:bg-zinc-600" />
+            )}
+          </AnimatePresence>
+        </motion.div>
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <div className={`truncate font-semibold ${selected ? "text-[color:var(--store-primary)]" : ""}`}>
+              {product.name}
+            </div>
+            <AnimatePresence>
+              {selected ? (
+                <motion.span
+                  initial={{ opacity: 0, scale: 0.7 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.7 }}
+                  className="shrink-0 rounded-full bg-[color:var(--store-primary)] px-2 py-0.5 text-[10px] font-bold text-white"
+                >
+                  {t("انتخاب شد", "Selected")}
+                </motion.span>
+              ) : null}
+            </AnimatePresence>
+          </div>
+          <div className="mt-0.5 text-xs text-zinc-500">
+            {formatBytes(product.traffic)} · {product.durationDays} {t("روز", "days")}
+          </div>
+        </div>
+      </div>
+      <motion.div
+        animate={selected ? { scale: 1.05 } : { scale: 1 }}
+        className="relative shrink-0 text-sm font-bold text-[color:var(--store-primary)]"
+      >
+        {price}
+      </motion.div>
     </motion.button>
   );
 }
