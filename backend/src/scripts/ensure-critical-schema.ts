@@ -280,6 +280,66 @@ export async function ensureCriticalSchema(prisma: PrismaClient): Promise<void> 
     )`,
     `CREATE UNIQUE INDEX IF NOT EXISTS "StoreAddonConnection_adminId_providerId_key" ON "StoreAddonConnection"("adminId", "providerId")`,
     `CREATE INDEX IF NOT EXISTS "StoreAddonConnection_storeId_idx" ON "StoreAddonConnection"("storeId")`,
+
+    // Premium 1.8.73+: name pools / grants / referral / order.isTest (bundle-only updates)
+    `ALTER TABLE "StoreOrder" ADD COLUMN IF NOT EXISTS "isTest" BOOLEAN NOT NULL DEFAULT false`,
+    `CREATE TABLE IF NOT EXISTS "ClientNamePool" (
+      "id" TEXT NOT NULL,
+      "adminId" TEXT NOT NULL,
+      "name" TEXT NOT NULL,
+      "prefix" TEXT NOT NULL,
+      "separator" TEXT NOT NULL DEFAULT '-',
+      "startNumber" INTEGER NOT NULL DEFAULT 1,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "ClientNamePool_pkey" PRIMARY KEY ("id")
+    )`,
+    `CREATE INDEX IF NOT EXISTS "ClientNamePool_adminId_idx" ON "ClientNamePool"("adminId")`,
+    `CREATE TABLE IF NOT EXISTS "StoreAddonGrant" (
+      "id" TEXT NOT NULL,
+      "providerId" TEXT NOT NULL,
+      "granterAdminId" TEXT NOT NULL,
+      "granteeAdminId" TEXT NOT NULL,
+      "enabled" BOOLEAN NOT NULL DEFAULT true,
+      "trafficQuotaBytes" BIGINT NOT NULL DEFAULT 0,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "StoreAddonGrant_pkey" PRIMARY KEY ("id")
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS "StoreAddonGrant_providerId_granteeAdminId_key"
+      ON "StoreAddonGrant"("providerId", "granteeAdminId")`,
+    `CREATE INDEX IF NOT EXISTS "StoreAddonGrant_granterAdminId_idx" ON "StoreAddonGrant"("granterAdminId")`,
+    `CREATE INDEX IF NOT EXISTS "StoreAddonGrant_granteeAdminId_idx" ON "StoreAddonGrant"("granteeAdminId")`,
+    `CREATE TABLE IF NOT EXISTS "StoreReferralReward" (
+      "id" TEXT NOT NULL,
+      "adminId" TEXT NOT NULL,
+      "enabled" BOOLEAN NOT NULL DEFAULT true,
+      "trigger" TEXT NOT NULL DEFAULT 'join',
+      "minCount" INTEGER NOT NULL DEFAULT 3,
+      "discountType" TEXT NOT NULL DEFAULT 'percent',
+      "discountValue" DOUBLE PRECISION NOT NULL DEFAULT 10,
+      "discountValueUsd" DOUBLE PRECISION NOT NULL DEFAULT 0,
+      "discountValueToman" DOUBLE PRECISION NOT NULL DEFAULT 0,
+      "productIds" JSONB DEFAULT '[]',
+      "categoryIds" JSONB DEFAULT '[]',
+      "telegramMessage" TEXT,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "StoreReferralReward_pkey" PRIMARY KEY ("id")
+    )`,
+    `CREATE INDEX IF NOT EXISTS "StoreReferralReward_adminId_enabled_idx"
+      ON "StoreReferralReward"("adminId", "enabled")`,
+    `CREATE TABLE IF NOT EXISTS "StoreReferralRewardGrant" (
+      "id" TEXT NOT NULL,
+      "rewardId" TEXT NOT NULL,
+      "customerId" TEXT NOT NULL,
+      "couponId" TEXT NOT NULL,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "StoreReferralRewardGrant_pkey" PRIMARY KEY ("id")
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS "StoreReferralRewardGrant_rewardId_customerId_key"
+      ON "StoreReferralRewardGrant"("rewardId", "customerId")`,
+    `CREATE INDEX IF NOT EXISTS "StoreReferralRewardGrant_customerId_idx" ON "StoreReferralRewardGrant"("customerId")`,
   ];
 
   for (const sql of statements) {
