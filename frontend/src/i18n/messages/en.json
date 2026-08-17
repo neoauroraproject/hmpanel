@@ -869,6 +869,7 @@
     "autoUpdateDisabledHint": "Docker socket is not mounted. Update manually:",
     "autoUpdateDisabledStep": "Run on the host, then reload this page.",
     "upToDate": "You are on the latest version",
+    "checkAgain": "Check again",
     "sslModalTitle": "SSL Manager",
     "sslModalSubtitle": "Configure HTTPS access and certificates",
     "sslLoadingState": "Loading SSL status…",

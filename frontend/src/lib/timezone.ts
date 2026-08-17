@@ -39,9 +39,13 @@ export function resolveDateLocale(
   return isFa ? "fa-IR" : "en-GB";
 }
 
-export type FormatInTzOptions = Intl.DateTimeFormatOptions & {
+/**
+ * Note: use `displayCalendar` (not Intl's `calendar`) to avoid clashing with
+ * `Intl.DateTimeFormatOptions.calendar: string`.
+ */
+export type FormatInTzOptions = Omit<Intl.DateTimeFormatOptions, "calendar"> & {
   locale?: string;
-  calendar?: DisplayCalendar;
+  displayCalendar?: DisplayCalendar;
   uiLocale?: string | null;
 };
 
@@ -54,12 +58,12 @@ export function formatInTz(
   if (Number.isNaN(d.getTime())) return String(value);
   const {
     locale: explicitLocale,
-    calendar = getDisplayCalendar(),
+    displayCalendar = getDisplayCalendar(),
     uiLocale,
     ...fmt
   } = options;
   const locale =
-    explicitLocale || resolveDateLocale(calendar, uiLocale ?? undefined);
+    explicitLocale || resolveDateLocale(displayCalendar, uiLocale ?? undefined);
   try {
     return d.toLocaleString(locale, { timeZone, ...fmt });
   } catch {
@@ -80,7 +84,7 @@ export function formatClockInTz(
     minute: "2-digit",
     hour12: false,
     // Clocks stay Gregorian numerals in panel chrome
-    calendar: "gregorian",
+    displayCalendar: "gregorian",
     locale: "en-GB",
   });
 }

@@ -77,6 +77,22 @@ export class SettingsService {
   private cachedUpdateResult: any = null;
   private lastUpdateCheckTime: number = 0;
 
+  private pickNewerSemver(a?: string | null, b?: string | null): string | null {
+    const semver = require('semver');
+    const clean = (v?: string | null) =>
+      String(v || '')
+        .trim()
+        .replace(/^v/, '');
+    const ca = clean(a);
+    const cb = clean(b);
+    const va = semver.valid(ca);
+    const vb = semver.valid(cb);
+    if (va && vb) return semver.gte(va, vb) ? va : vb;
+    if (va) return va;
+    if (vb) return vb;
+    return null;
+  }
+
   async checkUpdate() {
     try {
       const axios = require('axios');
@@ -84,53 +100,85 @@ export class SettingsService {
       const fs = require('fs');
 
       const now = Date.now();
-      // Cache for 1 hour to prevent GitHub API rate limits
-      if (this.cachedUpdateResult && now - this.lastUpdateCheckTime < 3600000) {
+      // Cache for 5 minutes (was 1h) so Settings refresh sees new releases sooner
+      if (this.cachedUpdateResult && now - this.lastUpdateCheckTime < 300_000) {
         return this.cachedUpdateResult;
       }
 
-      const response = await axios.get(
-        'https://api.github.com/repos/neoauroraproject/hmpanel/releases/latest',
-        {
-          headers: { 'User-Agent': 'HMPanel' },
-          timeout: 5000,
-        },
-      );
-      const latestVersion = response.data.tag_name;
-      const currentVersion = this.getCurrentVersion();
+      const headers = { 'User-Agent': 'HMPanel' };
+      let releaseVersion: string | null = null;
+      let mainVersion: string | null = null;
 
-      const latestClean = latestVersion.replace(/^v/, '');
-      const currentClean = currentVersion.replace(/^v/, '');
+      try {
+        const response = await axios.get(
+          'https://api.github.com/repos/neoauroraproject/hmpanel/releases/latest',
+          { headers, timeout: 8000 },
+        );
+        releaseVersion = response.data?.tag_name || null;
+      } catch (e: any) {
+        console.warn('checkUpdate: releases/latest failed:', e?.message || e);
+      }
+
+      // Same source hm update uses — VERSION on main tracks shipping image.
+      try {
+        const verRes = await axios.get(
+          'https://raw.githubusercontent.com/neoauroraproject/hmpanel/main/VERSION',
+          { headers, timeout: 8000, responseType: 'text' },
+        );
+        mainVersion = String(verRes.data || '')
+          .trim()
+          .replace(/\r/g, '');
+      } catch (e: any) {
+        console.warn('checkUpdate: main VERSION failed:', e?.message || e);
+      }
+
+      const latestClean = this.pickNewerSemver(releaseVersion, mainVersion);
+      const currentVersion = this.getCurrentVersion();
+      const currentClean = String(currentVersion || '')
+        .trim()
+        .replace(/^v/, '');
 
       const hasUpdate =
-        semver.valid(latestClean) && semver.valid(currentClean)
-          ? semver.gt(latestClean, currentClean)
-          : false;
+        !!latestClean &&
+        !!semver.valid(currentClean) &&
+        semver.gt(latestClean, currentClean);
 
       let canAutoUpdate = false;
       try {
-        if (fs.existsSync('/var/run/docker.sock')) {
+        if (
+          fs.existsSync('/var/run/docker.sock') ||
+          fs.existsSync('/run/docker.sock')
+        ) {
           canAutoUpdate = true;
         }
-      } catch (e) {
+      } catch {
         canAutoUpdate = false;
       }
+
+      const latestVersion = latestClean
+        ? latestClean.startsWith('v')
+          ? latestClean
+          : `v${latestClean}`
+        : releaseVersion || mainVersion || 'unknown';
 
       const result = {
         hasUpdate,
         latestVersion,
         currentVersion,
         canAutoUpdate,
+        sources: {
+          release: releaseVersion,
+          main: mainVersion,
+        },
       };
 
       this.cachedUpdateResult = result;
       this.lastUpdateCheckTime = now;
 
       return result;
-    } catch (error) {
-      console.error('Failed to check for updates:', error.message);
+    } catch (error: any) {
+      console.error('Failed to check for updates:', error?.message || error);
 
-      // If we have a cached result, return it on failure
       if (this.cachedUpdateResult) {
         return this.cachedUpdateResult;
       }
@@ -144,6 +192,12 @@ export class SettingsService {
     }
   }
 
+  /** Force next checkUpdate to hit the network (e.g. before starting update). */
+  clearUpdateCache() {
+    this.cachedUpdateResult = null;
+    this.lastUpdateCheckTime = 0;
+  }
+
   async updatePanel() {
     const { promisify } = require('util');
     const { exec } = require('child_process');
@@ -152,6 +206,7 @@ export class SettingsService {
 
     try {
       // 1. Check if update is actually needed to prevent abuse
+      this.clearUpdateCache();
       const updateStatus = await this.checkUpdate();
       if (
         !updateStatus.hasUpdate &&

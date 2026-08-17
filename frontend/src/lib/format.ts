@@ -109,10 +109,12 @@ export function applyDisplayCalendar(cal: string | null | undefined) {
   setTzCalendar(cal);
 }
 
-function dateFmtOpts(extra: Intl.DateTimeFormatOptions = {}) {
+function dateFmtOpts(
+  extra: Omit<Intl.DateTimeFormatOptions, "calendar"> = {},
+) {
   const ui = resolveUiLocale();
   return {
-    calendar: getDisplayCalendar(),
+    displayCalendar: getDisplayCalendar(),
     uiLocale: ui,
     ...extra,
   };

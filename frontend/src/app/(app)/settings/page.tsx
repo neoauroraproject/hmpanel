@@ -630,10 +630,12 @@ function UpdateCard() {
   const [updateCompleted, setUpdateCompleted] = useState(false);
   const [updateFailed, setUpdateFailed] = useState(false);
 
-  const { data: updateInfo, isLoading } = useQuery({
+  const { data: updateInfo, isLoading, refetch } = useQuery({
     queryKey: ['check-update'],
     queryFn: async () => (await api.get("/settings/check-update")).data,
-    refetchInterval: 1000 * 60 * 60, // Check every hour
+    refetchInterval: 1000 * 60 * 5,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   });
 
   const pollLogs = async () => {
@@ -753,10 +755,17 @@ function UpdateCard() {
   }
 
   return (
-    <div className="mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-800/60">
+    <div className="mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-800/60 space-y-2">
       <p className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
         <Shield size={14} /> {t("settings.upToDate")}
       </p>
+      <button
+        type="button"
+        onClick={() => refetch()}
+        className="text-xs text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 underline-offset-2 hover:underline"
+      >
+        {t("settings.checkAgain")}
+      </button>
     </div>
   );
 }

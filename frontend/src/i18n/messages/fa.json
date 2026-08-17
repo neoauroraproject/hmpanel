@@ -869,6 +869,7 @@
     "autoUpdateDisabledHint": "سوکت Docker متصل نیست. به‌صورت دستی به‌روزرسانی کنید:",
     "autoUpdateDisabledStep": "روی میزبان اجرا کنید، سپس این صفحه را تازه کنید.",
     "upToDate": "آخرین نسخه را دارید",
+    "checkAgain": "بررسی مجدد",
     "sslModalTitle": "مدیریت SSL",
     "sslModalSubtitle": "پیکربندی HTTPS و گواهی‌ها",
     "sslLoadingState": "در حال بارگذاری وضعیت SSL…",
