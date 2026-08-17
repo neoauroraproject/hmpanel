@@ -181,6 +181,10 @@ model Admin {
   storeCoupons     StoreCoupon[]
   storeIpLimits    StoreIpLimit[]
   clientTemplates  ClientTemplate[]
+  clientNamePools  ClientNamePool[]
+  storeAddonGrantsGiven    StoreAddonGrant[]      @relation("AddonGranter")
+  storeAddonGrantsReceived StoreAddonGrant[]      @relation("AddonGrantee")
+  storeReferralRewards     StoreReferralReward[]
   Brand            Brand[]
   operationQueues  OperationQueue[]
   moduleAssignments AdminModuleAssignment[]
@@ -689,6 +693,22 @@ model ProductTemplate {
   @@index([adminId])
 }
 
+// Reusable username sequence (prefix + start) shared by ClientTemplates
+model ClientNamePool {
+  id          String   @id @default(uuid())
+  adminId     String
+  name        String
+  prefix      String
+  separator   String   @default("-")
+  startNumber Int      @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  admin Admin @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([adminId])
+}
+
 // Quick-create presets used on the Clients page (not store products)
 model ClientTemplate {
   id            String   @id @default(uuid())
@@ -712,6 +732,25 @@ model ClientTemplate {
   admin Admin @relation(fields: [adminId], references: [id], onDelete: Cascade)
 
   @@index([adminId])
+}
+
+/// Super-admin shares an addon (e.g. Eylan) API with a reseller + traffic quota.
+model StoreAddonGrant {
+  id                 String   @id @default(uuid())
+  providerId         String
+  granterAdminId     String
+  granteeAdminId     String
+  enabled            Boolean  @default(true)
+  trafficQuotaBytes  BigInt   @default(0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  granter Admin @relation("AddonGranter", fields: [granterAdminId], references: [id], onDelete: Cascade)
+  grantee Admin @relation("AddonGrantee", fields: [granteeAdminId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, granteeAdminId])
+  @@index([granterAdminId])
+  @@index([granteeAdminId])
 }
 
 model StoreProduct {
@@ -789,6 +828,7 @@ model StoreCustomer {
   wallet        StoreWalletAccount?
   couponRedemptions StoreCouponRedemption[]
   walletDeposits StoreWalletDeposit[]
+  referralRewardGrants StoreReferralRewardGrant[]
 
   @@unique([adminId, telegramUserId])
   @@index([adminId])
@@ -881,6 +921,8 @@ model StoreOrder {
   telegramAdminHasPhoto   Boolean @default(false)
   /// Plugin delivery snapshot: { providerId, username, subUrl, subToken, renewOfOrderId }
   fulfillment    Json?
+  /// Snapshot of product.isTest at checkout (survives product archive).
+  isTest         Boolean          @default(false)
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
 
@@ -1017,9 +1059,49 @@ model StoreCoupon {
   admin       Admin                  @relation(fields: [adminId], references: [id], onDelete: Cascade)
   orders      StoreOrder[]
   redemptions StoreCouponRedemption[]
+  referralRewardGrants StoreReferralRewardGrant[]
 
   @@unique([adminId, code])
   @@index([adminId, enabled])
+}
+
+/// Auto-issue a unique coupon after N referral joins or purchases.
+model StoreReferralReward {
+  id                   String   @id @default(uuid())
+  adminId              String
+  enabled              Boolean  @default(true)
+  /// join | purchase
+  trigger              String   @default("join")
+  minCount             Int      @default(3)
+  discountType         String   @default("percent")
+  discountValue        Float    @default(10)
+  discountValueUsd     Float    @default(0)
+  discountValueToman   Float    @default(0)
+  productIds           Json?    @default("[]")
+  categoryIds          Json?    @default("[]")
+  telegramMessage      String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  admin  Admin                     @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  grants StoreReferralRewardGrant[]
+
+  @@index([adminId, enabled])
+}
+
+model StoreReferralRewardGrant {
+  id         String   @id @default(uuid())
+  rewardId   String
+  customerId String
+  couponId   String
+  createdAt  DateTime @default(now())
+
+  reward   StoreReferralReward @relation(fields: [rewardId], references: [id], onDelete: Cascade)
+  customer StoreCustomer       @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  coupon   StoreCoupon         @relation(fields: [couponId], references: [id], onDelete: Restrict)
+
+  @@unique([rewardId, customerId])
+  @@index([customerId])
 }
 
 /// Store-wide concurrent IP / user-limit catalog (products multi-select)
