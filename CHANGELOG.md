@@ -8,6 +8,15 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [1.8.30] - 2026-08-17
+
+### Fixed
+- **Premium update 502 loop:** Settings no longer auto-calls Reload plugins when the bundle fails to boot. A failed premium bootstrap keeps the panel in Community fallback instead of `process.exit` looping `/api/health`.
+- **Unsafe bundle install:** premium bundles that declare `minPanelVersion` are rejected until `hm update` brings the panel image high enough.
+
+### Changed
+- Reload plugins is a manual button only. After Update bundle the backend still restarts once to load the new files.
+
 ## [1.8.25] - 2026-08-07
 
 ### Fixed

@@ -5,6 +5,10 @@ import * as os from 'os';
 import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import {
+  getPanelVersion,
+  isInstalledPanelAtLeast,
+} from '../common/utils/panel-version.util';
 
 const execFileAsync = promisify(execFile);
 
@@ -86,6 +90,8 @@ export class PremiumBundleService {
         if (!inner) throw new Error('Invalid bundle: manifest.json not found');
         fs.cpSync(path.join(extractDir, inner), staging, { recursive: true });
       }
+
+      this.assertMinPanelVersion(staging, version);
 
       onProgress?.(85, 'installing');
       // Docker volume is mounted at `root` — never rename the mount point (EBUSY).
@@ -190,6 +196,26 @@ export class PremiumBundleService {
     } catch (err: any) {
       this.logger.error(`Premium bundle rollback failed: ${err?.message || err}`);
       return false;
+    }
+  }
+
+  private assertMinPanelVersion(staging: string, bundleVersion: string): void {
+    try {
+      const manifest = JSON.parse(
+        fs.readFileSync(path.join(staging, 'manifest.json'), 'utf8'),
+      ) as BundleManifest;
+      const min = manifest.minPanelVersion?.trim();
+      if (!min) return;
+      const panelVersion = getPanelVersion();
+      if (isInstalledPanelAtLeast(panelVersion, min)) return;
+      throw new Error(
+        `Premium bundle ${bundleVersion} requires panel ${min}+ (this panel is ${panelVersion}). Run hm update first.`,
+      );
+    } catch (err) {
+      if (err instanceof Error && /requires panel/.test(err.message)) throw err;
+      this.logger.warn(
+        `Could not read bundle minPanelVersion: ${(err as Error)?.message || err}`,
+      );
     }
   }
 

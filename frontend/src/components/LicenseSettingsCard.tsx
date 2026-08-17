@@ -1,7 +1,7 @@
 "use client";
 
 import { Key, RefreshCw, Power, PowerOff, ExternalLink, Sparkles } from "lucide-react";
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
 import { Card } from "@/components/ui";
 import { useLicenseActivation } from "@/hooks/useLicenseActivation";
 import { formatLicenseExpiry } from "@/lib/format";
@@ -14,19 +14,6 @@ export function LicenseSettingsCard() {
   const [key, setKey] = useState("");
   const { licenseQuery, activate, deactivate, recheck, updateBundle, reloadPlugins } = useLicenseActivation();
   const state = licenseQuery.data;
-  const autoReloadTried = useRef(false);
-
-  useEffect(() => {
-    if (autoReloadTried.current) return;
-    if (
-      state?.bundle?.installed &&
-      state?.edition === "PREMIUM" &&
-      state?.bundle?.pluginsLoaded === false
-    ) {
-      autoReloadTried.current = true;
-      reloadPlugins.mutate();
-    }
-  }, [state?.bundle?.installed, state?.bundle?.pluginsLoaded, state?.edition]);
 
   const isPremium =
     state?.edition === "PREMIUM" &&
@@ -159,6 +146,17 @@ export function LicenseSettingsCard() {
             <RefreshCw size={14} className={updateBundle.isPending ? "animate-spin" : ""} />
             {t("settings.licenseUpdateBundle")}
           </button>
+          {state?.bundle?.installed && state.bundle.pluginsLoaded === false && (
+            <button
+              type="button"
+              onClick={() => reloadPlugins.mutate()}
+              disabled={reloadPlugins.isPending}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-amber-500/40 text-amber-700 dark:text-amber-300 text-sm hover:bg-amber-500/10"
+            >
+              <RefreshCw size={14} className={reloadPlugins.isPending ? "animate-spin" : ""} />
+              {t("settings.licenseReloadPlugins")}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => recheck.mutate()}

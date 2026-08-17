@@ -83,6 +83,20 @@ export function panelHasCapability(
   return !!caps?.[key];
 }
 
+/** True when `current` is greater than or equal to `min` (panel semver). */
+export function isInstalledPanelAtLeast(
+  current: string | null | undefined,
+  min: string,
+): boolean {
+  const cur = parsePanelSemver(current);
+  const need = parsePanelSemver(min);
+  if (!need) return true;
+  if (!cur) return false;
+  if (cur[0] !== need[0]) return cur[0] > need[0];
+  if (cur[1] !== need[1]) return cur[1] > need[1];
+  return cur[2] >= need[2];
+}
+
 /** Installed panel version from env or package.json */
 export function getPanelVersion(): string {
   if (process.env.PANEL_VERSION) return process.env.PANEL_VERSION;

@@ -15,6 +15,7 @@ import { PluginsService } from '../plugins/plugins.service';
 import type { LicenseState } from './types/module-manifest.types';
 import { getAllFeatureIds } from './manifests';
 import { getPanelVersion } from '../common/utils/panel-version.util';
+import { getPremiumBootstrapResult } from '../plugins/premium-bootstrap';
 import {
   getLicenseServerUrls,
   getPrimaryLicenseServerUrl,
@@ -498,15 +499,28 @@ export class LicenseActivationService {
     const loaded = this.pluginsService.isLoaded();
     const lastLoadError = this.pluginsService.getLastLoadError();
     const bundleOnDisk = this.pluginsService.isBundleFilePresent();
+    const bootError = getPremiumBootstrapResult().error || lastLoadError;
 
-    // Controllers are only registered at process start. Any reload / recovery
-    // after installing or replacing the bundle requires a clean restart.
-    if (bundleOnDisk && (!loaded || lastLoadError)) {
-      this.scheduleBackendRestart(
-        lastLoadError
-          ? `premium bootstrap failed: ${lastLoadError}`
-          : 'premium routes missing — restart to import bundle',
+    // Nest already fell back to Community. Restarting here re-runs the same
+    // failed bootstrap and, on older images, 502-loops /api/health.
+    if (bundleOnDisk && bootError) {
+      this.logger.warn(
+        `Premium bootstrap failed (${bootError}); keeping Community fallback — no process.exit.`,
       );
+      return {
+        loaded: false,
+        hmpanelDist,
+        lastLoadError: bootError,
+        autoRestart: false,
+        message:
+          'Premium failed to load. The panel stays online in Community fallback. Update the panel, then the bundle — do not keep clicking Reload.',
+      };
+    }
+
+    // Controllers are only registered at process start. Bundle present but not
+    // imported yet (first-boot race) still needs one clean restart.
+    if (bundleOnDisk && !loaded) {
+      this.scheduleBackendRestart('premium routes missing — restart to import bundle');
       return {
         loaded,
         hmpanelDist,
