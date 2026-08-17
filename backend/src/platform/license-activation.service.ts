@@ -185,14 +185,19 @@ export class LicenseActivationService {
     } else if (targetVersion) {
       onProgress?.({ stage: 'downloading', percent: 25, message: 'Downloading premium bundle...' });
       const downloadUrl = await this.resolveBundleDownloadUrl(licenseKey, targetVersion, bundle);
-      await this.bundleService.downloadAndInstall(
-        downloadUrl,
-        bundle?.sha256 ?? null,
-        targetVersion,
-        (pct, stage) =>
-          onProgress?.({ stage, percent: 25 + Math.round(pct * 0.65), message: stage }),
-      );
-      await this.bundleService.applyDatabaseOverlay();
+      try {
+        await this.bundleService.downloadAndInstall(
+          downloadUrl,
+          bundle?.sha256 ?? null,
+          targetVersion,
+          (pct, stage) =>
+            onProgress?.({ stage, percent: 25 + Math.round(pct * 0.65), message: stage }),
+        );
+        await this.bundleService.applyDatabaseOverlay();
+      } catch (installErr: any) {
+        this.bundleService.rollbackToBackup();
+        throw installErr;
+      }
     }
 
     onProgress?.({ stage: 'loading', percent: 95, message: 'Preparing premium modules...' });
@@ -292,6 +297,7 @@ export class LicenseActivationService {
         message: `Premium bundle ${version} installed. Backend is restarting to load new modules…`,
       };
     } catch (err: any) {
+      this.bundleService.rollbackToBackup();
       if (err instanceof HttpException) throw err;
       const message = err?.message || 'Premium bundle update failed';
       this.logger.error(`Bundle update failed: ${message}`, err?.stack);

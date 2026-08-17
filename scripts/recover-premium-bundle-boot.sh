@@ -14,8 +14,12 @@
 #  Skip bundle install (schema + restart only):
 #    SKIP_BUNDLE=1 bash scripts/recover-premium-bundle-boot.sh
 #
-#  Temporarily disable premium so Community boots, then update from UI:
+#  Temporarily disable premium so Community boots:
 #    DISABLE_PREMIUM=1 bash scripts/recover-premium-bundle-boot.sh
+#
+#  IMPORTANT: After recovery, run `hm update` BEFORE using Settings → Update
+#  premium bundle in the UI (older panel images kill the process every minute
+#  when premium bootstrap fails). Or keep using this script to install bundles.
 # ═══════════════════════════════════════════════════════════════════
 set -euo pipefail
 
@@ -189,7 +193,8 @@ if docker exec hmpanel-panel test -f /opt/hmpanel/premium/manifest.json 2>/dev/n
 fi
 
 if [[ "$DISABLE_PREMIUM" == "1" ]]; then
-  warn "Premium is disabled. Open Settings → Update premium bundle, then restart panel-app."
+  warn "Premium is disabled. Run hm update first, then Update premium bundle — or re-run this script with BUNDLE_TAR."
 else
   log "Hard-refresh browser (Ctrl+Shift+R). Client templates + name pools should work."
+  warn "Run hm update when possible so future UI bundle updates are safe."
 fi

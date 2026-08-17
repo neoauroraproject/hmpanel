@@ -151,17 +151,98 @@ export class PremiumBundleService {
 
   /** Replace contents inside the install root without renaming the directory itself. */
   private installIntoRoot(staging: string, root: string): void {
+    this.validateStaging(staging);
     fs.mkdirSync(root, { recursive: true });
-    this.clearDirectoryContents(root);
-    for (const name of fs.readdirSync(staging)) {
-      const src = path.join(staging, name);
-      const dest = path.join(root, name);
-      fs.cpSync(src, dest, { recursive: true });
+
+    const backupDir = path.join(root, '.bundle-backup');
+    const stageDir = path.join(root, '.bundle-staging');
+
+    try {
+      if (fs.existsSync(stageDir)) fs.rmSync(stageDir, { recursive: true, force: true });
+      fs.cpSync(staging, stageDir, { recursive: true });
+      this.validateStaging(stageDir);
+
+      this.backupCurrentRoot(root, backupDir);
+      this.promoteStaging(root, stageDir);
+    } catch (err) {
+      this.logger.error(`Premium bundle install failed — attempting rollback: ${(err as Error).message}`);
+      this.restoreBackup(root, backupDir);
+      throw err;
+    } finally {
+      if (fs.existsSync(stageDir)) {
+        try {
+          fs.rmSync(stageDir, { recursive: true, force: true });
+        } catch {
+          /* best-effort */
+        }
+      }
+    }
+  }
+
+  /** Restore the previous bundle after a failed install (best-effort). */
+  rollbackToBackup(root = this.getPremiumRoot()): boolean {
+    const backupDir = path.join(root, '.bundle-backup');
+    if (!fs.existsSync(backupDir)) return false;
+    try {
+      this.restoreBackup(root, backupDir);
+      this.logger.warn('Premium bundle rolled back to previous backup.');
+      return true;
+    } catch (err: any) {
+      this.logger.error(`Premium bundle rollback failed: ${err?.message || err}`);
+      return false;
+    }
+  }
+
+  private validateStaging(staging: string): void {
+    const manifestPath = path.join(staging, 'manifest.json');
+    const backendPath = path.join(staging, 'backend', 'index.js');
+    if (!fs.existsSync(manifestPath)) {
+      throw new Error('Invalid premium bundle: manifest.json missing');
+    }
+    if (!fs.existsSync(backendPath)) {
+      throw new Error('Invalid premium bundle: backend/index.js missing');
+    }
+    const backendSrc = fs.readFileSync(backendPath, 'utf8');
+    if (/PremiumBundleModule:\s*null/.test(backendSrc)) {
+      throw new Error('Invalid premium bundle: compiled backend stub detected');
+    }
+  }
+
+  private listInstallEntries(root: string): string[] {
+    return fs.readdirSync(root).filter((name) => !name.startsWith('.bundle-'));
+  }
+
+  private backupCurrentRoot(root: string, backupDir: string): void {
+    const entries = this.listInstallEntries(root);
+    if (!entries.length) return;
+    if (fs.existsSync(backupDir)) fs.rmSync(backupDir, { recursive: true, force: true });
+    fs.mkdirSync(backupDir, { recursive: true });
+    for (const name of entries) {
+      fs.cpSync(path.join(root, name), path.join(backupDir, name), { recursive: true });
+    }
+  }
+
+  private promoteStaging(root: string, stageDir: string): void {
+    for (const name of this.listInstallEntries(root)) {
+      fs.rmSync(path.join(root, name), { recursive: true, force: true });
+    }
+    for (const name of fs.readdirSync(stageDir)) {
+      fs.cpSync(path.join(stageDir, name), path.join(root, name), { recursive: true });
+    }
+  }
+
+  private restoreBackup(root: string, backupDir: string): void {
+    if (!fs.existsSync(backupDir)) return;
+    for (const name of this.listInstallEntries(root)) {
+      fs.rmSync(path.join(root, name), { recursive: true, force: true });
+    }
+    for (const name of fs.readdirSync(backupDir)) {
+      fs.cpSync(path.join(backupDir, name), path.join(root, name), { recursive: true });
     }
   }
 
   private clearDirectoryContents(dir: string): void {
-    for (const name of fs.readdirSync(dir)) {
+    for (const name of this.listInstallEntries(dir)) {
       fs.rmSync(path.join(dir, name), { recursive: true, force: true });
     }
   }
@@ -196,6 +277,23 @@ export class PremiumBundleService {
    * Never use --accept-data-loss: premium/business rows must survive license gaps and server moves.
    */
   async applyDatabaseOverlay(): Promise<void> {
+    const overlayScript = path.join(process.cwd(), 'backend/dist/scripts/apply-premium-schema-overlay.js');
+    if (fs.existsSync(overlayScript)) {
+      try {
+        this.logger.log('Applying premium schema overlay (idempotent SQL)…');
+        await execFileAsync(process.execPath, [overlayScript], {
+          cwd: process.cwd(),
+          timeout: 120_000,
+          env: process.env as NodeJS.ProcessEnv,
+        });
+        this.logger.log('Premium schema overlay applied.');
+      } catch (err: any) {
+        this.logger.warn(
+          `Premium schema overlay script failed (continuing): ${err?.message || err}`,
+        );
+      }
+    }
+
     const schemaPath =
       process.env.PRISMA_SCHEMA_PATH ||
       path.join(process.cwd(), 'prisma', 'schema.prisma');
@@ -204,19 +302,12 @@ export class PremiumBundleService {
       return;
     }
     try {
-      const { execFile } = await import('child_process');
-      const { promisify } = await import('util');
-      const exec = promisify(execFile);
       this.logger.log('Running prisma db push for premium tables (data-preserving)…');
-      await exec(
-        process.platform === 'win32' ? 'npx.cmd' : 'npx',
-        ['prisma', 'db', 'push', `--schema=${schemaPath}`],
-        {
-          cwd: path.dirname(path.dirname(schemaPath)),
-          timeout: 180_000,
-          env: process.env as NodeJS.ProcessEnv,
-        },
-      );
+      await execFileAsync(process.platform === 'win32' ? 'npx.cmd' : 'npx', ['prisma', 'db', 'push', `--schema=${schemaPath}`], {
+        cwd: path.dirname(path.dirname(schemaPath)),
+        timeout: 180_000,
+        env: process.env as NodeJS.ProcessEnv,
+      });
       this.logger.log('Premium database tables synced (existing rows preserved).');
     } catch (err: any) {
       this.logger.warn(

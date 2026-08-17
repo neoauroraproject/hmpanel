@@ -3,6 +3,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { LicenseManagerService } from './license-manager.service';
 import { PremiumBundleService } from './premium-bundle.service';
 import { PluginsService } from '../plugins/plugins.service';
+import { getPremiumBootstrapResult } from '../plugins/premium-bootstrap';
 
 /**
  * If the premium bundle is on disk and licensed but this process did not
@@ -35,6 +36,15 @@ export class PremiumPluginsScheduler {
       state.status !== 'expired';
 
     if (!active) return;
+
+    const boot = getPremiumBootstrapResult();
+    // Premium was attempted and Nest fell back to Community — keep the panel up.
+    if (boot.error) {
+      this.logger.warn(
+        `Premium bundle on disk but not active (${boot.error}). Panel stays in Community fallback — fix bundle or update panel, then restart.`,
+      );
+      return;
+    }
 
     const err = this.pluginsService.getLastLoadError();
     this.logger.warn(

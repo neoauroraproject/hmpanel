@@ -188,7 +188,7 @@ export function markPremiumBootstrapFailed(error: string): void {
   bootstrapResult = {
     modules: [],
     loaded: false,
-    segments: [],
+    segments: prev?.segments ?? [],
     pluginPath: prev?.pluginPath ?? null,
     hmpanelDist: prev?.hmpanelDist ?? resolveHmpanelDist(),
     error,
