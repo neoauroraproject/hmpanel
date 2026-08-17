@@ -25,10 +25,11 @@ export class SettingsController {
 
   @Get('display-timezone')
   // Any authenticated JWT user (no SUPER_ADMIN) — used by UI clocks
-  @ApiOperation({ summary: 'Get display timezone for UI and notifications' })
+  @ApiOperation({ summary: 'Get display timezone and calendar for UI' })
   async getDisplayTimezone() {
     const timezone = await this.settingsService.getDisplayTimezone();
-    return { timezone };
+    const calendar = await this.settingsService.getDisplayCalendar();
+    return { timezone, calendar };
   }
 
   @Get()

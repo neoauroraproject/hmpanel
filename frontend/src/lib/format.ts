@@ -1,6 +1,14 @@
 import {
   DEFAULT_DISPLAY_TIMEZONE,
   formatInTz,
+  setDisplayCalendar as setTzCalendar,
+  getDisplayCalendar,
+} from "@/lib/timezone";
+
+export {
+  setDisplayCalendar,
+  getDisplayCalendar,
+  type DisplayCalendar,
 } from "@/lib/timezone";
 
 /** Format a byte count (number, string, or bigint) into a human-readable string. */
@@ -96,52 +104,89 @@ export function getDisplayTimezone() {
   return cachedDisplayTz || DEFAULT_DISPLAY_TIMEZONE;
 }
 
+/** Apply calendar setting from bootstrap / settings UI. */
+export function applyDisplayCalendar(cal: string | null | undefined) {
+  setTzCalendar(cal);
+}
+
+function dateFmtOpts(extra: Intl.DateTimeFormatOptions = {}) {
+  const ui = resolveUiLocale();
+  return {
+    calendar: getDisplayCalendar(),
+    uiLocale: ui,
+    ...extra,
+  };
+}
+
 export function formatDate(iso: string | number | Date): string {
-  return formatInTz(iso, getDisplayTimezone(), {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
+  return formatInTz(
+    iso,
+    getDisplayTimezone(),
+    dateFmtOpts({
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    }),
+  );
 }
 
 export function formatDateTime(iso: string | number | Date): string {
-  return formatInTz(iso, getDisplayTimezone(), {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
+  return formatInTz(
+    iso,
+    getDisplayTimezone(),
+    dateFmtOpts({
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }),
+  );
 }
 
-/** License expiry ISO string with days remaining, e.g. "Aug 9, 2026 (31 days)". */
+/** License expiry ISO string with days remaining. */
 export function formatLicenseExpiry(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   const days = Math.ceil((d.getTime() - Date.now()) / 86_400_000);
-  const label = formatInTz(d, getDisplayTimezone(), {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-  if (days < 0) return `${label} (expired)`;
-  if (days === 0) return `${label} (today)`;
-  if (days === 1) return `${label} (1 day)`;
-  return `${label} (${days} days)`;
+  const label = formatInTz(
+    d,
+    getDisplayTimezone(),
+    dateFmtOpts({
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    }),
+  );
+  const ui = resolveUiLocale();
+  if (days < 0) return ui === "fa" ? `${label} (منقضی)` : `${label} (expired)`;
+  if (days === 0) return ui === "fa" ? `${label} (امروز)` : `${label} (today)`;
+  if (days === 1) return ui === "fa" ? `${label} (۱ روز)` : `${label} (1 day)`;
+  return ui === "fa" ? `${label} (${days} روز)` : `${label} (${days} days)`;
 }
 
 /** Render a unix-ms expiry (stored as a stringified bigint). 0 = never. */
 export function formatExpiry(value: string): string {
   const ms = Number(value);
-  if (!ms) return "Never";
+  const ui = resolveUiLocale();
+  if (!ms) return ui === "fa" ? "هرگز" : "Never";
+  // Negative = first-use duration (days) in 3x-ui style
+  if (ms < 0) {
+    const days = Math.ceil(Math.abs(ms) / 86_400_000);
+    return ui === "fa" ? `${days} روز (اولین اتصال)` : `${days}d (first use)`;
+  }
   const days = Math.ceil((ms - Date.now()) / 86_400_000);
-  const label = formatInTz(ms, getDisplayTimezone(), {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-  if (days < 0) return `${label} (expired)`;
-  return `${label} (${days}d)`;
+  const label = formatInTz(
+    ms,
+    getDisplayTimezone(),
+    dateFmtOpts({
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    }),
+  );
+  if (days < 0) return ui === "fa" ? `${label} (منقضی)` : `${label} (expired)`;
+  return ui === "fa" ? `${label} (${days} روز)` : `${label} (${days}d)`;
 }
 
 export function isExpired(value: string): boolean {

@@ -331,6 +331,7 @@ export class AdminsService implements OnModuleInit {
   async update(
     id: string,
     data: {
+      username?: string;
       password?: string;
       email?: string;
       balance?: number;
@@ -351,6 +352,141 @@ export class AdminsService implements OnModuleInit {
   ) {
     const existing = await this.findOne(id);
     const updateData: any = {};
+
+    // --- Username rename (SUPER_ADMIN only at controller) + 3x-ui group rename ---
+    let normalizedUsername: string | null = null;
+    if (data.username !== undefined) {
+      normalizedUsername = String(data.username || '').trim();
+      if (!normalizedUsername) {
+        throw new BadRequestException('Username cannot be empty');
+      }
+      if (normalizedUsername.length < 3 || normalizedUsername.length > 32) {
+        throw new BadRequestException(
+          'Username must be between 3 and 32 characters',
+        );
+      }
+      if (!/^[A-Za-z0-9._-]+$/.test(normalizedUsername)) {
+        throw new BadRequestException(
+          'Username may only contain letters, numbers, dots, underscores, and hyphens',
+        );
+      }
+      if (
+        normalizedUsername.toLowerCase() !== existing.username.toLowerCase()
+      ) {
+        const clash = await this.prisma.admin.findFirst({
+          where: {
+            id: { not: id },
+            username: { equals: normalizedUsername, mode: 'insensitive' },
+          },
+          select: { id: true },
+        });
+        if (clash) {
+          throw new ConflictException('Username already exists');
+        }
+
+        const syntheticOld = `${existing.username}@panel.local`;
+        const syntheticNew = `${normalizedUsername}@panel.local`;
+        const emailIsSynthetic =
+          String(existing.email || '').toLowerCase() ===
+          syntheticOld.toLowerCase();
+        if (emailIsSynthetic && data.email === undefined) {
+          const emailClash = await this.prisma.admin.findFirst({
+            where: {
+              id: { not: id },
+              email: { equals: syntheticNew, mode: 'insensitive' },
+            },
+            select: { id: true },
+          });
+          if (emailClash) {
+            throw new ConflictException(
+              'Cannot update synthetic email; target email already exists',
+            );
+          }
+          updateData.email = syntheticNew;
+        }
+
+        // Rename groups on every panel BEFORE DB commit
+        const panels = await this.prisma.panel.findMany({
+          select: { id: true, name: true },
+        });
+        const renamedPanelIds: string[] = [];
+        try {
+          for (const panel of panels) {
+            const result = await this.panelsService.renameClientGroup(
+              panel.id,
+              existing.username,
+              normalizedUsername,
+              { adminId: id },
+            );
+            if (result === 'renamed') renamedPanelIds.push(panel.id);
+          }
+        } catch (err) {
+          // Rollback successful renames
+          for (const panelId of renamedPanelIds.reverse()) {
+            try {
+              await this.panelsService.renameClientGroup(
+                panelId,
+                normalizedUsername,
+                existing.username,
+                { adminId: id },
+              );
+            } catch (rollbackErr: any) {
+              this.logger.error(
+                `Failed to rollback group rename on panel ${panelId}: ${rollbackErr?.message || rollbackErr}`,
+              );
+            }
+          }
+          throw err;
+        }
+
+        updateData.username = normalizedUsername;
+      } else if (normalizedUsername !== existing.username) {
+        // Case-only change — update DB without panel rename if identical ignoring case
+        // Still rename on panels so group casing matches login username.
+        const panels = await this.prisma.panel.findMany({
+          select: { id: true },
+        });
+        const renamedPanelIds: string[] = [];
+        try {
+          for (const panel of panels) {
+            const result = await this.panelsService.renameClientGroup(
+              panel.id,
+              existing.username,
+              normalizedUsername,
+              { adminId: id },
+            );
+            if (result === 'renamed') renamedPanelIds.push(panel.id);
+          }
+        } catch (err) {
+          for (const panelId of renamedPanelIds.reverse()) {
+            try {
+              await this.panelsService.renameClientGroup(
+                panelId,
+                normalizedUsername,
+                existing.username,
+                { adminId: id },
+              );
+            } catch (rollbackErr: any) {
+              this.logger.error(
+                `Failed to rollback group rename on panel ${panelId}: ${rollbackErr?.message || rollbackErr}`,
+              );
+            }
+          }
+          throw err;
+        }
+        updateData.username = normalizedUsername;
+        const syntheticOld = `${existing.username}@panel.local`;
+        const syntheticNew = `${normalizedUsername}@panel.local`;
+        if (
+          String(existing.email || '').toLowerCase() ===
+            syntheticOld.toLowerCase() &&
+          data.email === undefined
+        ) {
+          updateData.email = syntheticNew;
+        }
+      }
+    }
+
     if (data.email !== undefined) updateData.email = data.email;
     if (data.balance !== undefined && existing.quotaMode !== 'PER_PANEL') {
       updateData.balance = data.balance;

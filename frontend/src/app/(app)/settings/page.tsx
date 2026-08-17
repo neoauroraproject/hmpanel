@@ -12,8 +12,13 @@ import { SslManagerModal } from "./SslManagerModal";
 import { LicenseSettingsCard } from "@/components/LicenseSettingsCard";
 import { LocaleSwitcher } from "@/components/LocaleSwitcher";
 import { useT } from "@/i18n";
-import { setDisplayTimezone } from "@/lib/format";
-import { COMMON_TIMEZONES, DEFAULT_DISPLAY_TIMEZONE } from "@/lib/timezone";
+import { setDisplayTimezone, applyDisplayCalendar } from "@/lib/format";
+import {
+  COMMON_TIMEZONES,
+  DEFAULT_DISPLAY_TIMEZONE,
+  DEFAULT_DISPLAY_CALENDAR,
+  type DisplayCalendar,
+} from "@/lib/timezone";
 
 export default function GlobalSettingsPage() {
   const t = useT();
@@ -41,6 +46,7 @@ export default function GlobalSettingsPage() {
   const [form, setForm] = useState({
     cleanup_threshold_days: 30,
     display_timezone: DEFAULT_DISPLAY_TIMEZONE,
+    display_calendar: DEFAULT_DISPLAY_CALENDAR as DisplayCalendar,
   });
   
   const [isSslModalOpen, setIsSslModalOpen] = useState(false);
@@ -51,11 +57,15 @@ export default function GlobalSettingsPage() {
         typeof settings.display_timezone === "string" && settings.display_timezone.trim()
           ? settings.display_timezone.trim()
           : DEFAULT_DISPLAY_TIMEZONE;
+      const cal: DisplayCalendar =
+        settings.display_calendar === "gregorian" ? "gregorian" : "jalali";
       setForm({
         cleanup_threshold_days: Number(settings.cleanup_threshold_days) || 30,
         display_timezone: tz,
+        display_calendar: cal,
       });
       setDisplayTimezone(tz);
+      applyDisplayCalendar(cal);
     }
   }, [settings]);
 
@@ -178,11 +188,34 @@ export default function GlobalSettingsPage() {
                 </select>
               </div>
 
+              <div>
+                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                  {t("settings.calendar")}
+                </label>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-2">
+                  {t("settings.calendarHint")}
+                </p>
+                <select
+                  value={form.display_calendar}
+                  onChange={(e) => {
+                    const next = e.target.value === "gregorian" ? "gregorian" : "jalali";
+                    setForm({ ...form, display_calendar: next });
+                    applyDisplayCalendar(next);
+                  }}
+                  className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors"
+                >
+                  <option value="jalali">{t("settings.calendarJalali")}</option>
+                  <option value="gregorian">{t("settings.calendarGregorian")}</option>
+                </select>
+              </div>
+
               <div className="pt-4 border-t border-zinc-200 dark:border-zinc-800 flex justify-end">
                 <button
                   onClick={() => {
                     updateSettings.mutate(form);
                     setDisplayTimezone(form.display_timezone);
+                    applyDisplayCalendar(form.display_calendar);
+                    qc.invalidateQueries({ queryKey: ["settings", "display-timezone"] });
                   }}
                   disabled={updateSettings.isPending}
                   className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50 transition-colors"

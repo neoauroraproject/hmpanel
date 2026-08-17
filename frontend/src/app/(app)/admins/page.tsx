@@ -934,6 +934,7 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
   const [openSection, setOpenSection] = useState("limits");
   const [showPassword, setShowPassword] = useState(false);
   const [form, setForm] = useState({
+    username: "",
     status: "active",
     trafficMode: "ALLOCATION",
     balanceGb: "",
@@ -983,6 +984,7 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
       );
       setForm((prev) => ({
         ...prev,
+        username: admin.username || "",
         status: admin.status || "active",
         trafficMode: admin.trafficMode || "ALLOCATION",
         balanceGb: "",
@@ -1028,6 +1030,10 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
       if (form.password.trim()) payload.password = form.password;
       if (form.expiryDays) payload.expiryTime = Date.now() + Number(form.expiryDays) * 24 * 60 * 60 * 1000;
       payload.storeEnabled = form.storeEnabled;
+      const nextUsername = form.username.trim();
+      if (nextUsername && nextUsername !== admin.username) {
+        payload.username = nextUsername;
+      }
       
       const res = await api.patch(`/admins/${adminId}`, payload);
 
@@ -1040,7 +1046,15 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
       qc.invalidateQueries({ queryKey: ["admin", adminId] });
       onSaved();
     },
-    onError: () => toast(t("admins.updateFailed"), "error"),
+    onError: (err: any) => {
+      const msg =
+        err?.response?.data?.message ||
+        (Array.isArray(err?.response?.data?.message)
+          ? err.response.data.message.join(", ")
+          : null) ||
+        t("admins.updateFailed");
+      toast(String(msg), "error");
+    },
   });
 
   const fixMigration = useMutation({
@@ -1256,7 +1270,17 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
                       <div className="p-4 grid grid-cols-2 gap-4 border-t border-zinc-200 dark:border-zinc-800">
                         <div>
                           <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.username")}</label>
-                          <input type="text" readOnly value={admin.username} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/30 px-3 py-2 text-sm text-zinc-500 outline-none opacity-60 cursor-not-allowed" />
+                          <input
+                            type="text"
+                            value={form.username}
+                            onChange={(e) => setForm({ ...form, username: e.target.value })}
+                            className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors"
+                            autoComplete="off"
+                            spellCheck={false}
+                          />
+                          <p className="mt-1.5 text-[11px] leading-relaxed text-zinc-500">
+                            {t("admins.usernameRenameHint")}
+                          </p>
                         </div>
                         <div className="relative">
                           <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.password")}</label>

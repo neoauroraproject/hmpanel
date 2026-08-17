@@ -1023,7 +1023,11 @@ export class StoreTelegramService {
         String(
           (await this.settings.getSetting('display_timezone', 'Asia/Tehran')) || 'Asia/Tehran',
         );
-      lines.push(`  ⏳ Expiry: ${formatDateTimeInTz(expiryMs, tz)}`);
+      const cal =
+        (await this.settings.getSetting('display_calendar', 'jalali')) === 'gregorian'
+          ? 'gregorian'
+          : 'jalali';
+      lines.push(`  ⏳ Expiry: ${formatDateTimeInTz(expiryMs, tz, cal, 'fa')}`);
     }
     const total = Number(client?.total || 0);
     if (total > 0) {

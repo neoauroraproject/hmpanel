@@ -22,6 +22,7 @@ export class SettingsService {
     const settings = await this.prisma.systemSetting.findMany();
     const result: Record<string, any> = {
       display_timezone: 'Asia/Tehran',
+      display_calendar: 'jalali',
     };
     for (const s of settings) {
       try {
@@ -33,12 +34,23 @@ export class SettingsService {
     if (!result.display_timezone) {
       result.display_timezone = 'Asia/Tehran';
     }
+    if (
+      result.display_calendar !== 'jalali' &&
+      result.display_calendar !== 'gregorian'
+    ) {
+      result.display_calendar = 'jalali';
+    }
     return result;
   }
 
   async getDisplayTimezone(): Promise<string> {
     const tz = await this.getSetting('display_timezone', 'Asia/Tehran');
     return typeof tz === 'string' && tz.trim() ? tz.trim() : 'Asia/Tehran';
+  }
+
+  async getDisplayCalendar(): Promise<'jalali' | 'gregorian'> {
+    const cal = await this.getSetting('display_calendar', 'jalali');
+    return cal === 'gregorian' ? 'gregorian' : 'jalali';
   }
 
   async setSetting(key: string, value: any) {

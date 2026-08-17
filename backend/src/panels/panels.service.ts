@@ -3406,6 +3406,117 @@ export class PanelsService implements OnModuleInit {
     }
   }
 
+  /**
+   * Rename a 3x-ui client group (admin username).
+   * Returns: 'renamed' | 'skipped' (group absent) | throws on hard failure.
+   * Fallback when /groups/rename is missing: bulkAdd emails to newName + delete old group.
+   */
+  async renameClientGroup(
+    panelId: string,
+    oldName: string,
+    newName: string,
+    opts?: { adminId?: string },
+  ): Promise<'renamed' | 'skipped'> {
+    if (!oldName || !newName || oldName === newName) return 'skipped';
+
+    const panel = await this.findOne(panelId);
+    const apiBaseUrl = panel.apiBaseUrl || panel.url.replace(/\/$/, '');
+    const panelLabel = panel.name || panelId;
+    const authHeaders = {
+      Authorization: panel.apiToken ? `Bearer ${panel.apiToken}` : undefined,
+    };
+
+    // Strict list — unreachable panel must fail the rename (not silent skip).
+    let groups: any[] = [];
+    try {
+      const response = await axios.get(`${apiBaseUrl}/panel/api/clients/groups`, {
+        headers: authHeaders,
+        timeout: 10000,
+      });
+      if (!response.data || !response.data.success) {
+        throw new Error(response.data?.msg || 'Panel API rejected listGroups');
+      }
+      groups = response.data.obj || [];
+    } catch (err: any) {
+      throw new BadRequestException(
+        `Panel "${panelLabel}" is unreachable; username was not changed (${err?.response?.data?.msg || err?.message || err})`,
+      );
+    }
+
+    const hasOld = (groups || []).some((g) => {
+      const name = typeof g === 'string' ? g : g?.name || g?.group || '';
+      return String(name).toLowerCase() === oldName.toLowerCase();
+    });
+    if (!hasOld) return 'skipped';
+
+    try {
+      const response = await axios.post(
+        `${apiBaseUrl}/panel/api/clients/groups/rename`,
+        { oldName, newName },
+        { headers: authHeaders, timeout: 15000 },
+      );
+      if (!response.data || !response.data.success) {
+        throw new Error(
+          response.data?.msg || 'Panel API rejected groups/rename',
+        );
+      }
+      return 'renamed';
+    } catch (err: any) {
+      if (err instanceof BadRequestException) throw err;
+
+      const status = err?.response?.status;
+      const missing =
+        status === 404 ||
+        status === 405 ||
+        /not found|unknown|404/i.test(
+          String(err?.response?.data?.msg || err?.message || ''),
+        );
+
+      if (!missing) {
+        throw new BadRequestException(
+          `Failed to rename group "${oldName}" → "${newName}" on panel "${panelLabel}": ${err?.response?.data?.msg || err.message}`,
+        );
+      }
+
+      // Fallback for older panels without /groups/rename
+      this.logger.warn(
+        `groups/rename unavailable on panel ${panelId}; falling back to bulkAdd + deleteGroup`,
+      );
+      let emails: string[] = [];
+      if (opts?.adminId) {
+        const clients = await this.prisma.client.findMany({
+          where: { adminId: opts.adminId, panelId },
+          select: { email: true },
+        });
+        emails = clients.map((c) => c.email).filter(Boolean);
+      }
+      if (emails.length) {
+        const add = await axios.post(
+          `${apiBaseUrl}/panel/api/clients/groups/bulkAdd`,
+          { emails, group: newName },
+          { headers: authHeaders, timeout: 15000 },
+        );
+        if (!add.data?.success) {
+          throw new BadRequestException(
+            `Fallback bulkAdd failed on panel "${panelLabel}": ${add.data?.msg || 'rejected'}`,
+          );
+        }
+      } else {
+        try {
+          await axios.post(
+            `${apiBaseUrl}/panel/api/clients/groups/create`,
+            { name: newName },
+            { headers: authHeaders, timeout: 10000 },
+          );
+        } catch {
+          /* may already exist */
+        }
+      }
+      await this.deleteGroup(panelId, oldName);
+      return 'renamed';
+    }
+  }
+
   async processSuspensions() {
     const now = new Date();
 

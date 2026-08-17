@@ -77,6 +77,11 @@ export class AdminsController {
     if (req.user.role !== 'SUPER_ADMIN' && req.user.id !== id) {
       throw new ForbiddenException('You can only update your own profile');
     }
+    // Username rename is SUPER_ADMIN-only (also renames 3x-ui groups).
+    if (req.user.role !== 'SUPER_ADMIN' && dto.username !== undefined) {
+      const { username: _ignored, ...rest } = dto;
+      return this.adminsService.update(id, rest);
+    }
     return this.adminsService.update(id, dto);
   }
 

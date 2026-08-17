@@ -52,6 +52,8 @@ export class CreateAdminDto {
 }
 
 export class UpdateAdminDto {
+  /** Super-admin only — renames 3x-ui client group oldName → newName on every panel. */
+  @ApiPropertyOptional() @IsOptional() @IsString() @MinLength(3) username?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() email?: string;
   @ApiPropertyOptional() @IsOptional() @IsNumber() balance?: number;
   @ApiPropertyOptional() @IsOptional() @IsString() status?: string;
