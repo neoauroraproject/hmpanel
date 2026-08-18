@@ -11,10 +11,21 @@ export type StorefrontProduct = {
   durationDays: number;
   badge?: string | null;
   featured?: boolean;
+  sortOrder?: number;
   renewable?: boolean;
   /** Fulfillment provider — used to keep Eylan renewals on Eylan plans. */
   providerId?: string | null;
+  /** Product base concurrent users (before optional IP add-ons). */
+  baseLimitIp?: number;
   ipLimitOptions?: Array<{ limitIp: number; priceExtra: number; label: string }>;
+  productAddons?: Array<{
+    id: string;
+    type: "IP_LIMIT" | "EXTRA_DAYS";
+    limitIp: number;
+    days: number;
+    priceExtra: number;
+    label: string;
+  }>;
 };
 
 export type StorefrontStore = {

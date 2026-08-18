@@ -145,6 +145,7 @@ export async function ensureCriticalSchema(prisma: PrismaClient): Promise<void> 
     // Coupon dual-currency fixed amounts
     `ALTER TABLE "StoreCoupon" ADD COLUMN IF NOT EXISTS "discountValueUsd" DOUBLE PRECISION NOT NULL DEFAULT 0`,
     `ALTER TABLE "StoreCoupon" ADD COLUMN IF NOT EXISTS "discountValueToman" DOUBLE PRECISION NOT NULL DEFAULT 0`,
+    `ALTER TABLE "StoreCoupon" ADD COLUMN IF NOT EXISTS "checkoutKind" TEXT NOT NULL DEFAULT 'both'`,
     `UPDATE "StoreCoupon" SET "discountValueUsd" = "discountValue" WHERE "discountType" = 'fixed' AND "discountValueUsd" = 0 AND COALESCE("currency",'') NOT IN ('IRT','IRR','TOMAN','TMN')`,
     `UPDATE "StoreCoupon" SET "discountValueToman" = "discountValue" WHERE "discountType" = 'fixed' AND "discountValueToman" = 0 AND COALESCE("currency",'') IN ('IRT','IRR','TOMAN','TMN')`,
 

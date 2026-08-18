@@ -1053,6 +1053,8 @@ model StoreCoupon {
   audienceTokens  Json? // string[]
   productIds      Json? // string[] optional scope
   categoryIds     Json?
+  /// both | new | renewal
+  checkoutKind    String    @default("both")
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 

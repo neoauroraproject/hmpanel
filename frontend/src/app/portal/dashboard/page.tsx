@@ -1,13 +1,11 @@
-"use client";
+﻿"use client";
 
-import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
-import { createPortal } from "react-dom";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Bell,
-  ChevronLeft,
   Copy,
   Link2,
   LoaderCircle,
@@ -15,12 +13,9 @@ import {
   Package,
   Plus,
   ShoppingBag,
-  Upload,
-  X,
 } from "lucide-react";
 import { copyToClipboard } from "@/lib/clipboard";
 import { publicApi } from "@/lib/api";
-import { formatQuotaLabel } from "@/lib/format";
 import { useCustomerSession } from "@/modules/storefront/session";
 import { buildSubscriptionLink, parseSubscriptionToken } from "@/modules/storefront/subscription";
 import { compressReceiptImage } from "@/modules/storefront/receipt-image";
@@ -34,20 +29,18 @@ import type {
 import { StoreShell, ServiceCard } from "@/modules/storefront/ui";
 import { scrollToTop } from "@/modules/storefront/scroll";
 import {
-  FieldBlock,
   MotionPage,
   SectionHeading,
   Surface,
   BottomTabBar,
   StatTile,
   EmptyState,
-  springSoft,
   staggerContainer,
   staggerItem,
 } from "@/modules/storefront/design";
-import { BankCardVisual, resolvePaymentCards } from "@/modules/storefront/BankCardVisual";
 import { usePortalTelegramGate } from "@/modules/storefront/tma/usePortalTelegramGate";
 import { StorefrontLocaleProvider, useStorefrontLocale } from "@/modules/storefront/locale";
+import { CheckoutSheet } from "@/modules/storefront/PortalCheckoutSheet";
 import { rememberStoreSlug, portalPathForSlug, shopPathForSlug } from "@/modules/storefront/store-slug";
 
 type FlowMode = "idle" | "buy" | "renew";
@@ -96,6 +89,8 @@ function CustomerDashboardInner() {
   const [receiptText, setReceiptText] = useState("");
   const [receiptImage, setReceiptImage] = useState("");
   const [receiptPreview, setReceiptPreview] = useState("");
+  const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([]);
+  const [couponCode, setCouponCode] = useState("");
   const [sheetStep, setSheetStep] = useState(0);
   const [copiedToken, setCopiedToken] = useState(false);
   const [showToken, setShowToken] = useState(false);
@@ -114,6 +109,8 @@ function CustomerDashboardInner() {
           productId: selectedProduct.id,
           receiptText: receiptText || undefined,
           receiptImage: receiptImage || undefined,
+          selectedAddonIds,
+          couponCode: couponCode || undefined,
         })
       ).data;
     },
@@ -136,6 +133,8 @@ function CustomerDashboardInner() {
           configName: configName.trim(),
           receiptText: receiptText || undefined,
           receiptImage: receiptImage || undefined,
+          selectedAddonIds,
+          couponCode: couponCode || undefined,
         })
       ).data;
     },
@@ -169,6 +168,8 @@ function CustomerDashboardInner() {
     setReceiptText("");
     setReceiptImage("");
     setReceiptPreview("");
+    setSelectedAddonIds([]);
+    setCouponCode("");
     setSheetStep(0);
   };
 
@@ -358,7 +359,9 @@ function CustomerDashboardInner() {
                 onClick={() => {
                   setFlow("buy");
                   setSheetStep(0);
-                  setSelectedProduct(products[0] || null);
+                  setSelectedProduct(null);
+                  setSelectedAddonIds([]);
+                  setCouponCode("");
                 }}
                 className="col-span-2 flex min-h-[72px] cursor-pointer items-center justify-center gap-2 rounded-[1.35rem] bg-[color:var(--store-primary)] px-4 text-[15px] font-bold text-white shadow-[0_14px_32px_-16px_var(--store-primary)] transition active:scale-[0.98] sm:col-span-2"
               >
@@ -415,7 +418,9 @@ function CustomerDashboardInner() {
                 onBuy={() => {
                   setFlow("buy");
                   setSheetStep(0);
-                  setSelectedProduct(products[0] || null);
+                  setSelectedProduct(null);
+                  setSelectedAddonIds([]);
+                  setCouponCode("");
                 }}
               />
             ) : null}
@@ -441,9 +446,14 @@ function CustomerDashboardInner() {
           mode={flow}
           step={sheetStep}
           setStep={setSheetStep}
+          categories={categories}
           products={flow === "renew" ? renewProducts : products}
           selectedProduct={selectedProduct}
           setSelectedProduct={setSelectedProduct}
+          selectedAddonIds={selectedAddonIds}
+          setSelectedAddonIds={setSelectedAddonIds}
+          couponCode={couponCode}
+          setCouponCode={setCouponCode}
           renewingService={renewingService}
           configName={configName}
           setConfigName={setConfigName}
@@ -920,271 +930,5 @@ function AlertsTab({
         ) : null}
       </div>
     </div>
-  );
-}
-
-function CheckoutSheet({
-  mode,
-  step,
-  setStep,
-  products,
-  selectedProduct,
-  setSelectedProduct,
-  renewingService,
-  configName,
-  setConfigName,
-  receiptText,
-  setReceiptText,
-  receiptPreview,
-  onReceiptFile,
-  onClose,
-  submitting,
-  error,
-  onSubmit,
-  primary,
-  payment,
-}: {
-  mode: FlowMode;
-  step: number;
-  setStep: Dispatch<SetStateAction<number>>;
-  products: StorefrontProduct[];
-  selectedProduct: StorefrontProduct | null;
-  setSelectedProduct: (p: StorefrontProduct | null) => void;
-  renewingService: CustomerService | null;
-  configName: string;
-  setConfigName: (v: string) => void;
-  receiptText: string;
-  setReceiptText: (v: string) => void;
-  receiptPreview: string;
-  onReceiptFile: (file?: File | null) => void;
-  onClose: () => void;
-  submitting: boolean;
-  error: any;
-  onSubmit: () => void;
-  primary: string;
-  payment: StorefrontStore["payment"] | null;
-}) {
-  const { t, formatToman, isFa } = useStorefrontLocale();
-  const maxStep = mode === "buy" ? 2 : 1;
-
-  const paymentCards = resolvePaymentCards(payment);
-
-  const goNext = () => {
-    if (step === 0 && !selectedProduct) return;
-    if (mode === "buy" && step === 1 && !configName.trim()) return;
-    if (
-      ((mode === "buy" && step === 2) || (mode === "renew" && step === 1)) &&
-      !receiptText.trim() &&
-      !receiptPreview
-    ) {
-      return;
-    }
-    if (step >= maxStep) onSubmit();
-    else setStep((s) => s + 1);
-  };
-
-  if (typeof document === "undefined") return null;
-
-  return createPortal(
-    <div className="fixed inset-0 z-[200] flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-6">
-      <button type="button" className="absolute inset-0 cursor-pointer" aria-label="Close" onClick={onClose} />
-      <motion.div
-        initial={{ y: 48, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={springSoft}
-        className={`relative z-10 flex max-h-[min(92dvh,calc(100dvh-1.5rem))] w-full max-w-lg flex-col overflow-hidden rounded-t-[1.85rem] bg-white shadow-2xl dark:bg-zinc-950 sm:max-h-[min(90dvh,calc(100dvh-3rem))] sm:rounded-[1.85rem] ${
-          isFa ? "font-[Vazirmatn,Tahoma,sans-serif]" : ""
-        }`}
-      >
-        <div className="mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-zinc-300 dark:bg-zinc-700 sm:hidden" />
-        <div className="flex items-center gap-2 border-b border-black/[0.05] px-3 py-3 dark:border-white/10">
-          <button
-            type="button"
-            onClick={() => (step === 0 ? onClose() : setStep((s) => s - 1))}
-            className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-2xl bg-[#F5F5F7] dark:bg-zinc-900"
-          >
-            {step === 0 ? <X size={18} /> : <ChevronLeft size={20} className={isFa ? "rotate-180" : ""} />}
-          </button>
-          <div className="min-w-0 flex-1">
-            <div className="font-bold">
-              {mode === "renew" ? t("تمدید سرویس", "Renew service") : t("سفارش جدید", "New order")}
-            </div>
-            <div className="text-[11px] text-zinc-500">
-              {t("مرحله", "Step")} {step + 1}/{maxStep + 1}
-            </div>
-          </div>
-        </div>
-
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-5">
-          {mode === "renew" && renewingService ? (
-            <div className="space-y-2">
-              <div className="rounded-2xl bg-zinc-100 px-3.5 py-2.5 text-sm dark:bg-zinc-900">
-                {t("تمدید", "Renewing")}: <b>{renewingService.remark || renewingService.email}</b>
-              </div>
-              <p className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-3.5 py-2.5 text-[13px] leading-relaxed text-emerald-800 dark:text-emerald-300">
-                {t(
-                  "حجم و زمان پلن انتخابی به سرویس فعلی اضافه می‌شود؛ مصرف قبلی و تنظیمات پاک نمی‌شوند.",
-                  "Selected plan volume and days are added to this service. Used traffic and settings are kept.",
-                )}
-              </p>
-            </div>
-          ) : null}
-
-          {step === 0 ? (
-            <div className="space-y-2">
-              {products.map((p) => {
-                const active = selectedProduct?.id === p.id;
-                return (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => setSelectedProduct(p)}
-                    className={`w-full rounded-2xl border px-3.5 py-3.5 text-start transition ${
-                      active
-                        ? "border-[color:var(--store-primary)] bg-[color:var(--store-primary)]/10"
-                        : "border-zinc-200 dark:border-zinc-800"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="font-semibold">{p.name}</div>
-                        <div className="text-xs text-zinc-500">
-                          {formatQuotaLabel(p.traffic, p.durationDays, { locale: isFa ? "fa" : "en" })}
-                        </div>
-                      </div>
-                      <div className="shrink-0 text-sm font-bold text-[color:var(--store-primary)]">
-                        {p.priceToman ? formatToman(p.priceToman) : `$${p.priceUsd}`}
-                      </div>
-                    </div>
-                    {active && p.description ? (
-                      <p className="mt-2.5 whitespace-pre-line text-[13px] leading-relaxed text-zinc-600 dark:text-zinc-400">
-                        {p.description}
-                      </p>
-                    ) : null}
-                  </button>
-                );
-              })}
-              {!products.length ? (
-                <div className="rounded-2xl border border-dashed border-zinc-300 px-4 py-8 text-center text-sm text-zinc-500 dark:border-zinc-700">
-                  {mode === "renew"
-                    ? t(
-                        "پلنی برای تمدید در این دسته‌بندی موجود نیست.",
-                        "No renewal plans available in this category.",
-                      )
-                    : t("محصولی موجود نیست.", "No products available.")}
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-
-          {mode === "buy" && step === 1 ? (
-            <FieldBlock
-              title={t("نام کانفیگ", "Config name")}
-              hint={t("این نام روی سرویس شما نمایش داده می‌شود.", "Shown on your service list.")}
-              accent
-            >
-              <input
-                className="w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3.5 outline-none dark:border-zinc-700 dark:bg-zinc-950"
-                style={{ fontSize: 16 }}
-                value={configName}
-                onChange={(e) => setConfigName(e.target.value)}
-                placeholder={t("مثلاً phone-1", "e.g. phone-1")}
-              />
-            </FieldBlock>
-          ) : null}
-
-          {(mode === "buy" && step === 2) || (mode === "renew" && step === 1) ? (
-            <>
-              <div className="space-y-1">
-                <div className="text-sm font-bold">{t("پرداخت کارت به کارت", "Card-to-card payment")}</div>
-                <p className="text-xs text-zinc-500">
-                  {t(
-                    "مبلغ را به کارت زیر واریز کنید، سپس رسید یا کد پیگیری را بفرستید.",
-                    "Transfer to the card below, then submit receipt or tracking code.",
-                  )}
-                </p>
-              </div>
-              {paymentCards.length ? (
-                <div className="space-y-3">
-                  {paymentCards.map((card) => (
-                    <BankCardVisual
-                      key={card.id}
-                      bankName={card.bankName}
-                      cardNumber={card.cardNumber}
-                      cardHolder={card.cardHolder}
-                      iban={card.iban}
-                      instructions={card.instructions}
-                      transferLabel={t("کارت به کارت", "Card to Card")}
-                      copyLabel={t("کپی شماره کارت", "Copy card number")}
-                      copiedLabel={t("کپی شد", "Copied")}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <p className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-3.5 py-3 text-sm text-amber-800 dark:text-amber-200">
-                  {t(
-                    "اطلاعات کارت پرداخت هنوز تنظیم نشده. با پشتیبانی تماس بگیرید.",
-                    "Payment card is not configured yet. Please contact support.",
-                  )}
-                </p>
-              )}
-              <FieldBlock
-                title={t("یادداشت پرداخت", "Payment note")}
-                hint={t("رسید یا یادداشت الزامی است", "Receipt or note is required")}
-                accent
-              >
-                <textarea
-                  rows={2}
-                  className="w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 outline-none dark:border-zinc-700 dark:bg-zinc-950"
-                  style={{ fontSize: 16 }}
-                  value={receiptText}
-                  onChange={(e) => setReceiptText(e.target.value)}
-                />
-              </FieldBlock>
-              <label className="flex cursor-pointer flex-col items-center gap-2 rounded-[1.35rem] border border-dashed border-zinc-300 px-4 py-8 text-sm dark:border-zinc-700">
-                <Upload size={18} />
-                {receiptPreview ? t("رسید پیوست شد", "Receipt attached") : t("آپلود رسید", "Upload receipt")}
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => onReceiptFile(e.target.files?.[0])}
-                />
-                {receiptPreview ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={receiptPreview} alt="" className="max-h-32 rounded-xl object-contain" />
-                ) : null}
-              </label>
-            </>
-          ) : null}
-
-          {error ? (
-            <p className="text-sm text-rose-500">
-              {error?.response?.data?.message || error?.message || "Failed"}
-            </p>
-          ) : null}
-        </div>
-
-        <div className="border-t border-zinc-200 p-4 dark:border-zinc-800">
-          <button
-            type="button"
-            disabled={
-              submitting ||
-              (step === 0 && !selectedProduct) ||
-              (((mode === "buy" && step === 2) || (mode === "renew" && step === 1)) &&
-                !receiptText.trim() &&
-                !receiptPreview)
-            }
-            onClick={goNext}
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl text-[15px] font-bold text-white disabled:opacity-50"
-            style={{ background: primary }}
-          >
-            {submitting ? <LoaderCircle size={18} className="animate-spin" /> : null}
-            {step >= maxStep ? t("ثبت", "Submit") : t("بعدی", "Next")}
-          </button>
-        </div>
-      </motion.div>
-    </div>,
-    document.body,
   );
 }

@@ -8,6 +8,14 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [1.8.31] - 2026-08-19
+
+### Changed
+- **Unified storefront checkout:** guest shop, customer portal, and TMA now share the same buy/renew steps — category → products → name + add-ons → payment with a clear payable total and selectable coupons.
+
+### Added
+- **Coupon order type:** `StoreCoupon.checkoutKind` (`both` / `new` / `renewal`) so discount codes can be limited to first purchase or renewals.
+
 ## [1.8.30] - 2026-08-17
 
 ### Fixed
