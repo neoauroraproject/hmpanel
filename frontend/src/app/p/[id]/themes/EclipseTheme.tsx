@@ -76,7 +76,9 @@ export default function EclipseTheme({ id, data }: { id: string; data: SubData }
               <div className="text-[10px] font-semibold tracking-[0.16em] text-zinc-400 uppercase">
                 {m.t("remainingTraffic")}
               </div>
-              <div className="text-2xl font-extrabold tabular-nums">{remainLabel}</div>
+              <div className="text-2xl font-extrabold tabular-nums" dir="ltr">
+                {remainLabel}
+              </div>
             </div>
           </div>
           <div className="mb-5 h-2.5 overflow-hidden rounded-full bg-white/10">
@@ -84,7 +86,9 @@ export default function EclipseTheme({ id, data }: { id: string; data: SubData }
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="rounded-2xl bg-[#1a1a1a] px-3 py-3">
-              <div className="text-lg font-bold tabular-nums">{m.formatBytes(m.used)}</div>
+              <div className="text-lg font-bold tabular-nums" dir="ltr">
+                {m.formatBytes(m.used)}
+              </div>
               <div className="mt-1 text-[10px] font-semibold tracking-[0.14em] text-zinc-500 uppercase">
                 {m.t("totalUsed")}
               </div>
@@ -134,6 +138,7 @@ export default function EclipseTheme({ id, data }: { id: string; data: SubData }
             nativeUrl={m.nativeUrl}
             copied={m.copied}
             onCopy={m.copy}
+            onQr={m.setQrValue}
             panelLabel={m.t("linkPanel")}
             nativeLabel={m.t("linkNative")}
             copiedLabel={m.t("copied")}

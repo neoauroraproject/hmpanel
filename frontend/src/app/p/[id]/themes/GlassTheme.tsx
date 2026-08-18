@@ -81,7 +81,9 @@ export default function GlassTheme({ id, data }: { id: string; data: SubData }) 
               {m.statusLabel}
             </span>
           </div>
-          <div className="text-4xl font-extrabold tracking-tight tabular-nums">{remainLabel}</div>
+          <div className="text-4xl font-extrabold tracking-tight tabular-nums" dir="ltr">
+            {remainLabel}
+          </div>
           <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/50">
             <div
               className="h-full rounded-full bg-gradient-to-r from-sky-400 to-violet-400"
@@ -93,7 +95,9 @@ export default function GlassTheme({ id, data }: { id: string; data: SubData }) 
               <div className="text-[10px] font-semibold tracking-[0.14em] text-zinc-500 uppercase">
                 {m.t("totalUsed")}
               </div>
-              <div className="mt-1 font-bold tabular-nums">{m.formatBytes(m.used)}</div>
+              <div className="mt-1 font-bold tabular-nums" dir="ltr">
+                {m.formatBytes(m.used)}
+              </div>
             </div>
             <div className="text-end">
               <div className="text-[10px] font-semibold tracking-[0.14em] text-zinc-500 uppercase">
@@ -136,8 +140,9 @@ export default function GlassTheme({ id, data }: { id: string; data: SubData }) 
           systemUrl={m.systemUrl}
           nativeUrl={m.nativeUrl}
           copied={m.copied}
-          onCopy={m.copy}
-          panelLabel={m.t("linkPanel")}
+            onCopy={m.copy}
+            onQr={m.setQrValue}
+            panelLabel={m.t("linkPanel")}
           nativeLabel={m.t("linkNative")}
           copiedLabel={m.t("copied")}
           showNative={m.ps.showNativeQR !== false}

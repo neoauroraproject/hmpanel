@@ -217,12 +217,13 @@ export function supportContacts(ps?: PortalSettings, t?: (k: PortalStringKey) =>
   return items;
 }
 
-/** Copy both HMPanel (/s/) and native 3x-ui (/sub/) subscription URLs. */
+/** Copy both HMPanel (/s/) and native 3x-ui (/sub/) subscription URLs, with QR for each. */
 export function DualSubCopyButtons({
   systemUrl,
   nativeUrl,
   copied,
   onCopy,
+  onQr,
   t,
   className = "",
   buttonClassName = "",
@@ -233,6 +234,7 @@ export function DualSubCopyButtons({
   nativeUrl?: string | null;
   copied: string | null;
   onCopy: (text: string, key: string) => void;
+  onQr?: (url: string) => void;
   t: (k: PortalStringKey) => string;
   className?: string;
   buttonClassName?: string;
@@ -240,25 +242,41 @@ export function DualSubCopyButtons({
   showNative?: boolean;
 }) {
   const showNativeBtn = showNative !== false && !!nativeUrl;
+  const qrBtnClass =
+    "inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-black/10 bg-black/5 hover:bg-black/10 dark:border-white/15 dark:bg-white/10";
   return (
     <div className={`grid gap-2 ${showNativeBtn ? "sm:grid-cols-2" : ""} ${className}`}>
-      <button
-        type="button"
-        onClick={() => onCopy(systemUrl, "system")}
-        className={buttonClassName}
-      >
-        {copied === "system" ? <Check size={16} /> : <Copy size={16} />}
-        {copied === "system" ? t("copied") : t("linkPanel")}
-      </button>
-      {showNativeBtn ? (
+      <div className="flex min-w-0 items-stretch gap-2">
         <button
           type="button"
-          onClick={() => onCopy(nativeUrl!, "native")}
-          className={nativeButtonClassName || buttonClassName}
+          onClick={() => onCopy(systemUrl, "system")}
+          className={`min-w-0 flex-1 ${buttonClassName}`}
         >
-          {copied === "native" ? <Check size={16} /> : <Copy size={16} />}
-          {copied === "native" ? t("copied") : t("linkNative")}
+          {copied === "system" ? <Check size={16} /> : <Copy size={16} />}
+          {copied === "system" ? t("copied") : t("linkPanel")}
         </button>
+        {onQr ? (
+          <button type="button" onClick={() => onQr(systemUrl)} className={qrBtnClass} aria-label={t("scanQr")}>
+            <QrCode size={16} />
+          </button>
+        ) : null}
+      </div>
+      {showNativeBtn ? (
+        <div className="flex min-w-0 items-stretch gap-2">
+          <button
+            type="button"
+            onClick={() => onCopy(nativeUrl!, "native")}
+            className={`min-w-0 flex-1 ${nativeButtonClassName || buttonClassName}`}
+          >
+            {copied === "native" ? <Check size={16} /> : <Copy size={16} />}
+            {copied === "native" ? t("copied") : t("linkNative")}
+          </button>
+          {onQr ? (
+            <button type="button" onClick={() => onQr(nativeUrl!)} className={qrBtnClass} aria-label={t("scanQr")}>
+              <QrCode size={16} />
+            </button>
+          ) : null}
+        </div>
       ) : null}
     </div>
   );

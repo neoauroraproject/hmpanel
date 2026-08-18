@@ -251,9 +251,11 @@ export function NeoDualSubCopy({
   nativeUrl,
   copied,
   onCopy,
+  onQr,
   panelLabel,
   nativeLabel,
   copiedLabel,
+  qrLabel,
   showNative = true,
   className = "grid gap-2 sm:grid-cols-2",
   buttonClassName,
@@ -263,32 +265,50 @@ export function NeoDualSubCopy({
   nativeUrl?: string | null;
   copied: string | null;
   onCopy: (text: string, key: string) => void;
+  onQr?: (url: string) => void;
   panelLabel: string;
   nativeLabel: string;
   copiedLabel: string;
+  qrLabel?: string;
   showNative?: boolean;
   className?: string;
   buttonClassName: string;
   nativeButtonClassName?: string;
 }) {
   const show = showNative !== false && !!nativeUrl;
+  const qrClass =
+    "inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-black/10 bg-black/5 text-current";
   return (
     <div className={className}>
-      <NeoCopyRow
-        onClick={() => onCopy(systemUrl, "system")}
-        copied={copied === "system"}
-        label={panelLabel}
-        copiedLabel={copiedLabel}
-        className={buttonClassName}
-      />
-      {show ? (
+      <div className="flex min-w-0 items-stretch gap-2">
         <NeoCopyRow
-          onClick={() => onCopy(nativeUrl!, "native")}
-          copied={copied === "native"}
-          label={nativeLabel}
+          onClick={() => onCopy(systemUrl, "system")}
+          copied={copied === "system"}
+          label={panelLabel}
           copiedLabel={copiedLabel}
-          className={nativeButtonClassName || buttonClassName}
+          className={`min-w-0 flex-1 ${buttonClassName}`}
         />
+        {onQr ? (
+          <button type="button" onClick={() => onQr(systemUrl)} className={qrClass} aria-label={qrLabel || "QR"}>
+            <QrCode size={16} />
+          </button>
+        ) : null}
+      </div>
+      {show ? (
+        <div className="flex min-w-0 items-stretch gap-2">
+          <NeoCopyRow
+            onClick={() => onCopy(nativeUrl!, "native")}
+            copied={copied === "native"}
+            label={nativeLabel}
+            copiedLabel={copiedLabel}
+            className={`min-w-0 flex-1 ${nativeButtonClassName || buttonClassName}`}
+          />
+          {onQr ? (
+            <button type="button" onClick={() => onQr(nativeUrl!)} className={qrClass} aria-label={qrLabel || "QR"}>
+              <QrCode size={16} />
+            </button>
+          ) : null}
+        </div>
       ) : null}
     </div>
   );

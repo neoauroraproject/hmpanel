@@ -87,8 +87,8 @@ export function parseUriEndpoint(link: string): UriEndpoint | null {
 }
 
 /**
- * Prefer the Host remark (Hosts page), then inbound remark/tag.
- * Never keep a fragment that is only the client email when a host/inbound name exists.
+ * Prefer the name 3x-ui already put on the URI (Hosts / inbound remark).
+ * Only rewrite when that name is blank or the client email.
  */
 export function pickConfigDisplayName(input: {
   hostRemark?: string | null;
@@ -99,6 +99,8 @@ export function pickConfigDisplayName(input: {
   email?: string | null;
 }): string {
   const email = String(input.email || '').trim();
+  const existing = String(input.existingRemark || '').trim();
+  if (existing && !isBlankOrEmail(existing, email)) return existing;
   const named = [
     input.hostRemark,
     input.inboundRemark,
@@ -108,9 +110,7 @@ export function pickConfigDisplayName(input: {
     .map((v) => String(v || '').trim())
     .filter((v) => v && !isBlankOrEmail(v, email));
   if (named[0]) return named[0];
-  const existing = String(input.existingRemark || '').trim();
-  if (existing && !isBlankOrEmail(existing, email)) return existing;
-  return named[0] || existing || email || 'Config';
+  return existing || email || 'Config';
 }
 
 export function hostAddressList(host: {
@@ -141,28 +141,37 @@ export function matchHostForEndpoint(
 ): { remark: string } | null {
   const addr = normalizeAddr(endpoint.address);
   if (!addr) return null;
-  const scored: Array<{ remark: string; score: number }> = [];
-  for (const host of hosts) {
-    if (host.isDisabled) continue;
-    const remark = String(host.remark || '').trim();
-    if (!remark) continue;
-    const addresses = hostAddressList(host).map(normalizeAddr);
-    if (!addresses.includes(addr)) continue;
-    const hostPort = Number(host.port || 0);
-    if (hostPort > 0 && endpoint.port > 0 && hostPort !== endpoint.port) continue;
-    let score = 1;
-    if (hostPort > 0 && hostPort === endpoint.port) score += 2;
-    if (
-      inboundPanelId != null &&
-      host.inboundId != null &&
-      Number(host.inboundId) === Number(inboundPanelId)
-    ) {
-      score += 3;
-    }
-    scored.push({ remark, score });
-  }
-  scored.sort((a, b) => b.score - a.score);
-  return scored[0] ? { remark: scored[0].remark } : null;
+  const inboundId =
+    inboundPanelId != null && Number.isFinite(Number(inboundPanelId))
+      ? Number(inboundPanelId)
+      : null;
+  const byAddress = hosts.filter((host) => {
+    if (host.isDisabled) return false;
+    if (!String(host.remark || '').trim()) return false;
+    return hostAddressList(host).map(normalizeAddr).includes(addr);
+  });
+  if (!byAddress.length) return null;
+
+  const forInbound =
+    inboundId != null
+      ? byAddress.filter((h) => h.inboundId != null && Number(h.inboundId) === inboundId)
+      : [];
+  const pool = forInbound.length ? forInbound : byAddress;
+  const epPort = Number(endpoint.port || 0);
+  const exactPort =
+    epPort > 0 ? pool.filter((h) => Number(h.port || 0) === epPort) : [];
+  // Never reuse a host that has a different port (that caused duplicate names).
+  const chosen = exactPort.length
+    ? exactPort
+    : pool.filter((h) => !Number(h.port || 0));
+  if (!chosen.length) return null;
+  chosen.sort((a, b) => {
+    const ai = inboundId != null && Number(a.inboundId) === inboundId ? 1 : 0;
+    const bi = inboundId != null && Number(b.inboundId) === inboundId ? 1 : 0;
+    return bi - ai;
+  });
+  const remark = String(chosen[0].remark || '').trim();
+  return remark ? { remark } : null;
 }
 
 export function normalizeHostRows(raw: unknown): Array<{

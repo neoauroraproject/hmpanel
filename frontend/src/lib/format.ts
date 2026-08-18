@@ -11,14 +11,19 @@ export {
   type DisplayCalendar,
 } from "@/lib/timezone";
 
+/** Keep Latin units like "30 GB" ordered LTR inside Persian RTL layouts. */
+export function ltrIsolate(text: string): string {
+  return `\u2066${text}\u2069`;
+}
+
 /** Format a byte count (number, string, or bigint) into a human-readable string. */
 export function formatBytes(value: string | number | bigint): string {
   const bytes = typeof value === "string" ? Number(value) : Number(value);
-  if (!bytes || bytes <= 0) return "0 B";
+  if (!bytes || bytes <= 0) return ltrIsolate("0 B");
   const units = ["B", "KB", "MB", "GB", "TB", "PB"];
   const i = Math.floor(Math.log(bytes) / Math.log(1024));
   const n = bytes / Math.pow(1024, i);
-  return `${n.toFixed(n >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
+  return ltrIsolate(`${n.toFixed(n >= 10 || i === 0 ? 0 : 1)} ${units[i]}`);
 }
 
 export type UiLocale = "fa" | "en";
@@ -46,7 +51,7 @@ export function formatBytesLocalized(
   const i = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
   const n = bytes / Math.pow(1024, i);
   const num = n.toFixed(n >= 10 || i === 0 ? 0 : 1);
-  return `${num} ${units[i]}`;
+  return ltrIsolate(`${num} ${units[i]}`);
 }
 
 export function formatDaysLocalized(

@@ -12,6 +12,7 @@ import { Response, Request } from 'express';
 import { normalizeTelegramLink } from '../common/utils/telegram-link';
 import { collectNativeSubscriptionUrls } from '../common/utils/native-sub-url';
 import {
+  getUriRemark,
   matchHostForEndpoint,
   parseUriEndpoint,
   pickConfigDisplayName,
@@ -173,15 +174,8 @@ export class SubscriptionsService {
   }
 
   private uriLineToNode(line: string): PortalNode {
-    const [protocol, rest] = line.split('://');
-    let tag = 'Unknown';
-    if (rest && rest.includes('#')) {
-      try {
-        tag = decodeURIComponent(rest.split('#').slice(1).join('#'));
-      } catch {
-        tag = rest.split('#').slice(1).join('#');
-      }
-    }
+    const [protocol] = line.split('://');
+    const tag = getUriRemark(line) || 'Unknown';
     return {
       link: line,
       protocol: (protocol || 'unknown').toUpperCase(),
@@ -215,16 +209,13 @@ export class SubscriptionsService {
         return byPort[0];
       }
     }
-    const proto = protocol.toLowerCase();
-    return (
-      inbounds.find((ib) => String(ib.protocol || '').toLowerCase() === proto) ||
-      inbounds[0]
-    );
+    // Do not fall back to the first inbound — that reused one name (e.g. US) on another node.
+    return null;
   }
 
   /**
-   * 3x-ui Copy-URL / fallback links often put the client email in `#fragment`.
-   * After Hosts-page renames, the real config name is host.remark or inbound.remark.
+   * Keep the real 3x-ui URI name when it isn't the client email.
+   * Only rewrite blank/email fragments using host or inbound remarks.
    */
   private async applyConfigDisplayNames(
     nodes: PortalNode[],

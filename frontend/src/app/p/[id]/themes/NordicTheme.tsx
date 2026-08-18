@@ -109,6 +109,7 @@ export default function NordicTheme({ id, data }: { id: string; data: SubData })
             nativeUrl={nativeUrl}
             copied={copied}
             onCopy={copy}
+            onQr={setQrValue}
             t={t}
             showNative={ps.showNativeQR !== false}
             className="flex-1"

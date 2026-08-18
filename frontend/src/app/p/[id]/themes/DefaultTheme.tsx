@@ -230,7 +230,7 @@ export default function DefaultTheme({ id, data }: { id: string; data: SubData }
               >
                 <Zap size={14} /> {t("trafficUsage")}
               </div>
-              <div className="flex items-baseline gap-2">
+              <div className="flex items-baseline gap-2" dir="ltr">
                 <span className={`text-5xl font-black tracking-tighter md:text-6xl ${ts.heading}`}>
                   {formatBytes(used)}
                 </span>
@@ -238,7 +238,7 @@ export default function DefaultTheme({ id, data }: { id: string; data: SubData }
                   / {totalBytes === 0 ? "∞" : formatBytes(totalBytes)}
                 </span>
               </div>
-              <div className="mt-4 flex gap-6 text-sm font-medium">
+              <div className="mt-4 flex gap-6 text-sm font-medium" dir="ltr">
                 <div className={ts.accent}>↓ {formatBytes(downBytes)}</div>
                 <div className="text-blue-400">↑ {formatBytes(upBytes)}</div>
               </div>
@@ -478,6 +478,14 @@ export default function DefaultTheme({ id, data }: { id: string; data: SubData }
                             {t("linkNative")}
                           </span>
                         )}
+                      </button>
+                      <button
+                        onClick={() => openQR(nativeUrl)}
+                        className="rounded-lg bg-zinc-800 p-2.5 text-zinc-300 transition-colors hover:bg-zinc-700"
+                        title={t("qrCode")}
+                        aria-label={t("qrCode")}
+                      >
+                        <QrCode size={16} />
                       </button>
                     </div>
                   </div>

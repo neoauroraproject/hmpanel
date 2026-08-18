@@ -403,12 +403,12 @@ export default function NeoTheme({
           ) : (
             <>
               <div className="text-sm font-medium opacity-90">Remaining traffic</div>
-              <div className="mt-1 flex items-end gap-2">
+              <div className="mt-1 flex items-end gap-2" dir="ltr">
                 <span className="text-5xl font-black leading-none tabular-nums">
-                  {totalN > 0 ? formatBytes(remaining).split(" ")[0] : "∞"}
+                  {totalN > 0 ? formatBytes(remaining).replace(/[\u2066\u2069]/g, "").split(" ")[0] : "∞"}
                 </span>
                 <span className="pb-1 text-lg font-semibold opacity-90">
-                  {totalN > 0 ? formatBytes(remaining).split(" ").slice(1).join(" ") : ""}
+                  {totalN > 0 ? formatBytes(remaining).replace(/[\u2066\u2069]/g, "").split(" ").slice(1).join(" ") : ""}
                 </span>
               </div>
               <div className="mt-5 grid grid-cols-3 gap-3 text-sm">
@@ -492,7 +492,7 @@ export default function NeoTheme({
               </button>
             ) : null}
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className={`grid gap-3 ${nativeUrl && portalSettings?.showNativeQR !== false ? "grid-cols-2" : "grid-cols-1"}`}>
             <button
               type="button"
               onClick={() => {
@@ -501,16 +501,28 @@ export default function NeoTheme({
               }}
               className={`flex items-center justify-center gap-2 px-4 py-3.5 text-sm font-semibold transition ${v.card} ${v.radius}`}
             >
-              <QrCode size={16} /> QR code
+              <QrCode size={16} /> Panel QR
             </button>
-            <button
-              type="button"
-              onClick={() => setImportSheet(true)}
-              className={`flex items-center justify-center gap-2 px-4 py-3.5 text-sm font-semibold transition ${v.card} ${v.radius}`}
-            >
-              <MonitorSmartphone size={16} /> Import to app
-            </button>
+            {nativeUrl && portalSettings?.showNativeQR !== false ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setUrlForQR(nativeUrl);
+                  setQrModal(true);
+                }}
+                className={`flex items-center justify-center gap-2 px-4 py-3.5 text-sm font-semibold transition ${v.card} ${v.radius}`}
+              >
+                <QrCode size={16} /> Native QR
+              </button>
+            ) : null}
           </div>
+          <button
+            type="button"
+            onClick={() => setImportSheet(true)}
+            className={`flex items-center justify-center gap-2 px-4 py-3.5 text-sm font-semibold transition ${v.card} ${v.radius}`}
+          >
+            <MonitorSmartphone size={16} /> Import to app
+          </button>
         </section>
 
         {/* Footer from branding footerText (replaces NeoTemplate copyright) */}

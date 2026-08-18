@@ -132,6 +132,7 @@ export default function VibrantTheme({ id, data }: { id: string; data: SubData }
               nativeUrl={m.nativeUrl}
               copied={m.copied}
               onCopy={m.copy}
+              onQr={m.setQrValue}
               panelLabel={m.t("linkPanel")}
               nativeLabel={m.t("linkNative")}
               copiedLabel={m.t("copied")}
