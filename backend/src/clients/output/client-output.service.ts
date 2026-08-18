@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { DomainStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { OutputCacheService } from './output-cache.service';
 import { resolveOutputType } from './output-type.resolver';
@@ -114,10 +115,12 @@ export class ClientOutputService {
     ).toLowerCase();
     const outputType = resolveOutputType(protocol);
 
+    const origin = await this.resolvePublicOrigin(client.adminId, opts?.origin);
     const cacheKey = this.cache.buildKey({
       uuid: client.uuid,
       updatedAt: client.updatedAt,
       inboundId: inbound?.id,
+      origin: origin || '',
     });
     const cached = this.cache.get(cacheKey);
     if (cached) {
@@ -146,7 +149,7 @@ export class ClientOutputService {
             panel: inbound.panel,
           }
         : null,
-      origin: opts?.origin,
+      origin,
     };
 
     if (outputType === 'wireguard') {
@@ -162,5 +165,45 @@ export class ClientOutputService {
       `Built output ${outputType} for client ${client.id} (${protocol})`,
     );
     return model;
+  }
+
+  /**
+   * Panel `/s/{token}` links use the admin's verified Premium custom domain
+   * (not the request host, which is often the default panel domain).
+   */
+  private async resolvePublicOrigin(
+    adminId?: string | null,
+    fallback?: string,
+  ): Promise<string | undefined> {
+    let host = '';
+    if (adminId) {
+      const owned = await this.prisma.domain.findFirst({
+        where: {
+          adminId,
+          status: { in: [DomainStatus.VERIFIED, DomainStatus.SSL_ACTIVE] },
+        },
+        select: { domain: true },
+        orderBy: { updatedAt: 'desc' },
+      });
+      host = String(owned?.domain || '').trim();
+      if (!host) {
+        const store = await this.prisma.storeProfile.findUnique({
+          where: { adminId },
+          include: { domain: { select: { domain: true, status: true } } },
+        });
+        const status = store?.domain?.status;
+        if (
+          store?.domain?.domain &&
+          (status === DomainStatus.VERIFIED || status === DomainStatus.SSL_ACTIVE)
+        ) {
+          host = store.domain.domain.trim();
+        }
+      }
+    }
+    if (host) {
+      const proto = process.env.FORCE_HTTP === 'true' ? 'http' : 'https';
+      return `${proto}://${host.split(':')[0].toLowerCase()}`;
+    }
+    return fallback || undefined;
   }
 }

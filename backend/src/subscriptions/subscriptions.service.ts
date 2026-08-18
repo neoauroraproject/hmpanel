@@ -11,7 +11,15 @@ import * as https from 'https';
 import { Response, Request } from 'express';
 import { normalizeTelegramLink } from '../common/utils/telegram-link';
 import { collectNativeSubscriptionUrls } from '../common/utils/native-sub-url';
+import {
+  matchHostForEndpoint,
+  parseUriEndpoint,
+  pickConfigDisplayName,
+  setUriRemark,
+} from '../common/utils/sub-link-remark';
 import { PanelsService } from '../panels/panels.service';
+
+const NATIVE_SUB_UA = 'v2rayNG/1.10.0';
 
 type PortalNode = { link: string; protocol: string; tag: string };
 
@@ -48,8 +56,11 @@ export class SubscriptionsService {
               select: {
                 id: true,
                 tag: true,
+                remark: true,
                 port: true,
                 protocol: true,
+                panelInboundId: true,
+                nodeName: true,
                 panel: {
                   select: {
                     id: true,
@@ -178,6 +189,122 @@ export class SubscriptionsService {
     };
   }
 
+  private inboundForEndpoint(
+    inbounds: Array<{
+      port?: number;
+      protocol?: string;
+      panelInboundId?: number | null;
+      remark?: string | null;
+      tag?: string;
+      nodeName?: string | null;
+      panel?: { id?: string } | null;
+    }>,
+    endpoint: { address: string; port: number } | null,
+    protocol: string,
+  ) {
+    if (!inbounds?.length) return null;
+    if (endpoint?.port) {
+      const byPort = inbounds.filter((ib) => Number(ib.port) === endpoint.port);
+      if (byPort.length === 1) return byPort[0];
+      if (byPort.length > 1) {
+        const proto = protocol.toLowerCase();
+        const byProto = byPort.find(
+          (ib) => String(ib.protocol || '').toLowerCase() === proto,
+        );
+        if (byProto) return byProto;
+        return byPort[0];
+      }
+    }
+    const proto = protocol.toLowerCase();
+    return (
+      inbounds.find((ib) => String(ib.protocol || '').toLowerCase() === proto) ||
+      inbounds[0]
+    );
+  }
+
+  /**
+   * 3x-ui Copy-URL / fallback links often put the client email in `#fragment`.
+   * After Hosts-page renames, the real config name is host.remark or inbound.remark.
+   */
+  private async applyConfigDisplayNames(
+    nodes: PortalNode[],
+    input: {
+      email?: string | null;
+      inbounds?: Array<{
+        port?: number;
+        protocol?: string;
+        panelInboundId?: number | null;
+        remark?: string | null;
+        tag?: string;
+        nodeName?: string | null;
+        panel?: { id?: string } | null;
+      }>;
+    },
+  ): Promise<PortalNode[]> {
+    if (!nodes.length) return nodes;
+    const inbounds = input.inbounds || [];
+    const email = String(input.email || '').trim();
+    const hostsByPanel = new Map<string, any[]>();
+    for (const panelId of this.collectPanelIds(inbounds as any)) {
+      try {
+        hostsByPanel.set(
+          panelId,
+          await this.panelsService.getPanelHostEndpoints(panelId),
+        );
+      } catch {
+        hostsByPanel.set(panelId, []);
+      }
+    }
+    for (const ib of inbounds) {
+      const panelId = ib.panel?.id;
+      const inboundId = Number(ib.panelInboundId || 0);
+      if (!panelId || !inboundId) continue;
+      const existing = hostsByPanel.get(panelId) || [];
+      if (existing.some((h) => Number(h.inboundId) === inboundId && h.remark)) {
+        continue;
+      }
+      try {
+        const extra = await this.panelsService.getPanelHostsByInbound(
+          panelId,
+          inboundId,
+        );
+        if (extra.length) {
+          hostsByPanel.set(panelId, [...existing, ...extra]);
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+
+    return nodes.map((node) => {
+      const endpoint = parseUriEndpoint(node.link);
+      const inbound = this.inboundForEndpoint(
+        inbounds,
+        endpoint,
+        node.protocol,
+      );
+      const hosts = inbound?.panel?.id
+        ? hostsByPanel.get(inbound.panel.id) || []
+        : [...hostsByPanel.values()].flat();
+      const host = endpoint
+        ? matchHostForEndpoint(hosts, endpoint, inbound?.panelInboundId)
+        : null;
+      const name = pickConfigDisplayName({
+        hostRemark: host?.remark,
+        inboundRemark: inbound?.remark,
+        inboundTag: inbound?.tag,
+        nodeName: inbound?.nodeName,
+        existingRemark: node.tag,
+        email,
+      });
+      return {
+        ...node,
+        tag: name,
+        link: setUriRemark(node.link, name),
+      };
+    });
+  }
+
   private parseUriNodesFromText(content: string): PortalNode[] {
     const decoded = this.tryDecodeSubBody(content);
     const lines = String(decoded)
@@ -259,7 +386,10 @@ export class SubscriptionsService {
           client.panelId,
           { email, subId: client.subId || subId },
         );
-        return links.map((l) => this.uriLineToNode(l));
+        return this.applyConfigDisplayNames(
+          links.map((l) => this.uriLineToNode(l)),
+          { email, inbounds: [{ panel: { id: client.panelId } }] },
+        );
       }
       return [];
     }
@@ -284,6 +414,7 @@ export class SubscriptionsService {
               timeout: 10000,
               responseType: 'text',
               transformResponse: [(d) => d],
+              headers: { 'User-Agent': NATIVE_SUB_UA },
             })
             .catch((err) => {
               this.logger.error(
@@ -338,7 +469,7 @@ export class SubscriptionsService {
       );
     }
 
-    return nodes;
+    return this.applyConfigDisplayNames(nodes, { email, inbounds });
   }
 
   async proxySubscription(token: string, req: Request, res: Response) {
@@ -364,6 +495,10 @@ export class SubscriptionsService {
         if (!links.length) {
           return res.status(404).send('Subscription not found');
         }
+        const labeled = await this.applyConfigDisplayNames(
+          links.map((l) => this.uriLineToNode(l)),
+          { email: client.email, inbounds: [{ panel: { id: client.panelId } }] },
+        );
         this.writeSubscriptionHeaders(res, {
           up: Number(client.up),
           down: Number(client.down),
@@ -374,7 +509,9 @@ export class SubscriptionsService {
           portalSettings: details.portalSettings,
         });
         res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-        return res.send(Buffer.from(links.join('\n')).toString('base64'));
+        return res.send(
+          Buffer.from(labeled.map((n) => n.link).join('\n')).toString('base64'),
+        );
       }
 
       const nativeUrls = collectNativeSubscriptionUrls(
@@ -382,10 +519,18 @@ export class SubscriptionsService {
         subId || email,
       );
 
-      const headers: any = {};
-      if (req.headers['user-agent'])
-        headers['User-Agent'] = req.headers['user-agent'];
-      if (req.headers['accept']) headers['Accept'] = req.headers['accept'];
+      const headers: any = {
+        'User-Agent': NATIVE_SUB_UA,
+      };
+      const incomingUa = String(req.headers['user-agent'] || '');
+      if (
+        incomingUa &&
+        /v2ray|clash|hiddify|sing-box|singbox|shadowrocket|nekobox|okhttp|dart\//i.test(
+          incomingUa,
+        )
+      ) {
+        headers['User-Agent'] = incomingUa;
+      }
       if (req.headers['accept-language'])
         headers['Accept-Language'] = req.headers['accept-language'];
 
@@ -484,6 +629,14 @@ export class SubscriptionsService {
 
       if (uriLines.length === 0 && !lines.length) {
         return res.status(502).send('Bad Gateway - No panels responded');
+      }
+
+      if (uriLines.length) {
+        const labeled = await this.applyConfigDisplayNames(
+          uriLines.map((l) => this.uriLineToNode(l)),
+          { email, inbounds },
+        );
+        uriLines = labeled.map((n) => n.link);
       }
 
       const payload = (uriLines.length ? uriLines : lines).join('\n');

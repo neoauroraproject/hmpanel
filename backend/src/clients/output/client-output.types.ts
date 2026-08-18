@@ -32,4 +32,4 @@ export type ClientOutputModel = {
   builtAt?: string;
 };
 
-export const OUTPUT_BUILDER_VERSION = '1';
+export const OUTPUT_BUILDER_VERSION = '2';

@@ -20,6 +20,7 @@ export class OutputCacheService {
     uuid: string;
     updatedAt: Date | string | number;
     inboundId?: string | null;
+    origin?: string | null;
   }): string {
     const updated =
       parts.updatedAt instanceof Date
@@ -29,6 +30,7 @@ export class OutputCacheService {
       parts.uuid,
       updated,
       parts.inboundId || '',
+      parts.origin || '',
       OUTPUT_BUILDER_VERSION,
     ].join('|');
     return createHash('sha256').update(raw).digest('hex');

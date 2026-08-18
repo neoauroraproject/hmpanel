@@ -2959,6 +2959,116 @@ export class PanelsService implements OnModuleInit {
   }
 
   /**
+   * Host endpoints from 3x-ui (Hosts page). Remarks here are the names
+   * that should appear on subscription configs — not the client email.
+   */
+  async getPanelHostEndpoints(panelId: string): Promise<
+    Array<{
+      address?: string | null;
+      hosts?: unknown;
+      port?: number | null;
+      remark?: string | null;
+      inboundId?: number | null;
+      isDisabled?: boolean;
+    }>
+  > {
+    try {
+      const { base, headers, agent } = await this.getPanelHttpContext(panelId);
+      const endpoints = [
+        `${base}/panel/api/hosts/list`,
+        `${base}/panel/api/inbounds/hosts`,
+      ];
+      for (const endpoint of endpoints) {
+        try {
+          const res = await axios.get(endpoint, {
+            headers,
+            httpsAgent: agent,
+            timeout: PANEL_REQUEST_TIMEOUT_MS,
+          });
+          if (!res.data?.success) continue;
+          const rows = Array.isArray(res.data.obj)
+            ? res.data.obj
+            : Array.isArray(res.data.obj?.hosts)
+              ? res.data.obj.hosts
+              : Array.isArray(res.data.obj?.list)
+                ? res.data.obj.list
+                : [];
+          if (rows.length) {
+            this.logger.log(
+              `[HOSTS] ${endpoint} → ${rows.length} host row(s)`,
+            );
+            return this.flattenHostEndpointRows(rows);
+          }
+        } catch (err: any) {
+          this.logger.debug(
+            `[HOSTS] ${endpoint} failed: ${err.message}`,
+          );
+        }
+      }
+    } catch (err: any) {
+      this.logger.warn(`[HOSTS] panel=${panelId} ${err.message}`);
+    }
+    return [];
+  }
+
+  private flattenHostEndpointRows(rows: any[]): any[] {
+    const out: any[] = [];
+    for (const row of rows || []) {
+      if (!row || typeof row !== 'object') continue;
+      if (
+        Array.isArray(row.hosts) &&
+        row.hosts.length &&
+        typeof row.hosts[0] === 'string'
+      ) {
+        for (const addr of row.hosts) {
+          out.push({ ...row, address: addr });
+        }
+        continue;
+      }
+      if (
+        Array.isArray(row.hosts) &&
+        row.hosts.length &&
+        typeof row.hosts[0] === 'object'
+      ) {
+        out.push(...this.flattenHostEndpointRows(row.hosts));
+        continue;
+      }
+      out.push(row);
+    }
+    return out;
+  }
+
+  async getPanelHostsByInbound(
+    panelId: string,
+    inboundId: number,
+  ): Promise<
+    Array<{
+      address?: string | null;
+      hosts?: unknown;
+      port?: number | null;
+      remark?: string | null;
+      inboundId?: number | null;
+      isDisabled?: boolean;
+    }>
+  > {
+    if (!inboundId) return [];
+    try {
+      const { base, headers, agent } = await this.getPanelHttpContext(panelId);
+      const endpoint = `${base}/panel/api/hosts/byInbound/${inboundId}`;
+      const res = await axios.get(endpoint, {
+        headers,
+        httpsAgent: agent,
+        timeout: PANEL_REQUEST_TIMEOUT_MS,
+      });
+      if (!res.data?.success) return [];
+      const rows = Array.isArray(res.data.obj) ? res.data.obj : [];
+      return this.flattenHostEndpointRows(rows);
+    } catch {
+      return [];
+    }
+  }
+
+  /**
    * VERIFY CLIENT EXISTS using GET /panel/api/clients/get/{email}
    * Returns { exists: true, data } when found.
    * Returns { exists: false } when success:false (record not found).
