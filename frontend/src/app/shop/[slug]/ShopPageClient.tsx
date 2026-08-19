@@ -27,6 +27,7 @@ import { FieldBlock } from "@/modules/storefront/design";
 import { BankCardVisual, resolvePaymentCards } from "@/modules/storefront/BankCardVisual";
 import { rememberStoreSlug, portalPathForSlug } from "@/modules/storefront/store-slug";
 import { computeCheckoutPreview, type CouponPreview } from "@/modules/storefront/checkout-preview";
+import { fetchApplicableCoupons, pickAutoCouponCode } from "@/modules/storefront/checkout-coupons";
 import {
   AddonPicker,
   CategoryPicker,
@@ -475,27 +476,27 @@ function ShopBody(props: {
       setCouponError("");
       setCouponOffers([]);
       try {
-        const session = getCustomerSessionToken();
-        const { data } = session
-          ? await publicApi.post("/store/customer/coupons/applicable", {
-              productId: selectedProduct.id,
-              isRenewal: isRenewFlow,
-              limitIp: form.limitIp,
-              selectedAddonIds: form.selectedAddonIds,
-            })
-          : await publicApi.post(`/store/public/${slug}/coupons/applicable`, {
-              productId: selectedProduct.id,
-              customerToken: form.customerToken || undefined,
-              isRenewal: isRenewFlow,
-              limitIp: form.limitIp,
-              selectedAddonIds: form.selectedAddonIds,
-            });
+        const offers = await fetchApplicableCoupons({
+          slug,
+          productId: selectedProduct.id,
+          isRenewal: isRenewFlow,
+          limitIp: form.limitIp,
+          selectedAddonIds: form.selectedAddonIds,
+          customerToken: form.customerToken || undefined,
+        });
         if (cancelled) return;
-        const offers = Array.isArray(data?.offers) ? data.offers : [];
         setCouponOffers(offers);
+        const nextCode = pickAutoCouponCode(offers, form.couponCode);
+        if (nextCode) {
+          await applyShopCoupon(nextCode);
+        } else {
+          setCouponPreview(null);
+          setForm((c: any) => ({ ...c, couponCode: "" }));
+        }
       } catch {
         if (cancelled) return;
         setCouponOffers([]);
+        setCouponPreview(null);
       }
     };
     void load();

@@ -15,6 +15,7 @@ import type {
   StorefrontStore,
 } from "@/modules/storefront/types";
 import { computeCheckoutPreview, type CouponPreview } from "@/modules/storefront/checkout-preview";
+import { fetchApplicableCoupons, pickAutoCouponCode } from "@/modules/storefront/checkout-coupons";
 import {
   AddonPicker,
   CategoryPicker,
@@ -56,6 +57,7 @@ export function CheckoutSheet({
   onSubmit,
   primary,
   payment,
+  storeSlug,
 }: {
   mode: FlowMode;
   step: number;
@@ -81,6 +83,7 @@ export function CheckoutSheet({
   onSubmit: () => void;
   primary: string;
   payment: StorefrontStore["payment"] | null;
+  storeSlug?: string;
 }) {
   const { t, formatToman, isFa } = useStorefrontLocale();
   const lockedCategoryId = mode === "renew" ? String(renewingService?.categoryId || "") : "";
@@ -135,13 +138,21 @@ export function CheckoutSheet({
       setCouponOffers([]);
       setCouponError("");
       try {
-        const { data } = await publicApi.post("/store/customer/coupons/applicable", {
+        const offers = await fetchApplicableCoupons({
+          slug: storeSlug,
           productId: selectedProduct.id,
           isRenewal: mode === "renew",
           selectedAddonIds,
         });
         if (cancelled) return;
-        setCouponOffers(Array.isArray(data?.offers) ? data.offers : []);
+        setCouponOffers(offers);
+        const nextCode = pickAutoCouponCode(offers, couponCode);
+        if (nextCode) {
+          await applyCoupon(nextCode);
+        } else {
+          setCouponPreview(null);
+          setCouponCode("");
+        }
       } catch {
         if (!cancelled) setCouponOffers([]);
       }
@@ -150,7 +161,8 @@ export function CheckoutSheet({
     return () => {
       cancelled = true;
     };
-  }, [current, selectedProduct?.id, mode, selectedAddonIds]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current, selectedProduct?.id, mode, selectedAddonIds, storeSlug]);
 
   const applyCoupon = async (codeOverride?: string) => {
     const code = String(codeOverride || couponCode || "").trim();

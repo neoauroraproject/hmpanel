@@ -470,6 +470,7 @@ function CustomerDashboardInner() {
           }}
           primary={primary}
           payment={data?.store?.payment || null}
+          storeSlug={data?.store?.slug}
         />
       ) : null}
 

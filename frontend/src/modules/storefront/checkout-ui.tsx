@@ -243,8 +243,8 @@ export function CheckoutCouponBox({
       <div className="text-sm font-semibold">{t("کد تخفیف", "Discount code")}</div>
       <p className="text-xs text-zinc-500">
         {t(
-          "کد قابل‌استفاده را از لیست بزنید تا قیمت بعد از تخفیف همین‌جا دیده شود.",
-          "Tap an available code to see the discounted price here.",
+          "کد مناسب این سفارش خودکار اعمال می‌شود. از لیست می‌توانید کد دیگری بزنید.",
+          "A matching code is applied automatically. Tap another code in the list if you want.",
         )}
       </p>
       {offers.length ? (
