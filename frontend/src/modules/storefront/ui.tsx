@@ -563,40 +563,17 @@ export function PlanPickRow({
   );
 }
 
-export function Stepper({ step, renew = false }: { step: number; renew?: boolean }) {
-  const { t } = useStorefrontLocale();
-  const labels = renew
-    ? [
-        t("پلن", "Plan"),
-        t("پروفایل", "Profile"),
-        t("پرداخت", "Payment"),
-        t("تأیید", "Confirm"),
-      ]
-    : [
-        t("دسته", "Category"),
-        t("پلن", "Plan"),
-        t("کانفیگ", "Config"),
-        t("پروفایل", "Profile"),
-        t("پرداخت", "Payment"),
-        t("تأیید", "Confirm"),
-      ];
-  // Map absolute checkout step (1..) onto the visible label index
-  const activeIndex = renew
-    ? step === 1
-      ? 0
-      : step === 3
-        ? 1
-        : step === 4
-          ? 2
-          : step >= 5
-            ? 3
-            : Math.max(0, step - 1)
-    : Math.max(0, step - 1);
-
+export function Stepper({
+  labels,
+  activeIndex,
+}: {
+  labels: string[];
+  activeIndex: number;
+}) {
   return (
     <div className="mb-6 flex items-center justify-between gap-1 overflow-x-auto pb-1 text-[10px] font-semibold uppercase tracking-wide sm:mb-8 sm:justify-center sm:gap-2 sm:text-xs">
       {labels.map((label, index) => (
-        <div key={label} className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+        <div key={`${index}-${label}`} className="flex shrink-0 items-center gap-1.5 sm:gap-2">
           <div
             className={`flex h-7 w-7 items-center justify-center rounded-full border transition-colors sm:h-8 sm:w-8 ${
               index <= activeIndex

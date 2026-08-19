@@ -169,7 +169,7 @@ export default function ShopPage() {
           }));
           if (isRenewFlow && renewClientId) {
             const svc = (me.services || []).find((s: any) => s.id === renewClientId);
-            if (svc?.categoryId) setRenewCategoryId(svc.categoryId);
+            if (svc?.categoryId) setSelectedCategoryId(svc.categoryId);
           }
         }
       } catch {
