@@ -5,6 +5,8 @@ export type ApplicableCouponOffer = {
   description?: string | null;
   discountAmount?: number;
   finalAmount?: number;
+  amount?: number;
+  currency?: string;
 };
 
 export function pickAutoCouponCode(

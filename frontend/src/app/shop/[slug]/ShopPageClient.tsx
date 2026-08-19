@@ -27,7 +27,7 @@ import { FieldBlock } from "@/modules/storefront/design";
 import { BankCardVisual, resolvePaymentCards } from "@/modules/storefront/BankCardVisual";
 import { rememberStoreSlug, portalPathForSlug } from "@/modules/storefront/store-slug";
 import { computeCheckoutPreview, type CouponPreview } from "@/modules/storefront/checkout-preview";
-import { fetchApplicableCoupons, pickAutoCouponCode } from "@/modules/storefront/checkout-coupons";
+import { fetchApplicableCoupons, pickAutoCouponCode, type ApplicableCouponOffer } from "@/modules/storefront/checkout-coupons";
 import {
   AddonPicker,
   CategoryPicker,
@@ -412,16 +412,7 @@ function ShopBody(props: {
     [store?.payment],
   );
   const [couponBusy, setCouponBusy] = useState(false);
-  const [couponOffers, setCouponOffers] = useState<
-    Array<{
-      code: string;
-      description?: string | null;
-      discountAmount: number;
-      finalAmount: number;
-      amount: number;
-      currency: string;
-    }>
-  >([]);
+  const [couponOffers, setCouponOffers] = useState<ApplicableCouponOffer[]>([]);
   const [couponPreview, setCouponPreview] = useState<CouponPreview | null>(null);
   const [couponError, setCouponError] = useState("");
   const slug = store.slug;

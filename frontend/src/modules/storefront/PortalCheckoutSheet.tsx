@@ -15,7 +15,7 @@ import type {
   StorefrontStore,
 } from "@/modules/storefront/types";
 import { computeCheckoutPreview, type CouponPreview } from "@/modules/storefront/checkout-preview";
-import { fetchApplicableCoupons, pickAutoCouponCode } from "@/modules/storefront/checkout-coupons";
+import { fetchApplicableCoupons, pickAutoCouponCode, type ApplicableCouponOffer } from "@/modules/storefront/checkout-coupons";
 import {
   AddonPicker,
   CategoryPicker,
@@ -90,14 +90,7 @@ export function CheckoutSheet({
   const [categoryId, setCategoryId] = useState(lockedCategoryId);
   const [couponBusy, setCouponBusy] = useState(false);
   const [couponError, setCouponError] = useState("");
-  const [couponOffers, setCouponOffers] = useState<
-    Array<{
-      code: string;
-      description?: string | null;
-      discountAmount: number;
-      finalAmount: number;
-    }>
-  >([]);
+  const [couponOffers, setCouponOffers] = useState<ApplicableCouponOffer[]>([]);
   const [couponPreview, setCouponPreview] = useState<CouponPreview | null>(null);
 
   useEffect(() => {
