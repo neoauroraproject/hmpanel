@@ -8,6 +8,7 @@ const MODULE_ID_TO_NAV: Record<string, string> = {
   "monitoring-pro": "nav.monitoringPro",
   "backup-center": "nav.backupCenter",
   "job-center": "nav.jobCenter",
+  "external-panels": "nav.panelPlus",
 };
 
 const HREF_TO_NAV: Record<string, string> = {
@@ -21,6 +22,7 @@ const HREF_TO_NAV: Record<string, string> = {
   "/premium/monitoring": "nav.monitoringPro",
   "/premium/backups": "nav.backupCenter",
   "/premium/jobs": "nav.jobCenter",
+  "/premium/external-panels": "nav.panelPlus",
 };
 
 type TFn = (key: string, params?: Record<string, string | number>) => string;

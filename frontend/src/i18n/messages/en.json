@@ -32,7 +32,8 @@
     "adminRecharge": "Admin Recharge",
     "monitoringPro": "Monitoring Pro",
     "backupCenter": "Backup Center",
-    "jobCenter": "Job Center"
+    "jobCenter": "Job Center",
+    "panelPlus": "Panel Plus"
   },
   "common": {
     "save": "Save",
