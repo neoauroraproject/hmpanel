@@ -8,6 +8,19 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [1.8.32] - 2026-08-29
+
+### Added
+- **External panels (Premium):** schema for `StoreAddonGrant` extensions (`maxClients`, `allowedScope`), `ExternalClientRegistry`, and `external-panels` module manifest (Eylan + Pasarguard).
+- **Admin branding:** HM Panel logo and favicon on admin routes (`/login`, app shell); store/portal keep user branding.
+- **3x-ui API 3.7.0:** OpenAPI docs resolution, capability flags, and Dockerfile `docs/` copy.
+
+### Fixed
+- **Admin session security:** JWT `tokenVersion` revocation on disable, password change, and expiry.
+- **Panel URL consistency:** `apiBaseUrl` / `webBasePath` sync on panel update and boot backfill.
+- **Storefront checkout:** coupon type matching and auto-apply at checkout; Docker build typecheck fixes.
+- **Admin update:** BigInt `expiryTime` comparison in reseller update path.
+
 ## [1.8.31] - 2026-08-19
 
 ### Changed
