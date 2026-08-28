@@ -186,6 +186,7 @@ model Admin {
   clientNamePools  ClientNamePool[]
   storeAddonGrantsGiven    StoreAddonGrant[]      @relation("AddonGranter")
   storeAddonGrantsReceived StoreAddonGrant[]      @relation("AddonGrantee")
+  externalClients          ExternalClientRegistry[]
   storeReferralRewards     StoreReferralReward[]
   Brand            Brand[]
   operationQueues  OperationQueue[]
@@ -744,6 +745,8 @@ model StoreAddonGrant {
   granteeAdminId     String
   enabled            Boolean  @default(true)
   trafficQuotaBytes  BigInt   @default(0)
+  maxClients         Int      @default(0)
+  allowedScope       Json?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -753,6 +756,24 @@ model StoreAddonGrant {
   @@unique([providerId, granteeAdminId])
   @@index([granterAdminId])
   @@index([granteeAdminId])
+}
+
+model ExternalClientRegistry {
+  id                    String   @id @default(uuid())
+  adminId               String
+  providerId            String
+  username              String
+  remoteUserId          String?
+  trafficAllocatedBytes BigInt   @default(0)
+  source                String   @default("manual")
+  storeOrderId          String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  admin Admin @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@unique([adminId, providerId, username])
+  @@index([adminId, providerId])
 }
 
 model StoreProduct {
