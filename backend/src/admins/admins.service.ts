@@ -536,7 +536,8 @@ export class AdminsService implements OnModuleInit {
       data.expiryTime !== undefined &&
       BigInt(data.expiryTime) > 0n &&
       BigInt(data.expiryTime) <= BigInt(Date.now()) &&
-      (existing.expiryTime === 0n || existing.expiryTime > BigInt(Date.now()))
+      (BigInt(existing.expiryTime || 0) === 0n ||
+        BigInt(existing.expiryTime || 0) > BigInt(Date.now()))
     ) {
       updateData.tokenVersion = { increment: 1 };
     }
