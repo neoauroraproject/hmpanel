@@ -2,15 +2,18 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ShieldCheck, Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/store/auth";
 import type { LoginResponse } from "@/lib/types";
-import { useT } from "@/i18n";
+import { useT, useLocale } from "@/i18n";
 import { LocaleSwitcher } from "@/components/LocaleSwitcher";
+import { PanelLogo } from "@/components/PanelLogo";
+import { PANEL_BRAND } from "@/lib/panel-brand";
 
 export default function LoginPage() {
   const t = useT();
+  const { locale } = useLocale();
   const router = useRouter();
   const setAuth = useAuth((s) => s.setAuth);
   const [username, setUsername] = useState("");
@@ -48,12 +51,14 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-zinc-950 px-4">
       <div className="w-full max-w-sm">
         <div className="mb-8 flex flex-col items-center text-center">
-          <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-blue-500/15 text-blue-400">
-            <ShieldCheck size={26} />
+          <div className="mb-4 flex h-20 w-20 items-center justify-center">
+            <PanelLogo size={80} priority />
           </div>
-          <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">{t("login.title")}</h1>
+          <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">
+            {locale === "fa" ? PANEL_BRAND.nameFa : PANEL_BRAND.name}
+          </h1>
           <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-            {t("login.subtitle")}
+            {locale === "fa" ? PANEL_BRAND.descriptionFa : PANEL_BRAND.description}
           </p>
           <div className="mt-4">
             <LocaleSwitcher />

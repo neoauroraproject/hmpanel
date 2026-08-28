@@ -13,9 +13,12 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+/** Root metadata is intentionally minimal — admin panel and storefront set their own title/icons. */
 export const metadata: Metadata = {
-  title: "Panel — 3x-ui Reseller Management",
-  description: "Multi-server 3x-ui reseller management panel",
+  title: {
+    default: "HM Panel",
+    template: "%s | HM Panel",
+  },
 };
 
 export default function RootLayout({

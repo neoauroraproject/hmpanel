@@ -11,7 +11,6 @@ import {
   Server,
   Wallet,
   LogOut,
-  ShieldCheck,
   DatabaseBackup,
   Activity,
   Import,
@@ -31,6 +30,9 @@ import { useLicenseActivation } from "@/hooks/useLicenseActivation";
 import { api } from "@/lib/api";
 import { useT } from "@/i18n";
 import { translatePremiumMenuTitle } from "@/lib/premium-nav";
+import { PanelLogo } from "@/components/PanelLogo";
+import { PANEL_BRAND } from "@/lib/panel-brand";
+import { useLocale } from "@/i18n";
 
 const CORE_NAV: {
   href: string;
@@ -68,6 +70,7 @@ const PREMIUM_MENU_ICONS: Record<string, typeof Diamond> = {
 
 export function Sidebar() {
   const t = useT();
+  const { locale } = useLocale();
   const pathname = usePathname();
   const router = useRouter();
   const admin = useAuth((s) => s.admin);
@@ -147,11 +150,11 @@ export function Sidebar() {
 
   return (
     <aside className="hidden md:flex w-60 flex-col border-e border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950">
-      <div className="flex items-center gap-2 px-5 py-5">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-500/15 text-blue-400">
-          <ShieldCheck size={18} />
-        </div>
-        <span className="font-semibold text-zinc-800 dark:text-zinc-100">{t("app.name")}</span>
+      <div className="flex items-center gap-2.5 px-5 py-5">
+        <PanelLogo size={32} />
+        <span className="font-semibold text-zinc-800 dark:text-zinc-100">
+          {locale === "fa" ? PANEL_BRAND.nameFa : PANEL_BRAND.name}
+        </span>
       </div>
 
       <div className="flex-1 overflow-y-auto overflow-x-hidden">

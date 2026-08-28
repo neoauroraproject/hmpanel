@@ -12,7 +12,6 @@ import {
   Server,
   Wallet,
   LogOut,
-  ShieldCheck,
   DatabaseBackup,
   Activity,
   Import,
@@ -33,6 +32,9 @@ import { useLicenseActivation } from "@/hooks/useLicenseActivation";
 import { api } from "@/lib/api";
 import { useT } from "@/i18n";
 import { translatePremiumMenuTitle } from "@/lib/premium-nav";
+import { PanelLogo } from "@/components/PanelLogo";
+import { PANEL_BRAND } from "@/lib/panel-brand";
+import { useLocale } from "@/i18n";
 
 const CORE_NAV: {
   href: string;
@@ -70,6 +72,7 @@ const PREMIUM_MENU_ICONS: Record<string, typeof Diamond> = {
 
 export function MobileNav() {
   const t = useT();
+  const { locale } = useLocale();
   const [isOpen, setIsOpen] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
@@ -152,10 +155,10 @@ export function MobileNav() {
     <>
       <div className="flex h-14 items-center justify-between border-b border-zinc-200 bg-white px-4 dark:border-zinc-800 dark:bg-zinc-950 md:hidden">
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-500/15 text-blue-400">
-            <ShieldCheck size={18} />
-          </div>
-          <span className="font-semibold text-zinc-800 dark:text-zinc-100">{t("app.name")}</span>
+          <PanelLogo size={28} />
+          <span className="font-semibold text-zinc-800 dark:text-zinc-100">
+            {locale === "fa" ? PANEL_BRAND.nameFa : PANEL_BRAND.name}
+          </span>
         </div>
         <button
           type="button"
