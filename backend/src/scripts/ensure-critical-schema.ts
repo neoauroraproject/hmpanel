@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { backfillPanelEndpointFields } from './backfill-panel-endpoints';
 
 /**
  * Idempotent schema patches for production panels that predate prisma migrate history.
@@ -49,6 +50,10 @@ export async function ensureCriticalSchema(prisma: PrismaClient): Promise<void> 
     `ALTER TABLE "StoreProduct" ADD COLUMN IF NOT EXISTS "testCooldownoldownDays" INTEGER NOT NULL DEFAULT 30`,
     `CREATE INDEX IF NOT EXISTS "StoreProduct_isTest_idx" ON "StoreProduct"("isTest")`,
     `ALTER TABLE "StoreProduct" ADD COLUMN IF NOT EXISTS "ipLimitOptions" JSONB DEFAULT '[]'`,
+
+    // Admin JWT invalidation + customer session auth channel
+    `ALTER TABLE "Admin" ADD COLUMN IF NOT EXISTS "tokenVersion" INTEGER NOT NULL DEFAULT 0`,
+    `ALTER TABLE "StoreCustomerSession" ADD COLUMN IF NOT EXISTS "authChannel" TEXT NOT NULL DEFAULT 'token'`,
 
     `ALTER TABLE "StoreOrder" ADD COLUMN IF NOT EXISTS "limitIp" INTEGER`,
     `ALTER TABLE "StoreOrder" ADD COLUMN IF NOT EXISTS "telegramAdminChatId" TEXT`,
@@ -354,5 +359,19 @@ export async function ensureCriticalSchema(prisma: PrismaClient): Promise<void> 
       }
       console.warn(`[HMPanel] ensureCriticalSchema skipped: ${msg}`);
     }
+  }
+
+  try {
+    const result = await backfillPanelEndpointFields(prisma);
+    if (result.updated > 0) {
+      console.log(
+        `[HMPanel] Reconciled panel API endpoints: ${result.updated}/${result.scanned} updated` +
+          (result.skipped ? `, ${result.skipped} skipped (invalid url)` : ''),
+      );
+    }
+  } catch (err: any) {
+    console.warn(
+      `[HMPanel] panel endpoint backfill skipped: ${err?.message || err}`,
+    );
   }
 }

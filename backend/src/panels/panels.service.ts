@@ -13,6 +13,11 @@ import { PanelCapabilitiesService } from './panel-capabilities.service';
 import { buildConnectionExtrasEnvelope } from '../clients/output/connection-extras';
 import { ClientsService } from '../clients/clients.service';
 import { AdminQuotaService } from '../traffic/admin-quota.service';
+import {
+  derivePanelConnectionFromUrl,
+  panelEndpointFieldsFromUrl,
+  resolvePanelApiBaseUrl,
+} from '../common/utils/panel-url.util';
 import axios, { AxiosError } from 'axios';
 import * as https from 'https';
 import * as crypto from 'crypto';
@@ -399,28 +404,13 @@ export class PanelsService implements OnModuleInit {
     if (!data.url || !/^https?:\/\//.test(data.url)) {
       throw new BadRequestException('A valid http(s) URL is required');
     }
-    let urlObj: URL;
-    try {
-      urlObj = new URL(data.url);
-    } catch {
-      throw new BadRequestException('Malformed URL');
-    }
+    const { normalizedUrl, webBasePath, apiBaseUrl } =
+      derivePanelConnectionFromUrl(data.url);
+    const urlObj = new URL(normalizedUrl);
 
     const parsedHost = urlObj.hostname;
     const parsedPort =
       urlObj.port || (urlObj.protocol === 'https:' ? '443' : '80');
-
-    const path = urlObj.pathname.replace(/\/$/, '');
-    let webBasePath = '';
-    const panelIndex = path.indexOf('/panel');
-    if (panelIndex !== -1) {
-      webBasePath = path.substring(0, panelIndex);
-    } else {
-      webBasePath = path;
-    }
-
-    const baseUrl = urlObj.origin;
-    const apiBaseUrl = `${baseUrl}${webBasePath}`;
 
     const startTime = Date.now();
 
@@ -433,7 +423,7 @@ export class PanelsService implements OnModuleInit {
     };
 
     const debugLog = {
-      requestedUrl: data.url,
+      requestedUrl: normalizedUrl,
       method: 'GET',
       responseStatus: 0,
       endpoint: `${apiBaseUrl}/panel/api/server/status`,
@@ -648,21 +638,8 @@ export class PanelsService implements OnModuleInit {
       serverId = server.id;
     }
 
-    let urlObj: URL;
-    try {
-      urlObj = new URL(data.url);
-    } catch {
-      throw new BadRequestException('Malformed URL');
-    }
-    const path = urlObj.pathname.replace(/\/$/, '');
-    let webBasePath = '';
-    const panelIndex = path.indexOf('/panel');
-    if (panelIndex !== -1) {
-      webBasePath = path.substring(0, panelIndex);
-    } else {
-      webBasePath = path;
-    }
-    const apiBaseUrl = `${urlObj.origin}${webBasePath}`;
+    const { normalizedUrl, webBasePath, apiBaseUrl } =
+      panelEndpointFieldsFromUrl(data.url);
 
     let formattedSubUrl = null;
     if (data.subUrl && data.subUrl.trim() !== '') {
@@ -680,7 +657,7 @@ export class PanelsService implements OnModuleInit {
     }
 
     const testResult = await this.testConnection({
-      url: data.url,
+      url: normalizedUrl,
       apiToken: data.apiToken,
     });
 
@@ -688,7 +665,7 @@ export class PanelsService implements OnModuleInit {
       data: {
         serverId,
         name: data.name,
-        url: data.url.replace(/\/$/, ''),
+        url: normalizedUrl,
         subUrl: formattedSubUrl,
         version: 'unknown',
         apiToken: data.apiToken,
@@ -836,15 +813,31 @@ export class PanelsService implements OnModuleInit {
       }
     }
 
+    const updateData: {
+      name?: string;
+      url?: string;
+      webBasePath?: string;
+      apiBaseUrl?: string;
+      subUrl?: string;
+      apiToken?: string;
+      status?: string;
+    } = {
+      name: data.name,
+      subUrl: formattedSubUrl,
+      apiToken: data.apiToken,
+      status: data.status,
+    };
+
+    if (data.url) {
+      const endpoint = panelEndpointFieldsFromUrl(data.url);
+      updateData.url = endpoint.normalizedUrl;
+      updateData.webBasePath = endpoint.webBasePath;
+      updateData.apiBaseUrl = endpoint.apiBaseUrl;
+    }
+
     return this.prisma.panel.update({
       where: { id },
-      data: {
-        name: data.name,
-        url: data.url ? data.url.replace(/\/$/, '') : undefined,
-        subUrl: formattedSubUrl,
-        apiToken: data.apiToken,
-        status: data.status,
-      },
+      data: updateData,
       select: {
         id: true,
         name: true,
@@ -940,7 +933,7 @@ export class PanelsService implements OnModuleInit {
   async sync(id: string) {
     const panel = await this.findOne(id);
     const startTime = Date.now();
-    const apiBaseUrl = panel.apiBaseUrl || panel.url.replace(/\/$/, '');
+    const apiBaseUrl = resolvePanelApiBaseUrl(panel);
 
     this.logger.debug(
       `[DIAGNOSTIC] Start Sync for panel ${id} (${panel.name}) at ${apiBaseUrl}`,
@@ -1870,7 +1863,7 @@ export class PanelsService implements OnModuleInit {
 
   async restartXray(id: string) {
     const panel = await this.findOne(id);
-    const apiBaseUrl = panel.apiBaseUrl || panel.url.replace(/\/$/, '');
+    const apiBaseUrl = resolvePanelApiBaseUrl(panel);
     try {
       const response = await axios.post(
         `${apiBaseUrl}/panel/api/server/restartXrayService`,
@@ -1994,7 +1987,7 @@ export class PanelsService implements OnModuleInit {
     modifier: (inbound: any) => void,
   ) {
     const panel = await this.findOne(panelId);
-    const apiBaseUrl = panel.apiBaseUrl || panel.url.replace(/\/$/, '');
+    const apiBaseUrl = resolvePanelApiBaseUrl(panel);
     const headers = {
       Authorization: panel.apiToken ? `Bearer ${panel.apiToken}` : undefined,
     };
@@ -2059,7 +2052,7 @@ export class PanelsService implements OnModuleInit {
 
   private async getPanelHttpContext(panelId: string) {
     const panel = await this.findOne(panelId);
-    const base = panel.apiBaseUrl || panel.url.replace(/\/$/, '');
+    const base = resolvePanelApiBaseUrl(panel);
     const headers = {
       Authorization: panel.apiToken ? `Bearer ${panel.apiToken}` : undefined,
     };
@@ -3393,7 +3386,7 @@ export class PanelsService implements OnModuleInit {
     groupName: string,
   ) {
     const panel = await this.findOne(panelId);
-    const apiBaseUrl = panel.apiBaseUrl || panel.url.replace(/\/$/, '');
+    const apiBaseUrl = resolvePanelApiBaseUrl(panel);
     try {
       const response = await axios.post(
         `${apiBaseUrl}/panel/api/clients/groups/bulkAdd`,
@@ -3430,7 +3423,7 @@ export class PanelsService implements OnModuleInit {
     groupName: string,
   ) {
     const panel = await this.findOne(panelId);
-    const apiBaseUrl = panel.apiBaseUrl || panel.url.replace(/\/$/, '');
+    const apiBaseUrl = resolvePanelApiBaseUrl(panel);
     try {
       const response = await axios.post(
         `${apiBaseUrl}/panel/api/clients/groups/bulkRemove`,
@@ -3462,7 +3455,7 @@ export class PanelsService implements OnModuleInit {
 
   async listGroups(panelId: string) {
     const panel = await this.findOne(panelId);
-    const apiBaseUrl = panel.apiBaseUrl || panel.url.replace(/\/$/, '');
+    const apiBaseUrl = resolvePanelApiBaseUrl(panel);
     try {
       const response = await axios.get(
         `${apiBaseUrl}/panel/api/clients/groups`,
@@ -3489,7 +3482,7 @@ export class PanelsService implements OnModuleInit {
 
   async deleteGroup(panelId: string, groupName: string) {
     const panel = await this.findOne(panelId);
-    const apiBaseUrl = panel.apiBaseUrl || panel.url.replace(/\/$/, '');
+    const apiBaseUrl = resolvePanelApiBaseUrl(panel);
     try {
       const response = await axios.post(
         `${apiBaseUrl}/panel/api/clients/groups/delete`,
@@ -3530,7 +3523,7 @@ export class PanelsService implements OnModuleInit {
     if (!oldName || !newName || oldName === newName) return 'skipped';
 
     const panel = await this.findOne(panelId);
-    const apiBaseUrl = panel.apiBaseUrl || panel.url.replace(/\/$/, '');
+    const apiBaseUrl = resolvePanelApiBaseUrl(panel);
     const panelLabel = panel.name || panelId;
     const authHeaders = {
       Authorization: panel.apiToken ? `Bearer ${panel.apiToken}` : undefined,
@@ -3827,7 +3820,7 @@ export class PanelsService implements OnModuleInit {
       panels.map(async (p) => {
         let panelEmails: string[] = [];
         let success = false;
-        const apiBaseUrl = p.apiBaseUrl || p.url.replace(/\/$/, '');
+        const apiBaseUrl = resolvePanelApiBaseUrl(p);
 
         try {
           this.logger.debug(`Fetching live onlines for panel ${p.id}`);
@@ -3935,7 +3928,7 @@ export class PanelsService implements OnModuleInit {
     await Promise.all(
       panels.map(async (p) => {
         try {
-          const apiBaseUrl = p.apiBaseUrl || p.url.replace(/\/$/, '');
+          const apiBaseUrl = resolvePanelApiBaseUrl(p);
           const res = await axios.post(
             `${apiBaseUrl}/panel/api/inbounds/clientIps`,
             {},

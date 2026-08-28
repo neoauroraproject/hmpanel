@@ -1,0 +1,2 @@
+-- Panel URL consistency: apiBaseUrl and webBasePath are derived from url at runtime.
+-- Existing rows with stale apiBaseUrl are reconciled on boot via backfillPanelEndpointFields().

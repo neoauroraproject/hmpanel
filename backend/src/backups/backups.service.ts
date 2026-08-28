@@ -13,6 +13,7 @@ import { promisify } from 'util';
 import axios from 'axios';
 import { HmctlClient } from '../settings/hmctl.client';
 import { PrismaService } from '../prisma/prisma.service';
+import { resolvePanelApiBaseUrl } from '../common/utils/panel-url.util';
 import { getAppVersion } from '../common/utils/app-version';
 
 const execPromise = promisify(exec);
@@ -907,7 +908,7 @@ export class BackupsService {
     apiBaseUrl?: string | null;
     apiToken?: string | null;
   }): Promise<StoredPanelDbBackup> {
-    const apiBaseUrl = (panel.apiBaseUrl || panel.url || '').replace(/\/$/, '');
+    const apiBaseUrl = resolvePanelApiBaseUrl(panel);
     if (!apiBaseUrl) throw new BadRequestException('Panel has no API URL');
 
     const fetched = await this.fetchPanelDatabase(apiBaseUrl, panel.apiToken);
@@ -952,7 +953,7 @@ export class BackupsService {
       );
     }
 
-    const apiBaseUrl = (panel.apiBaseUrl || panel.url || '').replace(/\/$/, '');
+    const apiBaseUrl = resolvePanelApiBaseUrl(panel);
     if (!apiBaseUrl) throw new BadRequestException('Panel has no API URL');
 
     const uploadName = path.basename(filePath).endsWith('.db')

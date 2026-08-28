@@ -6,6 +6,7 @@ import { ClientsService } from '../clients/clients.service';
 import axios from 'axios';
 import { supportsBulkClientApi } from '../common/utils/panel-version.util';
 import { buildNativeSubscriptionUrl } from '../common/utils/native-sub-url';
+import { resolvePanelApiBaseUrl } from '../common/utils/panel-url.util';
 
 /**
  * BulkClientsService — Dedicated service for optimized bulk operations.
@@ -127,7 +128,7 @@ export class BulkClientsService {
     endpoint: string,
     body: any,
   ): Promise<{ success: boolean; data?: any; error?: string }> {
-    const base = panel.apiBaseUrl || panel.url.replace(/\/$/, '');
+    const base = resolvePanelApiBaseUrl(panel);
     const headers: Record<string, string> = {};
     if (panel.apiToken) {
       headers['Authorization'] = `Bearer ${panel.apiToken}`;

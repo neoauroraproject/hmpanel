@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import axios from 'axios';
+import { resolvePanelApiBaseUrl } from '../common/utils/panel-url.util';
 
 export interface PanelSpeedData {
   panelId: string;
@@ -92,7 +93,7 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
             };
           }
 
-          const apiBaseUrl = p.apiBaseUrl || p.url.replace(/\/$/, '');
+          const apiBaseUrl = resolvePanelApiBaseUrl(p);
           const startTime = Date.now();
           let cpu = 0,
             ram = 0,

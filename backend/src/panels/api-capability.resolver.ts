@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
 import { isPanelApiAtLeast } from '../common/utils/panel-version.util';
+import { resolveOpenApiDocsDir } from '../common/utils/resolve-openapi-docs-dir';
 
 export interface PanelCapabilities {
   bulkEnable?: boolean;
@@ -24,6 +25,12 @@ export interface PanelCapabilities {
   hostsGroupedApi?: boolean;
   /** Panel self-update status endpoint (3.5.0+) */
   panelUpdateStatus?: boolean;
+  /** HWID limit API (3.7.0+) */
+  hwidsApi?: boolean;
+  /** Subscription balancers API (3.7.0+) */
+  subBalancersApi?: boolean;
+  /** Xray geodata management API (3.7.0+) */
+  xrayGeodataApi?: boolean;
   [key: string]: boolean | undefined;
 }
 
@@ -59,7 +66,7 @@ export class ApiCapabilityResolver {
       patch = parseInt(vMatch[3] || '0', 10);
     }
 
-    const docsDir = path.join(process.cwd(), '../docs');
+    const docsDir = resolveOpenApiDocsDir() ?? path.join(process.cwd(), '../docs');
     let specFile = '';
     let compatibilityMode = false;
 
@@ -169,6 +176,9 @@ export class ApiCapabilityResolver {
         panelUpdateStatus: paths.includes(
           '/panel/api/server/getUpdateStatus',
         ),
+        hwidsApi: paths.some((p) => p.includes('/panel/api/clients/hwids/')),
+        subBalancersApi: paths.includes('/panel/api/sub-balancers'),
+        xrayGeodataApi: paths.some((p) => p.includes('/panel/api/xray/geodata/')),
       };
 
       this.logger.log(

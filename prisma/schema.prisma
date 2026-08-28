@@ -158,6 +158,8 @@ model Admin {
   refundOnEdit     Boolean     @default(true)
   unlimitedTraffic Boolean     @default(false)
   quotaMode        QuotaMode   @default(GLOBAL)
+  /// Bumped on password change / disable to invalidate outstanding JWTs.
+  tokenVersion     Int         @default(0)
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
 
@@ -842,6 +844,8 @@ model StoreCustomerSession {
   id         String    @id @default(uuid())
   customerId String
   tokenHash  String    @unique
+  /// How the session was created: telegram | token | web
+  authChannel String   @default("token")
   userAgent  String?
   ipAddress  String?
   createdAt  DateTime  @default(now())

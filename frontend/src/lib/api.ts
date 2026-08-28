@@ -134,6 +134,14 @@ api.interceptors.response.use(
         isRefreshing = false;
       }
     }
+
+    if (error?.response?.status === 403) {
+      const msg = String(error?.response?.data?.message || "");
+      if (/account disabled|account expired|session revoked/i.test(msg)) {
+        clearAuthAndMaybeRedirectToLogin();
+      }
+    }
+
     return Promise.reject(error);
   },
 );

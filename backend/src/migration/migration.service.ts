@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PanelsService } from '../panels/panels.service';
+import { derivePanelConnectionFromUrl } from '../common/utils/panel-url.util';
 import Database = require('better-sqlite3');
 import { randomUUID } from 'crypto';
 
@@ -98,17 +99,13 @@ export class MigrationService {
       for (const p of panels) {
         // Parse url to get webBasePath and apiBaseUrl first so they are available for both create/update
         let webBasePath = '';
-        let apiBaseUrl = p.url;
+        let apiBaseUrl = String(p.url || '').replace(/\/$/, '');
+        let normalizedUrl = apiBaseUrl;
         try {
-          const urlObj = new URL(p.url);
-          const path = urlObj.pathname.replace(/\/$/, '');
-          const panelIndex = path.indexOf('/panel');
-          if (panelIndex !== -1) {
-            webBasePath = path.substring(0, panelIndex);
-          } else {
-            webBasePath = path;
-          }
-          apiBaseUrl = `${urlObj.origin}${webBasePath}`;
+          const derived = derivePanelConnectionFromUrl(p.url);
+          webBasePath = derived.webBasePath;
+          apiBaseUrl = derived.apiBaseUrl;
+          normalizedUrl = derived.normalizedUrl;
         } catch (err) {
           this.logger.warn(
             `Failed to parse URL for panel ${p.name}: ${p.url}. Using raw URL.`,
@@ -123,7 +120,7 @@ export class MigrationService {
           await this.prisma.panel.update({
             where: { id: existing.id },
             data: {
-              url: p.url.replace(/\/$/, ''),
+              url: normalizedUrl,
               subUrl: p.sub_url || null,
               apiToken: p.token || null,
               username: p.username,
@@ -141,7 +138,7 @@ export class MigrationService {
             data: {
               serverId: defaultServer.id,
               name: p.name,
-              url: p.url.replace(/\/$/, ''),
+              url: normalizedUrl,
               subUrl: p.sub_url || null,
               apiToken: p.token || null,
               username: p.username,

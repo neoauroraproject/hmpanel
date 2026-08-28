@@ -48,6 +48,9 @@ COPY VERSION ./
 # Copy backend source
 COPY backend ./backend
 
+# OpenAPI specs for panel capability resolver (api331…api370)
+COPY docs ./docs
+
 # Build backend
 RUN cd backend && npm run build
 
@@ -95,6 +98,7 @@ LABEL org.opencontainers.image.version="${APP_VERSION}"
 COPY --from=builder /app/backend/dist ./backend/dist
 COPY --from=builder /app/backend/package.json ./backend/package.json
 COPY --from=builder /app/backend/node_modules ./backend/node_modules
+COPY --from=builder /app/docs ./docs
 
 # ── Frontend artifacts (standalone) ──────────────────────────────
 COPY --from=builder /app/frontend/.next/standalone ./frontend/

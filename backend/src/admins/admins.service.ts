@@ -523,10 +523,23 @@ export class AdminsService implements OnModuleInit {
 
     if (data.password) {
       updateData.passwordHash = await bcrypt.hash(data.password, 10);
+      updateData.tokenVersion = { increment: 1 };
+    }
+
+    if (data.status === 'disabled' && existing.status !== 'disabled') {
+      updateData.tokenVersion = { increment: 1 };
     }
 
     if (data.expiryTime !== undefined)
       updateData.expiryTime = BigInt(data.expiryTime);
+    if (
+      data.expiryTime !== undefined &&
+      BigInt(data.expiryTime) > 0n &&
+      BigInt(data.expiryTime) <= BigInt(Date.now()) &&
+      (existing.expiryTime === 0n || existing.expiryTime > BigInt(Date.now()))
+    ) {
+      updateData.tokenVersion = { increment: 1 };
+    }
     if (data.trafficMode !== undefined)
       updateData.trafficMode = data.trafficMode as never;
     if (data.portalSettings !== undefined)
