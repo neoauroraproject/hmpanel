@@ -14,7 +14,8 @@ export const PANEL_METADATA = {
   title: PANEL_BRAND.title,
   description: PANEL_BRAND.description,
   icons: {
-    icon: PANEL_BRAND.logoPath,
+    icon: [{ url: PANEL_BRAND.logoPath, type: "image/png" }],
+    shortcut: PANEL_BRAND.logoPath,
     apple: PANEL_BRAND.logoPath,
   },
 } as const;

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/providers";
+import { PANEL_METADATA } from "@/lib/panel-brand";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -13,12 +14,13 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-/** Root metadata is intentionally minimal — admin panel and storefront set their own title/icons. */
+/** Root metadata — admin/portal layouts may override title; icons apply site-wide. */
 export const metadata: Metadata = {
   title: {
     default: "HM Panel",
     template: "%s | HM Panel",
   },
+  icons: PANEL_METADATA.icons,
 };
 
 export default function RootLayout({

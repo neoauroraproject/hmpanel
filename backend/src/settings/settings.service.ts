@@ -200,8 +200,9 @@ export class SettingsService {
 
   async updatePanel() {
     const { promisify } = require('util');
-    const { exec } = require('child_process');
+    const { exec, execFile } = require('child_process');
     const execAsync = promisify(exec);
+    const execFileAsync = promisify(execFile);
     const { HttpException, HttpStatus } = require('@nestjs/common');
 
     try {
@@ -367,8 +368,13 @@ export class SettingsService {
         'apk add --no-cache bash curl util-linux >> "$LOG" 2>&1 || fail "apk add failed (network/mirror?)"',
         'echo "[updater] apk packages OK" >> "$LOG"',
         'echo "[4/7] Running master update.sh on host via nsenter..." >> "$LOG"',
-        `echo "[updater] downloading update.sh..." >> "$LOG"`,
-        `curl -fsSL https://raw.githubusercontent.com/neoauroraproject/hmpanel/main/update.sh -o "${updateScriptPath}" >> "$LOG" 2>&1 || fail "curl update.sh failed (GitHub unreachable?)"`,
+        `if [ -f "${installDir}/update.sh" ]; then`,
+        `  cp "${installDir}/update.sh" "${updateScriptPath}" >> "$LOG" 2>&1 || fail "copy local update.sh failed"`,
+        `  echo "[updater] using bundled update.sh from install dir" >> "$LOG"`,
+        'else',
+        `  echo "[updater] downloading update.sh from GitHub..." >> "$LOG"`,
+        `  curl -fsSL https://raw.githubusercontent.com/neoauroraproject/hmpanel/main/update.sh -o "${updateScriptPath}" >> "$LOG" 2>&1 || fail "curl update.sh failed (GitHub unreachable?)"`,
+        'fi',
         `chmod +x "${updateScriptPath}"`,
         'echo "[updater] launching update.sh via nsenter..." >> "$LOG"',
         `nsenter -t 1 -m -u -i -n -- bash "${updateScriptPath}" >> "$LOG" 2>&1`,
@@ -379,10 +385,25 @@ export class SettingsService {
         'exit $EC',
       ].join('\n');
 
-      const runCmd = `docker run -d --name hmpanel-updater --rm --privileged --pid=host -v "${installDir}:${installDir}" -v ${logVolumeName}:/updater-logs docker:latest /bin/sh -c ${JSON.stringify(updaterShell)}`;
-
+      // execFile (not exec string) — avoids host shell expanding $LOG/$EC inside updaterShell.
       try {
-        await execAsync(runCmd);
+        await execFileAsync('docker', [
+          'run',
+          '-d',
+          '--name',
+          'hmpanel-updater',
+          '--rm',
+          '--privileged',
+          '--pid=host',
+          '-v',
+          `${installDir}:${installDir}`,
+          '-v',
+          `${logVolumeName}:/updater-logs`,
+          'docker:latest',
+          '/bin/sh',
+          '-c',
+          updaterShell,
+        ]);
         appendLog('[updater] hmpanel-updater container started');
       } catch (runErr: any) {
         appendLog(`[UPDATE_FAILED] docker run failed: ${runErr?.message || runErr}`);
