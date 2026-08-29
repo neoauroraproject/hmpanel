@@ -1,3 +1,5 @@
+import type { Metadata } from "next";
+
 /** Default branding for the admin panel UI only (not storefront / portal). */
 export const PANEL_BRAND = {
   name: "HM Panel",
@@ -10,7 +12,7 @@ export const PANEL_BRAND = {
   logoPath: "/brand/hmpanel-logo.png",
 } as const;
 
-export const PANEL_METADATA = {
+export const PANEL_METADATA: Metadata = {
   title: PANEL_BRAND.title,
   description: PANEL_BRAND.description,
   icons: {
@@ -18,4 +20,4 @@ export const PANEL_METADATA = {
     shortcut: PANEL_BRAND.logoPath,
     apple: PANEL_BRAND.logoPath,
   },
-} as const;
+};
