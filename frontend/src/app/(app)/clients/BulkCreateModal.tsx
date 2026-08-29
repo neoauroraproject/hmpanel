@@ -176,7 +176,8 @@ export function BulkCreateModal({ onClose, inboundsList }: BulkCreateModalProps)
         payload.total = Number(form.trafficGB) * 1024 * 1024 * 1024;
       }
       if (form.expiryDays) {
-        payload.expiryTime = Date.now() + Number(form.expiryDays) * 24 * 60 * 60 * 1000;
+        // On-hold: timer starts after first connection
+        payload.expiryTime = -(Number(form.expiryDays) * 24 * 60 * 60 * 1000);
       }
       if (form.group) payload.group = form.group;
       if (form.remark) payload.remark = form.remark;
@@ -397,6 +398,7 @@ export function BulkCreateModal({ onClose, inboundsList }: BulkCreateModalProps)
                   <input
                     type="number"
                     min="0"
+                    step="0.1"
                     placeholder={t("common.unlimited")}
                     value={form.trafficGB}
                     onChange={(e) => setForm({ ...form, trafficGB: e.target.value })}

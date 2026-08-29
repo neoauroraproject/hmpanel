@@ -2,6 +2,7 @@ import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ClientsService } from '../../clients/clients.service';
 import { PanelsService } from '../../panels/panels.service';
+import { buildOnHoldExpiry3xUi } from '../../clients/limit-mapper.util';
 
 @Injectable()
 export class StoreProvisioningService {
@@ -238,8 +239,10 @@ export class StoreProvisioningService {
     await this.ensurePanelSynced(profile.panelId, inboundIds);
 
     const totalBytes = Number(order.product.traffic);
-    const expiryTime = Date.now() + order.product.durationDays * 86400000;
+    const days = Math.max(0, Number(order.product.durationDays || 0));
+    const expiryTime = buildOnHoldExpiry3xUi(days);
     const remarkBase = this.normalizeBaseName(order.configName || 'user');
+    const limitIp = Number((order as { limitIp?: number | null }).limitIp || 0) || 0;
 
     let lastError: Error | null = null;
     const candidatesTried = new Set<string>();
@@ -262,6 +265,7 @@ export class StoreProvisioningService {
           total: totalBytes,
           expiryTime,
           adminId,
+          limitIp,
         });
 
         await this.prisma.storeOrder.update({

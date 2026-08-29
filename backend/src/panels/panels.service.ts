@@ -2123,12 +2123,16 @@ export class PanelsService implements OnModuleInit {
       totalGB?: number;
       expiryTime?: number;
       limitIp?: number;
+      limitHwid?: number;
       tgId?: number;
       enable?: boolean;
       flow?: string;
       subId?: string;
       comment?: string;
       reset?: number;
+      resetMax?: number;
+      trafficReset?: string;
+      trafficResetDay?: number;
     },
     adminId?: string,
   ): Promise<PanelApiResult> {

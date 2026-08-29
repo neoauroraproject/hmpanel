@@ -1915,7 +1915,8 @@ function AddClientModal({
       
       let expiryTime = 0;
       if (form.expiryDays && Number(form.expiryDays) > 0) {
-        expiryTime = Date.now() + Number(form.expiryDays) * 24 * 60 * 60 * 1000;
+        // On-hold: timer starts after first connection (negative ms duration)
+        expiryTime = -(Number(form.expiryDays) * 24 * 60 * 60 * 1000);
       }
 
       const dto = {
@@ -2120,6 +2121,7 @@ function AddClientModal({
                 <input
                   type="number"
                   min={0}
+                  step="0.1"
                   placeholder={t("clients.blankUnlimited")}
                   value={form.totalGB}
                   onChange={(e) => setForm({ ...form, totalGB: e.target.value })}
@@ -2424,7 +2426,7 @@ export function EditClientModal({
                 <input
                   type="number"
                   min={0}
-                  step={1}
+                  step="0.1"
                   placeholder={trafficMode === "set" ? t("clients.newTotalPlaceholder") : trafficMode === "add" ? t("clients.trafficToAddPlaceholder") : t("clients.trafficToRemovePlaceholder")}
                   value={trafficInput}
                   onChange={(e) => setTrafficInput(e.target.value)}

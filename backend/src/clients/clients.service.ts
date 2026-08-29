@@ -35,6 +35,9 @@ import {
   supportsBulkDelete,
 } from '../common/utils/panel-version.util';
 import { AdminQuotaService } from '../traffic/admin-quota.service';
+import {
+  resolve3xUiLimit,
+} from './limit-mapper.util';
 
 @Injectable()
 export class ClientsService {
@@ -518,6 +521,11 @@ export class ClientsService {
       flow?: string;
       adminId?: string;
       limitIp?: number;
+      /** When set, maps to 3x-ui trafficReset (3.7+) / reset interval. */
+      trafficReset?: string;
+      trafficResetDay?: number;
+      reset?: number;
+      resetMax?: number;
     },
   ) {
     if (data.email) data.email = data.email.trim();
@@ -643,24 +651,39 @@ export class ClientsService {
       const clientSubId = require('crypto').randomBytes(8).toString('hex');
 
       for (const [panelId, { numericIds }] of byPanel) {
+        const panel = inbounds.find((i) => i.panelId === panelId)?.panel;
+        const limits = resolve3xUiLimit(
+          {
+            apiVersion: panel?.apiVersion,
+            capabilities: panel?.capabilities,
+          },
+          data.limitIp,
+        );
         const clientUuid = randomUUID();
         const clientSubToken = require('crypto').randomBytes(5).toString('hex');
+        const payload: Record<string, unknown> = {
+          id: clientUuid,
+          email: data.email,
+          totalGB: Number(data.total) || 0,
+          expiryTime: data.expiryTime || 0,
+          limitIp: limits.limitIp,
+          limitHwid: limits.limitHwid,
+          tgId: 0,
+          enable: true,
+          flow: data.flow || '',
+          subId: clientSubId,
+          comment: '',
+          reset: data.reset ?? 0,
+        };
+        if (data.trafficReset && data.trafficReset !== 'never') {
+          payload.trafficReset = data.trafficReset;
+          if (data.trafficResetDay) payload.trafficResetDay = data.trafficResetDay;
+        }
+        if (data.resetMax != null) payload.resetMax = data.resetMax;
         panelPayloads.set(panelId, {
           uuid: clientUuid,
           subToken: clientSubToken,
-          payload: {
-            id: clientUuid,
-            email: data.email,
-            totalGB: Number(data.total) || 0,
-            expiryTime: data.expiryTime || 0,
-            limitIp: data.limitIp || 0,
-            tgId: 0,
-            enable: true,
-            flow: data.flow || '',
-            subId: clientSubId,
-            comment: '',
-            reset: 0,
-          },
+          payload,
         });
       }
 
@@ -1392,9 +1415,21 @@ export class ClientsService {
           ? data.limitIp
           : (existing as any).limitIp || 0,
       tgId: 0,
-      comment: existing.remark || '',
+      flow: newFlow || '',
+      comment: data.remark !== undefined ? data.remark : existing.remark || '',
       reset: 0,
     };
+
+    // Map allowed-users to HWID on 3.7+ panels when limitIp is being set
+    if (data.limitIp !== undefined) {
+      const panel = await this.prisma.panel.findUnique({
+        where: { id: existing.panelId },
+        select: { apiVersion: true, capabilities: true },
+      });
+      const limits = resolve3xUiLimit(panel || {}, data.limitIp);
+      baseClientPayload.limitIp = limits.limitIp;
+      baseClientPayload.limitHwid = limits.limitHwid;
+    }
 
     // ── Compute inbound diff for local DB updates ──────────────────────────
     let addedInboundDbIds: string[] = [];
@@ -2078,6 +2113,14 @@ export class ClientsService {
       const clientSubId = require('crypto').randomBytes(8).toString('hex');
 
       for (const [panelId] of byPanel) {
+        const panel = inbounds.find((i) => i.panelId === panelId)?.panel;
+        const limits = resolve3xUiLimit(
+          {
+            apiVersion: panel?.apiVersion,
+            capabilities: panel?.capabilities,
+          },
+          dto.limitIp,
+        );
         const clientUuid = crypto.randomUUID();
         const clientSubToken = crypto.randomBytes(5).toString('hex');
 
@@ -2090,7 +2133,8 @@ export class ClientsService {
           enable: dto.enable !== false,
           totalGB: Number(dto.total) || 0,
           expiryTime: dto.expiryTime || 0,
-          limitIp: dto.limitIp || 0,
+          limitIp: limits.limitIp,
+          limitHwid: limits.limitHwid,
           tgId: 0,
           comment: dto.remark || '',
           reset: 0,
