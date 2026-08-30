@@ -187,6 +187,7 @@ model Admin {
   storeAddonGrantsGiven    StoreAddonGrant[]      @relation("AddonGranter")
   storeAddonGrantsReceived StoreAddonGrant[]      @relation("AddonGrantee")
   externalClients          ExternalClientRegistry[]
+  providerAccesses         AdminProviderAccess[]
   storeReferralRewards     StoreReferralReward[]
   Brand            Brand[]
   operationQueues  OperationQueue[]
@@ -1337,9 +1338,17 @@ enum AdminRechargeOrderStatus {
   PAYMENT_SUBMITTED
   PROVISIONING
   PROVISION_FAILED
+  PARTIAL_SUCCESS
   APPROVED
   REJECTED
   CANCELLED
+}
+
+enum LineItemStatus {
+  PENDING
+  PROCESSING
+  SUCCESS
+  FAILED
 }
 
 enum AgencyPlanKind {
@@ -1422,7 +1431,7 @@ model AdminRechargeOrder {
   adminId                String?
   targetAdminId          String?
   createdAdminId         String?
-  planId                 String
+  planId                 String?
   status                 AdminRechargeOrderStatus @default(PENDING_PAYMENT)
   amount                 Float
   currency               String                   @default("IRT")
@@ -1450,17 +1459,84 @@ model AdminRechargeOrder {
   admin        Admin?                 @relation("RechargeOrderAdmin", fields: [adminId], references: [id], onDelete: SetNull)
   targetAdmin  Admin?                 @relation("RechargeOrderTarget", fields: [targetAdminId], references: [id], onDelete: SetNull)
   createdAdmin Admin?                 @relation("RechargeOrderCreated", fields: [createdAdminId], references: [id], onDelete: SetNull)
-  plan         AdminRechargePlan      @relation(fields: [planId], references: [id], onDelete: Restrict)
+  plan         AdminRechargePlan?     @relation(fields: [planId], references: [id], onDelete: Restrict)
   panel        Panel?                 @relation(fields: [panelId], references: [id], onDelete: SetNull)
   buyerSession AgencyBuyerSession?    @relation(fields: [buyerSessionId], references: [id], onDelete: SetNull)
   referralCode AgencyReferralCode?    @relation(fields: [referralCodeId], references: [id], onDelete: SetNull)
   timeline     AdminRechargeTimeline[]
+  lineItems    AdminRechargeOrderLineItem[]
 
   @@index([adminId, createdAt])
   @@index([targetAdminId, createdAt])
   @@index([buyerSessionId, createdAt])
   @@index([status, createdAt])
   @@index([orderKind, status])
+}
+
+model AdminRechargeOrderLineItem {
+  id               String         @id @default(uuid())
+  orderId          String
+  sortOrder        Int            @default(0)
+  planId           String
+  planName         String
+  panelType        String
+  amount           Float
+  trafficBytes     BigInt         @default(0)
+  expiryDays       Int            @default(0)
+  maxClients       Int            @default(1)
+  unlimitedTraffic Boolean        @default(false)
+  panelId          String?
+  adminTemplate    Json
+  status           LineItemStatus @default(PENDING)
+  operationId      String         @unique
+  lastError        String?
+  processedAt      DateTime?
+  attemptCount     Int            @default(0)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  order AdminRechargeOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, sortOrder])
+  @@index([status])
+}
+
+/// Per-provider authorization + quota context for an admin (3xui, eylan, pasarguard, …).
+model AdminProviderAccess {
+  id               String    @id @default(uuid())
+  adminId          String
+  provider         String
+  enabled          Boolean   @default(true)
+  trafficBytes     BigInt    @default(0)
+  usedTrafficBytes BigInt    @default(0)
+  expiryAt         DateTime?
+  maxClients       Int       @default(1)
+  unlimitedClients Boolean   @default(false)
+  unlimitedTraffic Boolean   @default(false)
+  quotaMode        QuotaMode @default(GLOBAL)
+  metadata         Json?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  admin     Admin                   @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  resources AdminProviderResource[]
+
+  @@unique([adminId, provider])
+  @@index([adminId])
+  @@index([provider, enabled])
+}
+
+model AdminProviderResource {
+  id           String @id @default(uuid())
+  accessId     String
+  resourceId   String
+  resourceName String
+  resourceType String
+
+  access AdminProviderAccess @relation(fields: [accessId], references: [id], onDelete: Cascade)
+
+  @@unique([accessId, resourceId])
+  @@index([accessId])
 }
 
 model AdminRechargeTimeline {

@@ -142,6 +142,7 @@ export default function ClientsPage() {
   const [adminId, setAdminId] = useState("");
   const [inboundId, setInboundId] = useState("");
   const [panelId, setPanelId] = useState("");
+  const isExternalProvider = panelId === "eylan" || panelId === "pasarguard";
   const [status, setStatus] = useState("");
   const [expiry, setExpiry] = useState("");
   const [trafficRange, setTrafficRange] = useState("");
@@ -202,6 +203,7 @@ export default function ClientsPage() {
   const { data, isLoading, isFetching, error } = useQuery<Paginated<Client>>({
     queryKey: ["clients", page, limit, search, adminId, inboundId, panelId, status, expiry, trafficRange],
     placeholderData: keepPreviousData,
+    enabled: !isExternalProvider,
     queryFn: async () => {
       const params = new URLSearchParams();
       params.append("page", String(page));
@@ -221,6 +223,7 @@ export default function ClientsPage() {
   // KPI Overview
   const { data: overviewData } = useQuery({
     queryKey: ["reseller-overview", panelId],
+    enabled: !isExternalProvider,
     queryFn: async () => (await api.get<any>(`/stats/reseller-overview${panelId ? `?panelId=${panelId}` : ''}`)).data,
   });
 
@@ -552,7 +555,9 @@ export default function ClientsPage() {
       />
 
       {/* Global KPI Header */}
-      {overviewData && overviewData.admin && (
+      {isExternalProvider ? (
+        <PluginSlot name="clients.kpi.override" props={{ providerId: panelId }} />
+      ) : overviewData && overviewData.admin ? (
         <div className="mb-4">
           <div className="md:hidden flex justify-between items-center mb-2">
             <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">{t("clients.overviewStats")}</span>
@@ -621,7 +626,7 @@ export default function ClientsPage() {
             </div>
           </div>
         </div>
-      )}
+      ) : null}
 
       {/* Search and Quick Filters */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -677,6 +682,7 @@ export default function ClientsPage() {
                 {p.name}
               </button>
             ))}
+            <PluginSlot name="clients.providerSelector.extra" props={{ panelId, selectPanel }} />
           </div>
         </div>
       )}
@@ -769,6 +775,9 @@ export default function ClientsPage() {
       </Card>
 
       {/* Main Table / Cards */}
+      {isExternalProvider ? (
+        <PluginSlot name="clients.list.override" props={{ providerId: panelId }} />
+      ) : (
       <Card className="overflow-hidden p-0 bg-transparent md:bg-zinc-50 dark:bg-zinc-950 border-0 md:border md:border-zinc-200 dark:border-zinc-800">
         <div className="overflow-x-auto">
           <table className="w-full text-sm block md:table">
@@ -1224,6 +1233,7 @@ export default function ClientsPage() {
           </div>
         )}
       </Card>
+      )}
 
       {/* Floating Bulk Actions Bar (Responsive) */}
       <AnimatePresence>

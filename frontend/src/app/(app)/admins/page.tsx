@@ -11,6 +11,7 @@ import { Plus, Power, Edit2, Shield, Activity, HardDrive, Cpu, CreditCard, Chevr
 import { motion, AnimatePresence } from "framer-motion";
 import { MOTION_CONFIG } from "@/lib/motion";
 import { NodeInboundBadge } from "@/components/NodeInboundBadge";
+import { PluginSlot } from "@/components/PluginSlot";
 
 interface AdminPanelQuotaRow {
   panelId: string;
