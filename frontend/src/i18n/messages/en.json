@@ -15,6 +15,7 @@
     "cleanup": "Cleanup",
     "diagnostics": "Diagnostics",
     "newStoreOrders": "New store orders",
+    "adminRechargePending": "{count} credit request(s) pending",
     "logout": "Sign out",
     "superAdmin": "Super Admin",
     "reseller": "Reseller",

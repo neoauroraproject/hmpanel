@@ -98,6 +98,17 @@ export function Sidebar() {
   });
   const storeHasNewOrders = (storeDash?.newOrders ?? 0) > 0;
 
+  const { data: rechargePending } = useQuery<{ count?: number }>({
+    queryKey: ["admin-recharge-pending-count"],
+    queryFn: async () =>
+      (await api.get("/premium-modules/admin-recharge/pending-count")).data,
+    enabled: isPremium && admin?.role === "SUPER_ADMIN",
+    refetchInterval: 20_000,
+    staleTime: 10_000,
+    retry: false,
+  });
+  const rechargePendingCount = rechargePending?.count ?? 0;
+
   const coreItems = CORE_NAV.filter(
     (n) => !n.roles || (admin && n.roles.includes(admin.role)),
   );
@@ -192,6 +203,10 @@ export function Sidebar() {
                 const Icon = menu.icon || Diamond;
                 const active = pathname.startsWith(href);
                 const showDot = menu.moduleId === "store" && storeHasNewOrders;
+                const rechargeBadge =
+                  menu.moduleId === "admin-recharge" && rechargePendingCount > 0
+                    ? rechargePendingCount
+                    : 0;
                 return (
                   <Link
                     key={href}
@@ -205,6 +220,20 @@ export function Sidebar() {
                   >
                     <Icon size={18} />
                     <span className="flex-1 truncate">{title}</span>
+                    {rechargeBadge > 0 ? (
+                      <>
+                        <span
+                          className="inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white"
+                          title={t("nav.adminRechargePending", { count: rechargeBadge })}
+                        >
+                          {rechargeBadge > 99 ? "99+" : rechargeBadge}
+                        </span>
+                        <span
+                          className="absolute end-2 top-2 h-2 w-2 rounded-full bg-rose-500"
+                          aria-hidden
+                        />
+                      </>
+                    ) : null}
                     {showDot ? (
                       <span
                         className="h-2 w-2 shrink-0 rounded-full bg-rose-500"

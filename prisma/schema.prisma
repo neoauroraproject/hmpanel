@@ -192,7 +192,9 @@ model Admin {
   operationQueues  OperationQueue[]
   moduleAssignments AdminModuleAssignment[]
   actionLogs          ActionLog[]
-  adminRechargeOrders AdminRechargeOrder[]
+  rechargeOrdersAsBuyer  AdminRechargeOrder[] @relation("RechargeOrderAdmin")
+  rechargeOrdersAsTarget AdminRechargeOrder[] @relation("RechargeOrderTarget")
+  rechargeOrdersCreated  AdminRechargeOrder[] @relation("RechargeOrderCreated")
 }
 
 // Bridging table for Admin <-> Inbound access
@@ -1333,58 +1335,132 @@ model SystemMigration {
 enum AdminRechargeOrderStatus {
   PENDING_PAYMENT
   PAYMENT_SUBMITTED
+  PROVISIONING
+  PROVISION_FAILED
   APPROVED
   REJECTED
   CANCELLED
 }
 
+enum AgencyPlanKind {
+  TOP_UP
+  NEW_AGENCY
+  BOTH
+}
+
+enum AgencyOrderKind {
+  TOP_UP
+  NEW_AGENCY
+}
+
+model AdminRechargePlanCategory {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  sortOrder Int      @default(0)
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  plans AdminRechargePlan[]
+}
+
 model AdminRechargePlan {
-  id              String   @id @default(uuid())
+  id              String          @id @default(uuid())
+  categoryId      String?
+  planKind        AgencyPlanKind  @default(TOP_UP)
   name            String
   description     String?
   price           Float
-  currency        String   @default("IRT")
-  trafficBytes    BigInt   @default(0)
-  expiryDays      Int      @default(0)
-  maxClientsDelta Int      @default(0)
-  sortOrder       Int      @default(0)
-  enabled         Boolean  @default(true)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  currency        String          @default("IRT")
+  trafficBytes    BigInt          @default(0)
+  expiryDays      Int             @default(0)
+  maxClientsDelta Int             @default(0)
+  adminTemplate   Json?
+  sortOrder       Int             @default(0)
+  enabled         Boolean         @default(true)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
 
-  orders AdminRechargeOrder[]
+  category AdminRechargePlanCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  orders   AdminRechargeOrder[]
+
+  @@index([categoryId, enabled])
+}
+
+model AgencyReferralCode {
+  id                  String   @id @default(uuid())
+  code                String   @unique
+  ownerTelegramChatId String?
+  ownerAdminId        String?
+  referralCount       Int      @default(0)
+  totalPurchaseAmount Float    @default(0)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  buyerSessions AgencyBuyerSession[]
+  orders        AdminRechargeOrder[]
+
+  @@index([ownerTelegramChatId])
+}
+
+model AgencyBuyerSession {
+  id             String   @id @default(uuid())
+  telegramChatId String   @unique
+  referralCodeId String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  referralCode AgencyReferralCode? @relation(fields: [referralCodeId], references: [id], onDelete: SetNull)
+  orders       AdminRechargeOrder[]
 }
 
 model AdminRechargeOrder {
-  id               String                   @id @default(uuid())
-  trackingCode     String                   @unique
-  adminId          String
-  planId           String
-  status           AdminRechargeOrderStatus @default(PENDING_PAYMENT)
-  amount           Float
-  currency         String                   @default("IRT")
-  trafficBytes     BigInt                   @default(0)
-  expiryDays       Int                      @default(0)
-  maxClientsDelta  Int                      @default(0)
-  panelId          String?
-  paymentMethod    String                   @default("manual_bank")
-  paymentMeta      Json?
-  receiptImage     String?
-  receiptText      String?
-  reviewedBy       String?
-  reviewedAt       DateTime?
-  rejectReason     String?
-  creditedAt       DateTime?
-  createdAt        DateTime                 @default(now())
-  updatedAt        DateTime                 @updatedAt
+  id                     String                   @id @default(uuid())
+  trackingCode           String                   @unique
+  orderKind              AgencyOrderKind          @default(TOP_UP)
+  adminId                String?
+  targetAdminId          String?
+  createdAdminId         String?
+  planId                 String
+  status                 AdminRechargeOrderStatus @default(PENDING_PAYMENT)
+  amount                 Float
+  currency               String                   @default("IRT")
+  trafficBytes           BigInt                   @default(0)
+  expiryDays             Int                      @default(0)
+  maxClientsDelta        Int                      @default(0)
+  panelId                String?
+  requestedUsername      String?
+  requestedPasswordEnc   String?
+  buyerSessionId         String?
+  referralCodeId         String?
+  provisionError         String?
+  telegramAdminMessageId String?
+  paymentMethod          String                   @default("manual_bank")
+  paymentMeta            Json?
+  receiptImage           String?
+  receiptText            String?
+  reviewedBy             String?
+  reviewedAt             DateTime?
+  rejectReason           String?
+  creditedAt             DateTime?
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @updatedAt
 
-  admin    Admin                      @relation(fields: [adminId], references: [id], onDelete: Cascade)
-  plan     AdminRechargePlan          @relation(fields: [planId], references: [id], onDelete: Restrict)
-  panel    Panel?                     @relation(fields: [panelId], references: [id], onDelete: SetNull)
-  timeline AdminRechargeTimeline[]
+  admin        Admin?                 @relation("RechargeOrderAdmin", fields: [adminId], references: [id], onDelete: SetNull)
+  targetAdmin  Admin?                 @relation("RechargeOrderTarget", fields: [targetAdminId], references: [id], onDelete: SetNull)
+  createdAdmin Admin?                 @relation("RechargeOrderCreated", fields: [createdAdminId], references: [id], onDelete: SetNull)
+  plan         AdminRechargePlan      @relation(fields: [planId], references: [id], onDelete: Restrict)
+  panel        Panel?                 @relation(fields: [panelId], references: [id], onDelete: SetNull)
+  buyerSession AgencyBuyerSession?    @relation(fields: [buyerSessionId], references: [id], onDelete: SetNull)
+  referralCode AgencyReferralCode?    @relation(fields: [referralCodeId], references: [id], onDelete: SetNull)
+  timeline     AdminRechargeTimeline[]
 
   @@index([adminId, createdAt])
+  @@index([targetAdminId, createdAt])
+  @@index([buyerSessionId, createdAt])
   @@index([status, createdAt])
+  @@index([orderKind, status])
 }
 
 model AdminRechargeTimeline {

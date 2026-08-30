@@ -101,6 +101,17 @@ export function MobileNav() {
   });
   const storeHasNewOrders = (storeDash?.newOrders ?? 0) > 0;
 
+  const { data: rechargePending } = useQuery<{ count?: number }>({
+    queryKey: ["admin-recharge-pending-count"],
+    queryFn: async () =>
+      (await api.get("/premium-modules/admin-recharge/pending-count")).data,
+    enabled: isPremium && admin?.role === "SUPER_ADMIN",
+    refetchInterval: 20_000,
+    staleTime: 10_000,
+    retry: false,
+  });
+  const rechargePendingCount = rechargePending?.count ?? 0;
+
   const coreItems = CORE_NAV.filter(
     (n) => !n.roles || (admin && n.roles.includes(admin.role)),
   );
@@ -222,6 +233,10 @@ export function MobileNav() {
                       const Icon = menu.icon || Diamond;
                       const active = pathname.startsWith(menu.href);
                       const showDot = menu.moduleId === "store" && storeHasNewOrders;
+                      const rechargeBadge =
+                        menu.moduleId === "admin-recharge" && rechargePendingCount > 0
+                          ? rechargePendingCount
+                          : 0;
                       return (
                         <Link
                           key={menu.href}
@@ -236,6 +251,11 @@ export function MobileNav() {
                         >
                           <Icon size={18} />
                           <span className="flex-1 truncate">{menu.title}</span>
+                          {rechargeBadge > 0 ? (
+                            <span className="inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                              {rechargeBadge > 99 ? "99+" : rechargeBadge}
+                            </span>
+                          ) : null}
                           {showDot ? (
                             <span
                               className="h-2 w-2 shrink-0 rounded-full bg-rose-500"

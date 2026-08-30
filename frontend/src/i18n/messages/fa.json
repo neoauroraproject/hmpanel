@@ -15,6 +15,7 @@
     "cleanup": "پاکسازی",
     "diagnostics": "عیب‌یابی",
     "newStoreOrders": "سفارش‌های جدید فروشگاه",
+    "adminRechargePending": "{count} درخواست اعتبار در انتظار",
     "logout": "خروج",
     "superAdmin": "سوپر ادمین",
     "reseller": "نماینده",
