@@ -407,11 +407,12 @@ export default function ClientsPage() {
     [inboundsList, panelId],
   );
 
-  if (isLoading) return <Spinner />;
+  if (isLoading && !isExternalProvider) return <Spinner />;
   if (error) return <ErrorBox message={t("clients.loadFailed")} />;
 
   const selectPanel = (nextPanelId: string) => {
     setPanelId(nextPanelId);
+    setSelectedClients({});
     // Drop an inbound filter that belongs to another panel
     if (inboundId && nextPanelId) {
       const inbound = (inboundsList ?? []).find((i) => i.id === inboundId);
@@ -530,26 +531,34 @@ export default function ClientsPage() {
     <div className="space-y-6 pb-20">
       <PageHeader
         title={t("clients.title")}
-        subtitle={t(totalItems === 1 ? "clients.subtitle" : "clients.subtitle_plural", { count: totalItems })}
+        subtitle={
+          isExternalProvider
+            ? ""
+            : t(totalItems === 1 ? "clients.subtitle" : "clients.subtitle_plural", { count: totalItems })
+        }
         action={
           <>
             <PluginSlot name="clients.actions" />
-            <button
-              onClick={() => setBulkCreateOpen(true)}
-              disabled={trafficExhausted}
-              title={trafficExhausted ? t("clients.insufficientBalance") : undefined}
-              className="flex items-center gap-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors disabled:opacity-50 disabled:pointer-events-none"
-            >
-              <Users size={16} /> {t("clients.bulkCreate")}
-            </button>
-            <button
-              onClick={() => setAddOpen(true)}
-              disabled={trafficExhausted}
-              title={trafficExhausted ? t("clients.insufficientBalance") : undefined}
-              className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 transition-colors shadow-lg shadow-blue-500/20 disabled:opacity-50 disabled:pointer-events-none disabled:shadow-none"
-            >
-              <Plus size={16} /> {t("clients.addClient")}
-            </button>
+            {!isExternalProvider && (
+              <>
+                <button
+                  onClick={() => setBulkCreateOpen(true)}
+                  disabled={trafficExhausted}
+                  title={trafficExhausted ? t("clients.insufficientBalance") : undefined}
+                  className="flex items-center gap-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors disabled:opacity-50 disabled:pointer-events-none"
+                >
+                  <Users size={16} /> {t("clients.bulkCreate")}
+                </button>
+                <button
+                  onClick={() => setAddOpen(true)}
+                  disabled={trafficExhausted}
+                  title={trafficExhausted ? t("clients.insufficientBalance") : undefined}
+                  className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 transition-colors shadow-lg shadow-blue-500/20 disabled:opacity-50 disabled:pointer-events-none disabled:shadow-none"
+                >
+                  <Plus size={16} /> {t("clients.addClient")}
+                </button>
+              </>
+            )}
           </>
         }
       />
