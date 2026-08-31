@@ -23,9 +23,17 @@ export interface ClientFilters {
   status?: string; // active | disabled | expired
   inboundId?: string;
   panelId?: string;
+  /** eylan | pasarguard | 3x-ui — type tabs on the Clients page */
+  panelType?: string;
   adminId?: string; // filter by owner (super-admin only)
   expiry?: string;
   trafficRange?: string;
+}
+
+const NATIVE_PANEL_TYPES = ['eylan', 'pasarguard'] as const;
+
+function isNativePanelTypeFilter(value?: string | null): value is 'eylan' | 'pasarguard' {
+  return value === 'eylan' || value === 'pasarguard';
 }
 
 import { MonitoringService } from '../stats/monitoring.service';
@@ -1239,14 +1247,18 @@ export class ClientsService {
         },
       };
     }
-    if (filters.panelId) {
-      where.inbounds = {
-        some: {
-          inbound: {
-            panelId: filters.panelId,
-          },
-        },
-      };
+    const typeTab =
+      (isNativePanelTypeFilter(filters.panelId) && filters.panelId) ||
+      (isNativePanelTypeFilter(filters.panelType) && filters.panelType) ||
+      '';
+    if (typeTab) {
+      // Eylan/Pasarguard type tabs: all clients on panels of that type.
+      // Native rows are keyed by Client.panelId, not always by inbound join.
+      where.panel = { panelType: typeTab };
+    } else if (filters.panelType === '3x-ui') {
+      where.panel = { NOT: { panelType: { in: [...NATIVE_PANEL_TYPES] } } };
+    } else if (filters.panelId) {
+      where.panelId = filters.panelId;
     }
 
     const now = BigInt(Date.now());
@@ -1330,6 +1342,7 @@ export class ClientsService {
           expiryTime: true,
           createdAt: true,
           admin: { select: { id: true, username: true } },
+          panel: { select: { id: true, name: true, url: true, subUrl: true, panelType: true } },
           inbounds: {
             select: {
               inbound: {

@@ -163,12 +163,10 @@ export class StatsService {
     if (!admin) throw new Error('Admin not found');
 
     const whereClause: any = { adminId };
-    if (panelId) {
-      whereClause.inbounds = {
-        some: {
-          inbound: { panelId },
-        },
-      };
+    if (panelId === 'eylan' || panelId === 'pasarguard') {
+      whereClause.panel = { panelType: panelId };
+    } else if (panelId) {
+      whereClause.panelId = panelId;
     }
 
     const clients = await this.prisma.client.findMany({

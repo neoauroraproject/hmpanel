@@ -94,6 +94,7 @@ export class ClientsController {
     @Query('status') status?: string,
     @Query('inboundId') inboundId?: string,
     @Query('panelId') panelId?: string,
+    @Query('panelType') panelType?: string,
     @Query('adminId') adminId?: string,
     @Query('expiry') expiry?: string,
     @Query('trafficRange') trafficRange?: string,
@@ -103,7 +104,7 @@ export class ClientsController {
       req.user.role,
       Number(page) || 1,
       Number(limit) || 25,
-      { search, status, inboundId, panelId, adminId, expiry, trafficRange },
+      { search, status, inboundId, panelId, panelType, adminId, expiry, trafficRange },
     );
   }
 

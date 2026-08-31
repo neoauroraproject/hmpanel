@@ -51,6 +51,7 @@ export interface Client {
   updatedAt: string;
 
   admin?: { id: string; username: string };
+  panel?: { id: string; name: string; url?: string; subUrl?: string | null; panelType?: string };
   inbound?: {
     id: string;
     tag: string;

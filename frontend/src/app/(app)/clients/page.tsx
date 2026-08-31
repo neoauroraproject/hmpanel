@@ -64,6 +64,7 @@ interface PanelRow {
   name: string;
   url: string;
   subUrl?: string | null;
+  panelType?: string;
 }
 
 function CopyBtn({ text }: { text: string }) {
@@ -142,7 +143,7 @@ export default function ClientsPage() {
   const [adminId, setAdminId] = useState("");
   const [inboundId, setInboundId] = useState("");
   const [panelId, setPanelId] = useState("");
-  const isExternalProvider = panelId === "eylan" || panelId === "pasarguard";
+  const isNativeTypeTab = panelId === "eylan" || panelId === "pasarguard";
   const [status, setStatus] = useState("");
   const [expiry, setExpiry] = useState("");
   const [trafficRange, setTrafficRange] = useState("");
@@ -203,7 +204,6 @@ export default function ClientsPage() {
   const { data, isLoading, isFetching, error } = useQuery<Paginated<Client>>({
     queryKey: ["clients", page, limit, search, adminId, inboundId, panelId, status, expiry, trafficRange],
     placeholderData: keepPreviousData,
-    enabled: !isExternalProvider,
     queryFn: async () => {
       const params = new URLSearchParams();
       params.append("page", String(page));
@@ -223,7 +223,6 @@ export default function ClientsPage() {
   // KPI Overview
   const { data: overviewData } = useQuery({
     queryKey: ["reseller-overview", panelId],
-    enabled: !isExternalProvider,
     queryFn: async () => (await api.get<any>(`/stats/reseller-overview${panelId ? `?panelId=${panelId}` : ''}`)).data,
   });
 
@@ -246,6 +245,22 @@ export default function ClientsPage() {
     queryFn: async () => (await api.get<PanelRow[]>("/panels")).data,
     enabled: isSuperAdmin,
   });
+
+  const nativeTypesPresent = useMemo(() => {
+    const types = new Set<string>();
+    (panelsList ?? []).forEach((p) => {
+      if (p.panelType === "eylan" || p.panelType === "pasarguard") types.add(p.panelType);
+    });
+    (inboundsList ?? []).forEach((i) => {
+      const type = (i.panel as { panelType?: string } | undefined)?.panelType || i.protocol;
+      if (type === "eylan" || type === "pasarguard") types.add(type);
+    });
+    return types;
+  }, [panelsList, inboundsList]);
+
+  const listsReady = isSuperAdmin ? panelsList !== undefined : inboundsList !== undefined;
+  const isLegacyExternal = isNativeTypeTab && listsReady && !nativeTypesPresent.has(panelId);
+  const isExternalProvider = isLegacyExternal;
 
   // Mutations
   const toggle = useMutation({
@@ -388,24 +403,28 @@ export default function ClientsPage() {
   // Panels the caller can reach: /panels is super-admin only, so resellers get
   // theirs from the inbounds they are assigned to.
   const accessiblePanels = useMemo(() => {
-    const byId = new Map<string, { id: string; name: string }>();
-    (panelsList ?? []).forEach((p) => byId.set(p.id, { id: p.id, name: p.name }));
+    const byId = new Map<string, { id: string; name: string; panelType?: string }>();
+    (panelsList ?? []).forEach((p) => byId.set(p.id, { id: p.id, name: p.name, panelType: p.panelType }));
     (inboundsList ?? []).forEach((i) => {
       if (i.panel && !byId.has(i.panel.id)) {
-        byId.set(i.panel.id, { id: i.panel.id, name: i.panel.name });
+        const type = (i.panel as { panelType?: string }).panelType || i.protocol;
+        byId.set(i.panel.id, { id: i.panel.id, name: i.panel.name, panelType: type });
       }
     });
     return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name));
   }, [panelsList, inboundsList]);
 
   // Inbound filter options follow the selected panel
-  const filterInbounds = useMemo(
-    () =>
-      panelId
-        ? (inboundsList ?? []).filter((i) => i.panel?.id === panelId)
-        : inboundsList ?? [],
-    [inboundsList, panelId],
-  );
+  const filterInbounds = useMemo(() => {
+    const all = inboundsList ?? [];
+    if (isNativeTypeTab) {
+      return all.filter(
+        (i) => ((i.panel as { panelType?: string } | undefined)?.panelType || i.protocol) === panelId,
+      );
+    }
+    if (panelId) return all.filter((i) => i.panel?.id === panelId);
+    return all.filter((i) => i.protocol !== "eylan" && i.protocol !== "pasarguard");
+  }, [inboundsList, panelId, isNativeTypeTab]);
 
   if (isLoading && !isExternalProvider) return <Spinner />;
   if (error) return <ErrorBox message={t("clients.loadFailed")} />;
@@ -415,8 +434,12 @@ export default function ClientsPage() {
     setSelectedClients({});
     // Drop an inbound filter that belongs to another panel
     if (inboundId && nextPanelId) {
-      const inbound = (inboundsList ?? []).find((i) => i.id === inboundId);
-      if (inbound && inbound.panel?.id !== nextPanelId) setInboundId("");
+      if (nextPanelId === "eylan" || nextPanelId === "pasarguard") {
+        setInboundId("");
+      } else {
+        const inbound = (inboundsList ?? []).find((i) => i.id === inboundId);
+        if (inbound && inbound.panel?.id !== nextPanelId) setInboundId("");
+      }
     }
     setPage(1);
   };
@@ -539,7 +562,7 @@ export default function ClientsPage() {
         action={
           <>
             <PluginSlot name="clients.actions" />
-            {!isExternalProvider && (
+            {!isExternalProvider && !isNativeTypeTab && (
               <>
                 <button
                   onClick={() => setBulkCreateOpen(true)}
@@ -902,9 +925,9 @@ export default function ClientsPage() {
                         {c.remark && (
                           <div className="text-xs text-zinc-500 mt-1 md:mt-0">{c.email}</div>
                         )}
-                        {!panelId && accessiblePanels.length > 1 && c.inbound?.panel?.name && (
+                        {!panelId && accessiblePanels.length > 1 && (c.inbound?.panel?.name || (c as any).panel?.name) && (
                           <div className="mt-1 inline-flex items-center gap-1 rounded bg-zinc-100 dark:bg-zinc-800/60 px-1.5 py-0.5 text-[10px] font-medium text-zinc-500 dark:text-zinc-400">
-                            <Database size={10} /> {c.inbound.panel.name}
+                            <Database size={10} /> {c.inbound?.panel?.name || (c as any).panel?.name}
                           </div>
                         )}
                       </td>

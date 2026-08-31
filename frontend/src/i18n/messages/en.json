@@ -638,6 +638,7 @@
     "typeEylan": "Eylan",
     "typePasarguard": "Pasarguard",
     "nativeRequiresPremium": "Eylan and Pasarguard need Premium Panel Plus. Enable the module, then add the panel with the same fields as Panel Plus.",
+    "nativeManageInPlus": "Eylan and Pasarguard are managed in Panel Plus. You can only rename the panel here.",
     "contactingApi": "Contacting remote API…",
     "diagFailed": "Connection Diagnostics Failed",
     "awaitingTest": "Awaiting connection test…",

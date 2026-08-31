@@ -23,7 +23,7 @@ export class InboundsService {
         nodeId: true,
         nodeName: true,
         originNodeGuid: true,
-        panel: { select: { id: true, name: true, url: true } },
+        panel: { select: { id: true, name: true, url: true, panelType: true } },
         _count: { select: { clientInbounds: true } },
       },
       orderBy: [{ nodeId: 'asc' }, { tag: 'asc' }],

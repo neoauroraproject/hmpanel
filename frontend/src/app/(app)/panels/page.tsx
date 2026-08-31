@@ -15,7 +15,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import { MOTION_CONFIG } from "@/lib/motion";
 import { NodeInboundBadge } from "@/components/NodeInboundBadge";
 import { PluginSlot } from "@/components/PluginSlot";
-import { usePluginRegistry } from "@/store/pluginRegistry";
 
 interface PanelForm {
   name: string;
@@ -26,24 +25,6 @@ interface PanelForm {
 
 function isNativePanelType(type?: string | null) {
   return type === "eylan" || type === "pasarguard";
-}
-
-function PanelTypeSelect({ value, onChange }: { value: string; onChange: (value: string) => void }) {
-  const t = useT();
-  return (
-    <div>
-      <label className="mb-1 block text-sm text-zinc-500 dark:text-zinc-400">{t("panels.panelType")}</label>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors"
-      >
-        <option value="3x-ui">{t("panels.typeXui")}</option>
-        <option value="eylan">{t("panels.typeEylan")}</option>
-        <option value="pasarguard">{t("panels.typePasarguard")}</option>
-      </select>
-    </div>
-  );
 }
 
 export default function PanelsPage() {
@@ -123,7 +104,6 @@ export default function PanelsPage() {
         subtitle={t(panels.length === 1 ? "panels.subtitle" : "panels.subtitle_plural", { count: panels.length })}
         action={
           <div className="flex items-center gap-2">
-            <PluginSlot name="panels.add.extra" />
             <motion.button 
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
@@ -326,8 +306,6 @@ function ChecklistItem({ label, status }: { label: string, status: boolean | nul
 function PanelWizard({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const t = useT();
   const toast = useToast((s) => s.push);
-  const nativeSlots = usePluginRegistry((s) => s.slots["panels.form.native"]);
-  const [panelType, setPanelType] = useState("3x-ui");
   const [form, setForm] = useState<PanelForm>({ name: "", url: "https://", subUrl: "", apiToken: "" });
   const [test, setTest] = useState<any | null>(null);
   const [syncReport, setSyncReport] = useState<any | null>(null);
@@ -407,33 +385,6 @@ function PanelWizard({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
   return (
     <Modal title={t("panels.addPanelTitle")} onClose={onClose}>
       <div className="space-y-4">
-        <PanelTypeSelect
-          value={panelType}
-          onChange={(next) => {
-            setPanelType(next);
-            setTest(null);
-          }}
-        />
-        {isNativePanelType(panelType) ? (
-          nativeSlots?.length ? (
-            <PluginSlot
-              key={panelType}
-              name="panels.form.native"
-              props={{
-                panelType,
-                onSaved: () => {
-                  onSaved();
-                  onClose();
-                },
-              }}
-            />
-          ) : (
-            <p className="rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
-              {t("panels.nativeRequiresPremium")}
-            </p>
-          )
-        ) : (
-          <>
         <Field label={t("panels.panelName")} value={form.name} placeholder={t("panels.panelNamePlaceholder")} onChange={(e) => setForm({ ...form, name: e.target.value })} />
         <div>
           <Field ltr label={t("panels.panelUrl")} value={form.url} placeholder={t("panels.panelUrlPlaceholder")} onChange={(e) => { setForm({ ...form, url: e.target.value }); setTest(null); }} />
@@ -573,8 +524,6 @@ function PanelWizard({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
             {create.isPending ? t("panels.syncing") : t("panels.saveAndSync")}
           </motion.button>
         </div>
-          </>
-        )}
       </div>
     </Modal>
   );
@@ -591,15 +540,14 @@ function AlertTriangle({ size, className }: { size: number, className?: string }
 function EditPanel({ panel, onClose, onSaved }: { panel: any; onClose: () => void; onSaved: () => void }) {
   const t = useT();
   const toast = useToast((s) => s.push);
-  const nativeSlots = usePluginRegistry((s) => s.slots["panels.form.native"]);
-  const [panelType, setPanelType] = useState(
-    isNativePanelType(panel.panelType) ? panel.panelType : "3x-ui",
-  );
+  const native = isNativePanelType(panel.panelType);
   const [form, setForm] = useState({ name: panel.name, url: panel.url, subUrl: panel.subUrl || "", status: panel.status, apiToken: "" });
   const update = useMutation({
     mutationFn: async () => {
-      const payload: any = { name: form.name, url: form.url, subUrl: form.subUrl, status: form.status };
-      if (form.apiToken) payload.apiToken = form.apiToken;
+      const payload: any = native
+        ? { name: form.name }
+        : { name: form.name, url: form.url, subUrl: form.subUrl, status: form.status };
+      if (!native && form.apiToken) payload.apiToken = form.apiToken;
       return (await api.patch(`/panels/${panel.id}`, payload)).data;
     },
     onSuccess: () => { toast(t("panels.panelUpdated")); onSaved(); },
@@ -608,19 +556,25 @@ function EditPanel({ panel, onClose, onSaved }: { panel: any; onClose: () => voi
   return (
     <Modal title={t("common.editTitle", { name: panel.name })} onClose={onClose}>
       <div className="space-y-4">
-        <PanelTypeSelect value={panelType} onChange={setPanelType} />
-        {isNativePanelType(panelType) ? (
-          nativeSlots?.length ? (
-            <PluginSlot
-              key={`${panel.id}-${panelType}`}
-              name="panels.form.native"
-              props={{ panelType, panel, onSaved }}
-            />
-          ) : (
-            <p className="rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
-              {t("panels.nativeRequiresPremium")}
+        {native ? (
+          <>
+            <p className="rounded-lg bg-zinc-100 px-3 py-2 text-sm text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300">
+              {t("panels.nativeManageInPlus")}
             </p>
-          )
+            <Field label={t("panels.panelName")} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            <div className="flex justify-end gap-2 border-t border-zinc-200 dark:border-zinc-800 pt-4 mt-4">
+              <button onClick={onClose} className="rounded-lg px-4 py-2 text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200">{t("common.cancel")}</button>
+              <motion.button
+                whileHover={{ scale: update.isPending || !form.name ? 1 : 1.05 }}
+                whileTap={{ scale: update.isPending || !form.name ? 1 : 0.95 }}
+                onClick={() => update.mutate()}
+                disabled={update.isPending || !form.name}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50 transition-colors"
+              >
+                {update.isPending ? t("common.savingChanges") : t("common.saveChanges")}
+              </motion.button>
+            </div>
+          </>
         ) : (
           <>
         <Field label={t("panels.panelName")} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />

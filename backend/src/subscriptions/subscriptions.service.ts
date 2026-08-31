@@ -92,16 +92,36 @@ export class SubscriptionsService {
       if (adminId) {
         const brand = await this.prisma.brand.findUnique({
           where: { adminId },
-          select: { theme: true, logo: true, logoDark: true, name: true, primaryColor: true },
+          select: {
+            theme: true,
+            logo: true,
+            logoDark: true,
+            name: true,
+            primaryColor: true,
+            portalSettings: true,
+          },
         });
         if (brand) {
+          const brandPortal =
+            brand.portalSettings && typeof brand.portalSettings === 'object'
+              ? (brand.portalSettings as Record<string, unknown>)
+              : {};
           portalSettings = {
+            ...brandPortal,
             ...portalSettings,
             theme: brand.theme || portalSettings.theme,
             logoUrl: portalSettings.logoUrl || brand.logo || undefined,
             logoDarkUrl: portalSettings.logoDarkUrl || brand.logoDark || undefined,
             portalName: portalSettings.portalName || brand.name || undefined,
             primaryColor: portalSettings.primaryColor || brand.primaryColor || undefined,
+            subscriptionTitleMode:
+              portalSettings.subscriptionTitleMode ||
+              brandPortal.subscriptionTitleMode ||
+              'brand',
+            subscriptionTitleCustom:
+              portalSettings.subscriptionTitleCustom ||
+              brandPortal.subscriptionTitleCustom ||
+              '',
           };
         }
       }
@@ -647,6 +667,26 @@ export class SubscriptionsService {
     }
   }
 
+  /**
+   * Name shown in VPN apps (profile-title) when the user adds the subscription URL.
+   * Default is the branding company name — not the client username.
+   */
+  private resolveProfileTitle(details: {
+    remark?: string | null;
+    email?: string | null;
+    portalSettings?: Record<string, unknown> | null;
+  }): string {
+    const ps = details.portalSettings || {};
+    const mode = String(ps.subscriptionTitleMode || 'brand').trim().toLowerCase();
+    const brand = String(ps.portalName || '').trim();
+    const client =
+      String(details.remark || details.email || '').trim() || 'subscription';
+    const custom = String(ps.subscriptionTitleCustom || '').trim();
+    if (mode === 'custom' && custom) return custom;
+    if (mode === 'client') return client;
+    return brand || client;
+  }
+
   private writeSubscriptionHeaders(
     res: Response,
     details: {
@@ -665,9 +705,7 @@ export class SubscriptionsService {
       `upload=${details.up}; download=${details.down}; total=${details.total}; expire=${expireDate}`,
     );
 
-    const titleSource =
-      String(details.remark || details.email || 'subscription').trim() ||
-      'subscription';
+    const titleSource = this.resolveProfileTitle(details);
     res.setHeader(
       'profile-title',
       `base64:${Buffer.from(titleSource, 'utf8').toString('base64')}`,
