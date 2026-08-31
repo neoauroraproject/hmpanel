@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { IncidentStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
-import { OPEN_INCIDENT_STATUSES } from '../../plugins/shared/incidents/incident.constants';
 import {
   capabilitiesForPanelType,
   isExternalPanelType,
@@ -13,6 +12,8 @@ import type { PanelSyncResult, RemoteClientSnapshot } from './panel-driver.types
 import { generatePanelKey } from './panel-identity.util';
 
 const CONNECTIVITY_INCIDENT = 'Provider Unreachable';
+/** Keep in Community core — do not import Premium overlay (`plugins/shared`). */
+const OPEN_INCIDENT_STATUSES: IncidentStatus[] = ['ACTIVE', 'OPEN', 'ACKNOWLEDGED'];
 
 @Injectable()
 export class NativePanelOrchestrator {

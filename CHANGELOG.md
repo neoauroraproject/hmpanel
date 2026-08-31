@@ -16,6 +16,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - Inbound/client sync metadata for external panels (`remoteUsername`, `remoteResourceId`) and safer freeze when Premium is unavailable.
+- Docker image build: native panel orchestrator no longer imports Premium-only incident constants.
 
 ## [1.8.32] - 2026-08-29
 
