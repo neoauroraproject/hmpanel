@@ -512,7 +512,7 @@ export class StatsService {
     );
 
     const panels = await this.prisma.panel.findMany({
-      select: { name: true, status: true },
+      select: { name: true, status: true, panelType: true, connectionHealth: true },
     });
     const [lastSync, failedJobs] = await Promise.all([
       this.prisma.syncState.findFirst({
@@ -524,10 +524,17 @@ export class StatsService {
 
     return {
       servers: serverStats,
-      xray: panels.map((p) => ({
-        panel: p.name,
-        status: p.status === 'online' ? 'running' : 'stopped',
-      })),
+      xray: panels.map((p) => {
+        const native = p.panelType === 'eylan' || p.panelType === 'pasarguard';
+        const running = native
+          ? p.connectionHealth === 'CONNECTED' || p.status === 'online'
+          : p.status === 'online';
+        return {
+          panel: p.name,
+          status: running ? 'running' : 'stopped',
+          panelType: p.panelType || '3x-ui',
+        };
+      }),
       lastSync: lastSync?.lastSync ?? null,
       pendingJobs: 0,
       failedJobs,

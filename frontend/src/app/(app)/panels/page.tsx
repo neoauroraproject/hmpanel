@@ -15,12 +15,35 @@ import { motion, AnimatePresence } from "framer-motion";
 import { MOTION_CONFIG } from "@/lib/motion";
 import { NodeInboundBadge } from "@/components/NodeInboundBadge";
 import { PluginSlot } from "@/components/PluginSlot";
+import { usePluginRegistry } from "@/store/pluginRegistry";
 
 interface PanelForm {
   name: string;
   url: string;
   subUrl: string;
   apiToken: string;
+}
+
+function isNativePanelType(type?: string | null) {
+  return type === "eylan" || type === "pasarguard";
+}
+
+function PanelTypeSelect({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const t = useT();
+  return (
+    <div>
+      <label className="mb-1 block text-sm text-zinc-500 dark:text-zinc-400">{t("panels.panelType")}</label>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors"
+      >
+        <option value="3x-ui">{t("panels.typeXui")}</option>
+        <option value="eylan">{t("panels.typeEylan")}</option>
+        <option value="pasarguard">{t("panels.typePasarguard")}</option>
+      </select>
+    </div>
+  );
 }
 
 export default function PanelsPage() {
@@ -68,10 +91,14 @@ export default function PanelsPage() {
         invalidate();
       }, 2000);
       const r = data.data;
+      if (r?.success === false || r?.skipped) {
+        toast(r.error || r.reason || t("panels.syncFailed"), r?.skipped ? "info" : "error");
+        return;
+      }
       if (r.discrepancyMsg && r.discrepancyMsg !== "Perfect Match") {
         toast(t("panels.syncOk", { msg: r.discrepancyMsg }));
       } else {
-        toast(t("panels.syncPerfect", { count: r.syncedClients }));
+        toast(t("panels.syncPerfect", { count: r.syncedClients ?? 0 }));
       }
     },
     onError: (err, id) => {
@@ -186,7 +213,7 @@ export default function PanelsPage() {
                       try {
                         const { data: r } = await api.post("/panels/test-connection", { url: p.url, panelId: p.id });
                         if (r.ok) toast(t("panels.testOk", { version: r.version, ping: r.pingMs ?? r.latencyMs }));
-                        else toast(r.errorType || r.error || t("common.connectionFailed"), "error");
+                        else toast(r.message || r.errorType || r.error || t("common.connectionFailed"), "error");
                       } catch { toast(t("common.connectionFailed"), "error"); }
                     }}><PlugZap size={15} /></IconBtn>
                     
@@ -211,7 +238,7 @@ export default function PanelsPage() {
                     {(!p.panelType || p.panelType === "3x-ui") && (
                       <IconBtn title={t("panels.viewLogs")} onClick={() => setLogsFor(p)}><ScrollText size={15} /></IconBtn>
                     )}
-                    <IconBtn title={t("common.edit")} disabled={p.operable === false && p.panelType !== "3x-ui" && !!p.panelType} onClick={() => setEditing(p)}><Pencil size={15} /></IconBtn>
+                    <IconBtn title={t("common.edit")} onClick={() => setEditing(p)}><Pencil size={15} /></IconBtn>
                     <IconBtn title={t("common.delete")} danger onClick={() => {
                       if (confirm(t("panels.deleteConfirm", { name: p.name }))) remove.mutate(p.id);
                     }}><Trash2 size={15} /></IconBtn>
@@ -299,6 +326,8 @@ function ChecklistItem({ label, status }: { label: string, status: boolean | nul
 function PanelWizard({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const t = useT();
   const toast = useToast((s) => s.push);
+  const nativeSlots = usePluginRegistry((s) => s.slots["panels.form.native"]);
+  const [panelType, setPanelType] = useState("3x-ui");
   const [form, setForm] = useState<PanelForm>({ name: "", url: "https://", subUrl: "", apiToken: "" });
   const [test, setTest] = useState<any | null>(null);
   const [syncReport, setSyncReport] = useState<any | null>(null);
@@ -378,6 +407,33 @@ function PanelWizard({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
   return (
     <Modal title={t("panels.addPanelTitle")} onClose={onClose}>
       <div className="space-y-4">
+        <PanelTypeSelect
+          value={panelType}
+          onChange={(next) => {
+            setPanelType(next);
+            setTest(null);
+          }}
+        />
+        {isNativePanelType(panelType) ? (
+          nativeSlots?.length ? (
+            <PluginSlot
+              key={panelType}
+              name="panels.form.native"
+              props={{
+                panelType,
+                onSaved: () => {
+                  onSaved();
+                  onClose();
+                },
+              }}
+            />
+          ) : (
+            <p className="rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
+              {t("panels.nativeRequiresPremium")}
+            </p>
+          )
+        ) : (
+          <>
         <Field label={t("panels.panelName")} value={form.name} placeholder={t("panels.panelNamePlaceholder")} onChange={(e) => setForm({ ...form, name: e.target.value })} />
         <div>
           <Field ltr label={t("panels.panelUrl")} value={form.url} placeholder={t("panels.panelUrlPlaceholder")} onChange={(e) => { setForm({ ...form, url: e.target.value }); setTest(null); }} />
@@ -517,6 +573,8 @@ function PanelWizard({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
             {create.isPending ? t("panels.syncing") : t("panels.saveAndSync")}
           </motion.button>
         </div>
+          </>
+        )}
       </div>
     </Modal>
   );
@@ -533,6 +591,10 @@ function AlertTriangle({ size, className }: { size: number, className?: string }
 function EditPanel({ panel, onClose, onSaved }: { panel: any; onClose: () => void; onSaved: () => void }) {
   const t = useT();
   const toast = useToast((s) => s.push);
+  const nativeSlots = usePluginRegistry((s) => s.slots["panels.form.native"]);
+  const [panelType, setPanelType] = useState(
+    isNativePanelType(panel.panelType) ? panel.panelType : "3x-ui",
+  );
   const [form, setForm] = useState({ name: panel.name, url: panel.url, subUrl: panel.subUrl || "", status: panel.status, apiToken: "" });
   const update = useMutation({
     mutationFn: async () => {
@@ -546,6 +608,21 @@ function EditPanel({ panel, onClose, onSaved }: { panel: any; onClose: () => voi
   return (
     <Modal title={t("common.editTitle", { name: panel.name })} onClose={onClose}>
       <div className="space-y-4">
+        <PanelTypeSelect value={panelType} onChange={setPanelType} />
+        {isNativePanelType(panelType) ? (
+          nativeSlots?.length ? (
+            <PluginSlot
+              key={`${panel.id}-${panelType}`}
+              name="panels.form.native"
+              props={{ panelType, panel, onSaved }}
+            />
+          ) : (
+            <p className="rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
+              {t("panels.nativeRequiresPremium")}
+            </p>
+          )
+        ) : (
+          <>
         <Field label={t("panels.panelName")} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
         <Field ltr label={t("panels.panelUrl")} value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} />
         <div>
@@ -575,6 +652,8 @@ function EditPanel({ panel, onClose, onSaved }: { panel: any; onClose: () => voi
             {update.isPending ? t("common.savingChanges") : t("common.saveChanges")}
           </motion.button>
         </div>
+          </>
+        )}
       </div>
     </Modal>
   );

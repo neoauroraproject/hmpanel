@@ -87,7 +87,11 @@ function AlertsSection({ monData }: { monData: Monitoring | undefined }) {
           <div key={p.panel} className="flex items-center justify-between rounded-lg bg-red-500/10 border border-red-500/20 p-3 text-sm text-red-200">
             <div className="flex items-center gap-2">
               <AlertTriangle size={16} className="text-red-400" />
-              <span>{t("dashboard.panelOffline", { panel: p.panel })}</span>
+              <span>
+              {p.panelType === "eylan" || p.panelType === "pasarguard"
+                ? t("dashboard.panelOfflineNative", { panel: p.panel })
+                : t("dashboard.panelOffline", { panel: p.panel })}
+            </span>
             </div>
             <Badge tone="red">{t("common.offline")}</Badge>
           </div>

@@ -578,7 +578,7 @@ export class PanelsService implements OnModuleInit {
           checklist.panelDetected = false;
           errorType = 'API Version Unsupported';
           exactError =
-            'Endpoint /panel/api/server/status not found. Is this 3x-ui?';
+            'This is not a 3x-ui panel (missing /panel/api/server/status). Edit the panel and set type to Eylan or Pasarguard.';
         } else {
           errorType = 'API Version Unsupported';
           exactError = `HTTP ${axiosErr.response.status}`;

@@ -149,7 +149,7 @@ export interface Monitoring {
     netDown: string;
     recordedAt: string | null;
   }[];
-  xray: { panel: string; status: string }[];
+  xray: { panel: string; status: string; panelType?: string }[];
   lastSync: string | null;
   pendingJobs: number;
   failedJobs: number;
