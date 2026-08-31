@@ -1,0 +1,340 @@
+{
+  "name": "EylanPanel API",
+  "provider": "eylan",
+  "source": {
+    "documentation_url": "https://eylandoo.github.io/",
+    "github_source": "https://github.com/eylandoo/eylandoo.github.io",
+    "documented_version": "3.1.3",
+    "format": "normalized-api-catalog",
+    "note": "This is a normalized JSON catalog derived from the official EylanPanel API documentation. The official documentation is published as a JavaScript/Vue index.html rather than a native OpenAPI JSON document."
+  },
+  "authentication": {
+    "type": "api_key",
+    "header": "X-API-KEY",
+    "main_admin_required_for": [
+      "sub-admin management",
+      "node management",
+      "port management",
+      "settings requiring main-admin privileges"
+    ]
+  },
+  "categories": {
+    "users": {
+      "capabilities": [
+        "list",
+        "get",
+        "create",
+        "bulk_create",
+        "update",
+        "enable_disable",
+        "reset_traffic",
+        "revoke_subscription",
+        "delete",
+        "get_subscription",
+        "get_configs"
+      ],
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/api/v1/users/list_all",
+          "operation": "list_users",
+          "returns": [
+            "username",
+            "active_connections",
+            "data_limit",
+            "download_bytes",
+            "is_active"
+          ]
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/users",
+          "operation": "create_users",
+          "supports": [
+            "single_user",
+            "bulk_count",
+            "max_clients",
+            "data_limit",
+            "activation_type",
+            "expiry_date_str",
+            "expiry_days",
+            "pending_activation_days",
+            "nodes",
+            "enable_l2tp",
+            "enable_cisco",
+            "enable_wg1",
+            "enable_openvpn"
+          ]
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/users/<username>",
+          "operation": "get_user",
+          "returns": [
+            "is_active",
+            "is_online",
+            "total_traffic_bytes",
+            "openvpn_servers",
+            "wireguard_config"
+          ]
+        },
+        {
+          "method": "PUT",
+          "path": "/api/v1/users/<username>",
+          "operation": "update_user",
+          "supports": [
+            "max_clients",
+            "data_limit",
+            "data_limit_unit",
+            "expiry_date_str",
+            "nodes",
+            "enable_l2tp",
+            "enable_cisco",
+            "enable_wg1",
+            "enable_openvpn",
+            "reset_activation",
+            "is_disabled"
+          ]
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/users/<username>/toggle",
+          "operation": "toggle_user"
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/users/<username>/reset_traffic",
+          "operation": "reset_traffic",
+          "returns": [
+            "user_re_enabled"
+          ]
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/users/<username>/revoke",
+          "operation": "revoke_subscription",
+          "returns": [
+            "new_subscription_url"
+          ]
+        },
+        {
+          "method": "DELETE",
+          "path": "/api/v1/users/<username>",
+          "operation": "delete_user"
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/users/<username>/sub",
+          "operation": "get_subscription",
+          "returns": [
+            "sub_url"
+          ]
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/users/<username>/all_ovpn_links",
+          "operation": "get_all_configs",
+          "returns": [
+            "download_links",
+            "l2tp_config",
+            "cisco_config",
+            "wireguard_config"
+          ]
+        }
+      ]
+    },
+    "sub_admins": {
+      "capabilities": [
+        "list",
+        "get",
+        "create",
+        "update",
+        "reset_usage",
+        "delete"
+      ],
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/api/v1/sub_admins",
+          "operation": "list_sub_admins"
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/sub_admins/<int:sub_admin_id>",
+          "operation": "get_sub_admin"
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/sub_admins",
+          "operation": "create_sub_admin"
+        },
+        {
+          "method": "PUT",
+          "path": "/api/v1/sub_admins/<int:sub_id>",
+          "operation": "update_sub_admin"
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/sub_admins/<int:sub_admin_id>/reset_usage",
+          "operation": "reset_sub_admin_usage"
+        },
+        {
+          "method": "DELETE",
+          "path": "/api/v1/sub_admins/<int:sub_id>",
+          "operation": "delete_sub_admin"
+        }
+      ]
+    },
+    "nodes": {
+      "capabilities": [
+        "list",
+        "create",
+        "update",
+        "delete",
+        "traffic_summary",
+        "status"
+      ],
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/api/v1/nodes",
+          "operation": "list_nodes",
+          "returns": [
+            "id",
+            "name",
+            "ip_address",
+            "status",
+            "total_traffic"
+          ]
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/nodes",
+          "operation": "create_node"
+        },
+        {
+          "method": "PUT",
+          "path": "/api/v1/nodes/<int:node_id>",
+          "operation": "update_node"
+        },
+        {
+          "method": "DELETE",
+          "path": "/api/v1/nodes/<int:node_id>",
+          "operation": "delete_node"
+        }
+      ]
+    },
+    "ports": {
+      "capabilities": [
+        "list",
+        "create",
+        "assign",
+        "delete_assignment",
+        "list_selectable_servers"
+      ],
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/api/v1/public/ports",
+          "operation": "list_ports"
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/public/ports",
+          "operation": "create_port"
+        },
+        {
+          "method": "DELETE",
+          "path": "/api/v1/public/ports/assignment",
+          "operation": "delete_port_assignment"
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/public/all_selectable_servers",
+          "operation": "list_selectable_servers"
+        }
+      ]
+    },
+    "settings": {
+      "capabilities": [
+        "panel_health",
+        "l2tp_secret_management"
+      ],
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/api/v1/status",
+          "operation": "panel_health",
+          "auth_required": false,
+          "returns": [
+            "success",
+            "message",
+            "timestamp"
+          ]
+        },
+        {
+          "method": "PUT",
+          "path": "/api/v1/settings/l2tp_secret",
+          "operation": "update_l2tp_secret",
+          "main_admin_required": true
+        }
+      ]
+    }
+  },
+  "normalized_capabilities_for_multi_panel": {
+    "client_management": {
+      "list": true,
+      "get": true,
+      "create": true,
+      "update": true,
+      "delete": true,
+      "enable_disable": true,
+      "reset_traffic": true,
+      "revoke_subscription": true,
+      "bulk_create": true
+    },
+    "traffic": {
+      "per_user": true,
+      "aggregate": true,
+      "node_total": true,
+      "historical_timeseries": "not_confirmed_in_documentation"
+    },
+    "online": {
+      "user_online_state": true,
+      "active_connections_count": true,
+      "realtime_stream": "not_confirmed_in_documentation"
+    },
+    "nodes": {
+      "list": true,
+      "health_status": true,
+      "traffic_summary": true,
+      "realtime_resource_metrics": "not_confirmed_in_documentation",
+      "latency_metrics": "not_confirmed_in_documentation"
+    },
+    "system": {
+      "panel_health": true,
+      "cpu": "not_confirmed_in_documentation",
+      "memory": "not_confirmed_in_documentation",
+      "disk": "not_confirmed_in_documentation",
+      "network": "not_confirmed_in_documentation"
+    },
+    "backup": {
+      "full_database_backup": false,
+      "catalog_snapshot": true
+    },
+    "subscription": {
+      "get_subscription": true,
+      "revoke_subscription": true,
+      "direct_configs": true
+    }
+  },
+  "implementation_notes": [
+    "Use GET /api/v1/users/list_all for DB synchronization instead of one live request per UI row.",
+    "The list_all response already exposes active_connections, download_bytes and is_active, which is enough to populate several monitoring/client fields.",
+    "GET /api/v1/users/<username> exposes is_online and total_traffic_bytes for detailed refresh or reconciliation.",
+    "GET /api/v1/nodes returns node status and total traffic and can feed panel/node monitoring.",
+    "GET /api/v1/status is an unauthenticated lightweight health check and is suitable for connectivity monitoring.",
+    "Do not represent unconfirmed CPU/RAM/disk/network time-series as supported Eylan capabilities until the API is verified on a real panel.",
+    "Do not store X-API-KEY or subscription tokens in providerMeta or logs."
+  ]
+}

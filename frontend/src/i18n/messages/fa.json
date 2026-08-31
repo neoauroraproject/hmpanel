@@ -657,7 +657,9 @@
     "inboundUpdated": "اینباند به‌روز شد",
     "inboundsHint": "نام سفارشی (remark) به شناسایی اینباندها هنگام افزودن کلاینت کمک می‌کند.",
     "colTag": "تگ",
-    "colRemark": "توضیح"
+    "colRemark": "توضیح",
+    "premiumUnavailable": "پرمیوم در دسترس نیست",
+    "disconnected": "قطع‌شده"
   },
   "traffic": {
     "title": "دفتر ترافیک",

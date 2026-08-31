@@ -20,6 +20,9 @@ export class CreateClientDto {
   @ApiPropertyOptional() @IsOptional() @IsString() flow?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() adminId?: string; // Target owner (for super-admin only)
   @ApiPropertyOptional() @IsOptional() @IsNumber() limitIp?: number;
+  @ApiPropertyOptional({ type: Object })
+  @IsOptional()
+  providerExtras?: Record<string, unknown>;
 }
 
 export class UpdateClientDto {
@@ -35,6 +38,9 @@ export class UpdateClientDto {
   @IsString({ each: true })
   inboundIds?: string[];
   @ApiPropertyOptional() @IsOptional() @IsNumber() limitIp?: number;
+  @ApiPropertyOptional({ type: Object })
+  @IsOptional()
+  providerExtras?: Record<string, unknown>;
 }
 
 export class BulkClientDto {

@@ -25,4 +25,16 @@ describe('assertAdminSessionActive', () => {
       assertAdminSessionActive({ ...active, tokenVersion: 2 }, 1),
     ).toThrow(UnauthorizedException);
   });
+
+  it('allows login after tokenVersion bump when no JWT version is passed', () => {
+    expect(() =>
+      assertAdminSessionActive({ ...active, tokenVersion: 3 }),
+    ).not.toThrow();
+  });
+
+  it('treats missing JWT tv as 0 when the payload slot is provided', () => {
+    expect(() =>
+      assertAdminSessionActive({ ...active, tokenVersion: 2 }, undefined),
+    ).toThrow(UnauthorizedException);
+  });
 });

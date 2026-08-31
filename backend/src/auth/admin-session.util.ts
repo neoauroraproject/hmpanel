@@ -17,9 +17,11 @@ export function assertAdminSessionActive(
   if (expiry > 0n && BigInt(Date.now()) >= expiry) {
     throw new UnauthorizedException('Account expired');
   }
+  // Login calls this with one argument. JWT/refresh always pass a second arg
+  // (possibly undefined) so stale tokens still compare against tokenVersion.
+  if (arguments.length < 2) return;
   const currentVersion = admin.tokenVersion ?? 0;
-  const tokenVersion = payloadTokenVersion ?? 0;
-  if (tokenVersion !== currentVersion) {
+  if ((payloadTokenVersion ?? 0) !== currentVersion) {
     throw new UnauthorizedException('Session revoked');
   }
 }

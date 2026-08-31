@@ -38,6 +38,10 @@ import { AdminQuotaService } from '../traffic/admin-quota.service';
 import {
   resolve3xUiLimit,
 } from './limit-mapper.util';
+import { PanelDriverRegistry } from '../panels/native/panel-driver.registry';
+import { PanelOperationGate } from '../panels/native/panel-operation-gate';
+import { isExternalPanelType } from '../panels/native/native-panel-capabilities';
+import { snapshotToClientUuid, mapSnapshotMeta } from '../panels/native/native-panel.orchestrator';
 
 @Injectable()
 export class ClientsService {
@@ -50,6 +54,8 @@ export class ClientsService {
     private monitoringService: MonitoringService,
     private lockService: RedisLockService,
     private adminQuota: AdminQuotaService,
+    private panelDrivers: PanelDriverRegistry,
+    private panelGate: PanelOperationGate,
   ) {}
 
   /** Only admins with unlimitedTraffic (or Super Admin) may own/create unlimited clients. */
@@ -510,6 +516,267 @@ export class ClientsService {
     }
   }
 
+  private async createOnExternalPanel(
+    callerId: string,
+    data: {
+      email: string;
+      inboundIds: string[];
+      remark?: string;
+      total?: number;
+      expiryTime?: number;
+      adminId?: string;
+      limitIp?: number;
+      providerExtras?: Record<string, unknown>;
+    },
+    inbounds: Array<{ id: string; panelId: string; panel: any }>,
+  ) {
+    const panel = inbounds[0].panel;
+    await this.panelGate.assertCanOperate(panel);
+    const driver = this.panelDrivers.get(panel.panelType);
+    if (!driver) {
+      throw new BadRequestException('Premium unavailable — this panel is frozen.');
+    }
+
+    const caller = await this.prisma.admin.findUnique({
+      where: { id: callerId },
+      include: { _count: { select: { clients: true } } },
+    });
+    if (!caller) throw new BadRequestException('Admin not found');
+
+    let targetAdminId = callerId;
+    let targetAdmin = caller;
+    if (caller.role === 'SUPER_ADMIN' && data.adminId) {
+      targetAdminId = data.adminId;
+      const explicitTarget = await this.prisma.admin.findUnique({
+        where: { id: targetAdminId },
+        include: { _count: { select: { clients: true } } },
+      });
+      if (!explicitTarget) throw new BadRequestException('Target Admin not found');
+      targetAdmin = explicitTarget;
+    }
+
+    const totalBytes = BigInt(data.total || 0);
+    this.assertUnlimitedClientAllowed(targetAdmin, totalBytes);
+    if (targetAdmin.maxClients > 0 && targetAdmin._count.clients >= targetAdmin.maxClients) {
+      throw new BadRequestException(
+        `Client limit reached. Maximum allowed: ${targetAdmin.maxClients}`,
+      );
+    }
+
+    const clash = await this.prisma.client.findUnique({
+      where: { panelId_email: { panelId: panel.id, email: data.email } },
+    });
+    if (clash) {
+      throw new BadRequestException(`Email "${data.email}" is already in use on a selected panel.`);
+    }
+
+    if (caller.role !== 'SUPER_ADMIN' && !this.skipTrafficAccounting(caller)) {
+      const callerCtx = await this.adminQuota.loadAdmin(callerId);
+      await this.adminQuota.assertCanAllocate(callerCtx, totalBytes, panel.id, {
+        usageMode: caller.trafficMode === 'USAGE',
+      });
+    }
+
+    let remote;
+    try {
+      remote = await driver.createClient(panel.id, {
+        username: data.email,
+        totalBytes,
+        expiryTimeMs: data.expiryTime || 0,
+        enable: true,
+        remark: data.remark,
+        limitIp: data.limitIp,
+        inboundIds: data.inboundIds,
+        resourceIds: inbounds.map((i) => i.id),
+        providerExtras: data.providerExtras,
+      });
+    } catch (err: any) {
+      throw new BadRequestException(err?.message || 'Remote create failed');
+    }
+
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const lockedCaller = await tx.admin.findUnique({ where: { id: callerId } });
+        if (!lockedCaller) throw new BadRequestException('Admin not found');
+        const callerCtx = await this.adminQuota.loadAdmin(callerId, tx);
+        const uuid = remote.uuid || snapshotToClientUuid(panel.panelType, data.email);
+        const client = await tx.client.create({
+          data: {
+            panelId: panel.id,
+            adminId: targetAdminId,
+            email: data.email,
+            remark: data.remark,
+            uuid,
+            remoteUsername: remote.username || data.email,
+            providerMeta: mapSnapshotMeta(remote),
+            lastSyncedAt: new Date(),
+            syncStale: false,
+            subToken: require('crypto').randomBytes(5).toString('hex'),
+            enable: remote.enable,
+            total: remote.total || totalBytes,
+            expiryTime: remote.expiryTime || BigInt(data.expiryTime || 0),
+            up: remote.up || 0n,
+            down: remote.down || 0n,
+            limitIp: data.limitIp || 0,
+            createdWithTrafficMode: targetAdmin.trafficMode,
+            provisioningStatus: 'ACTIVE',
+            provisionedAt: new Date(),
+            balanceDeducted:
+              totalBytes > 0n &&
+              lockedCaller.role !== 'SUPER_ADMIN' &&
+              !this.skipTrafficAccounting(lockedCaller) &&
+              lockedCaller.trafficMode === 'ALLOCATION',
+            inbounds: { create: data.inboundIds.map((inboundId) => ({ inboundId })) },
+          },
+          include: {
+            inbounds: {
+              select: {
+                inbound: {
+                  select: {
+                    id: true,
+                    tag: true,
+                    port: true,
+                    protocol: true,
+                    panel: { select: { id: true, name: true, url: true, subUrl: true, panelType: true } },
+                  },
+                },
+              },
+            },
+          },
+        });
+
+        if (
+          totalBytes > 0n &&
+          lockedCaller.role !== 'SUPER_ADMIN' &&
+          !this.skipTrafficAccounting(lockedCaller) &&
+          lockedCaller.trafficMode === 'ALLOCATION'
+        ) {
+          await this.adminQuota.debit(tx, callerCtx, panel.id, totalBytes, {
+            clientId: client.id,
+            targetClientUuid: client.uuid,
+            action: `CLIENT_CREATION_ALLOCATION_${Date.now()}`,
+            description: 'Client Creation Allocation',
+          });
+        }
+
+        return {
+          ...client,
+          inbound: client.inbounds?.[0]?.inbound || null,
+          inbounds: client.inbounds?.map((ci) => ci.inbound) || [],
+        };
+      });
+    } catch (err) {
+      await driver.deleteClient(panel.id, data.email).catch(() => {});
+      throw err;
+    }
+  }
+
+  private async updateOnExternalPanel(
+    id: string,
+    adminId: string,
+    role: string,
+    data: {
+      enable?: boolean;
+      total?: number;
+      expiryTime?: number;
+      remark?: string;
+      inboundIds?: string[];
+      limitIp?: number;
+      providerExtras?: Record<string, unknown>;
+    },
+    existing: any,
+  ) {
+    const panel = existing.inbound?.panel || existing.inbounds?.[0]?.panel;
+    await this.panelGate.assertCanOperate(panel);
+    const driver = this.panelDrivers.get(panel.panelType);
+    if (!driver) {
+      throw new BadRequestException('Premium unavailable — this panel is frozen.');
+    }
+    const username = existing.remoteUsername || existing.email;
+    const remote = await driver.updateClient(panel.id, username, {
+      totalBytes: data.total !== undefined ? BigInt(data.total) : undefined,
+      expiryTimeMs: data.expiryTime,
+      enable: data.enable,
+      remark: data.remark,
+      limitIp: data.limitIp,
+      inboundIds: data.inboundIds,
+      providerExtras: data.providerExtras,
+    });
+    const updated = await this.prisma.client.update({
+      where: { id },
+      data: {
+        enable: data.enable ?? remote.enable,
+        remark: data.remark ?? existing.remark,
+        total: data.total !== undefined ? BigInt(data.total) : existing.total,
+        expiryTime:
+          data.expiryTime !== undefined ? BigInt(data.expiryTime) : existing.expiryTime,
+        limitIp: data.limitIp ?? existing.limitIp,
+        providerMeta: mapSnapshotMeta(remote),
+        lastSyncedAt: new Date(),
+        syncStale: false,
+        ...(data.inboundIds
+          ? {
+              inbounds: {
+                deleteMany: {},
+                create: data.inboundIds.map((inboundId) => ({ inboundId })),
+              },
+            }
+          : {}),
+      },
+    });
+    return this.findOne(updated.id, adminId, role);
+  }
+
+  private async removeOnExternalPanel(
+    id: string,
+    adminId: string,
+    role: string,
+    skipRefund: boolean,
+    existing: any,
+  ) {
+    const panel = existing.inbound?.panel || existing.inbounds?.[0]?.panel;
+    await this.panelGate.assertCanOperate(panel);
+    const driver = this.panelDrivers.get(panel.panelType);
+    if (!driver) {
+      throw new BadRequestException('Premium unavailable — this panel is frozen.');
+    }
+    const username = existing.remoteUsername || existing.email;
+    try {
+      await driver.deleteClient(panel.id, username);
+    } catch (err: any) {
+      const msg = String(err?.message || '');
+      if (!/not found|404|does not exist/i.test(msg)) {
+        throw new BadRequestException(msg || 'Remote delete failed');
+      }
+    }
+
+    const remainingRaw =
+      BigInt(existing.total || 0) -
+      BigInt(existing.up || 0) -
+      BigInt(existing.down || 0);
+    const remaining = remainingRaw > 0n ? remainingRaw : 0n;
+    const refund =
+      !skipRefund &&
+      remaining > 0n &&
+      existing.balanceDeducted &&
+      this.shouldRefundDeletedClient(existing);
+
+    await this.prisma.$transaction(async (tx) => {
+      if (refund && existing.adminId) {
+        const owner = await this.adminQuota.loadAdmin(existing.adminId, tx);
+        await this.adminQuota.credit(tx, owner, existing.panelId, remaining, {
+          clientId: existing.id,
+          targetClientUuid: existing.uuid,
+          action: `CLIENT_DELETE_REFUND_${Date.now()}`,
+          description: 'Client deletion refund',
+        });
+      }
+      await tx.clientInbound.deleteMany({ where: { clientId: id } });
+      await tx.client.delete({ where: { id } });
+    });
+    return { ok: true };
+  }
+
   async create(
     callerId: string,
     data: {
@@ -526,6 +793,7 @@ export class ClientsService {
       trafficResetDay?: number;
       reset?: number;
       resetMax?: number;
+      providerExtras?: Record<string, unknown>;
     },
   ) {
     if (data.email) data.email = data.email.trim();
@@ -555,6 +823,19 @@ export class ClientsService {
       });
       if (!inbounds || inbounds.length === 0)
         throw new BadRequestException('No valid inbounds found');
+
+      const externalTypes = new Set(
+        inbounds.map((i) => i.panel?.panelType).filter((t) => isExternalPanelType(t)),
+      );
+      if (externalTypes.size > 0) {
+        if (externalTypes.size > 1) {
+          throw new BadRequestException('Cannot mix Eylan and Pasarguard inbounds on one client');
+        }
+        if (inbounds.some((i) => !isExternalPanelType(i.panel?.panelType))) {
+          throw new BadRequestException('Cannot mix 3x-ui and external panel inbounds');
+        }
+        return this.createOnExternalPanel(callerId, data, inbounds);
+      }
 
       const caller = await this.prisma.admin.findUnique({
         where: { id: callerId },
@@ -1059,8 +1340,17 @@ export class ClientsService {
                   protocol: true,
                   streamSettings: true,
                   panel: {
-                    select: { id: true, name: true, url: true, subUrl: true },
+                  select: {
+                    id: true,
+                    name: true,
+                    url: true,
+                    subUrl: true,
+                    panelType: true,
+                    nativeCapabilities: true,
+                    connectionHealth: true,
+                    lastSync: true,
                   },
+                },
                 },
               },
             },
@@ -1096,7 +1386,17 @@ export class ClientsService {
                 protocol: true,
                 streamSettings: true,
                 panel: {
-                  select: { id: true, name: true, url: true, subUrl: true },
+                  select: {
+                    id: true,
+                    name: true,
+                    url: true,
+                    subUrl: true,
+                    panelType: true,
+                    nativeCapabilities: true,
+                    connectionHealth: true,
+                    lastSync: true,
+                    lastSyncError: true,
+                  },
                 },
               },
             },
@@ -1325,9 +1625,16 @@ export class ClientsService {
       inboundIds?: string[];
       limitIp?: number;
       subId?: string;
+      providerExtras?: Record<string, unknown>;
     },
   ) {
     const existing = await this.findOne(id, adminId, role);
+    const existingPanel =
+      (existing as any).inbound?.panel ||
+      (existing as any).inbounds?.[0]?.panel;
+    if (existingPanel && isExternalPanelType(existingPanel.panelType)) {
+      return this.updateOnExternalPanel(id, adminId, role, data, existing);
+    }
 
     // Flow is dynamically assigned per inbound later.
 
@@ -1664,6 +1971,11 @@ export class ClientsService {
     skipRefund: boolean = false,
   ) {
     const existing = await this.findOne(id, adminId, role);
+    const existingPanel = (existing as any).inbounds?.[0]?.panel
+      || (existing as any).inbound?.panel;
+    if (existingPanel && isExternalPanelType(existingPanel.panelType)) {
+      return this.removeOnExternalPanel(id, adminId, role, skipRefund, existing);
+    }
     const lockKey = `client:delete:${existing.id}`;
 
     // Acquire distributed lock for deletion

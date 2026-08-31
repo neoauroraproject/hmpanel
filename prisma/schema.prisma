@@ -48,6 +48,18 @@ model Panel {
   backupEnabled   Boolean   @default(false)
   backupFrequency String    @default("daily") // hourly | 6h | 12h | daily
   backupKeepCount Int       @default(20)
+  /// Opaque immutable identity (`pnl_<ULID>`). Never used as a display name.
+  panelKey            String    @unique
+  /// Credential row for Eylan/Pasarguard. 3x-ui keeps apiToken/username/password on Panel.
+  connectionId        String?   @unique
+  /// Verified remote fingerprint after auth — never re-link on URL/password alone.
+  remoteIdentity      String?
+  /// CONNECTED | DEGRADED | DISCONNECTED | DISABLED | UNKNOWN
+  connectionHealth    String    @default("UNKNOWN")
+  lastSyncError       String?
+  lastHealthCheckAt   DateTime?
+  /// Granular capability matrix (clients/system/backup/...). Separate from 3x-ui `capabilities`.
+  nativeCapabilities  Json?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -70,6 +82,7 @@ model Panel {
   capBulkExport           Boolean   @default(false)
 
   server        Server         @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  connection    StoreAddonConnection? @relation(fields: [connectionId], references: [id], onDelete: SetNull)
   inbounds      Inbound[]
   syncState     SyncState?
   backups       Backup[]
@@ -101,6 +114,8 @@ model Inbound {
   /// Origin node GUID when inbound was synced from a node (#4983); may equal
   /// master panelGuid for local inbounds on newer 3x-ui (filled at API read time)
   originNodeGuid String?
+  /// Non-numeric remote resource id (Eylan default pool, Pasarguard group, …)
+  remoteResourceId String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -258,6 +273,13 @@ model Client {
 
   createdWithTrafficMode TrafficMode @default(ALLOCATION)
 
+  /// Provider username when it differs from email (Eylan/Pasarguard).
+  remoteUsername String?
+  /// Non-secret provider snapshot. Never store API keys or tokens here.
+  providerMeta   Json?    @default("{}")
+  lastSyncedAt   DateTime?
+  syncStale      Boolean  @default(false)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -271,6 +293,7 @@ model Client {
 
   @@unique([panelId, email])
   @@unique([panelId, uuid])
+  @@index([panelId, remoteUsername])
 }
 
 // ---------------------------------------------------------
@@ -670,10 +693,11 @@ model StoreAddonConnection {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  admin Admin        @relation(fields: [adminId], references: [id], onDelete: Cascade)
-  store StoreProfile @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  admin  Admin        @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  store  StoreProfile @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  panels Panel[]
 
-  @@unique([adminId, providerId])
+  @@index([adminId, providerId])
   @@index([storeId])
 }
 
@@ -1233,6 +1257,9 @@ model Incident {
   acknowledgedAt  DateTime?
   detectedAt      DateTime         @default(now())
   resolvedAt      DateTime?
+  resolvedBy      String?
+  /// system | admin
+  resolvedSource  String?
   archivedAt      DateTime?
 
   panel  Panel?          @relation(fields: [panelId], references: [id], onDelete: SetNull)

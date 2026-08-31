@@ -689,6 +689,13 @@ export default function ClientsPage() {
               >
                 <Database size={14} className={panelId === p.id ? "text-white" : "text-zinc-400"} />
                 {p.name}
+                {(p as any).operable === false ? (
+                  <span className="text-[10px] opacity-80">
+                    {(p as any).connectionHealth === "DISABLED"
+                      ? t("panels.disconnected")
+                      : t("panels.premiumUnavailable")}
+                  </span>
+                ) : null}
               </button>
             ))}
             <PluginSlot name="clients.providerSelector.extra" props={{ panelId, selectPanel }} />
@@ -1813,6 +1820,7 @@ interface AddClientForm {
   remark: string;
   flow?: string;
   limitIp?: string;
+  providerExtras?: Record<string, unknown>;
 }
 
 function AddClientModal({
@@ -1880,6 +1888,7 @@ function AddClientModal({
     remark: "",
     flow: "",
     limitIp: "",
+    providerExtras: {},
   });
 
   const requestedBytes = form.totalGB && Number(form.totalGB) > 0
@@ -1947,6 +1956,7 @@ function AddClientModal({
         remark: form.remark || undefined,
         flow: form.flow || undefined,
         limitIp: form.limitIp ? Number(form.limitIp) : 0,
+        providerExtras: form.providerExtras,
       };
 
       const res = await api.post<Client>("/clients", dto);
@@ -2127,6 +2137,16 @@ function AddClientModal({
                 </div>
               </div>
             </div>
+            <PluginSlot
+              name="clients.form.providerExtras"
+              props={{
+                panelId: selectedPanelId,
+                inboundIds: form.inboundIds,
+                extras: form.providerExtras,
+                onChange: (extras: Record<string, unknown>) =>
+                  setForm((f) => ({ ...f, providerExtras: extras })),
+              }}
+            />
             
 
           </div>
@@ -2280,6 +2300,7 @@ export function EditClientModal({
     flow: client.flow || "",
     limitIp: client.limitIp?.toString() || "",
     inboundIds: (client as any).inbounds?.map((i: any) => i.id) || [(client as any).inbound?.id].filter(Boolean),
+    providerExtras: {},
   });
 
   const usedTraffic = Number(client.up) + Number(client.down);
@@ -2348,6 +2369,7 @@ export function EditClientModal({
           inboundIds: form.inboundIds,
           enable: enableOverride,
           limitIp: form.limitIp ? Number(form.limitIp) : 0,
+          providerExtras: (form as any).providerExtras,
         })
       ).data;
     },
@@ -2612,6 +2634,17 @@ export function EditClientModal({
               </div>
             )}
           </div>
+
+          <PluginSlot
+            name="clients.form.providerExtras"
+            props={{
+              panelId: clientPanelId,
+              inboundIds: form.inboundIds,
+              extras: (form as any).providerExtras,
+              onChange: (extras: Record<string, unknown>) =>
+                setForm((f) => ({ ...f, providerExtras: extras })),
+            }}
+          />
 
           <div className="flex justify-end gap-2 border-t border-zinc-200 dark:border-zinc-800 pt-4">
             <button

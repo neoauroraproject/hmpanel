@@ -657,7 +657,9 @@
     "inboundUpdated": "Inbound updated",
     "inboundsHint": "Custom names (remarks) help identify inbounds when adding new clients.",
     "colTag": "Tag",
-    "colRemark": "Remark"
+    "colRemark": "Remark",
+    "premiumUnavailable": "Premium unavailable",
+    "disconnected": "Disconnected"
   },
   "traffic": {
     "title": "Traffic Ledger",

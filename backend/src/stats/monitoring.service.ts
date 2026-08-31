@@ -7,6 +7,10 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import axios from 'axios';
 import { resolvePanelApiBaseUrl } from '../common/utils/panel-url.util';
+import {
+  isExternalPanelType,
+  parseNativeCapabilities,
+} from '../panels/native/native-panel-capabilities';
 
 export interface PanelSpeedData {
   panelId: string;
@@ -20,6 +24,9 @@ export interface PanelSpeedData {
   panelVersion: string;
   online: boolean;
   latencyMs: number;
+  hasCpu?: boolean;
+  hasRam?: boolean;
+  hasDisk?: boolean;
 }
 
 @Injectable()
@@ -72,11 +79,37 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
           apiToken: true,
           apiBaseUrl: true,
           url: true,
+          panelType: true,
+          nativeCapabilities: true,
+          connectionHealth: true,
         },
       });
 
       const results = await Promise.all(
         panels.map(async (p) => {
+          if (isExternalPanelType((p as any).panelType)) {
+            const caps = parseNativeCapabilities(
+              (p as any).nativeCapabilities,
+              (p as any).panelType,
+            );
+            const connected = (p as any).connectionHealth === 'CONNECTED';
+            return {
+              panelId: p.id,
+              panelName: p.name,
+              cpu: 0,
+              ram: 0,
+              disk: 0,
+              up: 0,
+              down: 0,
+              xrayStatus: connected ? 'running' : 'stopped',
+              panelVersion: p.version || 'unknown',
+              online: connected,
+              latencyMs: 0,
+              hasCpu: caps.system.cpu,
+              hasRam: caps.system.memory,
+              hasDisk: caps.system.disk,
+            };
+          }
           if (p.status !== 'online') {
             return {
               panelId: p.id,

@@ -21,6 +21,15 @@ import {
 import axios, { AxiosError } from 'axios';
 import * as https from 'https';
 import * as crypto from 'crypto';
+import { NativePanelOrchestrator } from './native/native-panel.orchestrator';
+import { PanelOperationGate, withOperable } from './native/panel-operation-gate';
+import { PanelDriverRegistry } from './native/panel-driver.registry';
+import {
+  XUI_NATIVE_CAPABILITIES,
+  isExternalPanelType,
+  parseNativeCapabilities,
+} from './native/native-panel-capabilities';
+import { generatePanelKey } from './native/panel-identity.util';
 
 // ─── Provisioning Error Classification ───────────────────────────────────────
 export type ProvisioningErrorCode =
@@ -97,6 +106,9 @@ export class PanelsService implements OnModuleInit {
     @Inject(forwardRef(() => ClientsService))
     private clientsService: ClientsService,
     private adminQuota: AdminQuotaService,
+    private nativeOrchestrator: NativePanelOrchestrator,
+    private panelGate: PanelOperationGate,
+    private panelDrivers: PanelDriverRegistry,
   ) {}
 
   // ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -394,11 +406,21 @@ export class PanelsService implements OnModuleInit {
     apiToken?: string;
     panelId?: string;
   }) {
-    if (data.panelId && !data.apiToken) {
-      const panel = await this.prisma.panel.findUnique({
+    if (data.panelId) {
+      const saved = await this.prisma.panel.findUnique({
         where: { id: data.panelId },
       });
-      if (panel && panel.apiToken) data.apiToken = panel.apiToken;
+      if (saved && isExternalPanelType(saved.panelType)) {
+        await this.panelGate.assertCanOperate(saved);
+        const driver = this.panelDrivers.get(saved.panelType);
+        if (!driver?.testPanel) {
+          throw new BadRequestException(
+            'Premium unavailable — this panel is frozen.',
+          );
+        }
+        return driver.testPanel(saved.id);
+      }
+      if (saved && saved.apiToken && !data.apiToken) data.apiToken = saved.apiToken;
     }
 
     if (!data.url || !/^https?:\/\//.test(data.url)) {
@@ -674,10 +696,16 @@ export class PanelsService implements OnModuleInit {
         authMode,
         status: 'online',
         panelType: '3x-ui',
+        panelKey: generatePanelKey(),
+        connectionHealth: 'CONNECTED',
+        nativeCapabilities: XUI_NATIVE_CAPABILITIES as unknown as Prisma.InputJsonValue,
         webBasePath,
         apiBaseUrl,
-        capabilities: testResult.capabilities || {},
-        apiVersion: testResult.apiVersion || 'unknown',
+        capabilities: (testResult.capabilities || {}) as Prisma.InputJsonValue,
+        apiVersion:
+          ('apiVersion' in testResult && (testResult as { apiVersion?: string }).apiVersion) ||
+          testResult.version ||
+          'unknown',
         lastCapabilityScan: new Date(),
       },
     });
@@ -727,6 +755,11 @@ export class PanelsService implements OnModuleInit {
         lastSync: true,
         lastOnline: true,
         panelType: true,
+        panelKey: true,
+        connectionHealth: true,
+        lastSyncError: true,
+        lastHealthCheckAt: true,
+        nativeCapabilities: true,
         server: { select: { id: true, name: true, ipAddress: true } },
         syncState: {
           select: {
@@ -740,7 +773,18 @@ export class PanelsService implements OnModuleInit {
       },
       orderBy: { createdAt: 'desc' },
     });
-    return panels;
+    const decorated = [];
+    for (const panel of panels) {
+      const decision = await this.panelGate.decide(panel);
+      decorated.push({
+        ...withOperable(panel, decision),
+        nativeCapabilities: parseNativeCapabilities(
+          panel.nativeCapabilities,
+          panel.panelType,
+        ),
+      });
+    }
+    return decorated;
   }
 
   async findOne(id: string) {
@@ -795,7 +839,11 @@ export class PanelsService implements OnModuleInit {
       status?: string;
     },
   ) {
-    await this.findOne(id);
+    const existing = await this.findOne(id);
+    if (isExternalPanelType(existing.panelType)) {
+      await this.panelGate.assertCanOperate(existing);
+      data = { name: data.name };
+    }
     let formattedSubUrl: string | undefined | null = undefined;
     if (data.subUrl !== undefined) {
       if (data.subUrl && data.subUrl.trim() !== '') {
@@ -932,6 +980,9 @@ export class PanelsService implements OnModuleInit {
 
   async sync(id: string) {
     const panel = await this.findOne(id);
+    if (isExternalPanelType(panel.panelType)) {
+      return this.nativeOrchestrator.sync(id);
+    }
     const startTime = Date.now();
     const apiBaseUrl = resolvePanelApiBaseUrl(panel);
 
@@ -1863,6 +1914,9 @@ export class PanelsService implements OnModuleInit {
 
   async restartXray(id: string) {
     const panel = await this.findOne(id);
+    if (isExternalPanelType(panel.panelType)) {
+      throw new BadRequestException('Xray restart is not supported on this panel');
+    }
     const apiBaseUrl = resolvePanelApiBaseUrl(panel);
     try {
       const response = await axios.post(
@@ -3815,13 +3869,33 @@ export class PanelsService implements OnModuleInit {
 
     const panels = await this.prisma.panel.findMany({
       where: whereClause,
-      select: { id: true, apiToken: true, apiBaseUrl: true, url: true },
+      select: {
+        id: true,
+        apiToken: true,
+        apiBaseUrl: true,
+        url: true,
+        panelType: true,
+      },
     });
 
     const onlineEmails = new Set<string>();
 
     await Promise.all(
       panels.map(async (p) => {
+        if (isExternalPanelType(p.panelType)) {
+          const driver = this.panelDrivers.get(p.panelType);
+          if (!driver?.getOnlines) return;
+          if (!(await this.panelGate.canOperate(p))) return;
+          try {
+            const names = await driver.getOnlines(p.id);
+            for (const e of names) {
+              if (e) onlineEmails.add(e.trim().toLowerCase());
+            }
+          } catch (err: any) {
+            this.logger.debug(`native onlines failed for ${p.id}: ${err?.message}`);
+          }
+          return;
+        }
         let panelEmails: string[] = [];
         let success = false;
         const apiBaseUrl = resolvePanelApiBaseUrl(p);

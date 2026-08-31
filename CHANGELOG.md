@@ -8,6 +8,15 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [2.0.0] - 2026-08-31
+
+### Added
+- **Native multi-panel:** first-class `Panel` identity (`panelKey`, connection health, capability matrix) so 3x-ui, Eylan, and Pasarguard can coexist. 3x-ui path is unchanged; Eylan/Pasarguard need Premium `external-panels`.
+- **Capability-aware UI:** Clients, Panels, monitoring, and backup hide or freeze actions the remote API does not support instead of faking zeros.
+
+### Fixed
+- Inbound/client sync metadata for external panels (`remoteUsername`, `remoteResourceId`) and safer freeze when Premium is unavailable.
+
 ## [1.8.32] - 2026-08-29
 
 ### Added

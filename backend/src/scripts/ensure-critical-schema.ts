@@ -454,6 +454,35 @@ export async function ensureCriticalSchema(prisma: PrismaClient): Promise<void> 
     )`,
     `CREATE UNIQUE INDEX IF NOT EXISTS "AdminProviderResource_accessId_resourceId_key" ON "AdminProviderResource"("accessId", "resourceId")`,
     `CREATE INDEX IF NOT EXISTS "AdminProviderResource_accessId_idx" ON "AdminProviderResource"("accessId")`,
+
+    // Native multi-panel identity (additive — 3x-ui rows keep working)
+    `ALTER TABLE "Panel" ADD COLUMN IF NOT EXISTS "panelKey" TEXT`,
+    `ALTER TABLE "Panel" ADD COLUMN IF NOT EXISTS "connectionId" TEXT`,
+    `ALTER TABLE "Panel" ADD COLUMN IF NOT EXISTS "remoteIdentity" TEXT`,
+    `ALTER TABLE "Panel" ADD COLUMN IF NOT EXISTS "connectionHealth" TEXT NOT NULL DEFAULT 'UNKNOWN'`,
+    `ALTER TABLE "Panel" ADD COLUMN IF NOT EXISTS "lastSyncError" TEXT`,
+    `ALTER TABLE "Panel" ADD COLUMN IF NOT EXISTS "lastHealthCheckAt" TIMESTAMP(3)`,
+    `ALTER TABLE "Panel" ADD COLUMN IF NOT EXISTS "nativeCapabilities" JSONB`,
+    `UPDATE "Panel" SET "panelKey" = 'pnl_' || replace("id"::text, '-', '') WHERE "panelKey" IS NULL OR btrim("panelKey") = ''`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS "Panel_panelKey_key" ON "Panel"("panelKey")`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS "Panel_connectionId_key" ON "Panel"("connectionId")`,
+    `ALTER TABLE "Client" ADD COLUMN IF NOT EXISTS "remoteUsername" TEXT`,
+    `ALTER TABLE "Client" ADD COLUMN IF NOT EXISTS "providerMeta" JSONB DEFAULT '{}'`,
+    `ALTER TABLE "Client" ADD COLUMN IF NOT EXISTS "lastSyncedAt" TIMESTAMP(3)`,
+    `ALTER TABLE "Client" ADD COLUMN IF NOT EXISTS "syncStale" BOOLEAN NOT NULL DEFAULT false`,
+    `CREATE INDEX IF NOT EXISTS "Client_panelId_remoteUsername_idx" ON "Client"("panelId", "remoteUsername")`,
+    `ALTER TABLE "Inbound" ADD COLUMN IF NOT EXISTS "remoteResourceId" TEXT`,
+    `ALTER TABLE "Incident" ADD COLUMN IF NOT EXISTS "resolvedBy" TEXT`,
+    `ALTER TABLE "Incident" ADD COLUMN IF NOT EXISTS "resolvedSource" TEXT`,
+    // Multiple remotes per provider: drop one-connection-per-admin uniqueness
+    `ALTER TABLE "StoreAddonConnection" DROP CONSTRAINT IF EXISTS "StoreAddonConnection_adminId_providerId_key"`,
+    `DROP INDEX IF EXISTS "StoreAddonConnection_adminId_providerId_key"`,
+    `CREATE INDEX IF NOT EXISTS "StoreAddonConnection_adminId_providerId_idx" ON "StoreAddonConnection"("adminId", "providerId")`,
+    `DO $$ BEGIN
+      ALTER TABLE "Panel" ADD CONSTRAINT "Panel_connectionId_fkey"
+        FOREIGN KEY ("connectionId") REFERENCES "StoreAddonConnection"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+    EXCEPTION WHEN duplicate_object THEN NULL; WHEN undefined_table THEN NULL; WHEN undefined_object THEN NULL;
+    END $$`,
   ];
 
   for (const sql of statements) {

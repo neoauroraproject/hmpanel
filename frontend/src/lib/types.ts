@@ -70,6 +70,13 @@ export interface Panel {
   authMode: string;
   status: string;
   createdAt: string;
+  panelType?: string;
+  panelKey?: string;
+  connectionHealth?: string;
+  operable?: boolean;
+  freezeReason?: string | null;
+  lastSyncError?: string | null;
+  nativeCapabilities?: Record<string, unknown>;
   server: { id: string; name: string; ipAddress: string };
   syncState: {
     lastSync: string;

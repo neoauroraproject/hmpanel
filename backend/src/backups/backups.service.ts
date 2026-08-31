@@ -13,6 +13,7 @@ import { promisify } from 'util';
 import axios from 'axios';
 import { HmctlClient } from '../settings/hmctl.client';
 import { PrismaService } from '../prisma/prisma.service';
+import { parseNativeCapabilities } from '../panels/native/native-panel-capabilities';
 import { resolvePanelApiBaseUrl } from '../common/utils/panel-url.util';
 import { getAppVersion } from '../common/utils/app-version';
 
@@ -907,7 +908,15 @@ export class BackupsService {
     url?: string | null;
     apiBaseUrl?: string | null;
     apiToken?: string | null;
+    panelType?: string | null;
+    nativeCapabilities?: unknown;
   }): Promise<StoredPanelDbBackup> {
+    const caps = parseNativeCapabilities(panel.nativeCapabilities, panel.panelType);
+    if (!caps.backup.database) {
+      throw new BadRequestException(
+        'This panel does not support remote database export (getDb). Use a Full HMPanel backup or a catalog snapshot.',
+      );
+    }
     const apiBaseUrl = resolvePanelApiBaseUrl(panel);
     if (!apiBaseUrl) throw new BadRequestException('Panel has no API URL');
 

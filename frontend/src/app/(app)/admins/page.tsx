@@ -457,6 +457,7 @@ function PanelInboundPicker({
     <div className="space-y-2 max-h-72 overflow-y-auto pe-2 custom-scrollbar">
       {panels.map((p) => {
         const panelInbounds = inboundsByPanel.get(p.id) ?? [];
+        const frozen = (p as any).operable === false;
         const isEnabled = enabledPanels.includes(p.id);
         const isExpanded = expanded.includes(p.id);
         const checkedCount = panelInbounds.filter((i) => selectedInbounds.includes(i.id)).length;
@@ -467,8 +468,9 @@ function PanelInboundPicker({
               <input
                 type="checkbox"
                 checked={isEnabled}
+                disabled={frozen}
                 onChange={() => togglePanel(p.id)}
-                className="w-4 h-4 rounded text-blue-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-blue-500"
+                className="w-4 h-4 rounded text-blue-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-blue-500 disabled:opacity-40"
               />
               <button
                 type="button"
@@ -478,6 +480,13 @@ function PanelInboundPicker({
                 <span className="flex flex-col">
                   <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200 inline-flex items-center gap-2">
                     <Server size={14} className="text-blue-400" /> {p.name}
+                    {frozen ? (
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-amber-500">
+                        {(p as any).connectionHealth === "DISABLED"
+                          ? t("panels.disconnected")
+                          : t("panels.premiumUnavailable")}
+                      </span>
+                    ) : null}
                   </span>
                   <span className="text-xs text-zinc-500">
                     {t("admins.panelInboundCount", { selected: checkedCount, total: panelInbounds.length })}

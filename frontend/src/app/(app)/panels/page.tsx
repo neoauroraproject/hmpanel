@@ -14,6 +14,7 @@ import { useT } from "@/i18n";
 import { motion, AnimatePresence } from "framer-motion";
 import { MOTION_CONFIG } from "@/lib/motion";
 import { NodeInboundBadge } from "@/components/NodeInboundBadge";
+import { PluginSlot } from "@/components/PluginSlot";
 
 interface PanelForm {
   name: string;
@@ -94,14 +95,17 @@ export default function PanelsPage() {
         title={t("panels.title")}
         subtitle={t(panels.length === 1 ? "panels.subtitle" : "panels.subtitle_plural", { count: panels.length })}
         action={
-          <motion.button 
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={() => setWizardOpen(true)} 
-            className="flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500 shadow-sm"
-          >
-            <Plus size={16} /> {t("panels.addPanel")}
-          </motion.button>
+          <div className="flex items-center gap-2">
+            <PluginSlot name="panels.add.extra" />
+            <motion.button 
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => setWizardOpen(true)} 
+              className="flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500 shadow-sm"
+            >
+              <Plus size={16} /> {t("panels.addPanel")}
+            </motion.button>
+          </div>
         }
       />
 
@@ -132,7 +136,14 @@ export default function PanelsPage() {
                 <td className="block md:table-cell px-4 py-3">
                   <div className="flex justify-between items-start md:block">
                     <div>
-                      <div className="font-medium text-zinc-800 dark:text-zinc-100">{p.name}</div>
+                      <div className="font-medium text-zinc-800 dark:text-zinc-100 inline-flex items-center gap-2">
+                        {p.name}
+                        {p.freezeReason ? (
+                          <Badge tone="amber">{p.connectionHealth === "DISABLED" ? t("panels.disconnected") : t("panels.premiumUnavailable")}</Badge>
+                        ) : p.panelType && p.panelType !== "3x-ui" ? (
+                          <Badge tone="zinc">{p.panelType}</Badge>
+                        ) : null}
+                      </div>
                       <div className="text-xs text-zinc-500">{p.server?.name ?? t("common.localServer")}</div>
                     </div>
                     <div className="md:hidden">
@@ -168,11 +179,14 @@ export default function PanelsPage() {
                 </td>
                 <td className="block md:table-cell px-4 py-3 border-t border-zinc-200 dark:border-zinc-800/50 md:border-0 mt-2 md:mt-0">
                   <div className="flex flex-wrap items-center justify-start md:justify-end gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity w-full">
-                    <IconBtn title={t("common.testConnection")} onClick={async () => {
+                    <IconBtn
+                      title={t("common.testConnection")}
+                      disabled={p.operable === false}
+                      onClick={async () => {
                       try {
                         const { data: r } = await api.post("/panels/test-connection", { url: p.url, panelId: p.id });
-                        if (r.ok) toast(t("panels.testOk", { version: r.version, ping: r.pingMs }));
-                        else toast(r.errorType || t("common.connectionFailed"), "error");
+                        if (r.ok) toast(t("panels.testOk", { version: r.version, ping: r.pingMs ?? r.latencyMs }));
+                        else toast(r.errorType || r.error || t("common.connectionFailed"), "error");
                       } catch { toast(t("common.connectionFailed"), "error"); }
                     }}><PlugZap size={15} /></IconBtn>
                     
@@ -180,19 +194,24 @@ export default function PanelsPage() {
                       whileHover={{ scale: syncStatus[p.id] ? 1 : 1.1 }}
                       whileTap={{ scale: syncStatus[p.id] ? 1 : 0.9 }}
                       title={t("panels.runSync")} 
-                      onClick={() => !syncStatus[p.id] && sync.mutate(p.id)}
-                      disabled={!!syncStatus[p.id]}
-                      className={`rounded-md border border-zinc-300 dark:border-zinc-700 px-2 py-1.5 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center justify-center min-w-[32px] min-h-[32px] transition-colors ${syncStatus[p.id] ? 'bg-zinc-100 dark:bg-zinc-800/50' : ''}`}
+                      onClick={() => !syncStatus[p.id] && p.operable !== false && sync.mutate(p.id)}
+                      disabled={!!syncStatus[p.id] || p.operable === false}
+                      className={`rounded-md border border-zinc-300 dark:border-zinc-700 px-2 py-1.5 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center justify-center min-w-[32px] min-h-[32px] transition-colors ${syncStatus[p.id] || p.operable === false ? 'bg-zinc-100 dark:bg-zinc-800/50 opacity-50' : ''}`}
                     >
                       {syncStatus[p.id] === 'Started' ? <span className="text-[10px] uppercase font-bold text-blue-400 tracking-wider">{t("panels.syncStarted")}</span> : 
                        syncStatus[p.id] === 'Running' ? <span className="text-[10px] uppercase font-bold text-amber-400 tracking-wider flex items-center gap-1"><Spinner /> {t("panels.syncRunning")}</span> : 
                        syncStatus[p.id] === 'Finished' ? <span className="text-[10px] uppercase font-bold text-emerald-400 tracking-wider">{t("panels.syncFinished")}</span> : 
                        <RefreshCw size={15} />}
                     </motion.button>
-                    <IconBtn title={t("panels.restartXray")} onClick={() => restart.mutate(p.id)}><Power size={15} /></IconBtn>
+                    {(!p.panelType || p.panelType === "3x-ui") && (
+                      <IconBtn title={t("panels.restartXray")} disabled={p.operable === false} onClick={() => restart.mutate(p.id)}><Power size={15} /></IconBtn>
+                    )}
+                    <PluginSlot name="panels.row.actions" props={{ panel: p }} />
                     <IconBtn title={t("panels.inbounds")} onClick={() => setInboundsFor(p)}><Network size={15} /></IconBtn>
-                    <IconBtn title={t("panels.viewLogs")} onClick={() => setLogsFor(p)}><ScrollText size={15} /></IconBtn>
-                    <IconBtn title={t("common.edit")} onClick={() => setEditing(p)}><Pencil size={15} /></IconBtn>
+                    {(!p.panelType || p.panelType === "3x-ui") && (
+                      <IconBtn title={t("panels.viewLogs")} onClick={() => setLogsFor(p)}><ScrollText size={15} /></IconBtn>
+                    )}
+                    <IconBtn title={t("common.edit")} disabled={p.operable === false && p.panelType !== "3x-ui" && !!p.panelType} onClick={() => setEditing(p)}><Pencil size={15} /></IconBtn>
                     <IconBtn title={t("common.delete")} danger onClick={() => {
                       if (confirm(t("panels.deleteConfirm", { name: p.name }))) remove.mutate(p.id);
                     }}><Trash2 size={15} /></IconBtn>
@@ -217,14 +236,15 @@ export default function PanelsPage() {
   );
 }
 
-function IconBtn({ children, title, onClick, danger }: { children: React.ReactNode; title: string; onClick: () => void; danger?: boolean }) {
+function IconBtn({ children, title, onClick, danger, disabled }: { children: React.ReactNode; title: string; onClick: () => void; danger?: boolean; disabled?: boolean }) {
   return (
     <motion.button 
-      whileHover={{ scale: 1.1 }}
-      whileTap={{ scale: 0.9 }}
-      title={title} 
+      whileHover={{ scale: disabled ? 1 : 1.1 }}
+      whileTap={{ scale: disabled ? 1 : 0.9 }}
+      title={title}
+      disabled={disabled}
       onClick={onClick}
-      className={`rounded-md border border-zinc-300 dark:border-zinc-700 p-1.5 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 ${danger ? "hover:border-red-500/40 hover:text-red-400" : "hover:text-zinc-800 dark:hover:text-zinc-100"}`}
+      className={`rounded-md border border-zinc-300 dark:border-zinc-700 p-1.5 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 ${danger ? "hover:border-red-500/40 hover:text-red-400" : "hover:text-zinc-800 dark:hover:text-zinc-100"} ${disabled ? "opacity-40 pointer-events-none" : ""}`}
     >
       {children}
     </motion.button>

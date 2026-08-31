@@ -4,6 +4,7 @@ import { PanelsService } from '../panels/panels.service';
 import { derivePanelConnectionFromUrl } from '../common/utils/panel-url.util';
 import Database = require('better-sqlite3');
 import { randomUUID } from 'crypto';
+import { generatePanelKey } from '../panels/native/panel-identity.util';
 
 @Injectable()
 export class MigrationService {
@@ -145,6 +146,7 @@ export class MigrationService {
               password: p.password,
               status: p.is_active ? 'online' : 'offline',
               panelType: p.panel_type || '3x-ui',
+              panelKey: generatePanelKey(),
               webBasePath: webBasePath,
               apiBaseUrl: apiBaseUrl,
             },
