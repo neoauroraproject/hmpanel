@@ -24,6 +24,41 @@ import { PluginSlot } from "@/components/PluginSlot";
 import { NodeInboundBadge } from "@/components/NodeInboundBadge";
 
 const GB = 1024 ** 3;
+const CLIENTS_PANEL_TAB_KEY = "hmpanel.clients.panelId";
+
+function readStoredPanelTab() {
+  if (typeof window === "undefined") return "";
+  try {
+    const fromUrl = new URLSearchParams(window.location.search).get("panelId");
+    if (fromUrl) return fromUrl;
+    return sessionStorage.getItem(CLIENTS_PANEL_TAB_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+function PanelSwitchSkeleton() {
+  return (
+    <div className="space-y-4 animate-pulse">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="h-24 rounded-2xl bg-zinc-100 dark:bg-zinc-800/70" />
+        ))}
+      </div>
+      <div className="h-64 rounded-2xl bg-zinc-100 dark:bg-zinc-800/70" />
+    </div>
+  );
+}
+
+function writeStoredPanelTab(id: string) {
+  try {
+    if (id) sessionStorage.setItem(CLIENTS_PANEL_TAB_KEY, id);
+  } catch {
+    /* ignore */
+  }
+}
+
+const panelSwitchEase = { duration: 0.2, ease: [0.22, 1, 0.36, 1] as const };
 
 function bulkActionLabel(
   t: (key: string, params?: Record<string, string | number>) => string,
@@ -144,7 +179,7 @@ export default function ClientsPage() {
   const [search, setSearch] = useState("");
   const [adminId, setAdminId] = useState("");
   const [inboundId, setInboundId] = useState("");
-  const [panelId, setPanelId] = useState("");
+  const [panelId, setPanelId] = useState(readStoredPanelTab);
   const isNativeTypeTab = panelId === "eylan" || panelId === "pasarguard";
   const [status, setStatus] = useState("");
   const [expiry, setExpiry] = useState("");
@@ -205,7 +240,12 @@ export default function ClientsPage() {
   // Query Clients
   const { data, isLoading, isFetching, error } = useQuery<Paginated<Client>>({
     queryKey: ["clients", page, limit, search, adminId, inboundId, panelId, status, expiry, trafficRange],
-    placeholderData: keepPreviousData,
+    placeholderData: (previousData, previousQuery) => {
+      if (!previousQuery) return undefined;
+      const prevPanel = previousQuery.queryKey[6];
+      if (prevPanel !== panelId) return undefined;
+      return keepPreviousData(previousData, previousQuery);
+    },
     queryFn: async () => {
       const params = new URLSearchParams();
       params.append("page", String(page));
@@ -436,32 +476,36 @@ export default function ClientsPage() {
     [accessiblePanels, xuiEnabled],
   );
   const nativeAccessTabs = useMemo(() => {
-    if (isSuperAdmin) return [...nativeTypesPresent];
-    return (extAccess?.providers || [])
-      .map((p) => p.id)
-      .filter((id) => id === "eylan" || id === "pasarguard");
+    const raw = isSuperAdmin
+      ? [...nativeTypesPresent]
+      : (extAccess?.providers || [])
+          .map((p) => p.id)
+          .filter((id) => id === "eylan" || id === "pasarguard");
+    return (["pasarguard", "eylan"] as const).filter((id) => raw.includes(id));
   }, [isSuperAdmin, nativeTypesPresent, extAccess]);
   const showXuiTypeChip = xuiEnabled && selectorPanels.length === 0;
-  const destinationCount =
-    selectorPanels.length + nativeAccessTabs.length + (showXuiTypeChip ? 1 : 0);
-  const showAllPanelsChip = destinationCount > 1;
+  const orderedDestinations = useMemo(() => {
+    const ids: string[] = [];
+    selectorPanels.forEach((p) => ids.push(p.id));
+    if (showXuiTypeChip) ids.push("3x-ui");
+    nativeAccessTabs.forEach((id) => ids.push(id));
+    return ids;
+  }, [selectorPanels, showXuiTypeChip, nativeAccessTabs]);
+  const destinationCount = orderedDestinations.length;
   const showPanelSelector = destinationCount > 0 || nativeTypesPresent.size > 0;
 
   useEffect(() => {
-    if (isSuperAdmin) return;
-    if (destinationCount !== 1) return;
-    if (selectorPanels.length === 1 && !nativeAccessTabs.length) {
-      if (panelId !== selectorPanels[0].id) setPanelId(selectorPanels[0].id);
+    if (!orderedDestinations.length) return;
+    const stored = readStoredPanelTab();
+    if (stored && orderedDestinations.includes(stored)) {
+      if (panelId !== stored) setPanelId(stored);
       return;
     }
-    if (showXuiTypeChip && !nativeAccessTabs.length) {
-      if (panelId !== "3x-ui") setPanelId("3x-ui");
-      return;
+    if (!panelId || !orderedDestinations.includes(panelId)) {
+      setPanelId(orderedDestinations[0]);
+      writeStoredPanelTab(orderedDestinations[0]);
     }
-    if (selectorPanels.length === 0 && nativeAccessTabs.length === 1 && panelId !== nativeAccessTabs[0]) {
-      setPanelId(nativeAccessTabs[0]);
-    }
-  }, [isSuperAdmin, destinationCount, selectorPanels, nativeAccessTabs, showXuiTypeChip, panelId]);
+  }, [orderedDestinations, panelId]);
 
   // Inbound filter options follow the selected panel
   const filterInbounds = useMemo(() => {
@@ -478,11 +522,13 @@ export default function ClientsPage() {
     return all.filter((i) => i.protocol !== "eylan" && i.protocol !== "pasarguard");
   }, [inboundsList, panelId, isNativeTypeTab]);
 
-  if (isLoading && !isExternalProvider) return <Spinner />;
+  if (isLoading && !data && !isExternalProvider && !panelId) return <Spinner />;
   if (error) return <ErrorBox message={t("clients.loadFailed")} />;
 
   const selectPanel = (nextPanelId: string) => {
+    if (!nextPanelId) return;
     setPanelId(nextPanelId);
+    writeStoredPanelTab(nextPanelId);
     setSelectedClients({});
     // Drop an inbound filter that belongs to another panel
     if (inboundId && nextPanelId) {
@@ -580,7 +626,6 @@ export default function ClientsPage() {
     setSearch("");
     setAdminId("");
     setInboundId("");
-    setPanelId("");
     setStatus("");
     setExpiry("");
     setTrafficRange("");
@@ -640,80 +685,53 @@ export default function ClientsPage() {
         }
       />
 
-      {/* Global KPI Header — native type tabs use the scoped Premium overview
-          (this admin's online/capacity/panel time), not the global 3x-ui KPIs. */}
-      {isExternalProvider || isNativeTypeTab ? (
-        <PluginSlot name="clients.kpi.override" props={{ providerId: panelId }} />
-      ) : overviewData && overviewData.admin ? (
-        <div className="mb-4">
-          <div className="md:hidden flex justify-between items-center mb-2">
-            <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">{t("clients.overviewStats")}</span>
+      {/* Panel selector — 3x-ui first, then Pasarguard, then Eylan */}
+      {showPanelSelector && (
+        <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 p-3">
+          <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+            <Network size={14} /> {t("clients.panelSelectorLabel")}
           </div>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 pb-4 border-b border-zinc-200 dark:border-zinc-800 transition-all block md:grid">
-            <div className="bg-white dark:bg-zinc-900/50 rounded-2xl p-4 border border-zinc-200 dark:border-zinc-800 flex items-center gap-4">
-              <div className="p-3 bg-emerald-500/10 text-emerald-400 rounded-xl"><Activity size={20} /></div>
-              <div>
-                <div className="text-xs text-zinc-500 font-medium">{t("clients.onlineClients")}</div>
-                <div className="text-xl font-bold text-zinc-900 dark:text-white">
-                  {isSuperAdmin 
-                    ? <>{onlineClients.length} <span className="text-sm font-normal text-zinc-500">({t("clients.global")})</span></>
-                    : onlineClients.filter(c => c && overviewData?.clientEmails?.map((e: string) => e.trim().toLowerCase()).includes(c.toLowerCase())).length} 
-                </div>
-              </div>
-            </div>
-            <div className="bg-white dark:bg-zinc-900/50 rounded-2xl p-4 border border-zinc-200 dark:border-zinc-800 flex items-center gap-4">
-              <div className="p-3 bg-blue-500/10 text-blue-400 rounded-xl"><HardDrive size={20} /></div>
-              <div className="min-w-0 flex-1">
-                <div className="text-xs text-zinc-500 font-medium">{t("clients.availableTraffic")}</div>
-                <div className="text-xl font-bold text-zinc-900 dark:text-white">
-                  {overviewData.admin.unlimitedTraffic
-                    ? <span className="text-emerald-500">∞</span>
-                    : formatBytes(overviewData.admin.availableTraffic)}
-                </div>
-                <div className="text-[10px] text-zinc-400 mt-1">
-                  {overviewData.admin.unlimitedTraffic
-                    ? t("common.unlimited")
-                    : t("clients.outOf", { total: formatBytes(overviewData.admin.allTimeTraffic || 0) })}
-                </div>
-                {!overviewData.admin.unlimitedTraffic && overviewData.admin.quotaMode === "PER_PANEL" && overviewData.admin.panelQuotas?.length > 0 && (
-                  <div className="mt-2 pt-2 border-t border-zinc-200 dark:border-zinc-800 space-y-1">
-                    {overviewData.admin.panelQuotas.map((p: { panelId: string; name: string; availableTraffic: number }) => (
-                      <div key={p.panelId} className="flex justify-between text-[11px] gap-2">
-                        <span className="text-zinc-500 truncate">{p.name}</span>
-                        <span className="font-medium text-zinc-700 dark:text-zinc-300 shrink-0">{formatBytes(p.availableTraffic)}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="bg-white dark:bg-zinc-900/50 rounded-2xl p-4 border border-zinc-200 dark:border-zinc-800 flex items-center gap-4">
-              <div className="p-3 bg-purple-500/10 text-purple-400 rounded-xl"><Users size={20} /></div>
-              <div>
-                <div className="text-xs text-zinc-500 font-medium">{t("clients.clientCapacity")}</div>
-                <div className="text-xl font-bold text-zinc-900 dark:text-white">
-                  {overviewData.admin.clientCapacity === 0 
-                    ? `${overviewData.clientEmails?.length ?? 0} / ∞` 
-                    : `${overviewData.clientEmails?.length ?? 0} / ${overviewData.admin.clientCapacity}`}
-                </div>
-              </div>
-            </div>
-            <div className="bg-white dark:bg-zinc-900/50 rounded-2xl p-4 border border-zinc-200 dark:border-zinc-800 flex items-center gap-4">
-              <div className="p-3 bg-amber-500/10 text-amber-400 rounded-xl"><CalendarDays size={20} /></div>
-              <div>
-                <div className="text-xs text-zinc-500 font-medium">{isNativeTypeTab ? t("clients.panelTime") : t("clients.subscriptionExpiry")}</div>
-                <div className="text-xl font-bold text-zinc-900 dark:text-white">
-                  {overviewData.admin.expiryTime > 0 
-                    ? (overviewData.admin.expiryTime < Date.now() 
-                        ? t("common.expired")
-                        : t("clients.daysRemaining", { count: Math.ceil((overviewData.admin.expiryTime - Date.now()) / (1000 * 60 * 60 * 24)) })) 
-                    : t("common.never")}
-                </div>
-              </div>
-            </div>
+          <div className="flex overflow-x-auto hide-scrollbar items-center gap-2">
+            {selectorPanels.map((p) => (
+              <button
+                type="button"
+                key={p.id}
+                onClick={() => selectPanel(p.id)}
+                className={`whitespace-nowrap px-4 py-2 rounded-xl text-sm font-semibold transition-colors border inline-flex items-center gap-2 ${
+                  panelId === p.id
+                    ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/20 ring-2 ring-blue-500/30"
+                    : "bg-zinc-50 dark:bg-zinc-950 text-zinc-600 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                }`}
+              >
+                <Database size={14} className={panelId === p.id ? "text-white" : "text-zinc-400"} />
+                {p.name}
+                {(p as any).operable === false ? (
+                  <span className="text-[10px] opacity-80">
+                    {(p as any).connectionHealth === "DISABLED"
+                      ? t("panels.disconnected")
+                      : t("panels.premiumUnavailable")}
+                  </span>
+                ) : null}
+              </button>
+            ))}
+            {showXuiTypeChip && (
+              <button
+                type="button"
+                onClick={() => selectPanel("3x-ui")}
+                className={`whitespace-nowrap px-4 py-2 rounded-xl text-sm font-semibold transition-colors border inline-flex items-center gap-2 ${
+                  panelId === "3x-ui"
+                    ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/20 ring-2 ring-blue-500/30"
+                    : "bg-zinc-50 dark:bg-zinc-950 text-zinc-600 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                }`}
+              >
+                <Database size={14} className={panelId === "3x-ui" ? "text-white" : "text-zinc-400"} />
+                3x-ui
+              </button>
+            )}
+            <PluginSlot name="clients.providerSelector.extra" props={{ panelId, selectPanel }} />
           </div>
         </div>
-      ) : null}
+      )}
 
       {/* Search and Quick Filters */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -735,67 +753,6 @@ export default function ClientsPage() {
           />
         </div>
       </div>
-
-      {/* Panel selector — All + each accessible panel */}
-      {showPanelSelector && (
-        <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 p-3">
-          <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-            <Network size={14} /> {t("clients.panelSelectorLabel")}
-          </div>
-          <div className="flex overflow-x-auto hide-scrollbar items-center gap-2">
-            {showAllPanelsChip && (
-            <button
-              type="button"
-              onClick={() => selectPanel("")}
-              className={`whitespace-nowrap px-4 py-2 rounded-xl text-sm font-semibold transition-colors border ${
-                panelId === ""
-                  ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/20"
-                  : "bg-zinc-50 dark:bg-zinc-950 text-zinc-600 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-              }`}
-            >
-              {t("clients.allPanels")}
-            </button>
-            )}
-            {selectorPanels.map((p) => (
-              <button
-                type="button"
-                key={p.id}
-                onClick={() => selectPanel(p.id)}
-                className={`whitespace-nowrap px-4 py-2 rounded-xl text-sm font-semibold transition-colors border inline-flex items-center gap-2 ${
-                  panelId === p.id
-                    ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/20"
-                    : "bg-zinc-50 dark:bg-zinc-950 text-zinc-600 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                }`}
-              >
-                <Database size={14} className={panelId === p.id ? "text-white" : "text-zinc-400"} />
-                {p.name}
-                {(p as any).operable === false ? (
-                  <span className="text-[10px] opacity-80">
-                    {(p as any).connectionHealth === "DISABLED"
-                      ? t("panels.disconnected")
-                      : t("panels.premiumUnavailable")}
-                  </span>
-                ) : null}
-              </button>
-            ))}
-            {showXuiTypeChip && (
-              <button
-                type="button"
-                onClick={() => selectPanel("3x-ui")}
-                className={`whitespace-nowrap px-4 py-2 rounded-xl text-sm font-semibold transition-colors border inline-flex items-center gap-2 ${
-                  panelId === "3x-ui"
-                    ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/20"
-                    : "bg-zinc-50 dark:bg-zinc-950 text-zinc-600 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                }`}
-              >
-                <Database size={14} className={panelId === "3x-ui" ? "text-white" : "text-zinc-400"} />
-                3x-ui
-              </button>
-            )}
-            <PluginSlot name="clients.providerSelector.extra" props={{ panelId, selectPanel }} />
-          </div>
-        </div>
-      )}
 
       <div>
         <div className="flex overflow-x-auto hide-scrollbar items-center gap-2 pb-2 -mx-4 px-4 sm:mx-0 sm:px-0">
@@ -871,8 +828,7 @@ export default function ClientsPage() {
           </div>
         </div>
 
-        {/* Clear Filters Link */}
-        {(search || adminId || inboundId || panelId || status || expiry || trafficRange) && (
+        {(search || adminId || inboundId || status || expiry || trafficRange) && (
           <div className="flex justify-end">
             <button
               onClick={resetFilters}
@@ -884,8 +840,84 @@ export default function ClientsPage() {
         )}
       </Card>
 
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={panelId || "none"}
+          initial={{ opacity: 0, x: 10 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: -10 }}
+          transition={panelSwitchEase}
+          className="space-y-6"
+        >
+      {/* KPI Header — always matches the selected destination */}
+      {isFetching && !data && !isExternalProvider ? (
+        <PanelSwitchSkeleton />
+      ) : isExternalProvider || isNativeTypeTab ? (
+        <PluginSlot name="clients.kpi.override" props={{ providerId: panelId }} />
+      ) : overviewData && overviewData.admin ? (
+        <div className="mb-4">
+          <div className="md:hidden flex justify-between items-center mb-2">
+            <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">{t("clients.overviewStats")}</span>
+          </div>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 pb-4 border-b border-zinc-200 dark:border-zinc-800 transition-all block md:grid">
+            <div className="bg-white dark:bg-zinc-900/50 rounded-2xl p-4 border border-zinc-200 dark:border-zinc-800 flex items-center gap-4">
+              <div className="p-3 bg-emerald-500/10 text-emerald-400 rounded-xl"><Activity size={20} /></div>
+              <div>
+                <div className="text-xs text-zinc-500 font-medium">{t("clients.onlineClients")}</div>
+                <div className="text-xl font-bold text-zinc-900 dark:text-white">
+                  {isSuperAdmin 
+                    ? <>{onlineClients.length} <span className="text-sm font-normal text-zinc-500">({t("clients.global")})</span></>
+                    : onlineClients.filter(c => c && overviewData?.clientEmails?.map((e: string) => e.trim().toLowerCase()).includes(c.toLowerCase())).length} 
+                </div>
+              </div>
+            </div>
+            <div className="bg-white dark:bg-zinc-900/50 rounded-2xl p-4 border border-zinc-200 dark:border-zinc-800 flex items-center gap-4">
+              <div className="p-3 bg-blue-500/10 text-blue-400 rounded-xl"><HardDrive size={20} /></div>
+              <div className="min-w-0 flex-1">
+                <div className="text-xs text-zinc-500 font-medium">{t("clients.availableTraffic")}</div>
+                <div className="text-xl font-bold text-zinc-900 dark:text-white">
+                  {overviewData.admin.unlimitedTraffic
+                    ? <span className="text-emerald-500">∞</span>
+                    : formatBytes(overviewData.admin.availableTraffic)}
+                </div>
+                <div className="text-[10px] text-zinc-400 mt-1">
+                  {overviewData.admin.unlimitedTraffic
+                    ? t("common.unlimited")
+                    : t("clients.outOf", { total: formatBytes(overviewData.admin.allTimeTraffic || 0) })}
+                </div>
+              </div>
+            </div>
+            <div className="bg-white dark:bg-zinc-900/50 rounded-2xl p-4 border border-zinc-200 dark:border-zinc-800 flex items-center gap-4">
+              <div className="p-3 bg-purple-500/10 text-purple-400 rounded-xl"><Users size={20} /></div>
+              <div>
+                <div className="text-xs text-zinc-500 font-medium">{t("clients.clientCapacity")}</div>
+                <div className="text-xl font-bold text-zinc-900 dark:text-white">
+                  {overviewData.admin.clientCapacity === 0 
+                    ? `${overviewData.clientEmails?.length ?? 0} / ∞` 
+                    : `${overviewData.clientEmails?.length ?? 0} / ${overviewData.admin.clientCapacity}`}
+                </div>
+              </div>
+            </div>
+            <div className="bg-white dark:bg-zinc-900/50 rounded-2xl p-4 border border-zinc-200 dark:border-zinc-800 flex items-center gap-4">
+              <div className="p-3 bg-amber-500/10 text-amber-400 rounded-xl"><CalendarDays size={20} /></div>
+              <div>
+                <div className="text-xs text-zinc-500 font-medium">{isNativeTypeTab ? t("clients.panelTime") : t("clients.subscriptionExpiry")}</div>
+                <div className="text-xl font-bold text-zinc-900 dark:text-white">
+                  {overviewData.admin.expiryTime > 0 
+                    ? (overviewData.admin.expiryTime < Date.now() 
+                        ? t("common.expired")
+                        : t("clients.daysRemaining", { count: Math.ceil((overviewData.admin.expiryTime - Date.now()) / (1000 * 60 * 60 * 24)) })) 
+                    : t("common.never")}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {/* Main Table / Cards */}
-      {isExternalProvider ? (
+      {!(isFetching && !data && !isExternalProvider) && (
+      isExternalProvider ? (
         <PluginSlot name="clients.list.override" props={{ providerId: panelId }} />
       ) : (
       <Card className="overflow-hidden p-0 bg-transparent md:bg-zinc-50 dark:bg-zinc-950 border-0 md:border md:border-zinc-200 dark:border-zinc-800">
@@ -1343,7 +1375,11 @@ export default function ClientsPage() {
           </div>
         )}
       </Card>
+      )
       )}
+
+        </motion.div>
+      </AnimatePresence>
 
       {/* Floating Bulk Actions Bar (Responsive) */}
       <AnimatePresence>

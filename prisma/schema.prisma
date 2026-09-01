@@ -60,6 +60,8 @@ model Panel {
   lastHealthCheckAt   DateTime?
   /// Granular capability matrix (clients/system/backup/...). Separate from 3x-ui `capabilities`.
   nativeCapabilities  Json?
+  /// Optional intro shown to resellers in Panel Plus catalog.
+  description         String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 

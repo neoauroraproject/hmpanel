@@ -541,12 +541,19 @@ function EditPanel({ panel, onClose, onSaved }: { panel: any; onClose: () => voi
   const t = useT();
   const toast = useToast((s) => s.push);
   const native = isNativePanelType(panel.panelType);
-  const [form, setForm] = useState({ name: panel.name, url: panel.url, subUrl: panel.subUrl || "", status: panel.status, apiToken: "" });
+  const [form, setForm] = useState({
+    name: panel.name,
+    url: panel.url,
+    subUrl: panel.subUrl || "",
+    status: panel.status,
+    apiToken: "",
+    description: panel.description || "",
+  });
   const update = useMutation({
     mutationFn: async () => {
       const payload: any = native
-        ? { name: form.name }
-        : { name: form.name, url: form.url, subUrl: form.subUrl, status: form.status };
+        ? { name: form.name, description: form.description }
+        : { name: form.name, url: form.url, subUrl: form.subUrl, status: form.status, description: form.description };
       if (!native && form.apiToken) payload.apiToken = form.apiToken;
       return (await api.patch(`/panels/${panel.id}`, payload)).data;
     },
@@ -562,6 +569,16 @@ function EditPanel({ panel, onClose, onSaved }: { panel: any; onClose: () => voi
               {t("panels.nativeManageInPlus")}
             </p>
             <Field label={t("panels.panelName")} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            <label className="block space-y-1">
+              <span className="text-sm text-zinc-500 dark:text-zinc-400">{t("panels.catalogIntro")}</span>
+              <textarea
+                value={form.description}
+                onChange={(e) => setForm({ ...form, description: e.target.value })}
+                rows={3}
+                className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500"
+                placeholder={t("panels.catalogIntroPlaceholder")}
+              />
+            </label>
             <div className="flex justify-end gap-2 border-t border-zinc-200 dark:border-zinc-800 pt-4 mt-4">
               <button onClick={onClose} className="rounded-lg px-4 py-2 text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200">{t("common.cancel")}</button>
               <motion.button
@@ -578,6 +595,16 @@ function EditPanel({ panel, onClose, onSaved }: { panel: any; onClose: () => voi
         ) : (
           <>
         <Field label={t("panels.panelName")} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+        <label className="block space-y-1">
+          <span className="text-sm text-zinc-500 dark:text-zinc-400">{t("panels.catalogIntro")}</span>
+          <textarea
+            value={form.description}
+            onChange={(e) => setForm({ ...form, description: e.target.value })}
+            rows={3}
+            className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500"
+            placeholder={t("panels.catalogIntroPlaceholder")}
+          />
+        </label>
         <Field ltr label={t("panels.panelUrl")} value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} />
         <div>
           <Field ltr label={t("panels.subUrl")} value={form.subUrl} placeholder={t("panels.subUrlPlaceholder")} onChange={(e) => setForm({ ...form, subUrl: e.target.value })} />

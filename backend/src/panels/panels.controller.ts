@@ -93,6 +93,7 @@ export class PanelsController {
       subUrl?: string;
       apiToken?: string;
       status?: string;
+      description?: string | null;
     },
   ) {
     return this.panelsService.update(id, dto);

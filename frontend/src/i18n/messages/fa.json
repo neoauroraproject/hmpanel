@@ -221,7 +221,13 @@
     "moreCount": "+{count} مورد دیگر",
     "depleted": "تمام‌شده",
     "lowTraffic": "ترافیک کم",
-    "manageClient": "مدیریت کلاینت"
+    "manageClient": "مدیریت کلاینت",
+    "destinations": "پنل‌های شما",
+    "remainingTraffic": "باقی‌مانده",
+    "daysLeft": "{count} روز",
+    "destinationActive": "فعال",
+    "destinationInactive": "غیرفعال",
+    "clientCap": "کلاینت"
   },
   "clients": {
     "title": "کلاینت‌ها",
@@ -630,6 +636,8 @@
     "panelVersion": "نسخه پنل",
     "duration": "مدت",
     "panelName": "نام پنل",
+    "catalogIntro": "متن معرفی کاتالوگ (نماینده)",
+    "catalogIntroPlaceholder": "توضیح کوتاه که در کاتالوگ پنل پلاس نمایش داده می‌شود",
     "panelNamePlaceholder": "مثلاً FRA Panel D",
     "panelUrl": "آدرس پنل",
     "panelUrlPlaceholder": "https://domain.com:2053/custompath/panel/",

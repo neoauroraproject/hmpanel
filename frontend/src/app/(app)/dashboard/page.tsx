@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
@@ -19,6 +19,7 @@ import {
 import type { Overview, SeriesPoint, Trends, Monitoring } from "@/lib/types";
 import { formatBytes, formatDateTime } from "@/lib/format";
 import { Card, Spinner, ErrorBox, Badge } from "@/components/ui";
+import { PluginSlot } from "@/components/PluginSlot";
 import { useToast } from "@/components/toast";
 import { useAuth } from "@/store/auth";
 import { useT } from "@/i18n";
@@ -477,6 +478,27 @@ function ResellerDashboard() {
     queryFn: async () => (await api.get<any>("/stats/reseller-overview")).data,
   });
 
+  const extAccess = useQuery<{ providers?: Array<{ id: string }> }>({
+    queryKey: ["external-panels-access"],
+    queryFn: async () => (await api.get("/premium-modules/external-panels/access")).data,
+    retry: false,
+  });
+
+  const xuiDestinations = useMemo(() => {
+    const map = new Map<string, { id: string; name: string }>();
+    for (const inbound of inboundsQuery.data || []) {
+      const type = inbound.panel?.panelType || inbound.protocol;
+      if (type === "eylan" || type === "pasarguard") continue;
+      const id = inbound.panel?.id as string | undefined;
+      if (!id) continue;
+      if (!map.has(id)) map.set(id, { id, name: inbound.panel?.name || "3x-ui" });
+    }
+    return Array.from(map.values());
+  }, [inboundsQuery.data]);
+
+  const extraDestinations = extAccess.data?.providers?.length ?? 0;
+  const showDestinations = xuiDestinations.length + extraDestinations > 1;
+
   if (overview.isLoading) return <Spinner />;
   if (overview.error) return <ErrorBox message={t("dashboard.resellerLoadFailed")} />;
 
@@ -589,6 +611,58 @@ function ResellerDashboard() {
           </div>
         </motion.div>
       </div>
+
+      {showDestinations && (
+        <div>
+          <h2 className="mb-3 text-sm font-semibold text-zinc-700 dark:text-zinc-200">{t("dashboard.destinations")}</h2>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {xuiDestinations.map((p) => {
+              const q = (a.panelQuotas || []).find((row: { panelId: string }) => row.panelId === p.id);
+              const remaining = a.unlimitedTraffic ? null : Number(q?.availableTraffic ?? a.availableTraffic ?? 0);
+              const days =
+                a.expiryTime > 0
+                  ? Math.max(0, Math.ceil((a.expiryTime - Date.now()) / (1000 * 60 * 60 * 24)))
+                  : null;
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => router.push(`/clients?panelId=${encodeURIComponent(p.id)}`)}
+                  className="rounded-2xl border border-zinc-200 bg-white p-4 text-start shadow-sm transition-colors hover:border-blue-400/50 dark:border-zinc-800 dark:bg-zinc-900"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="truncate text-sm font-semibold text-zinc-900 dark:text-white">{p.name}</div>
+                    <span className="shrink-0 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase text-emerald-600">
+                      {t("dashboard.destinationActive")}
+                    </span>
+                  </div>
+                  <div className="mt-3 grid grid-cols-3 gap-2 text-[11px] text-zinc-500">
+                    <div>
+                      <div className="uppercase tracking-wide">{t("dashboard.remainingTraffic")}</div>
+                      <div className="mt-0.5 font-semibold text-zinc-800 dark:text-zinc-200">
+                        {a.unlimitedTraffic ? "∞" : formatBytes(remaining || 0)}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="uppercase tracking-wide">{t("dashboard.clientCap")}</div>
+                      <div className="mt-0.5 font-semibold text-zinc-800 dark:text-zinc-200">
+                        {overview.data.clientEmails?.length || 0}/{a.clientCapacity === 0 ? "∞" : a.clientCapacity}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="uppercase tracking-wide">{t("clients.subscriptionExpiry")}</div>
+                      <div className="mt-0.5 font-semibold text-zinc-800 dark:text-zinc-200">
+                        {days == null ? t("common.never") : t("dashboard.daysLeft", { count: days })}
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+            <PluginSlot name="dashboard.reseller.destinations" />
+          </div>
+        </div>
+      )}
 
       <div className="pt-6">
         <div className="flex items-center gap-2 mb-4">

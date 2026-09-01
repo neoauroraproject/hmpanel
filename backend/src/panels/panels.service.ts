@@ -761,6 +761,7 @@ export class PanelsService implements OnModuleInit {
         lastSyncError: true,
         lastHealthCheckAt: true,
         nativeCapabilities: true,
+        description: true,
         server: { select: { id: true, name: true, ipAddress: true } },
         syncState: {
           select: {
@@ -838,12 +839,13 @@ export class PanelsService implements OnModuleInit {
       subUrl?: string;
       apiToken?: string;
       status?: string;
+      description?: string | null;
     },
   ) {
     const existing = await this.findOne(id);
     if (isExternalPanelType(existing.panelType)) {
       await this.panelGate.assertCanOperate(existing);
-      data = { name: data.name };
+      data = { name: data.name, description: data.description };
     }
     let formattedSubUrl: string | undefined | null = undefined;
     if (data.subUrl !== undefined) {
@@ -870,12 +872,16 @@ export class PanelsService implements OnModuleInit {
       subUrl?: string;
       apiToken?: string;
       status?: string;
+      description?: string | null;
     } = {
       name: data.name,
       subUrl: formattedSubUrl,
       apiToken: data.apiToken,
       status: data.status,
     };
+    if (data.description !== undefined) {
+      updateData.description = data.description;
+    }
 
     if (data.url) {
       const endpoint = panelEndpointFieldsFromUrl(data.url);

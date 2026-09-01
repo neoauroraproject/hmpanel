@@ -15,6 +15,22 @@ export type AdminQuotaAdmin = {
 
 type Tx = Prisma.TransactionClient;
 
+function panelMatchesQuotaFilter(
+  panelId: string,
+  panelType: string | undefined,
+  filterPanelId: string,
+) {
+  if (panelId === filterPanelId) return true;
+  const type = panelType || '3x-ui';
+  if (filterPanelId === 'eylan' || filterPanelId === 'pasarguard') {
+    return type === filterPanelId;
+  }
+  if (filterPanelId === '3x-ui' || filterPanelId === '3xui') {
+    return type !== 'eylan' && type !== 'pasarguard';
+  }
+  return false;
+}
+
 @Injectable()
 export class AdminQuotaService {
   constructor(private readonly prisma: PrismaService) {}
@@ -549,7 +565,7 @@ export class AdminQuotaService {
   async listPanelQuotas(adminId: string) {
     const rows = await this.prisma.adminPanelQuota.findMany({
       where: { adminId },
-      include: { panel: { select: { id: true, name: true } } },
+      include: { panel: { select: { id: true, name: true, panelType: true } } },
       orderBy: { panel: { name: 'asc' } },
     });
     return rows.map((r) => {
@@ -557,6 +573,7 @@ export class AdminQuotaService {
       return {
         panelId: r.panelId,
         panelName: r.panel.name,
+        panelType: r.panel.panelType || "3x-ui",
         balance: r.balance,
         totalAssigned: r.totalAssigned,
         availableTraffic: summary.availableTraffic,
@@ -595,24 +612,25 @@ export class AdminQuotaService {
     const panels = quotas.map((q) => ({
       panelId: q.panelId,
       name: q.panelName,
+      panelType: q.panelType,
       availableTraffic: q.availableTraffic,
       allTimeTraffic: q.totalAssigned,
       usedTraffic: q.usedTraffic,
     }));
 
-    const filtered = filterPanelId
-      ? panels.find((p) => p.panelId === filterPanelId)
-      : null;
-    const sumAvailable = panels.reduce((s, p) => s + p.availableTraffic, 0);
-    const sumAssigned = panels.reduce((s, p) => s + p.allTimeTraffic, 0);
-    const sumUsed = panels.reduce((s, p) => s + p.usedTraffic, 0);
+    const matching = filterPanelId
+      ? panels.filter((p) => panelMatchesQuotaFilter(p.panelId, p.panelType, filterPanelId))
+      : panels;
+    const sumAvailable = matching.reduce((s, p) => s + p.availableTraffic, 0);
+    const sumAssigned = matching.reduce((s, p) => s + p.allTimeTraffic, 0);
+    const sumUsed = matching.reduce((s, p) => s + p.usedTraffic, 0);
 
     return {
       quotaMode: 'PER_PANEL' as const,
       unlimitedTraffic: false,
-      availableTraffic: filtered?.availableTraffic ?? sumAvailable,
-      allTimeTraffic: filtered?.allTimeTraffic ?? sumAssigned,
-      usedTraffic: filtered?.usedTraffic ?? sumUsed,
+      availableTraffic: sumAvailable,
+      allTimeTraffic: sumAssigned,
+      usedTraffic: sumUsed,
       panels,
     };
   }

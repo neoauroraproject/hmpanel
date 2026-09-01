@@ -221,7 +221,13 @@
     "moreCount": "+{count} More",
     "depleted": "Depleted",
     "lowTraffic": "Low Traffic",
-    "manageClient": "Manage Client"
+    "manageClient": "Manage Client",
+    "destinations": "Your panels",
+    "remainingTraffic": "Remaining",
+    "daysLeft": "{count} days",
+    "destinationActive": "Active",
+    "destinationInactive": "Inactive",
+    "clientCap": "Clients"
   },
   "clients": {
     "title": "Clients",
@@ -630,6 +636,8 @@
     "panelVersion": "Panel Version",
     "duration": "Duration",
     "panelName": "Panel Name",
+    "catalogIntro": "Catalog intro (resellers)",
+    "catalogIntroPlaceholder": "Short description shown in Panel Plus catalog",
     "panelNamePlaceholder": "e.g. FRA Panel D",
     "panelUrl": "Panel URL",
     "panelUrlPlaceholder": "https://domain.com:2053/custompath/panel/",
