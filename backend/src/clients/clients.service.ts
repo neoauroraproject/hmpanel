@@ -562,7 +562,13 @@ export class ClientsService {
       limitIp?: number;
       providerExtras?: Record<string, unknown>;
     },
-    inbounds: Array<{ id: string; panelId: string; panel: any }>,
+    inbounds: Array<{
+      id: string;
+      panelId: string;
+      panel: any;
+      remoteResourceId?: string | null;
+      panelInboundId?: number | null;
+    }>,
   ) {
     const panel = inbounds[0].panel;
     await this.panelGate.assertCanOperate(panel);
