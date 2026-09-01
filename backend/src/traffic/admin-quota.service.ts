@@ -42,6 +42,39 @@ export class AdminQuotaService {
     return admin.role === 'SUPER_ADMIN' || admin.unlimitedTraffic === true;
   }
 
+  providerFromPanelType(panelType?: string | null): '3xui' | 'eylan' | 'pasarguard' {
+    if (panelType === 'eylan' || panelType === 'pasarguard') return panelType;
+    return '3xui';
+  }
+
+  async resolveTrafficMode(
+    adminId: string,
+    panelType?: string | null,
+    tx?: Tx,
+  ): Promise<'ALLOCATION' | 'USAGE'> {
+    const provider = this.providerFromPanelType(panelType);
+    if (provider === 'eylan' || provider === 'pasarguard') {
+      const db = tx ?? this.prisma;
+      const access = await db.adminProviderAccess.findUnique({
+        where: { adminId_provider: { adminId, provider } },
+        select: { metadata: true },
+      });
+      const rec =
+        access?.metadata && typeof access.metadata === 'object'
+          ? (access.metadata as Record<string, unknown>)
+          : {};
+      if (rec.trafficMode === 'USAGE' || rec.trafficMode === 'ALLOCATION') {
+        return rec.trafficMode;
+      }
+    }
+    const db = tx ?? this.prisma;
+    const admin = await db.admin.findUnique({
+      where: { id: adminId },
+      select: { trafficMode: true },
+    });
+    return admin?.trafficMode === 'USAGE' ? 'USAGE' : 'ALLOCATION';
+  }
+
   isPerPanel(admin: { quotaMode?: QuotaMode | string | null }): boolean {
     return admin.quotaMode === 'PER_PANEL';
   }
@@ -286,7 +319,13 @@ export class AdminQuotaService {
   ): Promise<void> {
     if (delta <= 0n) return;
     const admin = await this.loadAdmin(adminId);
-    if (this.skipTrafficAccounting(admin) || admin.trafficMode !== 'USAGE') return;
+    if (this.skipTrafficAccounting(admin)) return;
+    const panel = await this.prisma.panel.findUnique({
+      where: { id: panelId },
+      select: { panelType: true },
+    });
+    const mode = await this.resolveTrafficMode(adminId, panel?.panelType);
+    if (mode !== 'USAGE') return;
 
     await this.prisma.$transaction(async (tx) => {
       if (this.isPerPanel(admin)) {

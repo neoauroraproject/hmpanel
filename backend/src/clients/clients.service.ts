@@ -614,10 +614,19 @@ export class ClientsService {
 
     if (caller.role !== 'SUPER_ADMIN' && !this.skipTrafficAccounting(caller)) {
       const callerCtx = await this.adminQuota.loadAdmin(callerId);
+      const accountingMode = await this.adminQuota.resolveTrafficMode(
+        callerId,
+        panel.panelType,
+      );
       await this.adminQuota.assertCanAllocate(callerCtx, totalBytes, panel.id, {
-        usageMode: caller.trafficMode === 'USAGE',
+        usageMode: accountingMode === 'USAGE',
       });
     }
+
+    const ownerTrafficMode = await this.adminQuota.resolveTrafficMode(
+      targetAdminId,
+      panel.panelType,
+    );
 
     const providerExtras =
       panel.panelType === 'pasarguard'
@@ -665,14 +674,14 @@ export class ClientsService {
             up: remote.up || 0n,
             down: remote.down || 0n,
             limitIp: remote.limitIp ?? data.limitIp ?? 0,
-            createdWithTrafficMode: targetAdmin.trafficMode,
+            createdWithTrafficMode: ownerTrafficMode,
             provisioningStatus: 'ACTIVE',
             provisionedAt: new Date(),
             balanceDeducted:
               totalBytes > 0n &&
               lockedCaller.role !== 'SUPER_ADMIN' &&
               !this.skipTrafficAccounting(lockedCaller) &&
-              lockedCaller.trafficMode === 'ALLOCATION',
+              ownerTrafficMode === 'ALLOCATION',
             inbounds: { create: data.inboundIds.map((inboundId) => ({ inboundId })) },
           },
           include: {
@@ -696,7 +705,7 @@ export class ClientsService {
           totalBytes > 0n &&
           lockedCaller.role !== 'SUPER_ADMIN' &&
           !this.skipTrafficAccounting(lockedCaller) &&
-          lockedCaller.trafficMode === 'ALLOCATION'
+          ownerTrafficMode === 'ALLOCATION'
         ) {
           await this.adminQuota.debit(tx, callerCtx, panel.id, totalBytes, {
             clientId: client.id,
@@ -785,11 +794,14 @@ export class ClientsService {
         });
         const skipOwnerAccounting =
           role === 'SUPER_ADMIN' || this.skipTrafficAccounting(owner ?? {});
-        if (
-          owner &&
-          !skipOwnerAccounting &&
-          owner.trafficMode === 'ALLOCATION'
-        ) {
+        const ownerMode = owner
+          ? await this.adminQuota.resolveTrafficMode(
+              owner.id,
+              panel.panelType,
+              tx,
+            )
+          : 'ALLOCATION';
+        if (owner && !skipOwnerAccounting && ownerMode === 'ALLOCATION') {
           if (diff > 0n) {
             await this.adminQuota.assertCanAllocate(
               owner as any,
