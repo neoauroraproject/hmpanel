@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { clsx } from "clsx";
-import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { copyToClipboard } from "@/lib/clipboard";
 import type { Client, Paginated, Admin } from "@/lib/types";
@@ -244,7 +244,7 @@ export default function ClientsPage() {
       if (!previousQuery) return undefined;
       const prevPanel = previousQuery.queryKey[6];
       if (prevPanel !== panelId) return undefined;
-      return keepPreviousData(previousData, previousQuery);
+      return previousData;
     },
     queryFn: async () => {
       const params = new URLSearchParams();
