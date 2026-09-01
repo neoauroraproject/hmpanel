@@ -2410,7 +2410,7 @@ export function EditClientModal({
       groupIds: Array.isArray((client as any).providerMeta?.group_ids)
         ? (client as any).providerMeta.group_ids.map((g: unknown) => Number(g)).filter((n: number) => Number.isFinite(n) && n > 0)
         : [],
-    },
+    } as Record<string, unknown>,
   });
 
   const usedTraffic = Number(client.up) + Number(client.down);
