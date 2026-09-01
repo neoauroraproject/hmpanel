@@ -18,11 +18,32 @@ interface ToastState {
 
 let seq = 1;
 
+function formatToastMessage(message: unknown): string {
+  if (message == null) return "";
+  if (typeof message === "string") return message;
+  if (typeof message === "number" || typeof message === "boolean") return String(message);
+  if (Array.isArray(message)) return message.map(formatToastMessage).filter(Boolean).join(", ");
+  if (typeof message === "object") {
+    const rec = message as Record<string, unknown>;
+    const nested = formatToastMessage(rec.message ?? rec.detail ?? rec.error ?? rec.msg);
+    if (nested) return nested;
+    try {
+      const json = JSON.stringify(message);
+      if (json && json !== "{}" && json !== "[]") return json.slice(0, 300);
+    } catch {
+      /* ignore */
+    }
+    return "";
+  }
+  return String(message);
+}
+
 export const useToast = create<ToastState>((set) => ({
   toasts: [],
   push: (message, tone = "success") => {
     const id = seq++;
-    set((s) => ({ toasts: [...s.toasts, { id, message, tone }] }));
+    const text = formatToastMessage(message) || "Error";
+    set((s) => ({ toasts: [...s.toasts, { id, message: text, tone }] }));
     setTimeout(() => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })), 3500);
   },
   remove: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),

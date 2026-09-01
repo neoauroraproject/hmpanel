@@ -168,6 +168,8 @@ export class StatsService {
     const whereClause: any = { adminId };
     if (panelId === 'eylan' || panelId === 'pasarguard') {
       whereClause.panel = { panelType: panelId };
+    } else if (panelId === '3x-ui' || panelId === '3xui') {
+      whereClause.panel = { NOT: { panelType: { in: ['eylan', 'pasarguard'] } } };
     } else if (panelId) {
       whereClause.panelId = panelId;
     }

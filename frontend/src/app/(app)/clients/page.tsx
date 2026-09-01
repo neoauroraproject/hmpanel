@@ -426,7 +426,7 @@ export default function ClientsPage() {
     return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name));
   }, [panelsList, inboundsList]);
 
-  const xuiEnabled = isSuperAdmin || extAccess?.xuiEnabled !== false;
+  const xuiEnabled = isSuperAdmin || extAccess?.xuiEnabled === true;
   const selectorPanels = useMemo(
     () =>
       accessiblePanels.filter((p) => {
@@ -441,18 +441,27 @@ export default function ClientsPage() {
       .map((p) => p.id)
       .filter((id) => id === "eylan" || id === "pasarguard");
   }, [isSuperAdmin, nativeTypesPresent, extAccess]);
-  const showAllPanelsChip = selectorPanels.length + nativeAccessTabs.length > 1;
-  const showPanelSelector = selectorPanels.length > 0 || nativeAccessTabs.length > 0 || nativeTypesPresent.size > 0;
+  const showXuiTypeChip = xuiEnabled && selectorPanels.length === 0;
+  const destinationCount =
+    selectorPanels.length + nativeAccessTabs.length + (showXuiTypeChip ? 1 : 0);
+  const showAllPanelsChip = destinationCount > 1;
+  const showPanelSelector = destinationCount > 0 || nativeTypesPresent.size > 0;
 
   useEffect(() => {
     if (isSuperAdmin) return;
+    if (destinationCount !== 1) return;
+    if (selectorPanels.length === 1 && !nativeAccessTabs.length) {
+      if (panelId !== selectorPanels[0].id) setPanelId(selectorPanels[0].id);
+      return;
+    }
+    if (showXuiTypeChip && !nativeAccessTabs.length) {
+      if (panelId !== "3x-ui") setPanelId("3x-ui");
+      return;
+    }
     if (selectorPanels.length === 0 && nativeAccessTabs.length === 1 && panelId !== nativeAccessTabs[0]) {
       setPanelId(nativeAccessTabs[0]);
     }
-    if (!xuiEnabled && panelId && panelId !== "eylan" && panelId !== "pasarguard") {
-      setPanelId(nativeAccessTabs[0] || "");
-    }
-  }, [isSuperAdmin, selectorPanels.length, nativeAccessTabs, xuiEnabled, panelId]);
+  }, [isSuperAdmin, destinationCount, selectorPanels, nativeAccessTabs, showXuiTypeChip, panelId]);
 
   // Inbound filter options follow the selected panel
   const filterInbounds = useMemo(() => {
@@ -461,6 +470,9 @@ export default function ClientsPage() {
       return all.filter(
         (i) => ((i.panel as { panelType?: string } | undefined)?.panelType || i.protocol) === panelId,
       );
+    }
+    if (panelId === "3x-ui" || panelId === "3xui") {
+      return all.filter((i) => i.protocol !== "eylan" && i.protocol !== "pasarguard");
     }
     if (panelId) return all.filter((i) => i.panel?.id === panelId);
     return all.filter((i) => i.protocol !== "eylan" && i.protocol !== "pasarguard");
@@ -766,6 +778,20 @@ export default function ClientsPage() {
                 ) : null}
               </button>
             ))}
+            {showXuiTypeChip && (
+              <button
+                type="button"
+                onClick={() => selectPanel("3x-ui")}
+                className={`whitespace-nowrap px-4 py-2 rounded-xl text-sm font-semibold transition-colors border inline-flex items-center gap-2 ${
+                  panelId === "3x-ui"
+                    ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/20"
+                    : "bg-zinc-50 dark:bg-zinc-950 text-zinc-600 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                }`}
+              >
+                <Database size={14} className={panelId === "3x-ui" ? "text-white" : "text-zinc-400"} />
+                3x-ui
+              </button>
+            )}
             <PluginSlot name="clients.providerSelector.extra" props={{ panelId, selectPanel }} />
           </div>
         </div>

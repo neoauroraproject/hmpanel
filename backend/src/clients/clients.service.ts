@@ -1305,7 +1305,7 @@ export class ClientsService {
       // Eylan/Pasarguard type tabs: all clients on panels of that type.
       // Native rows are keyed by Client.panelId, not always by inbound join.
       where.panel = { panelType: typeTab };
-    } else if (filters.panelType === '3x-ui') {
+    } else if (filters.panelType === '3x-ui' || filters.panelId === '3x-ui' || filters.panelId === '3xui') {
       where.panel = { NOT: { panelType: { in: [...NATIVE_PANEL_TYPES] } } };
     } else if (filters.panelId) {
       where.panelId = filters.panelId;
