@@ -14,7 +14,6 @@ import { randomUUID } from 'crypto';
 import * as QRCode from 'qrcode';
 import { PanelsService } from '../panels/panels.service';
 import { BulkCreateClientDto, BulkClientDto } from './dto/client.dto';
-import { buildNativeSubscriptionUrl } from '../common/utils/native-sub-url';
 
 const GB = 1024 ** 3;
 
@@ -76,6 +75,7 @@ import { PanelDriverRegistry } from '../panels/native/panel-driver.registry';
 import { PanelOperationGate } from '../panels/native/panel-operation-gate';
 import { isExternalPanelType } from '../panels/native/native-panel-capabilities';
 import { snapshotToClientUuid, mapSnapshotMeta } from '../panels/native/native-panel.orchestrator';
+import { ClientOutputService } from './output/client-output.service';
 
 @Injectable()
 export class ClientsService {
@@ -90,6 +90,8 @@ export class ClientsService {
     private adminQuota: AdminQuotaService,
     private panelDrivers: PanelDriverRegistry,
     private panelGate: PanelOperationGate,
+    @Inject(forwardRef(() => ClientOutputService))
+    private clientOutput: ClientOutputService,
   ) {}
 
   /** Only admins with unlimitedTraffic (or Super Admin) may own/create unlimited clients. */
@@ -1479,12 +1481,14 @@ export class ClientsService {
   }
 
   async getQrCode(id: string, adminId: string, role: string) {
-    const client = await this.findOne(id, adminId, role);
-    const subUrl = buildNativeSubscriptionUrl(
-      client.inbound?.panel?.subUrl,
-      client.inbound?.panel?.url,
-      client.subId || client.email,
-    );
+    await this.findOne(id, adminId, role);
+    const output = await this.clientOutput.getOutputByClientId(id);
+    const subUrl = String(
+      output.payload?.qrText ||
+        output.payload?.systemSubUrl ||
+        output.payload?.nativeSubUrl ||
+        '',
+    ).trim();
     if (!subUrl) {
       throw new BadRequestException('Panel subscription URL is not configured');
     }

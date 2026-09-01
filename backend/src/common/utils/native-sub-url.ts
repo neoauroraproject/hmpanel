@@ -52,3 +52,36 @@ export function collectNativeSubscriptionUrls(
   }
   return [...urls];
 }
+
+/** Prefer a stored provider snapshot URL over a constructed 3x-ui `/sub/{key}` path. */
+export function subscriptionUrlFromProviderMeta(meta: unknown): string | null {
+  if (!meta || typeof meta !== 'object') return null;
+  const rec = meta as Record<string, unknown>;
+  const url = String(
+    rec.subscriptionUrl || rec.sub_url || rec.subscription_url || '',
+  ).trim();
+  return url || null;
+}
+
+/**
+ * Rewrite only the hostname of a provider subscription URL using panel.subUrl
+ * (delivery domain). Path and query stay intact — Eylan is `/sub/{token}/{user}`.
+ */
+export function rewriteSubscriptionDeliveryHost(
+  nativeUrl: string,
+  deliveryBase?: string | null,
+): string {
+  const src = String(nativeUrl || '').trim();
+  if (!src) return src;
+  const base = String(deliveryBase || '').trim();
+  if (!base) return src;
+  try {
+    const dest = new URL(base.includes('://') ? base : `https://${base}`);
+    const parsed = new URL(src);
+    parsed.hostname = dest.hostname;
+    parsed.port = dest.port;
+    return parsed.toString();
+  } catch {
+    return src;
+  }
+}

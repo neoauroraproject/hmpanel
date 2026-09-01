@@ -106,7 +106,7 @@ export function ConnectionDetailsModal({
                 {t("connection.protocol")}
               </div>
               <div className="truncate text-sm font-medium text-zinc-700 dark:text-zinc-200">
-                {output?.protocol || currentInbound?.protocol || "—"}
+                {output?.protocol || currentInbound?.protocol || client.panel?.panelType || "—"}
               </div>
             </div>
           </div>

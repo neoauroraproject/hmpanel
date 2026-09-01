@@ -119,6 +119,8 @@ export interface PanelDriver {
   parseSubLink(link: string): ParsedSubLink | null;
   listClients(panelId: string): Promise<RemoteClientSnapshot[]>;
   getClient(panelId: string, username: string): Promise<RemoteClientSnapshot | null>;
+  /** Live subscription URL (Eylan `/sub/{token}/{user}`, Pasarguard user sub). */
+  getSubscriptionUrl?(panelId: string, username: string): Promise<string | null>;
   createClient(panelId: string, input: DriverCreateClientInput): Promise<RemoteClientSnapshot>;
   updateClient(
     panelId: string,

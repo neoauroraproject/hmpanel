@@ -56,11 +56,13 @@ export function resolveOutputType(protocol: string | null | undefined): OutputTy
     p === 'hysteria' ||
     p === 'hysteria2' ||
     p === 'tuic' ||
-    p === 'mieru'
+    p === 'mieru' ||
+    p === 'eylan' ||
+    p === 'pasarguard' ||
+    p === 'multi' ||
+    p === 'openvpn' ||
+    p === 'l2tp'
   ) {
-    // Traditional URI/subscription protocols stay on subscription output
-    // (tuic/mieru may get dedicated builders later — still subscription-like until then)
-    if (p === 'tuic' || p === 'mieru') return 'subscription';
     return 'subscription';
   }
   if (!p || p === 'unknown') return 'generic';
