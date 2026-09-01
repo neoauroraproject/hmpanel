@@ -20,6 +20,7 @@ export class InboundsService {
         protocol: true,
         streamSettings: true,
         panelInboundId: true,
+        remoteResourceId: true,
         nodeId: true,
         nodeName: true,
         originNodeGuid: true,

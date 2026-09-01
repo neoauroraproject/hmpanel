@@ -36,6 +36,32 @@ function isNativePanelTypeFilter(value?: string | null): value is 'eylan' | 'pas
   return value === 'eylan' || value === 'pasarguard';
 }
 
+function pasarguardGroupIdsFromInbounds(
+  inbounds: Array<{ remoteResourceId?: string | null; panelInboundId?: number | null }>,
+  extras?: Record<string, unknown>,
+): number[] {
+  if (Array.isArray(extras?.groupIds) && extras.groupIds.length) {
+    return extras.groupIds
+      .map((g) => Number(g))
+      .filter((n) => Number.isFinite(n) && n > 0);
+  }
+  return inbounds
+    .map((i) => Number(i.remoteResourceId || i.panelInboundId))
+    .filter((n) => Number.isFinite(n) && n > 0);
+}
+
+function extrasForPasarguard(
+  extras: Record<string, unknown> | undefined,
+  inbounds: Array<{ remoteResourceId?: string | null; panelInboundId?: number | null }>,
+  limitIp?: number,
+): Record<string, unknown> {
+  const next = { ...(extras || {}) };
+  const groupIds = pasarguardGroupIdsFromInbounds(inbounds, next);
+  if (groupIds.length) next.groupIds = groupIds;
+  if (next.hwidLimit == null && limitIp != null) next.hwidLimit = limitIp;
+  return next;
+}
+
 import { MonitoringService } from '../stats/monitoring.service';
 import { RedisLockService } from '../common/utils/redis-lock.service';
 import {
@@ -585,6 +611,11 @@ export class ClientsService {
       });
     }
 
+    const providerExtras =
+      panel.panelType === 'pasarguard'
+        ? extrasForPasarguard(data.providerExtras, inbounds, data.limitIp)
+        : data.providerExtras;
+
     let remote;
     try {
       remote = await driver.createClient(panel.id, {
@@ -595,8 +626,8 @@ export class ClientsService {
         remark: data.remark,
         limitIp: data.limitIp,
         inboundIds: data.inboundIds,
-        resourceIds: inbounds.map((i) => i.id),
-        providerExtras: data.providerExtras,
+        resourceIds: inbounds.map((i) => i.remoteResourceId || String(i.panelInboundId || i.id)),
+        providerExtras,
       });
     } catch (err: any) {
       throw new BadRequestException(err?.message || 'Remote create failed');
@@ -625,7 +656,7 @@ export class ClientsService {
             expiryTime: remote.expiryTime || BigInt(data.expiryTime || 0),
             up: remote.up || 0n,
             down: remote.down || 0n,
-            limitIp: data.limitIp || 0,
+            limitIp: remote.limitIp ?? data.limitIp ?? 0,
             createdWithTrafficMode: targetAdmin.trafficMode,
             provisioningStatus: 'ACTIVE',
             provisionedAt: new Date(),
@@ -701,6 +732,19 @@ export class ClientsService {
       throw new BadRequestException('Premium unavailable — this panel is frozen.');
     }
     const username = existing.remoteUsername || existing.email;
+    let providerExtras = data.providerExtras;
+    if (panel.panelType === 'pasarguard') {
+      const inboundIds = data.inboundIds?.length
+        ? data.inboundIds
+        : (existing.inbounds || []).map((i: any) => i.id).filter(Boolean);
+      const inboundRows = inboundIds.length
+        ? await this.prisma.inbound.findMany({
+            where: { id: { in: inboundIds } },
+            select: { remoteResourceId: true, panelInboundId: true },
+          })
+        : [];
+      providerExtras = extrasForPasarguard(data.providerExtras, inboundRows, data.limitIp);
+    }
     const remote = await driver.updateClient(panel.id, username, {
       totalBytes: data.total !== undefined ? BigInt(data.total) : undefined,
       expiryTimeMs: data.expiryTime,
@@ -708,7 +752,7 @@ export class ClientsService {
       remark: data.remark,
       limitIp: data.limitIp,
       inboundIds: data.inboundIds,
-      providerExtras: data.providerExtras,
+      providerExtras,
     });
     const updated = await this.prisma.client.update({
       where: { id },
@@ -718,7 +762,7 @@ export class ClientsService {
         total: data.total !== undefined ? BigInt(data.total) : existing.total,
         expiryTime:
           data.expiryTime !== undefined ? BigInt(data.expiryTime) : existing.expiryTime,
-        limitIp: data.limitIp ?? existing.limitIp,
+        limitIp: remote.limitIp ?? data.limitIp ?? existing.limitIp,
         providerMeta: mapSnapshotMeta(remote),
         lastSyncedAt: new Date(),
         syncStale: false,

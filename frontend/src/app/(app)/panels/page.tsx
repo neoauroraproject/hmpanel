@@ -95,7 +95,7 @@ export default function PanelsPage() {
 
   if (isLoading) return <Spinner />;
   if (error) return <ErrorBox message={t("panels.loadFailed")} />;
-  const panels = data ?? [];
+  const panels = (data ?? []).filter((p) => !isNativePanelType(p.panelType));
 
   return (
     <motion.div {...MOTION_CONFIG.page}>

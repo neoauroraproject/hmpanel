@@ -56,7 +56,9 @@ interface InboundRow {
   nodeName?: string | null;
   originNodeGuid?: string | null;
   streamSettings?: any;
-  panel: { id: string; name: string; url: string; subUrl?: string | null };
+  panel: { id: string; name: string; url: string; subUrl?: string | null; panelType?: string };
+  remoteResourceId?: string | null;
+  panelInboundId?: number | null;
 }
 
 interface PanelRow {
@@ -246,6 +248,16 @@ export default function ClientsPage() {
     enabled: isSuperAdmin,
   });
 
+  const { data: extAccess } = useQuery<{
+    providers?: Array<{ id: string }>;
+    xuiEnabled?: boolean;
+  }>({
+    queryKey: ["external-panels-access"],
+    queryFn: async () => (await api.get("/premium-modules/external-panels/access")).data,
+    enabled: !isSuperAdmin,
+    retry: false,
+  });
+
   const nativeTypesPresent = useMemo(() => {
     const types = new Set<string>();
     (panelsList ?? []).forEach((p) => {
@@ -414,6 +426,34 @@ export default function ClientsPage() {
     return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name));
   }, [panelsList, inboundsList]);
 
+  const xuiEnabled = isSuperAdmin || extAccess?.xuiEnabled !== false;
+  const selectorPanels = useMemo(
+    () =>
+      accessiblePanels.filter((p) => {
+        if (p.panelType === "eylan" || p.panelType === "pasarguard") return false;
+        return xuiEnabled;
+      }),
+    [accessiblePanels, xuiEnabled],
+  );
+  const nativeAccessTabs = useMemo(() => {
+    if (isSuperAdmin) return [...nativeTypesPresent];
+    return (extAccess?.providers || [])
+      .map((p) => p.id)
+      .filter((id) => id === "eylan" || id === "pasarguard");
+  }, [isSuperAdmin, nativeTypesPresent, extAccess]);
+  const showAllPanelsChip = selectorPanels.length + nativeAccessTabs.length > 1;
+  const showPanelSelector = selectorPanels.length > 0 || nativeAccessTabs.length > 0 || nativeTypesPresent.size > 0;
+
+  useEffect(() => {
+    if (isSuperAdmin) return;
+    if (selectorPanels.length === 0 && nativeAccessTabs.length === 1 && panelId !== nativeAccessTabs[0]) {
+      setPanelId(nativeAccessTabs[0]);
+    }
+    if (!xuiEnabled && panelId && panelId !== "eylan" && panelId !== "pasarguard") {
+      setPanelId(nativeAccessTabs[0] || "");
+    }
+  }, [isSuperAdmin, selectorPanels.length, nativeAccessTabs, xuiEnabled, panelId]);
+
   // Inbound filter options follow the selected panel
   const filterInbounds = useMemo(() => {
     const all = inboundsList ?? [];
@@ -562,8 +602,9 @@ export default function ClientsPage() {
         action={
           <>
             <PluginSlot name="clients.actions" />
-            {!isExternalProvider && !isNativeTypeTab && (
+            {!isExternalProvider && (
               <>
+                {!isNativeTypeTab && (
                 <button
                   onClick={() => setBulkCreateOpen(true)}
                   disabled={trafficExhausted}
@@ -572,6 +613,7 @@ export default function ClientsPage() {
                 >
                   <Users size={16} /> {t("clients.bulkCreate")}
                 </button>
+                )}
                 <button
                   onClick={() => setAddOpen(true)}
                   disabled={trafficExhausted}
@@ -586,8 +628,9 @@ export default function ClientsPage() {
         }
       />
 
-      {/* Global KPI Header */}
-      {isExternalProvider ? (
+      {/* Global KPI Header — native type tabs use the scoped Premium overview
+          (this admin's online/capacity/panel time), not the global 3x-ui KPIs. */}
+      {isExternalProvider || isNativeTypeTab ? (
         <PluginSlot name="clients.kpi.override" props={{ providerId: panelId }} />
       ) : overviewData && overviewData.admin ? (
         <div className="mb-4">
@@ -646,7 +689,7 @@ export default function ClientsPage() {
             <div className="bg-white dark:bg-zinc-900/50 rounded-2xl p-4 border border-zinc-200 dark:border-zinc-800 flex items-center gap-4">
               <div className="p-3 bg-amber-500/10 text-amber-400 rounded-xl"><CalendarDays size={20} /></div>
               <div>
-                <div className="text-xs text-zinc-500 font-medium">{t("clients.subscriptionExpiry")}</div>
+                <div className="text-xs text-zinc-500 font-medium">{isNativeTypeTab ? t("clients.panelTime") : t("clients.subscriptionExpiry")}</div>
                 <div className="text-xl font-bold text-zinc-900 dark:text-white">
                   {overviewData.admin.expiryTime > 0 
                     ? (overviewData.admin.expiryTime < Date.now() 
@@ -682,12 +725,13 @@ export default function ClientsPage() {
       </div>
 
       {/* Panel selector — All + each accessible panel */}
-      {accessiblePanels.length >= 1 && (
+      {showPanelSelector && (
         <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 p-3">
           <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
             <Network size={14} /> {t("clients.panelSelectorLabel")}
           </div>
           <div className="flex overflow-x-auto hide-scrollbar items-center gap-2">
+            {showAllPanelsChip && (
             <button
               type="button"
               onClick={() => selectPanel("")}
@@ -699,7 +743,8 @@ export default function ClientsPage() {
             >
               {t("clients.allPanels")}
             </button>
-            {accessiblePanels.map((p) => (
+            )}
+            {selectorPanels.map((p) => (
               <button
                 type="button"
                 key={p.id}
@@ -1459,9 +1504,18 @@ export default function ClientsPage() {
       <AnimatePresence>
         {addOpen && (
           <AddClientModal
-            inbounds={inboundsList ?? []}
+            inbounds={
+              isNativeTypeTab
+                ? (inboundsList ?? []).filter(
+                    (i) =>
+                      ((i.panel as { panelType?: string } | undefined)?.panelType || i.protocol) ===
+                      panelId,
+                  )
+                : (inboundsList ?? [])
+            }
             isLoadingInbounds={isLoadingInbounds}
             panels={panelsList ?? []}
+            preferredPanelType={isNativeTypeTab ? panelId : undefined}
             onClose={() => setAddOpen(false)}
             onSaved={(client) => {
               setAddOpen(false);
@@ -1846,16 +1900,22 @@ interface AddClientForm {
   providerExtras?: Record<string, unknown>;
 }
 
+function panelTypeOf(row?: { protocol?: string; panel?: { panelType?: string } } | null) {
+  return row?.panel?.panelType || row?.protocol || "";
+}
+
 function AddClientModal({
   inbounds,
   isLoadingInbounds,
   panels,
+  preferredPanelType,
   onClose,
   onSaved,
 }: {
   inbounds: InboundRow[];
   isLoadingInbounds?: boolean;
   panels?: PanelRow[];
+  preferredPanelType?: string;
   onClose: () => void;
   onSaved: (client?: any) => void;
 }) {
@@ -1945,6 +2005,11 @@ function AddClientModal({
   }, [availableInbounds, form.inboundIds]);
 
   const selectedInbounds = inbounds.filter((i) => form.inboundIds.includes(i.id));
+  const selectedPanelType =
+    preferredPanelType ||
+    panelTypeOf(availableInbounds[0]) ||
+    panelTypeOf(selectedInbounds[0]);
+  const isPasarguard = selectedPanelType === "pasarguard";
   const isReality = selectedInbounds.some((i) => i.protocol === "vless" && i.streamSettings?.security === "reality");
   const [showAdvanced, setShowAdvanced] = useState(false);
 
@@ -1997,7 +2062,7 @@ function AddClientModal({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (form.inboundIds.length === 0) {
-      toast(t("clients.selectInboundRequired"), "error");
+      toast(t(isPasarguard ? "clients.selectGroupRequired" : "clients.selectInboundRequired"), "error");
       return;
     }
     create.mutate();
@@ -2110,7 +2175,7 @@ function AddClientModal({
             )}
 
             <div>
-              <label className="mb-1 block text-xs text-zinc-500 font-medium">{t("clients.assignedInbounds")}</label>
+              <label className="mb-1 block text-xs text-zinc-500 font-medium">{t(isPasarguard ? "clients.assignedGroups" : "clients.assignedInbounds")}</label>
               <div className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 overflow-hidden">
                 <div className="max-h-[160px] overflow-y-auto divide-y divide-zinc-200 dark:divide-zinc-800">
                   {isLoadingInbounds ? (
@@ -2143,9 +2208,11 @@ function AddClientModal({
                                 <span className="truncate">{i.remark ? i.remark : i.tag}</span>
                                 <NodeInboundBadge inbound={i} />
                               </span>
+                              {!isPasarguard && (
                               <span className="text-[10px] uppercase tracking-wider text-zinc-400 dark:text-zinc-500 font-bold shrink-0">
                                 {i.protocol} : {i.port}
                               </span>
+                              )}
                             </div>
                             {i.remark && (
                               <div className="text-[10px] text-zinc-400 dark:text-zinc-500 truncate mt-0.5">
@@ -2195,13 +2262,21 @@ function AddClientModal({
                 )}
               </div>
               <div className="mt-4">
-                <label className="mb-1 block text-xs text-zinc-500">{t("clients.ipLimit")}</label>
+                <label className="mb-1 block text-xs text-zinc-500">{t(isPasarguard ? "clients.hwidLimit" : "clients.ipLimit")}</label>
                 <input
                   type="number"
                   min={0}
-                  placeholder={t("clients.ipLimitPlaceholder")}
+                  placeholder={t(isPasarguard ? "clients.hwidLimitPlaceholder" : "clients.ipLimitPlaceholder")}
                   value={form.limitIp}
-                  onChange={(e) => setForm({ ...form, limitIp: e.target.value })}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      limitIp: e.target.value,
+                      providerExtras: isPasarguard
+                        ? { ...form.providerExtras, hwidLimit: Number(e.target.value || 0) }
+                        : form.providerExtras,
+                    })
+                  }
                   className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors"
                 />
               </div>
@@ -2299,9 +2374,15 @@ export function EditClientModal({
   const [expiryMode, setExpiryMode] = useState<"add" | "remove">("add");
   
   const inbound = (client as any).inbound;
+  const clientPanelType =
+    inbound?.panel?.panelType ||
+    (client as any).inbounds?.[0]?.panel?.panelType ||
+    inbound?.protocol ||
+    "";
+  const isPasarguard = clientPanelType === "pasarguard";
   const isReality = inbound?.protocol === "vless" && inbound?.streamSettings?.security === "reality";
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [showInbounds, setShowInbounds] = useState(false);
+  const [showInbounds, setShowInbounds] = useState(clientPanelType === "pasarguard");
 
   // Filter inbounds by the client's current panel
   const clientPanelId = (client as any).inbounds?.[0]?.panelId || inbound?.panelId || (client as any).inbounds?.[0]?.panel?.id || inbound?.panel?.id;
@@ -2323,7 +2404,13 @@ export function EditClientModal({
     flow: client.flow || "",
     limitIp: client.limitIp?.toString() || "",
     inboundIds: (client as any).inbounds?.map((i: any) => i.id) || [(client as any).inbound?.id].filter(Boolean),
-    providerExtras: {},
+    providerExtras: {
+      hwidLimit: Number(client.limitIp || 0),
+      note: String((client as any).providerMeta?.note || client.remark || ""),
+      groupIds: Array.isArray((client as any).providerMeta?.group_ids)
+        ? (client as any).providerMeta.group_ids.map((g: unknown) => Number(g)).filter((n: number) => Number.isFinite(n) && n > 0)
+        : [],
+    },
   });
 
   const usedTraffic = Number(client.up) + Number(client.down);
@@ -2523,13 +2610,21 @@ export function EditClientModal({
               )}
 
               <div className="mt-4">
-                <label className="mb-1 block text-xs text-zinc-500">{t("clients.ipLimit")}</label>
+                <label className="mb-1 block text-xs text-zinc-500">{t(isPasarguard ? "clients.hwidLimit" : "clients.ipLimit")}</label>
                 <input
                   type="number"
                   min={0}
-                  placeholder={t("clients.ipLimitPlaceholder")}
+                  placeholder={t(isPasarguard ? "clients.hwidLimitPlaceholder" : "clients.ipLimitPlaceholder")}
                   value={form.limitIp}
-                  onChange={(e) => setForm({ ...form, limitIp: e.target.value })}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      limitIp: e.target.value,
+                      providerExtras: isPasarguard
+                        ? { ...form.providerExtras, hwidLimit: Number(e.target.value || 0) }
+                        : form.providerExtras,
+                    })
+                  }
                   className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors"
                 />
               </div>
@@ -2632,7 +2727,7 @@ export function EditClientModal({
               onClick={() => setShowInbounds(!showInbounds)}
               className="flex w-full items-center justify-between p-4 text-sm font-medium text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-900/50"
             >
-              <span>{t("clients.assignedInboundsCount", { count: form.inboundIds.length })}</span>
+              <span>{t(isPasarguard ? "clients.assignedGroupsCount" : "clients.assignedInboundsCount", { count: form.inboundIds.length })}</span>
               {showInbounds ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
             </button>
             {showInbounds && (
@@ -2645,14 +2740,16 @@ export function EditClientModal({
                           const inb = e.target.checked ? [...form.inboundIds, i.id] : form.inboundIds.filter((x: string) => x !== i.id);
                           setForm({ ...form, inboundIds: inb });
                         }} className="rounded border-zinc-600 bg-white dark:bg-zinc-900 text-blue-500 focus:ring-0 focus:ring-offset-0" />
-                        <span className="font-medium text-sm">{i.tag}</span>
+                        <span className="font-medium text-sm">{i.remark || i.tag}</span>
                       </div>
+                      {!isPasarguard && (
                       <span className="text-xs bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 rounded text-zinc-500 dark:text-zinc-400 font-mono">{i.protocol}:{i.port}</span>
+                      )}
                     </label>
                   ))}
                 </div>
                 {form.inboundIds.length === 0 && (
-                  <p className="mt-2 text-xs text-red-500">{t("clients.selectInboundError")}</p>
+                  <p className="mt-2 text-xs text-red-500">{t(isPasarguard ? "clients.selectGroupError" : "clients.selectInboundError")}</p>
                 )}
               </div>
             )}
