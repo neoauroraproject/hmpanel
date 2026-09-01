@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PanelsService } from './panels.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { isExternalPanelType } from './native/native-panel-capabilities';
 
 @Injectable()
 export class PanelsScheduler {
@@ -27,10 +28,13 @@ export class PanelsScheduler {
 
     try {
       const panels = await this.prisma.panel.findMany({
-        select: { id: true, name: true },
+        select: { id: true, name: true, panelType: true },
       });
 
       for (const panel of panels) {
+        if (isExternalPanelType(panel.panelType)) {
+          continue;
+        }
         try {
           await this.panelsService.sync(panel.id);
           this.logger.debug(`Synced panel ${panel.name} successfully.`);

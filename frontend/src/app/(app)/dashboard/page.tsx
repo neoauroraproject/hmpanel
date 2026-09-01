@@ -70,9 +70,15 @@ function MetricBar({ label, pct }: { label: string; pct: number }) {
   );
 }
 
+function isExternalPanelAlert(x: { panelType?: string }) {
+  return x.panelType === "eylan" || x.panelType === "pasarguard";
+}
+
 function AlertsSection({ monData }: { monData: Monitoring | undefined }) {
   const t = useT();
-  const offlinePanels = (monData?.xray ?? []).filter((x) => x.status !== "running");
+  const offlinePanels = (monData?.xray ?? []).filter(
+    (x) => x.status !== "running" && !isExternalPanelAlert(x),
+  );
   const failedJobs = monData?.failedJobs ?? 0;
   const hasAlerts = offlinePanels.length > 0 || failedJobs > 0;
 
@@ -88,9 +94,7 @@ function AlertsSection({ monData }: { monData: Monitoring | undefined }) {
             <div className="flex items-center gap-2">
               <AlertTriangle size={16} className="text-red-400" />
               <span>
-              {p.panelType === "eylan" || p.panelType === "pasarguard"
-                ? t("dashboard.panelOfflineNative", { panel: p.panel })
-                : t("dashboard.panelOffline", { panel: p.panel })}
+              {t("dashboard.panelOffline", { panel: p.panel })}
             </span>
             </div>
             <Badge tone="red">{t("common.offline")}</Badge>

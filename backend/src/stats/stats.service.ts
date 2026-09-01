@@ -3,8 +3,11 @@ import { calculateAdminTrafficSummary } from '../common/utils/traffic.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { PanelsService } from '../panels/panels.service';
 import { AdminQuotaService } from '../traffic/admin-quota.service';
+import { EXTERNAL_PANEL_TYPES } from '../panels/native/native-panel-capabilities';
 import * as os from 'os';
 import * as fs from 'fs';
+
+const XUI_PANEL_WHERE = { panelType: { notIn: [...EXTERNAL_PANEL_TYPES] } };
 
 const DAY = 24 * 60 * 60 * 1000;
 const HOUR = 60 * 60 * 1000;
@@ -39,8 +42,8 @@ export class StatsService {
       totalAdminBalance,
       thresholdSetting,
     ] = await Promise.all([
-      this.prisma.panel.count(),
-      this.prisma.panel.count({ where: { status: 'online' } }),
+      this.prisma.panel.count({ where: XUI_PANEL_WHERE }),
+      this.prisma.panel.count({ where: { ...XUI_PANEL_WHERE, status: 'online' } }),
       this.prisma.admin.count(),
       this.prisma.admin.count({ where: { status: 'active' } }),
       this.prisma.admin.count({ where: { status: 'disabled' } }),
@@ -510,29 +513,26 @@ export class StatsService {
     );
 
     const panels = await this.prisma.panel.findMany({
-      select: { name: true, status: true, panelType: true, connectionHealth: true },
+      where: XUI_PANEL_WHERE,
+      select: { name: true, status: true, panelType: true },
     });
     const [lastSync, failedJobs] = await Promise.all([
       this.prisma.syncState.findFirst({
         orderBy: { lastSync: 'desc' },
         select: { lastSync: true },
       }),
-      this.prisma.syncState.count({ where: { status: 'failure' } }),
+      this.prisma.syncState.count({
+        where: { status: 'failure', panel: XUI_PANEL_WHERE },
+      }),
     ]);
 
     return {
       servers: serverStats,
-      xray: panels.map((p) => {
-        const native = p.panelType === 'eylan' || p.panelType === 'pasarguard';
-        const running = native
-          ? p.connectionHealth === 'CONNECTED' || p.status === 'online'
-          : p.status === 'online';
-        return {
-          panel: p.name,
-          status: running ? 'running' : 'stopped',
-          panelType: p.panelType || '3x-ui',
-        };
-      }),
+      xray: panels.map((p) => ({
+        panel: p.name,
+        status: p.status === 'online' ? 'running' : 'stopped',
+        panelType: p.panelType || '3x-ui',
+      })),
       lastSync: lastSync?.lastSync ?? null,
       pendingJobs: 0,
       failedJobs,
@@ -541,7 +541,10 @@ export class StatsService {
 
   /** Quick action: run a real sync across all panels. */
   async runSync() {
-    const panels = await this.prisma.panel.findMany({ select: { id: true } });
+    const panels = await this.prisma.panel.findMany({
+      where: XUI_PANEL_WHERE,
+      select: { id: true },
+    });
     let synced = 0;
     for (const p of panels) {
       try {
@@ -557,7 +560,7 @@ export class StatsService {
   /** Quick action: restart Xray across all online panels. */
   async restartXray() {
     const panels = await this.prisma.panel.findMany({
-      where: { status: 'online' },
+      where: { ...XUI_PANEL_WHERE, status: 'online' },
       select: { id: true },
     });
     let restarted = 0;
@@ -616,6 +619,7 @@ export class StatsService {
 
     // 3. Fetch Real Stats
     const panels = await this.prisma.panel.findMany({
+      where: XUI_PANEL_WHERE,
       select: {
         id: true,
         name: true,

@@ -387,6 +387,7 @@ export class PanelsService implements OnModuleInit {
     try {
       const panels = await this.prisma.panel.findMany();
       for (const p of panels) {
+        if (isExternalPanelType(p.panelType)) continue;
         this.sync(p.id).catch((e) =>
           this.logger.error(`Boot sync failed for panel ${p.name}:`, e.message),
         );
