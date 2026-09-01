@@ -37,6 +37,20 @@ export class TrafficController {
     );
   }
 
+  @Get('destinations')
+  @ApiOperation({ summary: 'Ledger destination tabs for the caller' })
+  getDestinations(@Req() req: AuthRequest) {
+    return this.trafficService.getDestinations(req.user.id);
+  }
+
+  @Get('destinations/:adminId')
+  @UseGuards(RolesGuard)
+  @Roles('SUPER_ADMIN')
+  @ApiOperation({ summary: 'Ledger destination tabs for a specific admin' })
+  getAdminDestinations(@Param('adminId') adminId: string) {
+    return this.trafficService.getDestinations(adminId);
+  }
+
   @Get('ledger')
   @ApiOperation({ summary: 'Get traffic ledger (scoped to caller)' })
   getLedger(
@@ -45,6 +59,7 @@ export class TrafficController {
     @Query('limit') limit?: string,
     @Query('type') type?: string,
     @Query('search') search?: string,
+    @Query('panelId') panelId?: string,
   ) {
     return this.trafficService.getLedger(
       req.user.id,
@@ -52,6 +67,7 @@ export class TrafficController {
       Number(limit) || 100,
       type,
       search,
+      panelId,
     );
   }
 
@@ -65,6 +81,7 @@ export class TrafficController {
     @Query('limit') limit?: string,
     @Query('type') type?: string,
     @Query('search') search?: string,
+    @Query('panelId') panelId?: string,
   ) {
     return this.trafficService.getLedger(
       adminId,
@@ -72,6 +89,7 @@ export class TrafficController {
       Number(limit) || 100,
       type,
       search,
+      panelId,
     );
   }
 }

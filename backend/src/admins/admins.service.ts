@@ -302,7 +302,7 @@ export class AdminsService implements OnModuleInit {
                 tag: true,
                 port: true,
                 protocol: true,
-                panel: { select: { id: true, name: true } },
+                panel: { select: { id: true, name: true, panelType: true } },
               },
             },
           },

@@ -703,7 +703,10 @@
     "colDescription": "Description",
     "colClient": "Client",
     "colDate": "Date",
-    "noTransactions": "No transactions found matching your criteria."
+    "noTransactions": "No transactions found matching your criteria.",
+    "destinations": "Destination",
+    "remainingQuota": "Remaining quota",
+    "unlimited": "Unlimited"
   },
   "migration": {
     "title": "Migration",

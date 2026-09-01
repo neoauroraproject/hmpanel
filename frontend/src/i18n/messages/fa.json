@@ -703,7 +703,10 @@
     "colDescription": "توضیح",
     "colClient": "کلاینت",
     "colDate": "تاریخ",
-    "noTransactions": "تراکنشی با این معیار یافت نشد."
+    "noTransactions": "تراکنشی با این معیار یافت نشد.",
+    "destinations": "مقصد",
+    "remainingQuota": "مانده سهمیه",
+    "unlimited": "نامحدود"
   },
   "migration": {
     "title": "مهاجرت",

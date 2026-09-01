@@ -1,8 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowDownRight, ArrowUpRight, Search, ChevronLeft, ChevronRight, Activity } from "lucide-react";
+import {
+  ArrowDownRight,
+  ArrowUpRight,
+  Search,
+  ChevronLeft,
+  ChevronRight,
+  Activity,
+  Database,
+  Network,
+  Gauge,
+} from "lucide-react";
 import { api } from "@/lib/api";
 import type { Admin, Paginated, Transaction } from "@/lib/types";
 import { formatBytes, formatDateTime } from "@/lib/format";
@@ -10,23 +20,65 @@ import { Card, PageHeader, Badge, Spinner, ErrorBox } from "@/components/ui";
 import { useAuth } from "@/store/auth";
 import { useT } from "@/i18n";
 
+type LedgerQuota = {
+  quotaMode: string;
+  unlimitedTraffic: boolean;
+  availableTraffic: number;
+  usedTraffic: number;
+  allTimeTraffic: number;
+};
+
 type LedgerResponse = Paginated<Transaction> & {
   totals: {
     credit: string;
     debit: string;
-  }
+  };
+  quota?: LedgerQuota;
 };
+
+type LedgerDestination = {
+  id: string;
+  name: string;
+  panelType: string;
+  remainingBytes: number | null;
+};
+
+const TRAFFIC_PANEL_TAB_KEY = "hmpanel.traffic.panelId";
+
+function storageKey(adminId: string) {
+  return `${TRAFFIC_PANEL_TAB_KEY}:${adminId}`;
+}
+
+function readStoredPanelTab(adminId: string) {
+  if (typeof window === "undefined" || !adminId) return "";
+  try {
+    return sessionStorage.getItem(storageKey(adminId)) || "";
+  } catch {
+    return "";
+  }
+}
+
+function writeStoredPanelTab(adminId: string, id: string) {
+  try {
+    if (adminId && id) sessionStorage.setItem(storageKey(adminId), id);
+  } catch {
+    /* ignore */
+  }
+}
 
 export default function TrafficPage() {
   const t = useT();
   const admin = useAuth((s) => s.admin);
   const isSuper = admin?.role === "SUPER_ADMIN";
   const [adminId, setAdminId] = useState<string>("");
-  
+  const [panelId, setPanelId] = useState<string>("");
+
   const [page, setPage] = useState(1);
   const [type, setType] = useState<string>("");
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
+
+  const selectedAdminId = isSuper ? adminId : admin?.id || "";
 
   const adminsQuery = useQuery({
     queryKey: ["admins-mini"],
@@ -34,30 +86,76 @@ export default function TrafficPage() {
     enabled: isSuper,
   });
 
+  const destPath = isSuper
+    ? adminId
+      ? `/traffic/destinations/${adminId}`
+      : null
+    : "/traffic/destinations";
+
+  const destQuery = useQuery({
+    queryKey: ["traffic-destinations", destPath],
+    queryFn: async () =>
+      (await api.get<{ destinations: LedgerDestination[] }>(destPath!)).data,
+    enabled: !!destPath,
+  });
+
+  const destinations = destQuery.data?.destinations ?? [];
+
+  useEffect(() => {
+    if (!selectedAdminId || destQuery.isLoading) return;
+    const dests = destQuery.data?.destinations;
+    if (!dests?.length) {
+      setPanelId((current) => (current ? "" : current));
+      return;
+    }
+    const stored = readStoredPanelTab(selectedAdminId);
+    if (stored && dests.some((d) => d.id === stored)) {
+      setPanelId((current) => (current === stored ? current : stored));
+      return;
+    }
+    const next = dests[0].id;
+    setPanelId((current) => {
+      if (current && dests.some((d) => d.id === current)) return current;
+      writeStoredPanelTab(selectedAdminId, next);
+      return next;
+    });
+  }, [selectedAdminId, destQuery.data, destQuery.isLoading]);
+
   const basePath = isSuper ? (adminId ? `/traffic/ledger/${adminId}` : null) : "/traffic/ledger";
-  
+
   const queryParams = new URLSearchParams({
     page: page.toString(),
     limit: "15",
     ...(type ? { type } : {}),
     ...(search ? { search } : {}),
+    ...(panelId ? { panelId } : {}),
   }).toString();
 
   const ledger = useQuery({
     queryKey: ["ledger", basePath, queryParams],
     queryFn: async () => (await api.get<LedgerResponse>(`${basePath}?${queryParams}`)).data,
-    enabled: !!basePath,
+    enabled: !!basePath && !destQuery.isLoading && (destinations.length === 0 || !!panelId),
   });
 
   const resellers = (adminsQuery.data?.data ?? []).filter(
     (a) => a.role === "RESELLER" && a.status === "active",
   );
   const totalPages = Math.ceil((ledger.data?.total || 0) / 15) || 1;
+  const activeDest = destinations.find((d) => d.id === panelId);
+  const remainingBytes =
+    activeDest?.remainingBytes ??
+    (ledger.data?.quota?.unlimitedTraffic ? null : ledger.data?.quota?.availableTraffic);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     setSearch(searchInput);
     setPage(1);
+  };
+
+  const selectDestination = (id: string) => {
+    setPanelId(id);
+    setPage(1);
+    if (selectedAdminId) writeStoredPanelTab(selectedAdminId, id);
   };
 
   return (
@@ -72,6 +170,7 @@ export default function TrafficPage() {
               onChange={(e) => {
                 setAdminId(e.target.value);
                 setPage(1);
+                setPanelId("");
               }}
               className="rounded-lg border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3 py-2 text-sm text-zinc-700 dark:text-zinc-200 outline-none focus:border-blue-500"
             >
@@ -94,8 +193,43 @@ export default function TrafficPage() {
         </Card>
       ) : (
         <>
+          {destinations.length > 0 && (
+            <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 p-3">
+              <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                <Network size={14} /> {t("traffic.destinations")}
+              </div>
+              <div className="flex overflow-x-auto hide-scrollbar items-center gap-2">
+                {destinations.map((d) => (
+                  <button
+                    type="button"
+                    key={d.id}
+                    onClick={() => selectDestination(d.id)}
+                    className={`whitespace-nowrap px-4 py-2 rounded-xl text-sm font-semibold transition-colors border inline-flex items-center gap-2 ${
+                      panelId === d.id
+                        ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/20 ring-2 ring-blue-500/30"
+                        : "bg-zinc-50 dark:bg-zinc-950 text-zinc-600 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                    }`}
+                  >
+                    <Database size={14} className={panelId === d.id ? "text-white" : "text-zinc-400"} />
+                    {d.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {ledger.data && (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <Card>
+                <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
+                  <Gauge size={16} className="text-sky-500" /> {t("traffic.remainingQuota")}
+                </div>
+                <div className="mt-2 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
+                  {remainingBytes == null || ledger.data.quota?.unlimitedTraffic
+                    ? t("traffic.unlimited")
+                    : formatBytes(remainingBytes)}
+                </div>
+              </Card>
               <Card>
                 <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
                   <ArrowUpRight size={16} className="text-emerald-500" /> {t("traffic.totalCredits")}
@@ -231,7 +365,6 @@ export default function TrafficPage() {
                 </table>
               </div>
               
-              {/* Pagination Controls */}
               {ledger.data && ledger.data.total > 0 && (
                 <div className="flex items-center justify-between border-t border-zinc-200 dark:border-zinc-800 px-4 py-3 sm:px-6">
                   <div className="hidden sm:block">

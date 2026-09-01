@@ -762,29 +762,90 @@ export class ClientsService {
       inboundIds: data.inboundIds,
       providerExtras,
     });
-    const updated = await this.prisma.client.update({
-      where: { id },
-      data: {
-        enable: data.enable ?? remote.enable,
-        remark: data.remark ?? existing.remark,
-        total: data.total !== undefined ? BigInt(data.total) : existing.total,
-        expiryTime:
-          data.expiryTime !== undefined ? BigInt(data.expiryTime) : existing.expiryTime,
-        limitIp: remote.limitIp ?? data.limitIp ?? existing.limitIp,
-        providerMeta: mapSnapshotMeta(remote),
-        lastSyncedAt: new Date(),
-        syncStale: false,
-        ...(data.inboundIds
-          ? {
-              inbounds: {
-                deleteMany: {},
-                create: data.inboundIds.map((inboundId) => ({ inboundId })),
+    const previousAllocation = BigInt(existing.total || 0);
+    const newAllocation =
+      data.total !== undefined ? BigInt(data.total) : previousAllocation;
+    const diff = newAllocation - previousAllocation;
+    const quotaPanelId = existing.panelId || panel.id;
+
+    await this.prisma.$transaction(async (tx) => {
+      if (data.total !== undefined && diff !== 0n && existing.adminId) {
+        const owner = await tx.admin.findUnique({
+          where: { id: existing.adminId },
+          select: {
+            id: true,
+            role: true,
+            balance: true,
+            totalAssigned: true,
+            trafficMode: true,
+            unlimitedTraffic: true,
+            quotaMode: true,
+            refundOnEdit: true,
+          },
+        });
+        const skipOwnerAccounting =
+          role === 'SUPER_ADMIN' || this.skipTrafficAccounting(owner ?? {});
+        if (
+          owner &&
+          !skipOwnerAccounting &&
+          owner.trafficMode === 'ALLOCATION'
+        ) {
+          if (diff > 0n) {
+            await this.adminQuota.assertCanAllocate(
+              owner as any,
+              diff,
+              quotaPanelId,
+            );
+            await this.adminQuota.debit(tx, owner as any, quotaPanelId, diff, {
+              clientId: id,
+              targetClientUuid: existing.uuid,
+              action: `CLIENT_TRAFFIC_INCREASE_${Date.now()}`,
+              description: 'Client Traffic Increase',
+            });
+          } else if (diff < 0n && owner.refundOnEdit) {
+            await this.adminQuota.credit(
+              tx,
+              owner as any,
+              quotaPanelId,
+              -diff,
+              {
+                clientId: id,
+                targetClientUuid: existing.uuid,
+                action: `CLIENT_TRAFFIC_DECREASE_${Date.now()}`,
+                description: 'Client Traffic Decrease',
               },
-            }
-          : {}),
-      },
+            );
+          }
+        }
+      }
+
+      await tx.client.update({
+        where: { id },
+        data: {
+          enable: data.enable ?? remote.enable,
+          remark: data.remark ?? existing.remark,
+          total: data.total !== undefined ? newAllocation : existing.total,
+          expiryTime:
+            data.expiryTime !== undefined
+              ? BigInt(data.expiryTime)
+              : existing.expiryTime,
+          limitIp: remote.limitIp ?? data.limitIp ?? existing.limitIp,
+          providerMeta: mapSnapshotMeta(remote),
+          lastSyncedAt: new Date(),
+          syncStale: false,
+          ...(diff > 0n ? { balanceDeducted: true } : {}),
+          ...(data.inboundIds
+            ? {
+                inbounds: {
+                  deleteMany: {},
+                  create: data.inboundIds.map((inboundId) => ({ inboundId })),
+                },
+              }
+            : {}),
+        },
+      });
     });
-    return this.findOne(updated.id, adminId, role);
+    return this.findOne(id, adminId, role);
   }
 
   private async removeOnExternalPanel(

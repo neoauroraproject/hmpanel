@@ -15,7 +15,7 @@ export type AdminQuotaAdmin = {
 
 type Tx = Prisma.TransactionClient;
 
-function panelMatchesQuotaFilter(
+export function panelMatchesQuotaFilter(
   panelId: string,
   panelType: string | undefined,
   filterPanelId: string,
@@ -186,6 +186,7 @@ export class AdminQuotaService {
     await tx.trafficTransaction.create({
       data: {
         adminId: admin.id,
+        panelId,
         clientId: meta.clientId,
         targetClientUuid: meta.targetClientUuid,
         amount: bytes,
@@ -264,6 +265,7 @@ export class AdminQuotaService {
     await tx.trafficTransaction.create({
       data: {
         adminId: admin.id,
+        panelId: panelId || undefined,
         clientId: meta.clientId,
         targetClientUuid: meta.targetClientUuid,
         amount: bytes,
@@ -330,6 +332,7 @@ export class AdminQuotaService {
       await tx.trafficTransaction.create({
         data: {
           adminId,
+          panelId,
           amount: delta,
           type: 'USAGE_CHARGE',
           action: 'DAILY_USAGE_CHARGE',
@@ -399,6 +402,7 @@ export class AdminQuotaService {
       await tx.trafficTransaction.create({
         data: {
           adminId,
+          panelId: panelId || undefined,
           amount: amountBytes,
           type: 'CREDIT',
           action: 'BALANCE_TOPUP',
