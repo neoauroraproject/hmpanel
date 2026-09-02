@@ -1,29 +1,29 @@
-# Subscription portal
+# Subscription
 
 ::: info Community
-Public pages: `/p/:id` (themed HTML), short `/s/:token`. Admin connection modal on Clients.
+Public pages: `/p/:id`, short `/s/:token`. Administrator connection dialog on Clients.
 :::
 
-HMPanel can show a **platform** subscription URL (`/s/…` via this panel) and a **native** 3x-ui URL (`/sub/…` on the node). The connection UI has two tabs when both exist (`SubscriptionRenderer`: `platform` | `native`).
+A **platform** subscription URL (`/s/…` on this panel) and a **native** 3x-ui URL (`/sub/…` on the node) may both exist. The connection interface presents two tabs when both are available (`platform` | `native`).
 
 ## Public page `/p/:id`
 
-Frontend route `frontend/src/app/p/[id]/page.tsx`. Themes shipped in Community include Dark / Neo / Aurora / Sunset (Premium [Branding](/premium/branding) adds more themes and logos). Data comes from subscription APIs below.
+Community themes: Dark, Neo, Aurora, Sunset. Branding adds further themes and logos.
 
-## Reseller branding (Community)
+## Reseller portal (Community)
 
-UI: `/settings/portal` — **not** the Premium Branding module. Saves `portalSettings` on the admin:
+Path: `/settings/portal`. Distinct from Branding. Saves `portalSettings` on the administrator:
 
-- Support toggles: Telegram, WhatsApp, website, email
+- Support: Telegram, WhatsApp, website, email
 - Portal name, logo URL, primary color
-- Theme in this Community form: **Dark** only
-- Toggles: show platform QR, native QR, allow QR download, allow direct import, show support section
+- Theme in this form: **Dark**
+- Toggles: platform QR, native QR, QR download, direct import, support section
 
-`PATCH /api/admins/:id` with `{ portalSettings }`. If the Super Admin disabled portal customization, the reseller gets HTTP 403 and a “Feature Disabled” card.
+`PATCH /api/admins/:id` with `{ portalSettings }`. If the Super Admin has disabled portal customization, the reseller receives HTTP 403.
 
 ## Short links
 
-Nginx: `location /s/` → backend `@Controller('s')`.
+Nginx: `location /s/` → `@Controller('s')`.
 
 | Method | Path |
 |---|---|
@@ -33,12 +33,12 @@ Nginx: `location /s/` → backend `@Controller('s')`.
 | `GET` | `/api/subscriptions/:id/config` |
 | `GET` | `/api/subscriptions/:id/nodes` |
 
-Store-specific subscription URL mode (`hmpanel` vs `native`) is a Premium Store profile field — [Store](/premium/store).
+Store subscription URL mode (`hmpanel` or `native`) is a Store profile field.
 
-3x-ui custom HTML templates (on the **3x-ui** box, not HMPanel) are described in-repo at `docs/custom-subscription-templates.md`.
+<div class="hm-actions">
 
-## Related
+[Clients](/community/clients)
+[Branding](/premium/branding)
+[Store](/premium/store)
 
-- [Clients](/community/clients)
-- [Branding](/premium/branding)
-- [Store](/premium/store)
+</div>

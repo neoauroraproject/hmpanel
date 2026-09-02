@@ -1,29 +1,48 @@
 # Panel Plus
 
 ::: warning Premium
-ماژول `external-panels` · UI: `/premium/external-panels` · برچسب منو: Panel Plus
+ماژول `external-panels` · نوع BUSINESS · مسیر: `/premium/external-panels` · برچسب: **Panel Plus**
 :::
 
-اتصال **ایلان** و **پاسارگارد**. در Community می‌توان نوع را انتخاب کرد؛ نوشتن با `premium_unavailable` رد می‌شود تا این ماژول write داشته باشد.
+اتصال **Eylan** و **Pasarguard**. آن انواع ممکن است در پنل‌ها انتخاب شوند و در کلاینت‌های Community ظاهر گردند؛ عملیات نوشتن همچنان دروازه‌بندی می‌شود.
 
-## سوپرادمین
+دروازهٔ عملیات `operable: false` و `reason: 'premium_unavailable'` بازمی‌گرداند تا این ماژول بتواند بنویسد.
 
-نوار سلامت + کارت اتصال هر پروایدر. `GET access`، `providers`، ادآن `addons/:providerId` (+ test / health / options).
+## Super Admin
+
+نوار سلامت و کارت اتصال **Pasarguard** / **Eylan**. `GET access`، `GET providers`، افزونه `GET/PUT addons/:providerId`، `POST addons/:providerId/test`، سلامت و گزینه‌ها.
 
 ## ریسلر
 
-کاتالوگ مقصد از `GET catalog`. گرنت: `grants`، `grants/traffic-mode`.
+فهرست از `GET catalog`. مجوزها: `GET/PUT grants`، `PATCH grants/traffic-mode`، `PUT grants/:adminId/:providerId`.
 
-## عملیات کلاینت (با لایسنس)
+## عملیات کلاینت (دارای مجوز)
 
-زیر `/api/premium-modules/external-panels/:providerId/clients` — لیست، ساخت، bulk، خروجی، QR.
+زیر `/api/premium-modules/external-panels/:providerId/clients` — فهرست، ایجاد، گروهی، ایجاد گروهی، صدور، get/patch/delete بر اساس نام کاربری، خروجی، QR. نما و دامنه: `GET :providerId/overview`، `GET :providerId/scope`.
 
-## Endpointها
+تأمین فروشگاه ممکن است نقاط افزونهٔ ایلان و پاسارگارد را نیز فراخوانی کند.
 
-`access`، `providers`، `catalog`، `grants`، `addons/:providerId`، `:providerId/overview`، `scope`، `clients` (+ bulk / export / output / qrcode).
+## API (`/api/premium-modules/external-panels`)
 
-## مرتبط
+| روش | مسیر |
+|---|---|
+| `GET` | `access` · `providers` · `catalog` |
+| `PATCH` | `catalog/:id/description` |
+| `GET/PUT` | `grants` |
+| `PATCH` | `grants/traffic-mode` |
+| `PUT` | `grants/:adminId/:providerId` |
+| `GET/PUT` | `addons/:providerId` |
+| `POST` | `addons/:providerId/test` |
+| `GET` | `addons/:providerId/health` · `addons/:providerId/options` |
+| `GET` | `:providerId/overview` · `:providerId/scope` · `:providerId/clients` |
+| `POST` | `:providerId/clients` · `.../bulk` · `.../bulk-create` · `.../export` |
+| `GET/PATCH/DELETE` | `:providerId/clients/:username` |
+| `GET` | `:providerId/clients/:username/output` · `.../qrcode` |
 
-- [پنل‌ها](/fa/community/panels)
-- [کلاینت‌ها](/fa/community/clients)
-- [فروشگاه](/fa/premium/store)
+<div class="hm-actions">
+
+[پنل‌ها](/fa/community/panels)
+[کلاینت‌ها](/fa/community/clients)
+[فروشگاه](/fa/premium/store)
+
+</div>

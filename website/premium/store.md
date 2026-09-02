@@ -1,31 +1,29 @@
 # Store
 
 ::: warning Premium
-Module id `store` · Feature `CUSTOM_SUBSCRIPTION_PORTAL` · Depends on **branding** · UI: `/premium/store`
+Module `store` · Feature `CUSTOM_SUBSCRIPTION_PORTAL` · Depends on branding · Path: `/premium/store`
 :::
 
-Admin store plus public shop / customer portal / Telegram Mini App. Community repo contains a subset of Store controllers; the licensed bundle adds coupons, wallet, IP limits, analytics, broadcast, add-ons.
+Administrator store, public shop, customer portal, and Telegram Mini App. The Community tree includes a subset of Store controllers. The licensed bundle adds coupons, wallet, IP limits, analytics, broadcast, and add-ons.
 
-## Admin tabs
+## Administrator tabs
 
-From `StorePage.tsx`:
-
-| Tab | Sub-tabs |
+| Tab | Contents |
 |---|---|
 | Overview | Summary (`GET .../dashboard`), Analytics (`GET .../analytics`) |
 | Commerce | Orders, Products, Categories, Provisioning profiles, Coupons, Wallet deposits, IP limits |
 | Customers | Directory, Telegram broadcast |
-| Settings | Store profile, Telegram bot, product add-ons (Eylan/Pasarguard toggles) |
+| Settings | Store profile, Telegram bot, product add-ons (Eylan / Pasarguard) |
 
-Orders: approve, reject, provision, cancel, manual-deliver. Customers: attach/update services.
+Orders: approve, reject, provision, cancel, manual-deliver. Customers: attach and update services.
 
-Public routes (no admin JWT): `/shop/:slug`, `/shop/:slug/portal`, `/portal`, `/portal/dashboard`, `/track/:code`. Customer portal tabs: **home / orders / alerts**. TMA bottom nav: **home / services / shop / orders / alerts**.
+Public routes (no administrator JWT): `/shop/:slug`, `/shop/:slug/portal`, `/portal`, `/portal/dashboard`, `/track/:code`. Customer portal: **home / orders / alerts**. Mini App: **home / services / shop / orders / alerts**.
 
-Checkout (guest, portal, TMA) shares: category → products → name + add-ons → payment; coupons can be limited to `both` / `new` / `renewal`.
+Checkout (guest, portal, Mini App): category → products → name and add-ons → payment. Coupons may be limited to `both`, `new`, or `renewal`.
 
-## Admin API (`/api/premium-modules/store`)
+## Administrator API (`/api/premium-modules/store`)
 
-Guards: JWT + Premium + module `store`.
+Guards: JWT, Premium, module `store`.
 
 | Area | Methods |
 |---|---|
@@ -43,8 +41,6 @@ Guards: JWT + Premium + module `store`.
 | Referral | `GET/POST referral-rewards`, `DELETE referral-rewards/:id` |
 | Wallet | `GET wallet/deposits`, `POST wallet/deposits/:id/approve\|reject`, `POST wallet/customers/:customerId/adjust` |
 | Analytics | `GET analytics` |
-
-Community tree also exposes a smaller `StoreAdminController` with dashboard, categories, profiles, templates, products, orders, customers, telegram — same prefix.
 
 ## Public API (`/api/store`)
 
@@ -73,8 +69,10 @@ Community tree also exposes a smaller `StoreAdminController` with dashboard, cat
 
 Customer session header: `x-customer-session`.
 
-## Related
+<div class="hm-actions">
 
-- [Branding](/premium/branding)
-- [Custom Domains](/premium/custom-domains)
-- [Panel Plus](/premium/panel-plus) (store add-ons for Eylan/Pasarguard)
+[Branding](/premium/branding)
+[Custom Domains](/premium/custom-domains)
+[Panel Plus](/premium/panel-plus)
+
+</div>

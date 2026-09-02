@@ -1,28 +1,30 @@
 # برندینگ
 
 ::: warning Premium
-ماژول `branding` · فلگ `WHITE_LABEL` · UI: `/premium/branding`
+ماژول `branding` · قابلیت `WHITE_LABEL` · نوع BUSINESS · مسیر: `/premium/branding`
 :::
 
-وایت‌لیبل ظاهر اشتراک و فروشگاه. [تنظیمات پورتال Community](/fa/community/portal) همان ویرایشگر کوچک Dark روی `portalSettings` می‌ماند.
+ظاهر سفیدبرچسب برای صفحات اشتراک و فروشگاه. تنظیمات پورتال Community ویرایشگر قالب Dark روی `portalSettings` باقی می‌ماند.
 
-## UI
+قالب‌ها: **Aurora, Dark, Light, Eclipse, Sunset, Glass, Vibrant**. بارگذاری نشان و نشان تیره، نام، شرح، رنگ، پیوند تلگرام و پشتیبانی. بازگشت به پیش‌فرض.
 
-تم‌ها: Aurora, Dark, Light, Eclipse, Sunset, Glass, Vibrant. آپلود لوگو / لوگو تیره، نام، توضیح، رنگ، لینک تلگرام. ریست پیش‌فرض.
+پروندهٔ نشان عمومی: `GET /api/platform/premium-assets/branding/:adminId/:file`.
 
-فایل عمومی: `GET /api/platform/premium-assets/branding/:adminId/:file`.
+## API
 
-## Endpointها
-
-| متد | مسیر |
+| روش | مسیر |
 |---|---|
-| `GET/PUT` | `/api/premium-modules/branding` |
-| `POST` | `/api/premium-modules/branding/upload/:kind` · `reset` |
+| `GET` | `/api/premium-modules/branding` |
+| `PUT` | `/api/premium-modules/branding` |
+| `POST` | `/api/premium-modules/branding/upload/:kind` |
+| `POST` | `/api/premium-modules/branding/reset` |
 
-فروشگاه در manifest به branding وابسته است.
+Store مقدار `branding` را به‌عنوان وابستگی فهرست می‌کند.
 
-## مرتبط
+<div class="hm-actions">
 
-- [پورتال اشتراک](/fa/community/portal)
-- [دامنه سفارشی](/fa/premium/custom-domains)
-- [فروشگاه](/fa/premium/store)
+[اشتراک](/fa/community/portal)
+[دامنهٔ اختصاصی](/fa/premium/custom-domains)
+[فروشگاه](/fa/premium/store)
+
+</div>

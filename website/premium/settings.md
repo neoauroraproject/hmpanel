@@ -1,34 +1,34 @@
 # Premium Settings
 
 ::: warning Premium
-UI: `/settings/premium` · Role: `SUPER_ADMIN` · License must be Premium (`edition === PREMIUM`, not community/disabled)
+Path: `/settings/premium` · Role: `SUPER_ADMIN` · Edition must be `PREMIUM`
 :::
 
-If the bundle’s `/settings/premium` route is registered, that component replaces the Community fallback list. Tabs in `PremiumSettingsPage`:
+When the bundle registers `/settings/premium`, that view replaces the Community fallback list.
 
-| Tab | What it is |
+| Tab | Contents |
 |---|---|
-| **Modules** | Enable/disable catalog rows (`branding`, `custom-domains`, `client-templates`, `store`, `external-panels`, `admin-recharge`, `monitoring-pro`, `backup-center`, `job-center`). `PATCH /api/premium-modules/:moduleId/enabled` (fallback `/api/platform/premium-modules/:moduleId/enabled`) |
-| **Admin Management** | Assign **BUSINESS** modules to resellers; provider access for Eylan/Pasarguard |
-| **Jobs** | Embeds [Job Center](#job-center) (not a sidebar item) |
-| **Telegram** | Platform Telegram test (`POST /api/settings/telegram-test`) — Super Admin |
-| **Developer API** | **Coming soon** in the UI. Badge + placeholder bullets (API keys, scopes, agency). No create-key endpoint. Points at private `docs/future-api/*.md` — those files are **not** a public API |
+| **Modules** | Enable or disable catalog rows (`branding`, `custom-domains`, `client-templates`, `store`, `external-panels`, `admin-recharge`, `monitoring-pro`, `backup-center`, `job-center`). `PATCH /api/premium-modules/:moduleId/enabled` |
+| **Admin Management** | Assign BUSINESS modules to resellers; provider access for Eylan and Pasarguard |
+| **Jobs** | Job Center (not a sidebar item) |
+| **Telegram** | Platform Telegram test (`POST /api/settings/telegram-test`) |
+| **Developer API** | Marked coming soon. No key-issuance API is published |
 
-Community fallback (no bundle UI): a list of enabled modules linking to `frontendPath`.
+Community fallback (no bundle UI): a list of enabled modules.
 
-Job Center is hidden from the sidebar (`menus: []` on the `job-center` manifest).
+Job Center is omitted from the sidebar (`menus: []`).
 
 ## Job Center
 
-UI: this tab (also `/premium/jobs` if routed). Polls every 5s.
+Poll interval: 5 seconds.
 
 | Method | Path |
 |---|---|
 | `GET` | `/api/platform/jobs` |
-| `GET` | `/api/platform/jobs/stats` — queued / running / completed / failed |
+| `GET` | `/api/platform/jobs/stats` — queued, running, completed, failed |
 | `POST` | `/api/platform/jobs/:id/retry` |
 
-## Assignment endpoints
+## Assignment
 
 | Method | Path |
 |---|---|
@@ -38,9 +38,12 @@ UI: this tab (also `/premium/jobs` if routed). Polls every 5s.
 | `PATCH` | `/api/premium-modules/:moduleId/settings` |
 | `GET` | `/api/premium-modules/all` |
 
-Manifest kinds: `BUSINESS` (assignable) vs `PLATFORM` (Super Admin infrastructure).
+Manifest kinds: `BUSINESS` (assignable) and `PLATFORM` (Super Admin infrastructure).
 
-## Related
+<div class="hm-actions">
 
-- [License](/premium/license)
-- [Panel Plus](/premium/panel-plus)
+[License](/premium/license)
+[Modules](/premium/modules)
+[Panel Plus](/premium/panel-plus)
+
+</div>

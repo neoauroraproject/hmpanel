@@ -1,20 +1,20 @@
 # Client Templates
 
 ::: warning Premium
-Module id `client-templates` · Kind BUSINESS · UI: `/premium/client-templates`
+Module `client-templates` · Kind BUSINESS · Path: `/premium/client-templates`
 :::
 
-Quick-create presets: pick a template, type a name (or pull the next name from a **name pool**), create. Clients page shows **With Template** when this module is loaded.
+Presets for rapid client creation: select a template, enter a name (or allocate the next name from a name pool), then create. Clients displays **With Template** when this module is loaded.
 
 ## Template fields
 
-Name, description, inbound ids, total GB, expiry days, IP limit, flow, remark, enabled, sort order.
+Name, description, inbound identifiers, total GB, expiry days, IP limit, flow, remark, enabled, sort order.
 
 ## Name pools
 
 Prefix, separator, start number, sample names. `POST .../pools/:poolId/next-name` and `POST .../:id/next-name` allocate the next remark.
 
-## Endpoints
+## API
 
 | Method | Path |
 |---|---|
@@ -30,6 +30,8 @@ Prefix, separator, start number, sample names. `POST .../pools/:poolId/next-name
 | `DELETE` | `/api/premium-modules/client-templates/pools/:poolId` |
 | `POST` | `/api/premium-modules/client-templates/pools/:poolId/next-name` |
 
-## Related
+<div class="hm-actions">
 
-- [Clients](/community/clients)
+[Clients](/community/clients)
+
+</div>

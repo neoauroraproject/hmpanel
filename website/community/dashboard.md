@@ -1,45 +1,47 @@
 # Dashboard
 
 ::: info Community
-UI: `/dashboard` · Roles: `SUPER_ADMIN`, `RESELLER`
+Path: `/dashboard` · Roles: `SUPER_ADMIN`, `RESELLER`
 :::
 
-First screen after [login](/guide/login). Super Admin sees platform KPIs; resellers see `reseller-overview` (their clients, remaining traffic, capacity).
+Default view after sign-in. Super Admin receives platform indicators. Resellers receive `reseller-overview` (clients, remaining traffic, and capacity).
 
-## What the page shows
+## Contents
 
-From `frontend/src/app/(app)/dashboard/page.tsx` and `GET /api/stats/*`:
+Data is served by `GET /api/stats/*`.
 
-- KPI cards (panels, admins, clients, traffic, expiry) — Super Admin: `overview`; reseller: `reseller-overview`
-- Traffic series chart — `traffic-series`
+- Indicator cards — Super Admin: `overview`; reseller: `reseller-overview`
+- Traffic series — `traffic-series`
 - Trends — `trends`
-- Live resource bars (CPU / RAM / disk / network) — `monitoring` plus Socket.IO updates
+- Host resource meters (CPU, RAM, disk, network) — `monitoring`, with Socket.IO updates
 - Online clients — `onlines`
 - Host snapshot — `system`
-- Alerts for offline 3x-ui / Xray (Eylan/Pasarguard alerts are filtered separately so Community does not fake Xray-stopped on those nodes)
-- Actions: sync a panel, restart Xray (Super Admin)
+- Offline alerts for 3x-ui / Xray. Eylan and Pasarguard alerts are filtered separately
+- Actions: panel sync and Xray restart (Super Admin)
 
-`PluginSlot` on this page is empty until a Premium bundle registers widgets.
+Premium widgets appear only after the licensed bundle is loaded.
 
-## Endpoints
+Resource meters on this page are distinct from Monitoring Pro (`/premium/monitoring`).
+
+## API
 
 | Method | Path | Notes |
 |---|---|---|
-| `GET` | `/api/stats/overview` | Super Admin KPIs |
-| `GET` | `/api/stats/reseller-overview` | Reseller KPIs |
+| `GET` | `/api/stats/overview` | Super Admin indicators |
+| `GET` | `/api/stats/reseller-overview` | Reseller indicators |
 | `GET` | `/api/stats/traffic-series` | Chart series |
 | `GET` | `/api/stats/trends` | Trend cards |
-| `GET` | `/api/stats/monitoring` | CPU/RAM/disk/net snapshot used on this dashboard |
-| `GET` | `/api/stats/system` | Host info |
+| `GET` | `/api/stats/monitoring` | CPU, RAM, disk, and network snapshot |
+| `GET` | `/api/stats/system` | Host information |
 | `GET` | `/api/stats/onlines` | Online client list |
-| `GET` | `/api/stats/diagnostics` | Extra diagnostic payload (also used elsewhere) |
-| `POST` | `/api/stats/sync` | Trigger panel sync from dashboard |
+| `GET` | `/api/stats/diagnostics` | Diagnostic payload |
+| `POST` | `/api/stats/sync` | Panel sync |
 | `POST` | `/api/stats/restart-xray` | Restart Xray on a node |
 
-This is **not** [Monitoring Pro](/premium/monitoring-pro). Monitoring Pro is `/premium/monitoring` and `/api/plugins/monitoring/*`.
+<div class="hm-actions">
 
-## Related
+[Panels](/community/panels)
+[Clients](/community/clients)
+[Monitoring Pro](/premium/monitoring-pro)
 
-- [Panels](/community/panels)
-- [Clients](/community/clients)
-- [Monitoring Pro](/premium/monitoring-pro)
+</div>

@@ -2,26 +2,305 @@
   --vp-c-brand-1: #2563eb;
   --vp-c-brand-2: #3b82f6;
   --vp-c-brand-3: #1d4ed8;
+  --vp-font-family-base: Inter, ui-sans-serif, system-ui, sans-serif;
 }
 
-.edition-row {
+html.locale-fa,
+html.locale-fa body {
+  font-family: Vazir, Tahoma, ui-sans-serif, sans-serif;
+}
+
+html.locale-fa .VPNavBarTitle .title,
+html.locale-fa .VPSidebar,
+html.locale-fa .VPDoc,
+html.locale-fa .VPHome,
+html.locale-fa .VPFooter,
+html.locale-fa .VPLocalNav,
+html.locale-fa button,
+html.locale-fa input,
+html.locale-fa .DocSearch {
+  font-family: Vazir, Tahoma, ui-sans-serif, sans-serif;
+}
+
+/* ── page enter ── */
+@keyframes hm-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes hm-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.VPContent .VPDoc .container,
+.VPHomeHero,
+.VPHomeFeatures {
+  animation: hm-fade-up 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.VPHomeFeatures {
+  animation-delay: 0.08s;
+}
+
+.VPSidebar {
+  animation: hm-fade-in 0.35s ease both;
+}
+
+.VPButton {
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
+.VPButton:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgb(37 99 235 / 18%);
+}
+
+.VPFeature {
+  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+}
+
+.VPFeature:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 28px rgb(15 23 42 / 8%);
+}
+
+.VPSidebarItem .item {
+  transition: background-color 0.18s ease, transform 0.18s ease, color 0.18s ease;
+  border-radius: 8px;
+}
+
+.VPSidebarItem .item:hover {
+  transform: translateX(3px);
+}
+
+html.locale-fa .VPSidebarItem .item:hover {
+  transform: translateX(-3px);
+}
+
+.vp-doc a {
+  transition: color 0.15s ease;
+}
+
+.hm-actions,
+.hm-actions p {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
-  margin: 0.75rem 0 1.25rem;
+  gap: 0.6rem;
+  margin: 0;
 }
 
-.edition-row a {
-  text-decoration: none;
+.hm-actions {
+  margin: 1.75rem 0 0;
+  padding-top: 0.25rem;
 }
 
-html[dir="rtl"] .VPSidebar,
-html[dir="rtl"] .VPNav,
-html[dir="rtl"] .VPDoc {
-  direction: rtl;
+.hm-actions a,
+a.hm-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.35rem;
+  padding: 0.4rem 1rem;
+  border-radius: 8px;
+  border: 1px solid var(--vp-c-brand-1);
+  background: transparent;
+  color: var(--vp-c-brand-1) !important;
+  font-weight: 500;
+  font-size: 0.875rem;
+  line-height: 1.2;
+  text-decoration: none !important;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease, color 0.2s ease;
 }
 
-html[dir="rtl"] .vp-doc table {
+.hm-actions a:hover,
+a.hm-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 18px rgb(37 99 235 / 16%);
+  background: var(--vp-c-brand-soft);
+}
+
+.hm-actions a:first-child,
+.hm-actions p a:first-child,
+a.hm-btn.primary {
+  background: var(--vp-c-brand-1);
+  color: #fff !important;
+  border-color: var(--vp-c-brand-1);
+}
+
+.hm-actions a:first-child:hover,
+.hm-actions p a:first-child:hover,
+a.hm-btn.primary:hover {
+  background: var(--vp-c-brand-3);
+}
+
+html.locale-fa .hm-actions a,
+html.locale-fa a.hm-btn {
+  font-family: Vazir, Tahoma, sans-serif;
+}
+
+.VPFooter .message a {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.7rem;
+  margin: 0 0.15rem;
+  border-radius: 6px;
+  border: 1px solid var(--vp-c-divider);
+  text-decoration: none !important;
+  transition: background-color 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+}
+
+.VPFooter .message a:hover {
+  border-color: var(--vp-c-brand-1);
+  transform: translateY(-1px);
+}
+
+.vp-doc table {
   display: block;
   overflow-x: auto;
+}
+
+.custom-block {
+  transition: transform 0.2s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .VPContent .VPDoc .container,
+  .VPHomeHero,
+  .VPHomeFeatures,
+  .VPSidebar,
+  .VPButton,
+  .VPFeature,
+  .VPSidebarItem .item,
+  .hm-actions a,
+  a.hm-btn,
+  .VPFooter .message a {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+  }
+}
+
+/* ── RTL layout: sidebar on the right ── */
+@media (min-width: 960px) {
+  html.locale-fa .VPSidebar {
+    left: auto !important;
+    right: 0 !important;
+    transform: none !important;
+    padding-left: 32px;
+    padding-right: 32px;
+  }
+
+  html.locale-fa .VPContent.has-sidebar {
+    padding-left: 32px !important;
+    padding-right: var(--vp-sidebar-width) !important;
+  }
+
+  html.locale-fa .VPNavBar.has-sidebar .title {
+    left: auto !important;
+    right: 0 !important;
+    padding-left: 32px;
+    padding-right: 32px;
+  }
+
+  html.locale-fa .VPNavBar.has-sidebar .content {
+    padding-left: 32px !important;
+    padding-right: var(--vp-sidebar-width) !important;
+  }
+
+  html.locale-fa .VPNavBar.has-sidebar .divider {
+    padding-left: 0 !important;
+    padding-right: var(--vp-sidebar-width) !important;
+  }
+
+  html.locale-fa .VPLocalNav.has-sidebar {
+    padding-left: 32px !important;
+    padding-right: var(--vp-sidebar-width) !important;
+  }
+
+  html.locale-fa .VPFooter.has-sidebar {
+    padding-left: 32px !important;
+    padding-right: var(--vp-sidebar-width) !important;
+  }
+}
+
+@media (min-width: 1440px) {
+  html.locale-fa .VPSidebar {
+    padding-right: max(32px, calc((100% - (var(--vp-layout-max-width) - 64px)) / 2));
+    padding-left: 32px;
+    width: calc((100% - (var(--vp-layout-max-width) - 64px)) / 2 + var(--vp-sidebar-width) - 32px);
+  }
+
+  html.locale-fa .VPContent.has-sidebar {
+    padding-left: calc((100vw - var(--vp-layout-max-width)) / 2) !important;
+    padding-right: calc((100vw - var(--vp-layout-max-width)) / 2 + var(--vp-sidebar-width)) !important;
+  }
+
+  html.locale-fa .VPNavBar.has-sidebar .title {
+    padding-right: max(32px, calc((100% - (var(--vp-layout-max-width) - 64px)) / 2));
+    padding-left: 32px;
+    width: calc((100% - (var(--vp-layout-max-width) - 64px)) / 2 + var(--vp-sidebar-width) - 32px);
+  }
+
+  html.locale-fa .VPNavBar.has-sidebar .content {
+    padding-left: calc((100vw - var(--vp-layout-max-width)) / 2 + 32px) !important;
+    padding-right: calc((100vw - var(--vp-layout-max-width)) / 2 + var(--vp-sidebar-width)) !important;
+  }
+
+  html.locale-fa .VPNavBar.has-sidebar .divider {
+    padding-right: calc((100vw - var(--vp-layout-max-width)) / 2 + var(--vp-sidebar-width)) !important;
+  }
+
+  html.locale-fa .VPLocalNav.has-sidebar {
+    padding-left: calc((100vw - var(--vp-layout-max-width)) / 2) !important;
+    padding-right: calc((100vw - var(--vp-layout-max-width)) / 2 + var(--vp-sidebar-width)) !important;
+  }
+}
+
+/* Mobile drawer slides in from the right in FA */
+@media (max-width: 959px) {
+  html.locale-fa .VPSidebar {
+    left: auto !important;
+    right: 0 !important;
+    transform: translateX(100%);
+  }
+
+  html.locale-fa .VPSidebar.open {
+    transform: translateX(0);
+  }
+}
+
+html.locale-fa .VPDoc .aside {
+  padding-left: 0;
+  padding-right: 32px;
+}
+
+html.locale-fa {
+  text-align: right;
+}
+
+html.locale-fa .vp-doc h1,
+html.locale-fa .vp-doc h2,
+html.locale-fa .vp-doc h3,
+html.locale-fa .vp-doc p,
+html.locale-fa .vp-doc li {
+  text-align: right;
+}
+
+html.locale-fa .vp-doc pre,
+html.locale-fa .vp-doc code,
+html.locale-fa .vp-doc table {
+  direction: ltr;
+  text-align: left;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }

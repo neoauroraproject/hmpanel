@@ -1,30 +1,38 @@
-# Community در برابر Premium
+# مقایسهٔ نسخه‌ها
 
-فقط رفتارهایی که در UI/API رایگان یا در ماژول باندل پرمیوم وجود دارد. ردیف ایلان/پاسارگارد ممکن است در Community دیده شود؛ **نوشتن قفل است** تا Panel Plus لایسنس شود.
+نسخهٔ Community در توزیع عمومی ارائه می‌شود. ماژول‌های Premium پس از فعال‌سازی کلید مجوز بارگذاری می‌گردند.
+
+عملیات نوشتن روی ایلان و پاسارگارد تا زمان مجوز داشتن Panel Plus غیرفعال است؛ حتی اگر نوع پنل در رابط Community نمایش داده شود.
 
 | بخش | Community | Premium |
 |---|---|---|
-| ورود `/login` | `POST /api/auth/login` و `refresh` | همان |
-| داشبورد | KPI و CPU/RAM از `GET /api/stats/*` | اسلات ویجت بعد از لود باندل |
-| ادمین‌ها | ریسلر، سهمیه، اینباند، رفراند | تخصیص ماژول BUSINESS در تنظیمات پرمیوم |
-| کلاینت‌ها | CRUD، bulk، QR | «با قالب»؛ ایلان/پاسارگارد با Panel Plus عملیاتی می‌شود |
-| پنل‌ها | 3x-ui کامل | ایلان/پاسارگارد عملیاتی با Panel Plus |
-| ترافیک | دفتر + شارژ سوپرادمین | بدون تغییر |
-| مهاجرت | ویزارد `.db` | بدون تغییر |
-| تنظیمات General / SSL / Backup / About | بکاپ **دستی**، ACME، آپدیت گیت‌هاب | بدون تغییر |
+| ورود `/login` | `POST /api/auth/login`، `POST /api/auth/refresh` | یکسان |
+| داشبورد `/dashboard` | شاخص‌ها و منابع میزبان از `GET /api/stats/*` | ویجت اختیاری پس از بارگذاری باندل |
+| ادمین‌ها `/admins` | ریسلر، سهمیه، اینباند | تخصیص ماژول BUSINESS در تنظیمات پرمیوم |
+| کلاینت‌ها `/clients` | ایجاد، ویرایش، عملیات گروهی، QR | قالب کلاینت؛ ایلان/پاسارگارد با Panel Plus |
+| پنل‌ها `/panels` | عملیات کامل 3x-ui | ایلان/پاسارگارد عملیاتی نیازمند Panel Plus |
+| ترافیک `/traffic` | دفتر حساب و شارژ سوپرادمین | یکسان |
+| مهاجرت `/migration` | ورود از فایل `.db` | یکسان |
+| تنظیمات | منطقهٔ زمانی، ACME، پشتیبان درخواستی، به‌روزرسانی | یکسان |
 | لایسنس | فعال‌سازی کلید | وضعیت `PREMIUM` |
-| پاکسازی | `action: cleanup` بدون رفراند | بدون تغییر |
-| عیب‌یابی | `GET /api/settings/diagnostics` | بدون تغییر |
-| صفحه اشتراک | تب لینک پنل / نیتیو | برندینگ لوگوی همان صفحات را عوض می‌کند |
-| `/settings/portal` | تم Dark و لینک پشتیبانی | ویرایشگر کامل Branding |
-| فروشگاه عمومی | مسیرها هستند؛ API نیاز به ماژول store دارد | فروشگاه کامل |
-| مانیتورینگ | فقط نوارهای داشبورد | `/premium/monitoring` |
-| بکاپ | Settings → Backup | Backup Center زمان‌بندی‌شده |
-| Job Center | — | تب Jobs در تنظیمات پرمیوم |
-| Developer API | — | تب هست، **coming soon** — کلید API ساخته نمی‌شود |
+| پاکسازی `/cleanup` | `action: cleanup` بدون استرداد ترافیک | یکسان |
+| عیب‌یابی `/diagnostics` | `GET /api/settings/diagnostics` | یکسان |
+| اشتراک `/p/:id`، `/s/:token` | زبانهٔ پیوند سامانه و نیتیو | جایگزینی لوگو و قالب با Branding |
+| `/settings/portal` | قالب Dark و پیوند پشتیبانی | ویرایشگر کامل Branding |
+| فروشگاه عمومی | مسیرها موجود است؛ API نیازمند ماژول store | مدیریت و تسویهٔ کامل |
+| برندینگ، دامنه، قالب | موجود نیست | `/premium/branding`، `/premium/domains`، `/premium/client-templates` |
+| فروشگاه | — | `/premium/store` |
+| شارژ ادمین | — | `/premium/admin-recharge` |
+| Panel Plus | پاسخ `premium_unavailable` | `/premium/external-panels` |
+| پایش | نوارهای داشبورد | `/premium/monitoring` |
+| پشتیبان | تنظیمات → Backup | Backup Center |
+| Job Center | — | تنظیمات پرمیوم → Jobs |
+| Developer API | — | زبانه موجود است؛ coming soon. صدور کلید ارائه نشده است |
 
-## خرید پرمیوم
+<div class="hm-actions">
 
-- کانال: [t.me/hmpanel](https://t.me/hmpanel)
-- خرید / پشتیبانی: [t.me/hmraysupport](https://t.me/hmraysupport)
-- بعد از دریافت کلید: [لایسنس و باندل](/fa/premium/license)
+[فعال‌سازی مجوز](/fa/premium/license)
+[خرید مجوز](https://t.me/hmraysupport)
+[کانال تلگرام](https://t.me/hmpanel)
+
+</div>

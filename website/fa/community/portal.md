@@ -1,41 +1,44 @@
-# پورتال اشتراک
+# اشتراک
 
 ::: info Community
-صفحات عمومی: `/p/:id`، کوتاه `/s/:token`. مودال اتصال در کلاینت‌ها.
+صفحات عمومی: `/p/:id`، کوتاه `/s/:token`. گفتگوی اتصال مدیر در کلاینت‌ها.
 :::
 
-اچ‌ام‌پنل می‌تواند لینک **پلتفرم** (`/s/…`) و لینک **نیتیو** 3x-ui (`/sub/…`) را نشان دهد. مودال اتصال دو تب دارد وقتی هر دو موجود باشند.
+نشانی اشتراک **platform** (`/s/…` روی این پنل) و نشانی **native** مربوط به 3x-ui (`/sub/…` روی گره) ممکن است هر دو موجود باشند. رابط اتصال در صورت وجود هر دو، دو زبانه نمایش می‌دهد (`platform` | `native`).
 
-## صفحه `/p/:id`
+## صفحهٔ عمومی `/p/:id`
 
-تم‌های Community شامل Dark / Neo / Aurora / Sunset. [برندینگ پرمیوم](/fa/premium/branding) تم و لوگو را گسترش می‌دهد.
+قالب‌های Community: Dark، Neo، Aurora، Sunset. Branding قالب و نشان‌های بیشتری می‌افزاید.
 
-## برندینگ ریسلر (رایگان)
+## پورتال ریسلر (Community)
 
-UI: `/settings/portal` — نه ماژول Branding. ذخیره روی `portalSettings`:
+مسیر: `/settings/portal`. متمایز از Branding. `portalSettings` را روی مدیر ذخیره می‌کند:
 
-- تلگرام، واتساپ، وبسایت، ایمیل
-- نام پورتال، لوگو، رنگ
-- در این فرم Community فقط تم **Dark**
-- نمایش QR پلتفرم/نیتیو، دانلود QR، ایمپورت مستقیم، بخش پشتیبانی
+- پشتیبانی: تلگرام، واتساپ، وب‌گاه، رایانامه
+- نام پورتال، نشانی نشان، رنگ اصلی
+- قالب در این فرم: **Dark**
+- کلیدها: QR سکو، QR بومی، بارگیری QR، ورود مستقیم، بخش پشتیبانی
 
-`PATCH /api/admins/:id` با `{ portalSettings }`. اگر سوپر سفارشی‌سازی را بسته باشد، 403 و کارت Feature Disabled.
+`PATCH /api/admins/:id` با `{ portalSettings }`. اگر Super Admin سفارشی‌سازی پورتال را غیرفعال کرده باشد، ریسلر پاسخ HTTP 403 دریافت می‌کند.
 
-## لینک کوتاه
+## پیوند کوتاه
 
-Nginx: `/s/` → `@Controller('s')`.
+Nginx: `location /s/` → `@Controller('s')`.
 
-| متد | مسیر |
+| روش | مسیر |
 |---|---|
-| `GET` | `/s/:token` |
-| `GET` | `/api/subscriptions/:id` · `output` · `config` · `nodes` |
+| `GET` | `/s/:token` — اشتراک کوتاه عمومی |
+| `GET` | `/api/subscriptions/:id` |
+| `GET` | `/api/subscriptions/:id/output` |
+| `GET` | `/api/subscriptions/:id/config` |
+| `GET` | `/api/subscriptions/:id/nodes` |
 
-حالت لینک فروشگاه (`hmpanel` / `native`) فیلد پروفایل Store پرمیوم است.
+حالت نشانی اشتراک فروشگاه (`hmpanel` یا `native`) فیلد نمایهٔ Store است.
 
-قالب HTML سفارشی خود 3x-ui در `docs/custom-subscription-templates.md` است.
+<div class="hm-actions">
 
-## مرتبط
+[کلاینت‌ها](/fa/community/clients)
+[برندینگ](/fa/premium/branding)
+[فروشگاه](/fa/premium/store)
 
-- [کلاینت‌ها](/fa/community/clients)
-- [برندینگ](/fa/premium/branding)
-- [فروشگاه](/fa/premium/store)
+</div>

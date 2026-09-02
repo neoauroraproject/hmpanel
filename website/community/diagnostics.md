@@ -1,27 +1,27 @@
 # Diagnostics
 
 ::: info Community
-UI: `/diagnostics` · Role: `SUPER_ADMIN` (`GET /api/settings/diagnostics` is Super Admin only)
+Path: `/diagnostics` · Role: `SUPER_ADMIN`
 :::
-
-Cards on the page (`frontend/src/app/(app)/diagnostics/page.tsx`):
 
 - **Version** — installed version, running image tag, latest GitHub release
 - **Host** — hostname, CPU, memory, disk
-- **Docker / GitHub API** reachability
-- Note when `/var/run/docker.sock` is not mounted (host management / auto-update tracking disabled)
-- **Capability matrix**, SSL detection, certificate analysis, host diagnostics, auto-update flags
+- Docker and GitHub API reachability
+- Note when `/var/run/docker.sock` is not mounted (host management and automatic-update tracking disabled)
+- Capability matrix, TLS detection, certificate analysis, host diagnostics, automatic-update flags
 
-Refresh interval in the UI: 15 seconds.
+Refresh interval: 15 seconds.
 
-## Endpoints
+## API
 
 | Method | Path |
 |---|---|
 | `GET` | `/api/settings/diagnostics` |
 | `GET` | `/api/stats/diagnostics` |
 
-## Related
+<div class="hm-actions">
 
-- [Settings → About](/community/settings#about)
-- [Dashboard](/community/dashboard)
+[Settings](/community/settings#about)
+[Dashboard](/community/dashboard)
+
+</div>

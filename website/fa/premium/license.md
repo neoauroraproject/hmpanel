@@ -1,35 +1,54 @@
-# لایسنس و باندل
+# مجوز
 
 ::: warning Premium
-UI: **تنظیمات → License**. سوپرادمین در Community هم می‌تواند کلید بزند و ارتقا دهد.
+مسیر: **Settings → License** (`/settings`، زبانهٔ `license`). Super Admin می‌تواند کلید را از Community فعال کند.
 :::
 
-نصب پیش‌فرض Community است. کد پرمیوم در git عمومی نیست. بعد از کلید معتبر، باندل از `license.hmray.pro` (فالبک `license.hmrayserver.com`) دانلود و ماژول Nest به‌علاوه `premium-runtime.js` لود می‌شود.
+نصب پیش‌فرض Community است (`RELEASE_MODE=COMMUNITY`). مبدأ Premium در مخزن عمومی نیست. پس از کلید معتبر، پنل باندل امضاشده را از `license.hmray.pro` (پشتیبان `license.hmrayserver.com`) بارگیری می‌کند و ماژول‌های NestJS را همراه با `premium-runtime.js` بار می‌گذارد.
 
-خرید / پشتیبانی: [t.me/hmraysupport](https://t.me/hmraysupport). کانال: [t.me/hmpanel](https://t.me/hmpanel).
+خرید و پشتیبانی: [t.me/hmraysupport](https://t.me/hmraysupport). کانال: [t.me/hmpanel](https://t.me/hmpanel).
 
-## اکشن‌های کارت
+## اقدامات کارت
 
-فعال‌سازی، غیرفعال‌سازی، recheck، به‌روزرسانی باندل، reload پلاگین‌ها (بعد از باندل خراب به‌صورت خودکار لوپ 502 نمی‌سازد).
+- Activate — درج کلید مجوز
+- Deactivate — پرونده‌های باندل ممکن است روی دیسک بمانند
+- Recheck — استعلام از کارساز مجوز
+- Update bundle — بارگیری باندل جاری برای این کلید
+- Reload plugins — پس از باندل ناموفق به‌صورت خودکار اجرا نمی‌شود
 
-وضعیت: `active`, `grace`, `expired`, `invalid`, `community`. حالت: `full`, `read_only`, `disabled`.
+وضعیت: `active`، `grace`، `expired`، `invalid`، `community`. حالت: `full`، `read_only`، `disabled`. نسخه: `COMMUNITY` | `PREMIUM`.
 
-**Grace:** ۷ روز در `license-manager.service.ts`. در این مدت پرمیوم **فقط خواندنی** است.
+مهلت ارفاق: ۷ روز. در این مدت Premium به‌صورت **فقط‌خواندنی** باقی می‌ماند. پس از آن ماژول‌ها غیرفعال می‌شوند.
 
-باندل با `minPanelVersion` تا `hm update` ایمیج را بالا نبرد رد می‌شود.
+باندل دارای `minPanelVersion` تا زمان ارتقای تصویر با `hm update` رد می‌شود.
 
-## Endpointها
+## API
 
-| متد | مسیر |
+| روش | مسیر |
 |---|---|
-| `GET` | `/api/platform/license` · `bundle-status` · `features` · `premium-module-catalog` · `premium-modules-all` |
-| `POST` | `/api/platform/license/activate` · `deactivate` · `recheck` · `update-bundle` · `reload-plugins` · `diagnose-bundle` |
+| `GET` | `/api/platform/license` |
+| `POST` | `/api/platform/license/activate` — `{ licenseKey }` |
+| `POST` | `/api/platform/license/deactivate` |
+| `POST` | `/api/platform/license/recheck` |
+| `POST` | `/api/platform/license/update-bundle` |
+| `POST` | `/api/platform/license/reload-plugins` |
+| `POST` | `/api/platform/license/diagnose-bundle` |
+| `GET` | `/api/platform/license/bundle-status` |
+| `GET` | `/api/platform/features` |
+| `GET` | `/api/platform/premium-module-catalog` |
+| `GET` | `/api/platform/premium-modules-all` |
 | `GET` | `/api/premium-modules` |
-| `GET` | `/api/platform/premium-assets/frontend/premium-runtime.js` · `css` · `premium-monitoring.js` |
+| `GET` | `/api/platform/premium-assets/frontend/premium-runtime.js` |
+| `GET` | `/api/platform/premium-assets/frontend/premium-runtime.css` |
+| `GET` | `/api/platform/premium-assets/frontend/premium-monitoring.js` |
 | `GET` | `/api/settings/license` |
 
-`LICENSE_PRODUCT_ID=hmpanel`.
+شناسهٔ محصول: `LICENSE_PRODUCT_ID=hmpanel`.
 
-## مرتبط
+<div class="hm-actions">
 
-- [تنظیمات پرمیوم](/fa/premium/settings)
+[تنظیمات Premium](/fa/premium/settings)
+[ماژول‌ها](/fa/premium/modules)
+[مقایسهٔ نسخه‌ها](/fa/compare)
+
+</div>

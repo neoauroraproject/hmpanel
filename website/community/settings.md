@@ -1,29 +1,29 @@
 # Settings
 
 ::: info Community
-UI: `/settings` · Role: `SUPER_ADMIN`
+Path: `/settings` · Role: `SUPER_ADMIN`
 :::
 
-Five tabs in `frontend/src/app/(app)/settings/page.tsx`: **General**, **License**, **SSL**, **Backup**, **About**.
+Tabs: **General**, **License**, **SSL**, **Backup**, **About**.
 
-Cleanup and Diagnostics are separate routes linked from this area of the UI (`/cleanup`, `/diagnostics`).
+Cleanup and Diagnostics are separate routes (`/cleanup`, `/diagnostics`).
 
 ## General
 
-- Cleanup candidate threshold (days after expiry) — stored via `POST /api/settings`
-- Display timezone (default Asia/Tehran) — used for admin UI dates and Telegram alert clocks
-- Display calendar: Jalali or Gregorian (independent of UI language)
+- Cleanup candidate threshold (days after expiry) — `POST /api/settings`
+- Display timezone (default Asia/Tehran) — used for interface dates and Telegram alert clocks
+- Display calendar: Jalali or Gregorian (independent of interface language)
 - Panel language (also switchable from the sidebar)
 
 | Method | Path |
 |---|---|
 | `GET` | `/api/settings` |
-| `POST` | `/api/settings` — body is a settings map (`cleanup_threshold_days`, `display_timezone`, `display_calendar`, …) |
-| `GET` | `/api/settings/display-timezone` — any authenticated admin (clocks) |
+| `POST` | `/api/settings` — settings map (`cleanup_threshold_days`, `display_timezone`, `display_calendar`, …) |
+| `GET` | `/api/settings/display-timezone` — any authenticated administrator |
 
 ## License
 
-Same card as [License & bundle](/premium/license). Community can activate a key here.
+The same card as License. A Community installation can activate a key here.
 
 | Method | Path |
 |---|---|
@@ -39,7 +39,7 @@ Same card as [License & bundle](/premium/license). Community can activate a key 
 
 ## SSL
 
-Opens `SslManagerModal`. Views: status, issue (Let’s Encrypt or self-signed), change domain, progress (SSE).
+Views: status, issue (Let’s Encrypt or self-signed), change domain, progress (SSE).
 
 | Method | Path |
 |---|---|
@@ -49,22 +49,22 @@ Opens `SslManagerModal`. Views: status, issue (Let’s Encrypt or self-signed), 
 | `POST` | `/api/settings/ssl/switch` — `{ enableHttps }` |
 | `POST` | `/api/settings/ssl/change-domain` — `{ domain, email }` |
 | `POST` | `/api/settings/ssl/repair` |
-| `GET` | `/api/settings/ssl/stream` — SSE progress (`@Sse('stream')`) |
+| `GET` | `/api/settings/ssl/stream` — SSE progress |
 | `GET` | `/api/settings/ssl-diagnostic` |
 
-Host equivalent: [CLI SSL menu](/guide/cli).
+Host equivalent: command-line TLS menu.
 
 ## Backup
 
-**Manual** snapshot from the UI — not [Backup Center](/premium/backup-center).
+On-demand snapshot. Distinct from Backup Center.
 
-Types (same as `hm` backup submenu):
+Types (identical to `hm` backup):
 
-- `full` — database + config + uploads + premium
+- `full` — database, configuration, uploads, and premium
 - `database`
-- `config` — `.env` + nginx + acme
+- `config` — `.env`, nginx, and ACME
 
-Flow: generate → download; or upload archive → analyze → confirm restore.
+Flow: generate then download; or upload an archive, analyze, and confirm restore.
 
 | Method | Path |
 |---|---|
@@ -75,7 +75,7 @@ Flow: generate → download; or upload archive → analyze → confirm restore.
 
 ## About
 
-Panel version, edition label, Telegram channel link, GitHub update check and apply.
+Panel version, edition label, Telegram channel, and GitHub update check and apply.
 
 | Method | Path |
 |---|---|
@@ -83,8 +83,11 @@ Panel version, edition label, Telegram channel link, GitHub update check and app
 | `POST` | `/api/settings/update-panel` |
 | `GET` | `/api/settings/update-logs` |
 
-## Related
+<div class="hm-actions">
 
-- [Cleanup](/community/cleanup)
-- [Diagnostics](/community/diagnostics)
-- [CLI](/guide/cli)
+[Cleanup](/community/cleanup)
+[Diagnostics](/community/diagnostics)
+[Subscription](/community/portal)
+[Command line](/guide/cli)
+
+</div>

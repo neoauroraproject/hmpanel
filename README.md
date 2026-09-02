@@ -19,7 +19,7 @@ HMPanel is a **professional management layer built specifically on top of native
 
 ### 📚 Documentation
 
-Full Community vs Premium operator wiki (UI tabs + real APIs): [https://neoauroraproject.github.io/hmpanel/](https://neoauroraproject.github.io/hmpanel/)
+Documentation for Community and Premium editions: [https://neoauroraproject.github.io/hmpanel/](https://neoauroraproject.github.io/hmpanel/)
 
 ### 🚀 Installation
 
@@ -61,7 +61,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/neoauroraproject/hmpanel/mai
 
 ### 📚 مستندات
 
-ویکی کامل نسخه رایگان و پرمیوم (تب‌های UI و API واقعی): [https://neoauroraproject.github.io/hmpanel/fa/](https://neoauroraproject.github.io/hmpanel/fa/)
+مستندات نسخهٔ Community و Premium: [https://neoauroraproject.github.io/hmpanel/fa/](https://neoauroraproject.github.io/hmpanel/fa/)
 
 کانال تلگرام: [t.me/hmpanel](https://t.me/hmpanel) · خرید لایسنس: [t.me/hmraysupport](https://t.me/hmraysupport)
 

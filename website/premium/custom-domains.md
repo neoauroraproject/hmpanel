@@ -1,21 +1,19 @@
 # Custom Domains
 
 ::: warning Premium
-Module id `custom-domains` · Feature `CUSTOM_DOMAINS` · Kind BUSINESS · UI: `/premium/domains`
+Module `custom-domains` · Feature `CUSTOM_DOMAINS` · Kind BUSINESS · Path: `/premium/domains`
 :::
 
-Per-admin (or store) hostnames with SSL. Status chips in the UI: `PENDING`, `VERIFIED`, `SSL_ACTIVE`, `SSL_FAILED`, `EXPIRED`.
+Per-administrator (or store) hostnames with TLS. Status: `PENDING`, `VERIFIED`, `SSL_ACTIVE`, `SSL_FAILED`, `EXPIRED`.
 
-## UI
-
-- Add domain, optional assign admin, optional store slug
+- Add domain, optional administrator assignment, optional store slug
 - Verify DNS
-- Issue SSL
+- Issue TLS
 - Delete
 
-Nginx templates `vhost-domain.*.template` use `${VHOST_DOMAIN}` for these vhosts (separate from the main `PANEL_DOMAIN`).
+Nginx templates `vhost-domain.*.template` use `${VHOST_DOMAIN}` for these virtual hosts, separate from `PANEL_DOMAIN`.
 
-## Endpoints
+## API
 
 | Method | Path |
 |---|---|
@@ -25,12 +23,14 @@ Nginx templates `vhost-domain.*.template` use `${VHOST_DOMAIN}` for these vhosts
 | `POST` | `/api/domains/:id/verify` |
 | `POST` | `/api/domains/:id/ssl` |
 | `DELETE` | `/api/domains/:id` |
-| `GET` | `/api/domains/resolve` — public resolve by host (`public-domains.controller`) |
+| `GET` | `/api/domains/resolve` — public resolve by host |
 
-Read-only when license is in grace: view/use existing SSL; writes (add/issue/change) blocked by feature manager.
+During license grace: existing TLS may be viewed and used; add, issue, and change are blocked.
 
-## Related
+<div class="hm-actions">
 
-- [Branding](/premium/branding)
-- [Store](/premium/store)
-- [Settings → SSL](/community/settings#ssl) (that tab is the **panel** hostname, not reseller vhosts)
+[Branding](/premium/branding)
+[Store](/premium/store)
+[Panel TLS](/community/settings#ssl)
+
+</div>

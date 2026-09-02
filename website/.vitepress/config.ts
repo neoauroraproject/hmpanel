@@ -4,97 +4,77 @@ const REPO = "https://github.com/neoauroraproject/hmpanel";
 const CHANNEL = "https://t.me/hmpanel";
 const SUPPORT = "https://t.me/hmraysupport";
 
-function communitySidebar(prefix: string): DefaultTheme.SidebarItem[] {
+function sidebar(prefix: string, fa: boolean): DefaultTheme.SidebarItem[] {
   return [
     {
-      text: prefix === "/fa" ? "راهنما" : "Guide",
+      text: fa ? "شروع" : "Start",
+      items: [{ text: fa ? "نصب" : "Installation", link: `${prefix}/guide/install` }],
+    },
+    {
+      text: fa ? "رایگان" : "Community",
       items: [
-        { text: prefix === "/fa" ? "نصب" : "Install", link: `${prefix}/guide/install` },
-        { text: prefix === "/fa" ? "ورود" : "Login", link: `${prefix}/guide/login` },
-        { text: prefix === "/fa" ? "خط فرمان hm" : "CLI (hm)", link: `${prefix}/guide/cli` },
+        { text: fa ? "داشبورد" : "Dashboard", link: `${prefix}/community/dashboard` },
+        { text: fa ? "کلاینت‌ها" : "Clients", link: `${prefix}/community/clients` },
+        { text: fa ? "پنل‌ها" : "Panels", link: `${prefix}/community/panels` },
+        { text: fa ? "تنظیمات" : "Settings", link: `${prefix}/community/settings` },
       ],
     },
     {
-      text: prefix === "/fa" ? "نسخه رایگان (Community)" : "Community",
+      text: fa ? "پرمیوم" : "Premium",
       items: [
-        { text: prefix === "/fa" ? "داشبورد" : "Dashboard", link: `${prefix}/community/dashboard` },
-        { text: prefix === "/fa" ? "ادمین‌ها" : "Admins", link: `${prefix}/community/admins` },
-        { text: prefix === "/fa" ? "کلاینت‌ها" : "Clients", link: `${prefix}/community/clients` },
-        { text: prefix === "/fa" ? "پنل‌ها" : "Panels", link: `${prefix}/community/panels` },
-        { text: prefix === "/fa" ? "ترافیک" : "Traffic", link: `${prefix}/community/traffic` },
-        { text: prefix === "/fa" ? "مهاجرت" : "Migration", link: `${prefix}/community/migration` },
-        { text: prefix === "/fa" ? "تنظیمات" : "Settings", link: `${prefix}/community/settings` },
-        { text: prefix === "/fa" ? "پاکسازی" : "Cleanup", link: `${prefix}/community/cleanup` },
-        { text: prefix === "/fa" ? "عیب‌یابی" : "Diagnostics", link: `${prefix}/community/diagnostics` },
-        { text: prefix === "/fa" ? "پورتال اشتراک" : "Subscription portal", link: `${prefix}/community/portal` },
+        { text: fa ? "لایسنس" : "License", link: `${prefix}/premium/license` },
+        { text: fa ? "فروشگاه" : "Store", link: `${prefix}/premium/store` },
+        { text: fa ? "ماژول‌ها" : "Modules", link: `${prefix}/premium/modules` },
       ],
     },
     {
-      text: prefix === "/fa" ? "نسخه پرمیوم" : "Premium",
-      items: [
-        { text: prefix === "/fa" ? "لایسنس و باندل" : "License & bundle", link: `${prefix}/premium/license` },
-        { text: prefix === "/fa" ? "تنظیمات پرمیوم" : "Premium Settings", link: `${prefix}/premium/settings` },
-        { text: prefix === "/fa" ? "برندینگ" : "Branding", link: `${prefix}/premium/branding` },
-        { text: prefix === "/fa" ? "دامنه سفارشی" : "Custom Domains", link: `${prefix}/premium/custom-domains` },
-        { text: prefix === "/fa" ? "قالب کلاینت" : "Client Templates", link: `${prefix}/premium/client-templates` },
-        { text: prefix === "/fa" ? "فروشگاه" : "Store", link: `${prefix}/premium/store` },
-        { text: prefix === "/fa" ? "شارژ ادمین" : "Admin Recharge", link: `${prefix}/premium/admin-recharge` },
-        { text: prefix === "/fa" ? "Panel Plus" : "Panel Plus", link: `${prefix}/premium/panel-plus` },
-        { text: prefix === "/fa" ? "مانیتورینگ پرو" : "Monitoring Pro", link: `${prefix}/premium/monitoring-pro` },
-        { text: prefix === "/fa" ? "مرکز بکاپ" : "Backup Center", link: `${prefix}/premium/backup-center` },
-      ],
-    },
-    {
-      text: prefix === "/fa" ? "مقایسه" : "Compare",
-      items: [{ text: prefix === "/fa" ? "Community در برابر Premium" : "Community vs Premium", link: `${prefix}/compare` }],
+      text: fa ? "مقایسه" : "Compare",
+      items: [{ text: fa ? "رایگان و پرمیوم" : "Editions", link: `${prefix}/compare` }],
     },
   ];
 }
 
-const enNav: DefaultTheme.NavItem[] = [
-  { text: "Guide", link: "/guide/install" },
-  { text: "Community", link: "/community/dashboard" },
-  { text: "Premium", link: "/premium/license" },
-  { text: "Compare", link: "/compare" },
-  { text: "GitHub", link: REPO },
-  { text: "Telegram", link: CHANNEL },
-  { text: "Buy license", link: SUPPORT },
-];
+const footerEn = {
+  message: `<a href="${REPO}">GitHub</a><a href="${CHANNEL}">Telegram</a><a href="${SUPPORT}">License</a>`,
+  copyright: "HMPanel",
+};
 
-const faNav: DefaultTheme.NavItem[] = [
-  { text: "راهنما", link: "/fa/guide/install" },
-  { text: "رایگان", link: "/fa/community/dashboard" },
-  { text: "پرمیوم", link: "/fa/premium/license" },
-  { text: "مقایسه", link: "/fa/compare" },
-  { text: "گیت‌هاب", link: REPO },
-  { text: "کانال", link: CHANNEL },
-  { text: "خرید لایسنس", link: SUPPORT },
-];
-
-const socialLinks: DefaultTheme.SocialLink[] = [
-  { icon: "github", link: REPO },
-];
+const footerFa = {
+  message: `<a href="${REPO}">GitHub</a><a href="${CHANNEL}">تلگرام</a><a href="${SUPPORT}">مجوز</a>`,
+  copyright: "HMPanel",
+};
 
 export default defineConfig({
   base: "/hmpanel/",
   title: "HMPanel",
-  description: "Operator wiki for HMPanel Community and Premium, written from the real UI and APIs.",
-  lastUpdated: true,
+  description: "Documentation for HMPanel Community and Premium editions.",
+  lastUpdated: false,
   cleanUrls: false,
   ignoreDeadLinks: false,
+  head: [
+    [
+      "link",
+      {
+        rel: "stylesheet",
+        href: "https://cdn.jsdelivr.net/gh/rastikerdar/vazir-font@v30.1.0/dist/font-face.css",
+      },
+    ],
+  ],
   locales: {
     root: {
       label: "English",
       lang: "en",
       themeConfig: {
-        nav: enNav,
-        sidebar: communitySidebar(""),
-        socialLinks,
-        outline: { level: [2, 3] },
-        footer: {
-          message: `GitHub: <a href="${REPO}">neoauroraproject/hmpanel</a> · Channel: <a href="${CHANNEL}">t.me/hmpanel</a> · License / support: <a href="${SUPPORT}">t.me/hmraysupport</a>`,
-          copyright: "HMPanel Community Edition",
-        },
+        nav: [
+          { text: "Installation", link: "/guide/install" },
+          { text: "Community", link: "/community/dashboard" },
+          { text: "Premium", link: "/premium/license" },
+          { text: "Compare", link: "/compare" },
+        ],
+        sidebar: sidebar("", false),
+        socialLinks: [{ icon: "github", link: REPO }],
+        outline: { level: 2 },
+        footer: footerEn,
       },
     },
     fa: {
@@ -103,25 +83,26 @@ export default defineConfig({
       dir: "rtl",
       link: "/fa/",
       themeConfig: {
-        nav: faNav,
-        sidebar: communitySidebar("/fa"),
-        socialLinks,
-        outline: { level: [2, 3], label: "در این صفحه" },
-        footer: {
-          message: `گیت‌هاب: <a href="${REPO}">neoauroraproject/hmpanel</a> · کانال: <a href="${CHANNEL}">t.me/hmpanel</a> · خرید لایسنس: <a href="${SUPPORT}">t.me/hmraysupport</a>`,
-          copyright: "نسخه رایگان اچ‌ام‌پنل",
-        },
+        nav: [
+          { text: "نصب", link: "/fa/guide/install" },
+          { text: "رایگان", link: "/fa/community/dashboard" },
+          { text: "پرمیوم", link: "/fa/premium/license" },
+          { text: "مقایسه", link: "/fa/compare" },
+        ],
+        sidebar: sidebar("/fa", true),
+        socialLinks: [{ icon: "github", link: REPO }],
+        outline: { level: 2, label: "در این صفحه" },
+        footer: footerFa,
         docFooter: { prev: "قبلی", next: "بعدی" },
-        lastUpdatedText: "آخرین به‌روزرسانی",
         darkModeSwitchLabel: "ظاهر",
         sidebarMenuLabel: "منو",
-        returnToTopLabel: "بازگشت به بالا",
+        returnToTopLabel: "بالا",
+        langMenuLabel: "زبان",
       },
     },
   },
   themeConfig: {
     siteTitle: "HMPanel",
-    logo: false,
     search: { provider: "local" },
   },
 });

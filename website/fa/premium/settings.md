@@ -1,42 +1,49 @@
-# تنظیمات پرمیوم
+# تنظیمات Premium
 
 ::: warning Premium
-UI: `/settings/premium` · فقط سوپرادمین · لایسنس باید Premium باشد
+مسیر: `/settings/premium` · نقش: `SUPER_ADMIN` · نسخه باید `PREMIUM` باشد
 :::
 
-اگر مسیر باندل ثبت شده باشد، همان کامپوننت جایگزین لیست ساده Community می‌شود. تب‌ها:
+هنگامی که باندل مسیر `/settings/premium` را ثبت کند، آن نما فهرست پشتیبان Community را جایگزین می‌کند.
 
-| تب | کار |
+| زبانه | محتوا |
 |---|---|
-| **Modules** | روشن/خاموش کردن ردیف کاتالوگ. `PATCH /api/premium-modules/:moduleId/enabled` |
-| **Admin Management** | تخصیص ماژول BUSINESS به ریسلر؛ دسترسی ایلان/پاسارگارد |
-| **Jobs** | [Job Center](#job-center) — در سایدبار نیست |
-| **Telegram** | تست تلگرام سکو `POST /api/settings/telegram-test` |
-| **Developer API** | در UI **coming soon** است. کلید API ساخته نمی‌شود. فایل‌های `docs/future-api` عمومی نیستند |
+| **Modules** | فعال یا غیرفعال کردن ردیف‌های فهرست (`branding`، `custom-domains`، `client-templates`، `store`، `external-panels`، `admin-recharge`، `monitoring-pro`، `backup-center`، `job-center`). `PATCH /api/premium-modules/:moduleId/enabled` |
+| **Admin Management** | تخصیص ماژول BUSINESS به ریسلر؛ دسترسی پروایدر ایلان و پاسارگارد |
+| **Jobs** | Job Center (آیتم نوار کناری نیست) |
+| **Telegram** | آزمایش تلگرام سکو (`POST /api/settings/telegram-test`) |
+| **Developer API** | coming soon. API صدور کلید منتشر نشده است |
 
-Job Center در manifest با `menus: []` از سایدبار مخفی است.
+پشتیبان Community (بدون رابط باندل): فهرست ماژول‌های فعال.
+
+Job Center از نوار کناری حذف شده است (`menus: []`).
 
 ## Job Center
 
-پول هر ۵ ثانیه.
+بازهٔ پرسش: ۵ ثانیه.
 
-| متد | مسیر |
+| روش | مسیر |
 |---|---|
-| `GET` | `/api/platform/jobs` · `jobs/stats` |
+| `GET` | `/api/platform/jobs` |
+| `GET` | `/api/platform/jobs/stats` — queued، running، completed، failed |
 | `POST` | `/api/platform/jobs/:id/retry` |
 
 ## تخصیص
 
-| متد | مسیر |
+| روش | مسیر |
 |---|---|
-| `GET/POST` | `/api/premium-modules/assignments` یا `/api/platform/premium-assignments` |
+| `GET` | `/api/premium-modules/assignments` یا `/api/platform/premium-assignments` |
+| `POST` | `/api/premium-modules/assignments` یا `/api/platform/premium-assignments` |
 | `DELETE` | `/api/premium-modules/assignments/:adminId/:moduleId` |
 | `PATCH` | `/api/premium-modules/:moduleId/settings` |
 | `GET` | `/api/premium-modules/all` |
 
-`BUSINESS` قابل تخصیص است؛ `PLATFORM` زیرساخت سوپرادمین.
+انواع مانیفست: `BUSINESS` (قابل تخصیص) و `PLATFORM` (زیرساخت Super Admin).
 
-## مرتبط
+<div class="hm-actions">
 
-- [لایسنس](/fa/premium/license)
-- [Panel Plus](/fa/premium/panel-plus)
+[مجوز](/fa/premium/license)
+[ماژول‌ها](/fa/premium/modules)
+[Panel Plus](/fa/premium/panel-plus)
+
+</div>

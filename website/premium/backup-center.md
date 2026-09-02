@@ -1,21 +1,19 @@
 # Backup Center
 
 ::: warning Premium
-Module id `backup-center` · Kind PLATFORM · Feature `REMOTE_BACKUPS` · UI: `/premium/backups` · Super Admin
+Module `backup-center` · Kind PLATFORM · Feature `REMOTE_BACKUPS` · Path: `/premium/backups` · Super Admin
 :::
 
-**Scheduled** backups and restore UI. Distinct from [Settings → Backup](/community/settings#backup) (`/api/backups`), which is on-demand only.
-
-## UI
+Scheduled backup and restore. Distinct from Settings → Backup (`/api/backups`), which is on-demand only.
 
 - Dashboard metrics
-- Schedule frequencies in the page: `hourly`, `6h`, `12h`, `daily`, `3d`, `weekly`
-- Types: `full`, `database`, `config` (same names as Community)
+- Frequencies: `hourly`, `6h`, `12h`, `daily`, `3d`, `weekly`
+- Types: `full`, `database`, `config`
 - History: download, restore, delete
 - Telegram delivery log
-- Upload → analyze → apply (including restoring a 3x-ui SQLite onto a chosen panel when the archive is a panel-db)
+- Upload, analyze, apply (including restoring a 3x-ui SQLite onto a selected panel)
 
-## Endpoints (`/api/plugins/backup-center`)
+## API (`/api/plugins/backup-center`)
 
 | Method | Path |
 |---|---|
@@ -27,11 +25,13 @@ Module id `backup-center` · Kind PLATFORM · Feature `REMOTE_BACKUPS` · UI: `/
 | `POST` | `restore/analyze` · `restore/apply` |
 | `GET/PUT` | `schedule` |
 
-Manifest scheduler: `scheduled-backup` on queue `platform-jobs` every 5 minutes when write is allowed.
+Scheduler: `scheduled-backup` on queue `platform-jobs` every 5 minutes when write is allowed.
 
-Jobs for long-running backup/SSL work show up under [Premium Settings → Jobs](/premium/settings#job-center).
+Long-running backup and TLS jobs appear under Premium Settings → Jobs.
 
-## Related
+<div class="hm-actions">
 
-- [Settings → Backup](/community/settings#backup)
-- [CLI backup](/guide/cli)
+[Settings → Backup](/community/settings#backup)
+[Command line](/guide/cli)
+
+</div>

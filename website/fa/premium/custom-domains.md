@@ -1,30 +1,36 @@
-# دامنه سفارشی
+# دامنهٔ اختصاصی
 
 ::: warning Premium
-ماژول `custom-domains` · فلگ `CUSTOM_DOMAINS` · UI: `/premium/domains`
+ماژول `custom-domains` · قابلیت `CUSTOM_DOMAINS` · نوع BUSINESS · مسیر: `/premium/domains`
 :::
 
-هاست‌نیم per-admin (یا فروشگاه) با SSL. وضعیت UI: `PENDING`, `VERIFIED`, `SSL_ACTIVE`, `SSL_FAILED`, `EXPIRED`.
+نام میزبان به‌ازای مدیر (یا فروشگاه) همراه با TLS. وضعیت: `PENDING`، `VERIFIED`، `SSL_ACTIVE`، `SSL_FAILED`، `EXPIRED`.
 
-افزودن دامنه، تخصیص ادمین، اسلاگ فروشگاه، verify DNS، صدور SSL، حذف.
+- افزودن دامنه، تخصیص اختیاری مدیر، شناسهٔ اختیاری فروشگاه
+- تأیید DNS
+- صدور TLS
+- حذف
 
-قالب Nginx `vhost-domain.*.template` از `${VHOST_DOMAIN}` استفاده می‌کند (جدا از `PANEL_DOMAIN`).
+قالب‌های Nginx با نام `vhost-domain.*.template` از `${VHOST_DOMAIN}` برای این میزبان‌های مجازی استفاده می‌کنند؛ جدا از `PANEL_DOMAIN`.
 
-## Endpointها
+## API
 
-| متد | مسیر |
+| روش | مسیر |
 |---|---|
-| `GET/POST` | `/api/domains` |
+| `GET` | `/api/domains` |
+| `POST` | `/api/domains` |
 | `PATCH` | `/api/domains/:id` |
-| `POST` | `/api/domains/:id/verify` · `ssl` |
+| `POST` | `/api/domains/:id/verify` |
+| `POST` | `/api/domains/:id/ssl` |
 | `DELETE` | `/api/domains/:id` |
-| `GET` | `/api/domains/resolve` — resolve عمومی |
+| `GET` | `/api/domains/resolve` — حل عمومی بر اساس میزبان |
 
-در grace فقط خواندن/استفاده از SSL موجود؛ افزودن/صدور قفل است.
+در مهلت ارفاق مجوز: TLS موجود قابل مشاهده و استفاده است؛ افزودن، صدور و تغییر مسدود است.
 
-تب SSL تنظیمات سراسری، دامنه **خود پنل** است نه vhost ریسلر.
+<div class="hm-actions">
 
-## مرتبط
+[برندینگ](/fa/premium/branding)
+[فروشگاه](/fa/premium/store)
+[TLS پنل](/fa/community/settings#ssl)
 
-- [برندینگ](/fa/premium/branding)
-- [فروشگاه](/fa/premium/store)
+</div>

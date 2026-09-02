@@ -1,56 +1,58 @@
 # Admins
 
 ::: info Community
-UI: `/admins` · Role: `SUPER_ADMIN` only (sidebar `roles: ["SUPER_ADMIN"]`)
+Path: `/admins` · Role: `SUPER_ADMIN`
 :::
 
-Create and edit **reseller** operators. Subtitle in the UI: platform operators and resellers with quick operation actions.
+Create and administer reseller operators.
 
 ## List
 
-Search, pagination, status. Columns include remaining/total traffic, remaining/total clients, expiry.
+Search, pagination, and status. Columns include remaining and total traffic, remaining and total clients, and expiry.
 
-## Create / edit reseller
+## Create and edit
 
-Form fields wired to `POST /api/admins` and `PATCH /api/admins/:id` (`CreateAdminDto` / `UpdateAdminDto`):
+`POST /api/admins` and `PATCH /api/admins/:id`:
 
-- Username, password — renaming username also renames the admin’s group on every 3x-ui panel
-- **Allowed Panels & Inbounds** — enable one or more panels, then tick inbounds (`AdminInbound`). Required: at least one inbound
-- Max clients (`0` = unlimited)
-- Traffic limit (GB) and **quota mode**:
+- Username and password. Renaming the username also renames the administrator’s group on every 3x-ui panel
+- **Allowed Panels & Inbounds** — enable one or more panels, then select inbounds. At least one inbound is required
+- Maximum clients (`0` = unlimited)
+- Traffic limit (GB) and quota mode:
   - Global pool — one shared balance
   - Per panel — separate GB per assigned panel
-- Unlimited traffic — no limits; refunds disabled; can only create unlimited clients
+- Unlimited traffic — no limits; refunds disabled; only unlimited clients may be created
 - Expiry days (`0` = unlimited)
-- Traffic accounting: **Allocation based** (deduct on create) vs **Usage based** (charge real consumption)
+- Traffic accounting: **Allocation based** (deduct on create) or **Usage based** (charge actual consumption)
 - Refund on delete / refund on edit
-- Enable / disable account
+- Enable or disable the account
 
-Cannot delete an admin who still has clients.
+An administrator who still has clients cannot be deleted.
 
-## Other actions
+## Additional actions
 
 - Refund audit report
-- Fix migrated admin (sync balance from `trafficPool`, set `adminInbound`) after [Migration](/community/migration)
+- Repair a migrated administrator (synchronize balance from `trafficPool`, set `adminInbound`) after Migration
 
-Resellers can `GET`/`PATCH` **their own** `/api/admins/:id` (used by [portal settings](/community/portal)). They cannot list all admins.
+Resellers may `GET` and `PATCH` their own `/api/admins/:id`. They cannot list all administrators.
 
-## Endpoints
+## API
 
 | Method | Path | Role |
 |---|---|---|
 | `GET` | `/api/admins` | Super Admin. Query: `page`, `limit`, `search`, `status`, `inboundId`, `panelId` |
 | `POST` | `/api/admins` | Super Admin. Create reseller |
-| `GET` | `/api/admins/:id` | Super Admin, or the same admin id |
+| `GET` | `/api/admins/:id` | Super Admin, or the same administrator id |
 | `PATCH` | `/api/admins/:id` | Super Admin, or self (username change Super Admin only) |
 | `DELETE` | `/api/admins/:id` | Super Admin |
 | `GET` | `/api/admins/audit-refunds` | Super Admin |
 | `POST` | `/api/admins/:id/fix-migration` | Super Admin. Body: `balanceGb`, `inboundIds` |
 
-Premium: assign Store / Branding / etc. per reseller under [Premium Settings](/premium/settings) (`POST /api/platform/premium-assignments`).
+Assignment of Store, Branding, and other BUSINESS modules is configured under Premium Settings (`POST /api/platform/premium-assignments`).
 
-## Related
+<div class="hm-actions">
 
-- [Traffic](/community/traffic)
-- [Panels](/community/panels)
-- [Admin Recharge](/premium/admin-recharge)
+[Traffic](/community/traffic)
+[Panels](/community/panels)
+[Admin Recharge](/premium/admin-recharge)
+
+</div>

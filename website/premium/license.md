@@ -1,30 +1,28 @@
-# License and bundle
+# License
 
 ::: warning Premium
-UI: **Settings → License** (`/settings`, tab `license`). Any Super Admin can open the card in Community to **upgrade**.
+Path: **Settings → License** (`/settings`, tab `license`). Super Admin may activate a key from Community.
 :::
 
-Default install is Community (`RELEASE_MODE=COMMUNITY`). Premium code is **not** in the public git clone. After a valid key, the panel downloads a signed bundle from the license server (`license.hmray.pro`, fallback `license.hmrayserver.com`) and loads Nest modules + `premium-runtime.js`.
+Default installation is Community (`RELEASE_MODE=COMMUNITY`). Premium source is not included in the public repository. After a valid key, the panel downloads a signed bundle from `license.hmray.pro` (fallback `license.hmrayserver.com`) and loads NestJS modules together with `premium-runtime.js`.
 
-Support / purchase: [t.me/hmraysupport](https://t.me/hmraysupport). Channel: [t.me/hmpanel](https://t.me/hmpanel).
+Purchase and support: [t.me/hmraysupport](https://t.me/hmraysupport). Channel: [t.me/hmpanel](https://t.me/hmpanel).
 
 ## Card actions
 
-From `LicenseSettingsCard`:
+- Activate — paste the license key
+- Deactivate — bundle files may remain on disk
+- Recheck with the license server
+- Update bundle — download the current bundle for this key
+- Reload plugins — not executed automatically after a failed bundle
 
-- Paste license key → Activate
-- Deactivate (bundle files can remain on disk)
-- Recheck with license server
-- Update bundle (download latest for this key)
-- Reload plugins (does **not** auto-run after a failed bundle; Settings will not loop 502)
+Status: `active`, `grace`, `expired`, `invalid`, `community`. Mode: `full`, `read_only`, `disabled`. Edition: `COMMUNITY` | `PREMIUM`.
 
-Status values: `active`, `grace`, `expired`, `invalid`, `community`. Mode: `full`, `read_only`, `disabled`. Edition: `COMMUNITY` | `PREMIUM`.
-
-**Grace:** `GRACE_DAYS = 7` in `license-manager.service.ts`. During grace, premium stays mounted in **read-only** (`mode: read_only`). After grace, modules disable.
+Grace period: 7 days. During grace, Premium remains mounted as **read-only**. After grace, modules are disabled.
 
 Bundles that declare `minPanelVersion` are rejected until `hm update` raises the image.
 
-## Endpoints
+## API
 
 | Method | Path |
 |---|---|
@@ -45,9 +43,12 @@ Bundles that declare `minPanelVersion` are rejected until `hm update` raises the
 | `GET` | `/api/platform/premium-assets/frontend/premium-monitoring.js` |
 | `GET` | `/api/settings/license` |
 
-Product id on the worker: `LICENSE_PRODUCT_ID=hmpanel`.
+Product identifier: `LICENSE_PRODUCT_ID=hmpanel`.
 
-## Related
+<div class="hm-actions">
 
-- [Premium Settings](/premium/settings)
-- [Compare](/compare)
+[Premium Settings](/premium/settings)
+[Modules](/premium/modules)
+[Edition comparison](/compare)
+
+</div>

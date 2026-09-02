@@ -1,16 +1,16 @@
 # Monitoring Pro
 
 ::: warning Premium
-Module id `monitoring-pro` · Kind PLATFORM · Features `ADVANCED_ANALYTICS`, `SMART_ALERTS`, `XRAY_PRO` · UI: `/premium/monitoring` · Super Admin
+Module `monitoring-pro` · Kind PLATFORM · Features `ADVANCED_ANALYTICS`, `SMART_ALERTS`, `XRAY_PRO` · Path: `/premium/monitoring` · Super Admin
 :::
 
-This is **not** the CPU/RAM bars on [Dashboard](/community/dashboard) (`GET /api/stats/monitoring`). Monitoring Pro is a separate page loaded via `/api/platform/premium-assets/frontend/premium-monitoring.js`.
+Distinct from the resource meters on Dashboard (`GET /api/stats/monitoring`). This module is loaded via `/api/platform/premium-assets/frontend/premium-monitoring.js`.
 
-The page (`MonitoringProPage`) is a single workspace: platform overview, per-panel metrics, history ranges **1h / 6h / 24h**, availability, active alerts, incident lifecycle, and an **alert rules** manager.
+Workspace: platform overview, per-panel metrics, history ranges **1h / 6h / 24h**, availability, active alerts, incident lifecycle, and alert rules.
 
-## Endpoints (`/api/plugins/monitoring`)
+## API (`/api/plugins/monitoring`)
 
-Guards: JWT, Premium, Super Admin, module `monitoring-pro`, read-only guard in grace.
+Guards: JWT, Premium, Super Admin, module `monitoring-pro`, read-only during grace.
 
 | Method | Path |
 |---|---|
@@ -24,9 +24,11 @@ Guards: JWT, Premium, Super Admin, module `monitoring-pro`, read-only guard in g
 | `GET` | `incidents` · `incidents/:id/timeline` |
 | `POST` | `incidents/:id/acknowledge` · `resolve` · `reopen` · `archive` |
 
-Scheduler in the manifest (write required): poll-tier-1 every 5s, poll-tier-2 every 30s.
+Scheduler: poll-tier-1 every 5 seconds, poll-tier-2 every 30 seconds (write required).
 
-## Related
+<div class="hm-actions">
 
-- [Dashboard](/community/dashboard)
-- [Premium Settings](/premium/settings) (enable module)
+[Dashboard](/community/dashboard)
+[Premium Settings](/premium/settings)
+
+</div>

@@ -1,71 +1,93 @@
 # تنظیمات
 
 ::: info Community
-UI: `/settings` · فقط `SUPER_ADMIN`
+مسیر: `/settings` · نقش: `SUPER_ADMIN`
 :::
 
-پنج تب: **General**، **License**، **SSL**، **Backup**، **About**.
+زبانه‌ها: **General**، **License**، **SSL**، **Backup**، **About**.
 
 پاکسازی و عیب‌یابی مسیر جدا دارند (`/cleanup`، `/diagnostics`).
 
 ## General
 
-- آستانه کاندید پاکسازی (روز بعد از انقضا)
-- منطقه زمانی نمایش (پیش‌فرض Asia/Tehran)
-- تقویم: جلالی یا میلادی (جدا از زبان UI)
-- زبان پنل
+- آستانهٔ نامزد پاکسازی (روز پس از انقضا) — `POST /api/settings`
+- منطقهٔ زمانی نمایش (پیش‌فرض Asia/Tehran) — برای تاریخ رابط و ساعت هشدار تلگرام
+- تقویم نمایش: جلالی یا میلادی (مستقل از زبان رابط)
+- زبان پنل (همچنین از نوار کناری)
 
-| متد | مسیر |
+| روش | مسیر |
 |---|---|
-| `GET/POST` | `/api/settings` |
-| `GET` | `/api/settings/display-timezone` — هر ادمین لاگین‌شده |
+| `GET` | `/api/settings` |
+| `POST` | `/api/settings` — نقشهٔ تنظیمات (`cleanup_threshold_days`، `display_timezone`، `display_calendar`، …) |
+| `GET` | `/api/settings/display-timezone` — هر مدیر احراز هویت‌شده |
 
-## لایسنس
+## License
 
-همان کارت [لایسنس و باندل](/fa/premium/license).
+همان کارت مجوز. نصب Community می‌تواند کلید را در این زبانه فعال کند.
 
-| متد | مسیر |
+| روش | مسیر |
 |---|---|
 | `GET` | `/api/platform/license` |
-| `POST` | `/api/platform/license/activate` · `deactivate` · `recheck` · `update-bundle` · `reload-plugins` · `diagnose-bundle` |
+| `POST` | `/api/platform/license/activate` — `{ licenseKey }` |
+| `POST` | `/api/platform/license/deactivate` |
+| `POST` | `/api/platform/license/recheck` |
+| `POST` | `/api/platform/license/update-bundle` |
+| `POST` | `/api/platform/license/reload-plugins` |
+| `POST` | `/api/platform/license/diagnose-bundle` |
 | `GET` | `/api/platform/license/bundle-status` |
-| `GET` | `/api/settings/license` |
+| `GET` | `/api/settings/license` — پرچم قابلیت برای هر کاربر احراز هویت‌شده |
 
 ## SSL
 
-مدال: وضعیت، صدور (Let's Encrypt یا self-signed)، تغییر دامنه، پیشرفت SSE.
+نماها: وضعیت، صدور (Let’s Encrypt یا خودامضا)، تغییر دامنه، پیشرفت (SSE).
 
-| متد | مسیر |
+| روش | مسیر |
 |---|---|
 | `GET` | `/api/settings/ssl` |
-| `POST` | `/api/settings/ssl/issue` · `renew` · `switch` · `change-domain` · `repair` |
-| `GET` | `/api/settings/ssl/stream` |
+| `POST` | `/api/settings/ssl/issue` — `{ domain, email, selfSigned? }` |
+| `POST` | `/api/settings/ssl/renew` |
+| `POST` | `/api/settings/ssl/switch` — `{ enableHttps }` |
+| `POST` | `/api/settings/ssl/change-domain` — `{ domain, email }` |
+| `POST` | `/api/settings/ssl/repair` |
+| `GET` | `/api/settings/ssl/stream` — پیشرفت SSE |
 | `GET` | `/api/settings/ssl-diagnostic` |
 
-معادل میزبان: [منوی SSL در hm](/fa/guide/cli).
+معادل میزبان: زیرفهرست TLS خط فرمان.
 
 ## Backup
 
-اسنپ‌شات **دستی** — نه [مرکز بکاپ](/fa/premium/backup-center).
+اسنپ‌شات درخواستی. متمایز از Backup Center.
 
-انواع: `full`، `database`، `config`.
+انواع (همان `hm`):
 
-| متد | مسیر |
+- `full` — پایگاه داده، پیکربندی، بارگذاری‌ها و premium
+- `database`
+- `config` — `.env`، nginx و ACME
+
+گردش: تولید سپس بارگیری؛ یا بارگذاری بایگانی، تحلیل و تأیید بازیابی.
+
+| روش | مسیر |
 |---|---|
-| `POST` | `/api/backups` — `{ type }` |
+| `POST` | `/api/backups` — `{ type: 'full' \| 'database' \| 'config' }` |
 | `GET` | `/api/backups/:id/download` |
-| `POST` | `/api/backups/analyze-upload` · `restore-apply` |
+| `POST` | `/api/backups/analyze-upload` — چندبخشی `file` |
+| `POST` | `/api/backups/restore-apply` — `{ id, fileName, panelId? }` |
 
 ## About
 
-نسخه، بررسی آپدیت گیت‌هاب، اجرای آپدیت.
+نسخهٔ پنل، برچسب نسخه، کانال تلگرام، و بررسی و اعمال به‌روزرسانی GitHub.
 
-| متد | مسیر |
+| روش | مسیر |
 |---|---|
-| `GET` | `/api/settings/check-update` · `update-logs` |
+| `GET` | `/api/settings/check-update` |
 | `POST` | `/api/settings/update-panel` |
+| `GET` | `/api/settings/update-logs` |
 
-## مرتبط
+<div class="hm-actions">
 
-- [پاکسازی](/fa/community/cleanup)
-- [عیب‌یابی](/fa/community/diagnostics)
+[پاکسازی](/fa/community/cleanup)
+[عیب‌یابی](/fa/community/diagnostics)
+[اشتراک](/fa/community/portal)
+[خط فرمان](/fa/guide/cli)
+
+</div>

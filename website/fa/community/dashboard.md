@@ -1,45 +1,47 @@
 # داشبورد
 
 ::: info Community
-UI: `/dashboard` · نقش: `SUPER_ADMIN` و `RESELLER`
+مسیر: `/dashboard` · نقش: `SUPER_ADMIN`، `RESELLER`
 :::
 
-اولین صفحه بعد از [ورود](/fa/guide/login). سوپرادمین KPI سکو را می‌بیند؛ ریسلر `reseller-overview` را.
+نمای پیش‌فرض پس از ورود. Super Admin شاخص‌های سکو را دریافت می‌کند. ریسلر `reseller-overview` را دریافت می‌کند (کلاینت‌ها، ترافیک باقی‌مانده و ظرفیت).
 
-## محتوای صفحه
+## محتوا
 
-از `dashboard/page.tsx` و `GET /api/stats/*`:
+داده از `GET /api/stats/*` تأمین می‌شود.
 
-- کارت KPI — سوپر: `overview`؛ ریسلر: `reseller-overview`
-- نمودار ترافیک — `traffic-series`
+- کارت شاخص — Super Admin: `overview`؛ ریسلر: `reseller-overview`
+- سری ترافیک — `traffic-series`
 - روند — `trends`
-- نوار CPU / RAM / دیسک / شبکه — `monitoring` به‌علاوه Socket.IO
-- کلاینت آنلاین — `onlines`
-- اسنپ‌شات میزبان — `system`
-- هشدار آفلاین 3x-ui / Xray (برای ایلان/پاسارگارد وضعیت Xray جعلی نشان داده نمی‌شود)
-- اکشن: سینک پنل، ریستارت Xray (سوپرادمین)
+- سنجش منابع میزبان (CPU، RAM، دیسک، شبکه) — `monitoring`، همراه با به‌روزرسانی Socket.IO
+- کلاینت‌های برخط — `onlines`
+- نمای میزبان — `system`
+- هشدار آفلاین برای 3x-ui / Xray. هشدارهای ایلان و پاسارگارد جداگانه پالایش می‌شوند
+- عملیات: همگام‌سازی پنل و راه‌اندازی مجدد Xray (Super Admin)
 
-`PluginSlot` تا لود باندل پرمیوم خالی است.
+ویجت‌های Premium تنها پس از بارگذاری باندل دارای مجوز ظاهر می‌شوند.
 
-## Endpointها
+سنجش منابع این صفحه با Monitoring Pro (`/premium/monitoring`) متفاوت است.
 
-| متد | مسیر |
-|---|---|
-| `GET` | `/api/stats/overview` |
-| `GET` | `/api/stats/reseller-overview` |
-| `GET` | `/api/stats/traffic-series` |
-| `GET` | `/api/stats/trends` |
-| `GET` | `/api/stats/monitoring` |
-| `GET` | `/api/stats/system` |
-| `GET` | `/api/stats/onlines` |
-| `GET` | `/api/stats/diagnostics` |
-| `POST` | `/api/stats/sync` |
-| `POST` | `/api/stats/restart-xray` |
+## API
 
-این صفحه **مانیتورینگ پرو** نیست. آن یکی `/premium/monitoring` است.
+| روش | مسیر | توضیح |
+|---|---|---|
+| `GET` | `/api/stats/overview` | شاخص Super Admin |
+| `GET` | `/api/stats/reseller-overview` | شاخص ریسلر |
+| `GET` | `/api/stats/traffic-series` | سری نمودار |
+| `GET` | `/api/stats/trends` | کارت روند |
+| `GET` | `/api/stats/monitoring` | نمای CPU، RAM، دیسک و شبکه |
+| `GET` | `/api/stats/system` | اطلاعات میزبان |
+| `GET` | `/api/stats/onlines` | فهرست کلاینت برخط |
+| `GET` | `/api/stats/diagnostics` | بار تشخیصی |
+| `POST` | `/api/stats/sync` | همگام‌سازی پنل |
+| `POST` | `/api/stats/restart-xray` | راه‌اندازی مجدد Xray روی گره |
 
-## مرتبط
+<div class="hm-actions">
 
-- [پنل‌ها](/fa/community/panels)
-- [کلاینت‌ها](/fa/community/clients)
-- [مانیتورینگ پرو](/fa/premium/monitoring-pro)
+[پنل‌ها](/fa/community/panels)
+[کلاینت‌ها](/fa/community/clients)
+[Monitoring Pro](/fa/premium/monitoring-pro)
+
+</div>

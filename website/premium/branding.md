@@ -1,18 +1,16 @@
 # Branding
 
 ::: warning Premium
-Module id `branding` · Feature `WHITE_LABEL` · Kind BUSINESS · UI: `/premium/branding`
+Module `branding` · Feature `WHITE_LABEL` · Kind BUSINESS · Path: `/premium/branding`
 :::
 
-White-label for subscription / store-facing appearance. Community’s [portal settings](/community/portal) remain a smaller Dark-theme editor on `portalSettings`.
+White-label appearance for subscription and store-facing pages. Community portal settings remain a Dark-theme editor on `portalSettings`.
 
-## UI
+Themes: **Aurora, Dark, Light, Eclipse, Sunset, Glass, Vibrant**. Logo and dark-logo upload, name, description, colors, Telegram and support links. Reset to defaults.
 
-Themes in `BrandingPage`: **Aurora, Dark, Light, Eclipse, Sunset, Glass, Vibrant**. Logo / logo-dark upload, name, description, colors, Telegram/support links (`normalizeTelegramLink`). Reset to defaults.
+Public logo files: `GET /api/platform/premium-assets/branding/:adminId/:file`.
 
-Public logo files are also served under `GET /api/platform/premium-assets/branding/:adminId/:file`.
-
-## Endpoints
+## API
 
 | Method | Path |
 |---|---|
@@ -21,10 +19,12 @@ Public logo files are also served under `GET /api/platform/premium-assets/brandi
 | `POST` | `/api/premium-modules/branding/upload/:kind` |
 | `POST` | `/api/premium-modules/branding/reset` |
 
-Depends on: none. Store lists `branding` as a dependency in the manifest.
+Store lists `branding` as a dependency.
 
-## Related
+<div class="hm-actions">
 
-- [Subscription portal](/community/portal)
-- [Custom Domains](/premium/custom-domains)
-- [Store](/premium/store)
+[Subscription](/community/portal)
+[Custom Domains](/premium/custom-domains)
+[Store](/premium/store)
+
+</div>

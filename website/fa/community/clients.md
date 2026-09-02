@@ -1,50 +1,67 @@
 # کلاینت‌ها
 
 ::: info Community
-UI: `/clients` · `SUPER_ADMIN` و `RESELLER` (محدود به پنل/اینباند مجاز)
+مسیر: `/clients` · نقش: `SUPER_ADMIN`، `RESELLER` (محدود به پنل و اینباند تخصیص‌یافته)
 :::
 
-لیست، فیلتر، ساخت، ویرایش گروهی، خروجی اشتراک برای کلاینت‌های 3x-ui. گروه نیتیو با گروه 3x-ui یکی است.
+فهرست، پالایش، ایجاد، ویرایش گروهی و صدور پیوند اشتراک برای کلاینت‌های 3x-ui. گروه بومی با گروه 3x-ui متناظر است.
 
-## فیلتر و چیپ
+## پالایش
 
-- نوار پنل: همه + هر پنل قابل دسترس. اگر چند پنل باشد، ساخت/ساخت گروهی پنل می‌خواهد
-- فیلتر سریع: همه، آنلاین، ترافیک کم، نزدیک انقضا، غیرفعال، منقضی، بدون ترافیک
-- کوئری: جستجو، اینباند، `panelType`، ادمین (سوپر)، انقضا، بازه ترافیک
+- انتخاب پنل: همهٔ پنل‌های در دسترس. ایجاد و ایجاد گروهی در صورت وجود بیش از یک پنل، انتخاب پنل را الزامی می‌کند
+- وضعیت: All، Online، Low traffic، Expiring soon، Disabled، Expired، No traffic
+- پالایش پرس‌وجو: جستجو، اینباند، `panelType`، ادمین (Super Admin)، انقضا، بازهٔ ترافیک
 
-اینباند ایلان/پاسارگارد ممکن است دیده شود. **نوشتن قفل است** تا [Panel Plus](/fa/premium/panel-plus) لایسنس شود.
+اینباندهای ایلان و پاسارگارد ممکن است در فهرست ظاهر شوند. عملیات نوشتن تا زمان مجوز داشتن Panel Plus مسدود است (`premium_unavailable`).
 
-## ساخت / ویرایش
+## ایجاد و ویرایش
 
-`POST /api/clients`، `PATCH /api/clients/:id`. **با قالب** وقتی ماژول Client Templates لود شده باشد.
+`POST /api/clients`، `PATCH /api/clients/:id` — نامک، ترافیک، انقضا، محدودیت IP، اینباند، پرچم فعال‌سازی، گروه.
 
-## گروهی
+**With Template** هنگام بارگذاری Client Templates در دسترس است. در غیر این صورت ایجاد به‌صورت دستی انجام می‌شود.
 
-`POST /api/clients/bulk`: `enable`, `disable`, `delete`, `cleanup`, `addTraffic`, `addDays`, `resetUsage`, `resetTraffic`, `assignGroup`, `assignInbounds`.
+## عملیات گروهی
 
-فعال/غیرفعال سریع‌تر: `POST /api/bulk-clients/enable` و `disable`. خروجی لینک: `export-subs`. ساخت گروهی: `bulk-create` بعد از `validate`.
+اقدامات `POST /api/clients/bulk`: `enable`، `disable`، `delete`، `cleanup`، `addTraffic`، `addDays`، `resetUsage`، `resetTraffic`، `assignGroup`، `assignInbounds`.
+
+فعال و غیرفعال سریع، در صورت پشتیبانی 3x-ui دور: `POST /api/bulk-clients/enable` و `disable`. صدور: `POST /api/bulk-clients/export-subs`.
+
+ایجاد گروهی: `POST /api/clients/bulk-create` پس از `POST /api/clients/bulk-create/validate` (پیشوند، جداکننده، تعداد، ترافیک، انقضا، اینباند).
 
 ## خروجی اتصال
 
-خروجی پروتکل، QR، فایل کانفیگ. مودال اشتراک تب **پلتفرم / نیتیو** دارد — [پورتال اشتراک](/fa/community/portal).
+برای هر کلاینت: خروجی متناسب با پروتکل، رمزینهٔ QR و پیکربندی قابل بارگیری (برای نمونه WireGuard `.conf`). گفتگوی اشتراک در صورت وجود هر دو نشانی، زبانه‌های **platform** و **native** را نمایش می‌دهد.
 
-## Endpointها
+## API
 
-| متد | مسیر |
+| روش | مسیر |
 |---|---|
-| `GET` | `/api/clients` |
+| `GET` | `/api/clients` — `page`، `limit`، `search`، `status`، `inboundId`، `panelId`، `panelType`، `adminId`، `expiry`، `trafficRange` |
 | `POST` | `/api/clients` |
-| `GET/PATCH/DELETE` | `/api/clients/:id` |
-| `GET` | `/api/clients/:id/output` · `config` · `qrcode` |
+| `GET` | `/api/clients/:id` |
+| `PATCH` | `/api/clients/:id` |
+| `DELETE` | `/api/clients/:id` |
+| `GET` | `/api/clients/:id/output` — اختیاری `inboundId` |
+| `GET` | `/api/clients/:id/config` |
+| `GET` | `/api/clients/:id/qrcode` |
 | `GET` | `/api/clients/groups` |
-| `POST` | `/api/clients/bulk-create` · `bulk-create/validate` · `bulk` |
+| `POST` | `/api/clients/bulk-create` |
+| `POST` | `/api/clients/bulk-create/validate` |
+| `POST` | `/api/clients/bulk` |
 | `GET` | `/api/clients/cleanup-candidates` |
-| `POST` | `/api/bulk-clients/enable` · `disable` · `export-subs` |
-| `GET` | `/api/inbounds` · `PATCH /api/inbounds/:id` |
-| `GET` | `/api/panels/online-ips` |
+| `POST` | `/api/bulk-clients/enable` |
+| `POST` | `/api/bulk-clients/disable` |
+| `POST` | `/api/bulk-clients/export-subs` |
+| `GET` | `/api/inbounds` |
+| `PATCH` | `/api/inbounds/:id` |
 
-## مرتبط
+شمارش IP برخط: `GET /api/panels/online-ips` (Super Admin و Reseller).
 
-- [پنل‌ها](/fa/community/panels)
-- [پاکسازی](/fa/community/cleanup)
-- [قالب کلاینت](/fa/premium/client-templates)
+<div class="hm-actions">
+
+[پنل‌ها](/fa/community/panels)
+[پاکسازی](/fa/community/cleanup)
+[قالب کلاینت](/fa/premium/client-templates)
+[Panel Plus](/fa/premium/panel-plus)
+
+</div>

@@ -1,26 +1,27 @@
 # عیب‌یابی
 
 ::: info Community
-UI: `/diagnostics` · `GET /api/settings/diagnostics` فقط سوپرادمین
+مسیر: `/diagnostics` · نقش: `SUPER_ADMIN`
 :::
 
-کارت‌های صفحه:
+- **Version** — نسخهٔ نصب‌شده، برچسب تصویر در حال اجرا، آخرین انتشار GitHub
+- **Host** — نام میزبان، CPU، حافظه، دیسک
+- دسترسی به Docker و GitHub API
+- یادداشت در صورت عدم اتصال `/var/run/docker.sock` (مدیریت میزبان و ردگیری به‌روزرسانی خودکار غیرفعال است)
+- ماتریس قابلیت، تشخیص TLS، تحلیل گواهی، تشخیص میزبان، پرچم به‌روزرسانی خودکار
 
-- نسخه نصب‌شده، تگ ایمیج در حال اجرا، آخرین ریلیز گیت‌هاب
-- میزبان: hostname، CPU، حافظه، دیسک
-- دسترسی Docker / GitHub API
-- اگر `/var/run/docker.sock` مانت نشده باشد، مدیریت میزبان و ردیابی آپدیت خودکار خاموش است
-- ماتریس قابلیت، تشخیص SSL، تحلیل گواهی، فلگ auto-update
+بازهٔ نوسازی: ۱۵ ثانیه.
 
-رفرش UI: هر ۱۵ ثانیه.
+## API
 
-## Endpointها
-
-| متد | مسیر |
+| روش | مسیر |
 |---|---|
 | `GET` | `/api/settings/diagnostics` |
 | `GET` | `/api/stats/diagnostics` |
 
-## مرتبط
+<div class="hm-actions">
 
-- [تنظیمات → About](/fa/community/settings#about)
+[تنظیمات](/fa/community/settings#about)
+[داشبورد](/fa/community/dashboard)
+
+</div>

@@ -1,26 +1,37 @@
 # قالب کلاینت
 
 ::: warning Premium
-ماژول `client-templates` · UI: `/premium/client-templates`
+ماژول `client-templates` · نوع BUSINESS · مسیر: `/premium/client-templates`
 :::
 
-ساخت سریع: انتخاب قالب، نام (یا نام بعدی از **استخر نام**). صفحه کلاینت‌ها دکمه **با قالب** را نشان می‌دهد.
+پیش‌تنظیم برای ایجاد سریع کلاینت: قالب را انتخاب کنید، نام را وارد نمایید (یا نام بعدی را از استخر نام تخصیص دهید)، سپس ایجاد کنید. صفحهٔ کلاینت‌ها هنگام بارگذاری این ماژول **With Template** را نمایش می‌دهد.
 
-فیلد قالب: نام، توضیح، اینباندها، گیگ، روز انقضا، سقف IP، flow، remark، فعال، ترتیب.
+## فیلدهای قالب
 
-استخر نام: پیشوند، جداکننده، شماره شروع. `POST .../next-name` نام بعدی را می‌دهد.
+نام، شرح، شناسهٔ اینباند، کل گیگابایت، روز انقضا، محدودیت IP، flow، نامک، فعال، ترتیب.
 
-## Endpointها
+## استخر نام
 
-| متد | مسیر |
+پیشوند، جداکننده، شمارهٔ شروع، نام‌های نمونه. `POST .../pools/:poolId/next-name` و `POST .../:id/next-name` نامک بعدی را تخصیص می‌دهند.
+
+## API
+
+| روش | مسیر |
 |---|---|
-| `GET/POST` | `/api/premium-modules/client-templates` |
-| `GET/PATCH/DELETE` | `/api/premium-modules/client-templates/:id` |
+| `GET` | `/api/premium-modules/client-templates` |
+| `GET` | `/api/premium-modules/client-templates/:id` |
+| `POST` | `/api/premium-modules/client-templates` |
+| `PATCH` | `/api/premium-modules/client-templates/:id` |
+| `DELETE` | `/api/premium-modules/client-templates/:id` |
 | `POST` | `/api/premium-modules/client-templates/:id/next-name` |
-| `GET/POST` | `/api/premium-modules/client-templates/pools` |
-| `PATCH/DELETE` | `.../pools/:poolId` |
-| `POST` | `.../pools/:poolId/next-name` |
+| `GET` | `/api/premium-modules/client-templates/pools` |
+| `POST` | `/api/premium-modules/client-templates/pools` |
+| `PATCH` | `/api/premium-modules/client-templates/pools/:poolId` |
+| `DELETE` | `/api/premium-modules/client-templates/pools/:poolId` |
+| `POST` | `/api/premium-modules/client-templates/pools/:poolId/next-name` |
 
-## مرتبط
+<div class="hm-actions">
 
-- [کلاینت‌ها](/fa/community/clients)
+[کلاینت‌ها](/fa/community/clients)
+
+</div>

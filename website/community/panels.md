@@ -1,25 +1,25 @@
 # Panels
 
 ::: info Community
-UI: `/panels` · Role: `SUPER_ADMIN`
+Path: `/panels` · Role: `SUPER_ADMIN`
 :::
 
-Register and operate **3x-ui** nodes. The add/edit form also lets you pick type **3x-ui / Eylan / Pasarguard**. Eylan and Pasarguard use Panel Plus connection fields; **client/panel writes for those types stay frozen** in Community (`panel-operation-gate.ts` → `premium_unavailable`) until [Panel Plus](/premium/panel-plus) is active.
+Register and operate **3x-ui** nodes. The form also accepts types **3x-ui**, **Eylan**, and **Pasarguard**. Eylan and Pasarguard use Panel Plus connection fields. Write operations for those types remain blocked in Community (`premium_unavailable`) until Panel Plus is active.
 
-## List and actions (3x-ui)
+## 3x-ui operations
 
-- Register: name, URL, optional `subUrl`, `apiToken` or username/password
+- Register: name, URL, optional `subUrl`, `apiToken` or username and password
 - Test connection before save
-- Sync inbounds/clients from the remote API
-- Scan capabilities against the bundled OpenAPI specs (`docs/api*.json`)
-- Restart Xray on the node
+- Synchronize inbounds and clients from the remote API
+- Scan capabilities against the bundled OpenAPI specifications
+- Restart Xray
 - View recent logs
 - Live inbounds: `GET /api/panels/:id/inbounds`
-- Edit / delete
+- Edit and delete
 
-Capability-aware UI: Clients, Panels, monitoring, and backup hide or freeze actions the remote API does not support instead of showing fake zeros.
+Actions that the remote API does not support are hidden or disabled.
 
-## Endpoints
+## API
 
 | Method | Path |
 |---|---|
@@ -29,17 +29,22 @@ Capability-aware UI: Clients, Panels, monitoring, and backup hide or freeze acti
 | `PATCH` | `/api/panels/:id` |
 | `DELETE` | `/api/panels/:id` |
 | `POST` | `/api/panels/test-connection` — `{ url, apiToken?, panelId? }` |
-| `GET` | `/api/panels/online-ips` — also allowed for `RESELLER` |
+| `GET` | `/api/panels/online-ips` — also available to `RESELLER` |
 | `GET` | `/api/panels/:id/inbounds` |
 | `POST` | `/api/panels/:id/scan-capabilities` |
 | `POST` | `/api/panels/:id/sync` |
 | `POST` | `/api/panels/:id/restart-xray` |
 | `GET` | `/api/panels/:id/logs` |
 
-Premium bundle extra (not Community): `POST /api/premium-modules/native-panels` test/sync/disconnect/reconnect for native-panel helpers.
+Licensed bundle (not Community): `POST /api/premium-modules/native-panels` for native-panel helpers.
 
-## Related
+<div class="hm-actions">
 
-- [Dashboard](/community/dashboard)
-- [Clients](/community/clients)
-- [Panel Plus](/premium/panel-plus)
+[Dashboard](/community/dashboard)
+[Clients](/community/clients)
+[Admins](/community/admins)
+[Traffic](/community/traffic)
+[Migration](/community/migration)
+[Panel Plus](/premium/panel-plus)
+
+</div>

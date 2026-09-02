@@ -1,34 +1,50 @@
 # شارژ ادمین
 
 ::: warning Premium
-ماژول `admin-recharge` · UI: `/premium/admin-recharge`
+ماژول `admin-recharge` · نوع BUSINESS · مسیر: `/premium/admin-recharge`
 :::
 
-پلن شارژ اعتبار ریسلر با **تأیید دستی پرداخت**.
+طرح اعتبار ریسلر با تأیید دستی پرداخت. Super Admin و Reseller زبانه‌های متفاوت می‌بینند.
 
-## تب سوپرادمین
+## Super Admin
 
 `orders` · `plans` · `payment` · `agency` · `finance`
 
-- سفارش‌ها — تأیید رسید؛ بج سایدبار از `pending-count`
-- پلن‌ها — کاتالوگ پک
-- پرداخت — `settings` / `payment-settings` (کارت بانکی / کریپتو)
-- آژانس — `agency/catalog`
-- مالی — `GET finance`
+- **Orders** — بررسی رسید معلق؛ approve، reject، retry. نشان: `GET .../pending-count`
+- **Plans** — بسته‌های شارژ (`GET/POST/PATCH/DELETE plans`، دسته‌ها)
+- **Payment** — `GET/PATCH settings` (نام مستعار `payment-settings`): کارت بانکی و دستورالعمل رمزارز
+- **Agency** — `GET agency/catalog`
+- **Finance** — `GET finance`
 
-## تب ریسلر
+## ریسلر
 
-`buy` · `history` — `GET catalog`، `POST orders`، آپلود رسید، `GET my-orders`.
+`buy` · `history` — `GET catalog`، `POST orders`، بارگذاری رسید `POST orders/:id/receipt`، `GET my-orders`. بررسی اعتبارنامه: `GET check-username`، `POST validate-credentials`.
 
-وب‌هوک: `POST /api/premium-modules/admin-recharge/webhook/:secret`.
+وب‌هوک تلگرام: `POST /api/premium-modules/admin-recharge/webhook/:secret`.
 
-## Endpointها (`/api/premium-modules/admin-recharge`)
+## API (`/api/premium-modules/admin-recharge`)
 
-`pending-count`، `categories`، `plans`، `catalog`، `orders` (+ receipt / approve / retry / reject)، `my-orders`، `finance`، `check-username`، `validate-credentials`، `settings`.
+| روش | مسیر |
+|---|---|
+| `GET` | `pending-count` / `my-pending-count` |
+| `GET/POST` | `categories` · `PATCH/DELETE categories/:id` |
+| `GET` | `agency/catalog` |
+| `GET` | `check-username` |
+| `POST` | `validate-credentials` |
+| `GET/PATCH` | `settings` یا `payment-settings` |
+| `GET/POST` | `plans` · `PATCH/DELETE plans/:id` |
+| `GET` | `catalog` |
+| `POST` | `orders` |
+| `POST` | `orders/:id/receipt` |
+| `GET` | `my-orders` · `orders` |
+| `POST` | `orders/:id/approve` · `retry` · `reject` |
+| `GET` | `finance` |
 
-دسترسی پروایدر ایلان/پاسارگارد از Admin Management تنظیمات پرمیوم است، نه تب اصلی این صفحه.
+مجوز ایلان و پاسارگارد برای ریسلر در تنظیمات Premium → Admin Management (`admin-provider-access`) پیکربندی می‌شود.
 
-## مرتبط
+<div class="hm-actions">
 
-- [ترافیک](/fa/community/traffic)
-- [تنظیمات پرمیوم](/fa/premium/settings)
+[ترافیک](/fa/community/traffic)
+[تنظیمات Premium](/fa/premium/settings)
+
+</div>

@@ -1,32 +1,40 @@
 # ترافیک
 
 ::: info Community
-UI: `/traffic` · سوپر: دفتر هر ریسلر + شارژ · ریسلر: دفتر خودش
+مسیر: `/traffic` · Super Admin: دفتر و شارژ هر ریسلر. ریسلر: دفتر خود
 :::
 
-دفتر **ledger**: بستانکار (شارژ)، بدهکار (ساخت)، شارژ مصرف. چیپ مقصد وقتی سهمیه per-panel باشد (`GET /api/traffic/destinations`).
+دفتر ترافیک: بستانکار (شارژ)، بدهکار (تأمین) و هزینهٔ مصرف. زبانه‌های مقصد هنگامی ظاهر می‌شوند که مدیر سهمیهٔ به‌ازای پنل داشته باشد (`GET /api/traffic/destinations`).
 
-## سوپرادمین
+## Super Admin
 
-انتخاب ریسلر، تب مقصد، فیلتر نوع، جستجو، شارژ با `POST /api/traffic/top-up/:adminId` و `{ amount, description?, panelId? }` (`amount` در API بایت است؛ UI گیگ را تبدیل می‌کند).
+1. انتخاب ریسلر
+2. مقصد اختیاری (پنل)
+3. پالایش: همه، بستانکار، بدهکار یا مصرف
+4. جستجوی شرح یا کلاینت
+5. شارژ: `POST /api/traffic/top-up/:adminId` با `{ amount, description?, panelId? }` (`amount` بایت صحیح است؛ رابط گیگابایت را به بایت تبدیل می‌کند)
+
+کارت سهمیه حالت (سراسری یا به‌ازای پنل)، باقی‌مانده، مصرف‌شده و پرچم نامحدود را نشان می‌دهد.
 
 ## ریسلر
 
-`GET /api/traffic/ledger` بدون `:adminId`. endpoint شارژ ندارد.
+همان دفتر از `GET /api/traffic/ledger` (بدون `:adminId`). مسیر شارژ وجود ندارد.
 
-حالت حسابداری روی رکورد ادمین است — [ادمین‌ها](/fa/community/admins).
+حالت حسابداری روی پروندهٔ مدیر تنظیم می‌شود: تخصیص در برابر مصرف، و استرداد.
 
-## Endpointها
+## API
 
-| متد | مسیر | نقش |
+| روش | مسیر | نقش |
 |---|---|---|
-| `GET` | `/api/traffic/ledger` | دفتر خود |
-| `GET` | `/api/traffic/ledger/:adminId` | سوپر |
-| `GET` | `/api/traffic/destinations` | تب‌های پنل خود |
-| `GET` | `/api/traffic/destinations/:adminId` | سوپر |
-| `POST` | `/api/traffic/top-up/:adminId` | سوپر |
+| `GET` | `/api/traffic/ledger` | دفتر فراخوان. پرس‌وجو: `page`، `limit`، `type`، `search`، `panelId` |
+| `GET` | `/api/traffic/ledger/:adminId` | Super Admin |
+| `GET` | `/api/traffic/destinations` | زبانه‌های پنل فراخوان |
+| `GET` | `/api/traffic/destinations/:adminId` | Super Admin |
+| `POST` | `/api/traffic/top-up/:adminId` | Super Admin |
 
-## مرتبط
+<div class="hm-actions">
 
-- [ادمین‌ها](/fa/community/admins)
-- [شارژ ادمین](/fa/premium/admin-recharge)
+[ادمین‌ها](/fa/community/admins)
+[شارژ ادمین](/fa/premium/admin-recharge)
+
+</div>

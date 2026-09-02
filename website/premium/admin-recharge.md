@@ -1,28 +1,28 @@
 # Admin Recharge
 
 ::: warning Premium
-Module id `admin-recharge` · Kind BUSINESS · UI: `/premium/admin-recharge`
+Module `admin-recharge` · Kind BUSINESS · Path: `/premium/admin-recharge`
 :::
 
-Reseller **credit top-up plans** with **manual payment approval**. Super Admin and Reseller see different tabs.
+Reseller credit plans with manual payment approval. Super Admin and Reseller see different tabs.
 
-## Super Admin tabs
+## Super Admin
 
-`orders` · `plans` · `payment` · `agency` · `finance` (`AdminRechargePage`).
+`orders` · `plans` · `payment` · `agency` · `finance`
 
-- **Orders** — pending receipt review, approve / reject / retry. Sidebar badge uses `GET .../pending-count`
-- **Plans** — catalog of recharge packs (`GET/POST/PATCH/DELETE plans`, categories)
-- **Payment** — `GET/PATCH settings` (alias `payment-settings`): bank cards / crypto instructions
-- **Agency** — agency catalog (`GET agency/catalog`)
+- **Orders** — pending receipt review; approve, reject, retry. Badge: `GET .../pending-count`
+- **Plans** — recharge packs (`GET/POST/PATCH/DELETE plans`, categories)
+- **Payment** — `GET/PATCH settings` (alias `payment-settings`): bank cards and crypto instructions
+- **Agency** — `GET agency/catalog`
 - **Finance** — `GET finance`
 
-## Reseller tabs
+## Reseller
 
-`buy` · `history` — browse `GET catalog`, `POST orders`, upload receipt `POST orders/:id/receipt`, `GET my-orders`. Username/credential checks: `GET check-username`, `POST validate-credentials`.
+`buy` · `history` — `GET catalog`, `POST orders`, upload receipt `POST orders/:id/receipt`, `GET my-orders`. Credential checks: `GET check-username`, `POST validate-credentials`.
 
-Telegram webhook for this module: `POST /api/premium-modules/admin-recharge/webhook/:secret`.
+Telegram webhook: `POST /api/premium-modules/admin-recharge/webhook/:secret`.
 
-## Endpoints (`/api/premium-modules/admin-recharge`)
+## API (`/api/premium-modules/admin-recharge`)
 
 | Method | Path |
 |---|---|
@@ -40,9 +40,11 @@ Telegram webhook for this module: `POST /api/premium-modules/admin-recharge/webh
 | `POST` | `orders/:id/approve` · `retry` · `reject` |
 | `GET` | `finance` |
 
-Provider access (Eylan/Pasarguard grants for resellers) lives under `admin-provider-access` (`GET/PUT :adminId`, catalog resources). Wired from Premium Settings → Admin Management, not this page’s main tabs.
+Eylan and Pasarguard grants for resellers are configured under Premium Settings → Admin Management (`admin-provider-access`).
 
-## Related
+<div class="hm-actions">
 
-- [Traffic](/community/traffic) (Super Admin still top-ups via ledger)
-- [Premium Settings](/premium/settings)
+[Traffic](/community/traffic)
+[Premium Settings](/premium/settings)
+
+</div>

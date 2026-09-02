@@ -1,20 +1,20 @@
 # Migration
 
 ::: info Community
-UI: `/migration` · Role: `SUPER_ADMIN`
+Path: `/migration` · Role: `SUPER_ADMIN`
 :::
 
-Import from a legacy **WhalePanel-style** SQLite `backupp.db` (the UI asks for a `.db` file). Wizard steps in the page:
+Import from a WhalePanel-style SQLite `backupp.db`. The interface accepts a `.db` file.
 
 1. **Upload backup** — `POST /api/migration/upload`
-2. **Validate schema** — panels / admins / `sanaei_users` tables
+2. **Validate schema** — panels, admins, and `sanaei_users`
 3. **Preview entities** — `POST /api/migration/preview`
-4. **Import architecture** — `POST /api/migration/import` (panels + admins; client map kept in memory)
+4. **Import architecture** — `POST /api/migration/import` (panels and admins; client map retained in memory)
 5. **Post-import sync** — `POST /api/migration/sync` (connect to imported 3x-ui panels, fetch live clients, optionally create native groups)
 
-After import, use **Fix migration** on [Admins](/community/admins) (`POST /api/admins/:id/fix-migration`) if inbound mapping or balance needs a repair.
+After import, **Fix migration** on Admins (`POST /api/admins/:id/fix-migration`) repairs inbound mapping or balance if required.
 
-## Endpoints
+## API
 
 | Method | Path |
 |---|---|
@@ -23,7 +23,9 @@ After import, use **Fix migration** on [Admins](/community/admins) (`POST /api/a
 | `POST` | `/api/migration/import` |
 | `POST` | `/api/migration/sync` |
 
-## Related
+<div class="hm-actions">
 
-- [Admins](/community/admins)
-- [Panels](/community/panels)
+[Admins](/community/admins)
+[Panels](/community/panels)
+
+</div>

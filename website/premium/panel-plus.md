@@ -1,28 +1,28 @@
-# Panel Plus (external panels)
+# Panel Plus
 
 ::: warning Premium
-Module id `external-panels` · Kind BUSINESS · UI: `/premium/external-panels` · Nav label: **Panel Plus**
+Module `external-panels` · Kind BUSINESS · Path: `/premium/external-panels` · Label: **Panel Plus**
 :::
 
-Connect **Eylan** and **Pasarguard**. In Community you can still *select* those types on [Panels](/community/panels) / see chips on [Clients](/community/clients), but writes are gated:
+Connect **Eylan** and **Pasarguard**. Those types may be selected on Panels and appear on Clients in Community; write operations remain gated.
 
-`panel-operation-gate.ts` returns `operable: false`, `reason: 'premium_unavailable'` unless this module can write.
+The operation gate returns `operable: false`, `reason: 'premium_unavailable'` until this module can write.
 
 ## Super Admin
 
-Health strip + **Pasarguard** and **Eylan** connection cards (`ProviderConnectionCard`). APIs: `GET access`, `GET providers`, addons `GET/PUT addons/:providerId`, `POST addons/:providerId/test`, `GET .../health`, `GET .../options`.
+Health strip and **Pasarguard** / **Eylan** connection cards. `GET access`, `GET providers`, add-ons `GET/PUT addons/:providerId`, `POST addons/:providerId/test`, health and options.
 
 ## Reseller
 
-`ResellerPanelCatalog` from `GET catalog` — which destinations they may use. Grants: `GET/PUT grants`, `PATCH grants/traffic-mode`, `PUT grants/:adminId/:providerId`.
+Catalog from `GET catalog`. Grants: `GET/PUT grants`, `PATCH grants/traffic-mode`, `PUT grants/:adminId/:providerId`.
 
-## Client operations (when licensed)
+## Client operations (licensed)
 
-Same mental model as 3x-ui clients, under `/api/premium-modules/external-panels/:providerId/clients` — list, create, bulk, bulk-create, export, get/patch/delete by username, output, qrcode. Overview/scope: `GET :providerId/overview`, `GET :providerId/scope`.
+Under `/api/premium-modules/external-panels/:providerId/clients` — list, create, bulk, bulk-create, export, get/patch/delete by username, output, QR. Overview and scope: `GET :providerId/overview`, `GET :providerId/scope`.
 
-Store fulfillment can also call Eylan/Pasarguard add-on endpoints under Store.
+Store fulfillment may also call Eylan and Pasarguard add-on endpoints.
 
-## Endpoints (`/api/premium-modules/external-panels`)
+## API (`/api/premium-modules/external-panels`)
 
 | Method | Path |
 |---|---|
@@ -39,8 +39,10 @@ Store fulfillment can also call Eylan/Pasarguard add-on endpoints under Store.
 | `GET/PATCH/DELETE` | `:providerId/clients/:username` |
 | `GET` | `:providerId/clients/:username/output` · `.../qrcode` |
 
-## Related
+<div class="hm-actions">
 
-- [Panels](/community/panels)
-- [Clients](/community/clients)
-- [Store](/premium/store)
+[Panels](/community/panels)
+[Clients](/community/clients)
+[Store](/premium/store)
+
+</div>

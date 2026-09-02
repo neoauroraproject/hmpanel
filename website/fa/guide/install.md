@@ -1,30 +1,33 @@
 # نصب
 
 ::: info Community
-روی اوبونتو ۲۰.۰۴+ یا دبیان خام. برای Let's Encrypt روی دامنه پنل، IP عمومی لازم است.
+میزبان پشتیبانی‌شده: اوبونتو ۲۰٫۰۴ یا جدیدتر، و دبیان. برای صدور گواهی Let’s Encrypt روی دامنهٔ پنل، نشانی IPv4 عمومی لازم است.
 :::
 
-دستور رسمی از [neoauroraproject/hmpanel](https://github.com/neoauroraproject/hmpanel):
+نصب‌کنندهٔ رسمی:
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/neoauroraproject/hmpanel/main/install.sh)
 ```
 
-`install.sh` می‌پرسد:
+نصب‌کننده مقادیر زیر را دریافت می‌کند:
 
-- دامنه پنل
-- نام کاربری ادمین (پیش‌فرض `admin`)
-- رمز (حداقل ۸ کاراکتر)
-- ایمیل به‌صورت `admin@<domain>`
+- دامنهٔ پنل
+- نام کاربری مدیر (پیش‌فرض `admin`)
+- گذرواژهٔ مدیر (حداقل هشت نویسه)
+- نشانی تماس، به‌صورت `admin@<domain>`
 
-پیش‌نیاز README: حدود **۱ گیگ رم**، **۵ گیگ دیسک**.
+حداقل منابع: **۱ گیگابایت RAM**، **۵ گیگابایت** دیسک.
 
-سرویس‌ها با Docker Compose: `panel-app`، PostgreSQL 15، Redis 7، Nginx. ایمیج: `ghcr.io/neoauroraproject/hmpanel`.
+خدمات با Docker Compose مستقر می‌شوند: `panel-app` (NestJS و Next.js)، PostgreSQL 15، Redis 7 و Nginx. تصویر: `ghcr.io/neoauroraproject/hmpanel`.
 
-بعد از نصب: `sudo hm` — [خط فرمان](/fa/guide/cli).
+پس از نصب، مدیریت میزبان از طریق `sudo hm` در دسترس است.
 
-## مرتبط
+<div class="hm-actions">
 
-- [ورود](/fa/guide/login)
-- [تنظیمات SSL](/fa/community/settings#ssl)
-- [لایسنس](/fa/premium/license)
+[ورود](/fa/guide/login)
+[خط فرمان](/fa/guide/cli)
+[TLS](/fa/community/settings#ssl)
+[مجوز](/fa/premium/license)
+
+</div>

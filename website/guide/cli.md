@@ -1,33 +1,33 @@
-# CLI (`sudo hm`)
+# Command line
 
 ::: info Community
-Host script `cli.sh`, installed as `hm`. Not an HTTP API.
+Host utility `cli.sh`, installed as `hm`. This is not an HTTP API.
 :::
 
-Header in the script: **HMPanel CLI Manager — Community Edition**. Main menu (`cli.sh`):
+Title: **HMPanel CLI Manager — Community Edition**.
 
-| # | Item | What it does |
+| # | Item | Function |
 |---|---|---|
 | 1 | Panel Status | Container health |
-| 2 | Panel Information | Install path, SSL path |
-| 3 | Update HMPanel | Pulls latest from GitHub (`update.sh` / image) |
-| 4 | Create Backup | Submenu: **full** / **database** / **config** — same three types as Settings → Backup |
-| 5 | Restore Backup | Restores PostgreSQL payload into `panel_db` (does not run `DROP ROLE panel_user`) |
-| 6 | Restart Services | All / panel-app / nginx / postgres / redis |
-| 7 | View Logs | Follow compose logs (all, panel-app, nginx, postgres, redis) |
+| 2 | Panel Information | Install path and TLS path |
+| 3 | Update HMPanel | Pulls the current GitHub release |
+| 4 | Create Backup | `full`, `database`, or `config` — the same types as Settings → Backup |
+| 5 | Restore Backup | Restores the PostgreSQL payload into `panel_db` |
+| 6 | Restart Services | All, `panel-app`, nginx, postgres, or redis |
+| 7 | View Logs | Follow Compose logs |
 | 8 | SSL Management | See below |
 | 9 | System Cleanup | Host cleanup |
 | 10 | Uninstall HMPanel | Removal wizard |
-| 11 | Heal Panel (fix 502 / auth drift) | Emergency repair |
+| 11 | Heal Panel | Emergency repair for 502 and authentication drift |
 | 0 | Exit | |
 
-### SSL submenu
+### TLS submenu
 
 | # | Item |
 |---|---|
 | 1 | Issue / Renew SSL |
 | 2 | Enable HTTPS |
-| 3 | Disable HTTPS (HTTP Mode) — keeps certs; sets `.ssl_disabled` |
+| 3 | Disable HTTPS (HTTP Mode) — certificates are retained; `.ssl_disabled` is set |
 | 4 | Renew Existing Certificate |
 | 5 | Check SSL Status |
 | 6 | Test Domain & DNS |
@@ -35,11 +35,13 @@ Header in the script: **HMPanel CLI Manager — Community Edition**. Main menu (
 | 8 | Change Panel Domain |
 | 0 | Back |
 
-The Settings → SSL modal drives the same host workflows over `GET/POST /api/settings/ssl*` plus `GET /api/settings/ssl/stream` (SSE).
+Settings → SSL drives the same host workflows through `GET`/`POST /api/settings/ssl*` and `GET /api/settings/ssl/stream` (SSE).
 
-Backup retention after backup/update: `HMPANEL_BACKUP_KEEP` (default 5).
+Backup retention after backup or update: `HMPANEL_BACKUP_KEEP` (default `5`).
 
-## Related
+<div class="hm-actions">
 
-- [Settings](/community/settings)
-- [Backup Center](/premium/backup-center) (Premium scheduled backups — different UI)
+[Settings](/community/settings)
+[Backup Center](/premium/backup-center)
+
+</div>

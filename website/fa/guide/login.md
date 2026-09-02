@@ -1,26 +1,30 @@
 # ورود
 
 ::: info Community
-مسیر UI: `/login` · بدون JWT
+مسیر: `/login` · احراز هویت: عمومی
 :::
 
-فرم، نام کاربری و رمز را می‌فرستد، توکن را ذخیره می‌کند و به `/dashboard` می‌رود. زبان همین صفحه عوض می‌شود (English / فارسی).
+فرم ورود نام کاربری و گذرواژه را ارسال می‌کند، نشان‌های صادرشده را ذخیره می‌نماید و `/dashboard` را باز می‌کند. زبان انگلیسی و فارسی در همین صفحه قابل انتخاب است.
 
-## Endpointها
+## API
 
-| متد | مسیر | نقش |
+| روش | مسیر | دسترسی |
 |---|---|---|
-| `POST` | `/api/auth/login` | عمومی. بدنه `{ username, password }`. خروجی `accessToken`, `refreshToken`, `admin` |
-| `POST` | `/api/auth/refresh` | بدنه `{ refreshToken }` |
+| `POST` | `/api/auth/login` | عمومی. بدنه: `{ username, password }`. پاسخ شامل `accessToken`، `refreshToken` و `admin` است. |
+| `POST` | `/api/auth/refresh` | بدنه: `{ refreshToken }`. نشان دسترسی جدید صادر می‌شود. |
 
-کلاینت فرانت (`/api`) احراز هویت را در `localStorage` با کلید `panel-auth` نگه می‌دارد. در 401، refresh می‌زند.
+Nginx درخواست `POST /api/auth/login` را به همان گرداننده می‌فرستد.
 
-نقش‌ها:
+پایهٔ نشانی `/api` است و نشست در `localStorage` با کلید `panel-auth` نگهداری می‌شود. درخواست‌های بعدی نشان دسترسی را همراه دارند. پاسخ `401` تلاش برای تازه‌سازی را آغاز می‌کند.
 
-- `SUPER_ADMIN` — ادمین‌ها، پنل‌ها، مهاجرت، تنظیمات
-- `RESELLER` — داشبورد، کلاینت، ترافیک خودش؛ بدون تنظیمات سراسری
+نقش‌ها پس از احراز هویت:
 
-## مرتبط
+- `SUPER_ADMIN` — پیمایش Community شامل ادمین‌ها، پنل‌ها، مهاجرت و تنظیمات
+- `RESELLER` — داشبورد، کلاینت‌ها و دفتر ترافیک همان اپراتور. تنظیمات، پنل‌ها و مهاجرت در دسترس نیست
 
-- [داشبورد](/fa/community/dashboard)
-- [نصب](/fa/guide/install)
+<div class="hm-actions">
+
+[داشبورد](/fa/community/dashboard)
+[نصب](/fa/guide/install)
+
+</div>

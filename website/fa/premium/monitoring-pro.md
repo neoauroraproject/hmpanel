@@ -1,20 +1,34 @@
-# مانیتورینگ پرو
+# Monitoring Pro
 
 ::: warning Premium
-ماژول `monitoring-pro` · فلگ‌های `ADVANCED_ANALYTICS`، `SMART_ALERTS`، `XRAY_PRO` · UI: `/premium/monitoring` · سوپرادمین
+ماژول `monitoring-pro` · نوع PLATFORM · قابلیت `ADVANCED_ANALYTICS`، `SMART_ALERTS`، `XRAY_PRO` · مسیر: `/premium/monitoring` · Super Admin
 :::
 
-نوار CPU/RAM داشبورد (`GET /api/stats/monitoring`) این صفحه نیست. این ماژول با `/api/platform/premium-assets/frontend/premium-monitoring.js` لود می‌شود.
+متمایز از سنجش منابع داشبورد (`GET /api/stats/monitoring`). این ماژول از `/api/platform/premium-assets/frontend/premium-monitoring.js` بارگذاری می‌شود.
 
-یک فضای کاری: overview سکو، متریک per-panel، بازه تاریخچه **1h / 6h / 24h**، availability، هشدار فعال، چرخه incident، مدیر قوانین هشدار.
+فضای کار: نمای سکو، شاخص به‌ازای پنل، بازه‌های تاریخچه **1h / 6h / 24h**، دسترس‌پذیری، هشدار فعال، چرخهٔ حادثه و قواعد هشدار.
 
-## Endpointها (`/api/plugins/monitoring`)
+## API (`/api/plugins/monitoring`)
 
-`platform-overview`، `dashboard`، `availability`، `panels/:id` (+ outbounds / traffic-windows)، `realtime/:panelId`، `history`، `alerts/active`، `settings`، `rules`، `incidents` (+ acknowledge / resolve / reopen / archive / timeline).
+محافظ: JWT، Premium، Super Admin، ماژول `monitoring-pro`، فقط‌خواندنی در مهلت ارفاق.
 
-زمان‌بند manifest: poll هر ۵ و ۳۰ ثانیه (نیاز به write).
+| روش | مسیر |
+|---|---|
+| `GET` | `platform-overview` · `dashboard` · `availability` |
+| `GET` | `panels/:id` · `panels/:id/outbounds` · `panels/:id/traffic-windows` |
+| `GET` | `realtime/:panelId` |
+| `GET` | `history` |
+| `GET` | `alerts/active` |
+| `GET/PUT` | `settings` |
+| `GET/POST` | `rules` · `PUT/DELETE rules/:id` |
+| `GET` | `incidents` · `incidents/:id/timeline` |
+| `POST` | `incidents/:id/acknowledge` · `resolve` · `reopen` · `archive` |
 
-## مرتبط
+زمان‌بند: poll-tier-1 هر ۵ ثانیه، poll-tier-2 هر ۳۰ ثانیه (نوشتن لازم است).
 
-- [داشبورد](/fa/community/dashboard)
-- [تنظیمات پرمیوم](/fa/premium/settings)
+<div class="hm-actions">
+
+[داشبورد](/fa/community/dashboard)
+[تنظیمات Premium](/fa/premium/settings)
+
+</div>

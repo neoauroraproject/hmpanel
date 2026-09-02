@@ -1,28 +1,30 @@
-# Login
+# Sign-in
 
 ::: info Community
-UI: `/login` · Public (no JWT)
+Path: `/login` · Authentication: public
 :::
 
-The login form posts username and password, stores tokens, then navigates to `/dashboard`. Language can be switched on this page (English / فارسی).
+The sign-in form submits the username and password, stores the issued tokens, and opens `/dashboard`. English and فارسی are selectable on this page.
 
-## Endpoints
+## API
 
-| Method | Path | Role |
+| Method | Path | Access |
 |---|---|---|
-| `POST` | `/api/auth/login` | Public. Body: `{ username, password }`. Returns `accessToken`, `refreshToken`, `admin`. |
+| `POST` | `/api/auth/login` | Public. Body: `{ username, password }`. Response includes `accessToken`, `refreshToken`, and `admin`. |
 | `POST` | `/api/auth/refresh` | Body: `{ refreshToken }`. Issues a new access token. |
 
-Nginx also has a dedicated location for `POST /api/auth/login` (same backend handler).
+Nginx forwards `POST /api/auth/login` to the same handler.
 
-The frontend axios client (`frontend/src/lib/api.ts`) uses base URL `/api` and persists auth in `localStorage` key `panel-auth`. Subsequent admin calls send the JWT. On 401 it tries refresh.
+The client uses base URL `/api` and persists the session in `localStorage` under `panel-auth`. Subsequent requests send the access token. A `401` response attempts refresh.
 
-Roles after login:
+Roles after authentication:
 
-- `SUPER_ADMIN` — full Community sidebar including Admins, Panels, Migration, Settings
-- `RESELLER` — Dashboard, Clients, Traffic (own ledger); no global Settings / Panels / Migration
+- `SUPER_ADMIN` — Community navigation including Admins, Panels, Migration, and Settings
+- `RESELLER` — Dashboard, Clients, and the operator’s own traffic ledger. Settings, Panels, and Migration are not available
 
-## Related
+<div class="hm-actions">
 
-- [Dashboard](/community/dashboard)
-- [Install](/guide/install)
+[Dashboard](/community/dashboard)
+[Installation](/guide/install)
+
+</div>
