@@ -7,6 +7,8 @@
 
 [English](#english) | [فارسی](#فارسی)
 
+**Docs:** [neoauroraproject.github.io/hmpanel](https://neoauroraproject.github.io/hmpanel/) · Channel: [t.me/hmpanel](https://t.me/hmpanel) · License: [t.me/hmraysupport](https://t.me/hmraysupport)
+
 </div>
 
 ---
@@ -14,6 +16,10 @@
 <h2 id="english">🇬🇧 English</h2>
 
 HMPanel is a **professional management layer built specifically on top of native 3x-ui**. Designed for VPN Providers, Resellers, and Administrators managing large client bases across multi-panel deployments.
+
+### 📚 Documentation
+
+Full Community vs Premium operator wiki (UI tabs + real APIs): [https://neoauroraproject.github.io/hmpanel/](https://neoauroraproject.github.io/hmpanel/)
 
 ### 🚀 Installation
 
@@ -52,6 +58,12 @@ bash <(curl -fsSL https://raw.githubusercontent.com/neoauroraproject/hmpanel/mai
 <h2 id="فارسی">🇮🇷 فارسی</h2>
 
 اچ‌ام‌پنل (HMPanel) یک **لایه مدیریت حرفه‌ای و پیشرفته برای پنل‌های 3x-ui** است که منحصراً برای ارائه‌دهندگان VPN و ادمین‌هایی که چندین سرور و تعداد زیادی کاربر دارند طراحی شده است.
+
+### 📚 مستندات
+
+ویکی کامل نسخه رایگان و پرمیوم (تب‌های UI و API واقعی): [https://neoauroraproject.github.io/hmpanel/fa/](https://neoauroraproject.github.io/hmpanel/fa/)
+
+کانال تلگرام: [t.me/hmpanel](https://t.me/hmpanel) · خرید لایسنس: [t.me/hmraysupport](https://t.me/hmraysupport)
 
 ### 🚀 نصب و راه‌اندازی
 
