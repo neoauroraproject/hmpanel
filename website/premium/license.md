@@ -1,54 +1,31 @@
 # License
 
 ::: warning Premium
-Path: **Settings → License** (`/settings`, tab `license`). Super Admin may activate a key from Community.
+Enter the license key under **Settings → License**. Super Admin can open the same card in Community and upgrade.
 :::
 
-Default installation is Community (`RELEASE_MODE=COMMUNITY`). Premium source is not included in the public repository. After a valid key, the panel downloads a signed bundle from `license.hmray.pro` (fallback `license.hmrayserver.com`) and loads NestJS modules together with `premium-runtime.js`.
+A default installation is Community. Premium capabilities load after the key is activated.
 
-Purchase and support: [t.me/hmraysupport](https://t.me/hmraysupport). Channel: [t.me/hmpanel](https://t.me/hmpanel).
+Purchase: [t.me/hmraysupport](https://t.me/hmraysupport). Channel: [t.me/hmpanel](https://t.me/hmpanel).
 
-## Card actions
+## License card
 
-- Activate — paste the license key
-- Deactivate — bundle files may remain on disk
-- Recheck with the license server
-- Update bundle — download the current bundle for this key
-- Reload plugins — not executed automatically after a failed bundle
+- **Activate:** paste the key and confirm
+- **Deactivate:** disconnects the license
+- **Recheck:** refreshes status from the license server
+- **Update bundle:** downloads the current package for this key
+- **Reload modules:** use this if the package is on disk but the menu has not appeared
 
-Status: `active`, `grace`, `expired`, `invalid`, `community`. Mode: `full`, `read_only`, `disabled`. Edition: `COMMUNITY` | `PREMIUM`.
+Common statuses: active, grace, expired, invalid, Community.
 
-Grace period: 7 days. During grace, Premium remains mounted as **read-only**. After grace, modules are disabled.
+During the seven-day grace period, Premium stays read-only. After grace, modules are turned off.
 
-Bundles that declare `minPanelVersion` are rejected until `hm update` raises the image.
-
-## API
-
-| Method | Path |
-|---|---|
-| `GET` | `/api/platform/license` |
-| `POST` | `/api/platform/license/activate` — `{ licenseKey }` |
-| `POST` | `/api/platform/license/deactivate` |
-| `POST` | `/api/platform/license/recheck` |
-| `POST` | `/api/platform/license/update-bundle` |
-| `POST` | `/api/platform/license/reload-plugins` |
-| `POST` | `/api/platform/license/diagnose-bundle` |
-| `GET` | `/api/platform/license/bundle-status` |
-| `GET` | `/api/platform/features` |
-| `GET` | `/api/platform/premium-module-catalog` |
-| `GET` | `/api/platform/premium-modules-all` |
-| `GET` | `/api/premium-modules` |
-| `GET` | `/api/platform/premium-assets/frontend/premium-runtime.js` |
-| `GET` | `/api/platform/premium-assets/frontend/premium-runtime.css` |
-| `GET` | `/api/platform/premium-assets/frontend/premium-monitoring.js` |
-| `GET` | `/api/settings/license` |
-
-Product identifier: `LICENSE_PRODUCT_ID=hmpanel`.
+If the package requires a newer panel version, update the panel with `sudo hm` first.
 
 <div class="hm-actions">
 
 [Premium Settings](/premium/settings)
-[Modules](/premium/modules)
 [Edition comparison](/compare)
+[Buy license](https://t.me/hmraysupport)
 
 </div>

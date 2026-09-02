@@ -1,7 +1,7 @@
 # Installation
 
 ::: info Community
-Supported hosts: Ubuntu 20.04 or later, and Debian. A public IPv4 address is required to issue a Let’s Encrypt certificate for the panel domain.
+Hosts: Ubuntu 20.04 or later, and Debian. A public IP address is required for Let’s Encrypt on the panel domain.
 :::
 
 Official installer:
@@ -10,24 +10,22 @@ Official installer:
 bash <(curl -fsSL https://raw.githubusercontent.com/neoauroraproject/hmpanel/main/install.sh)
 ```
 
-The installer collects the following values:
+The installer asks for:
 
 - Panel domain
 - Administrator username (default `admin`)
-- Administrator password (minimum eight characters)
-- Contact address, recorded as `admin@<domain>`
+- Password (at least eight characters)
+- Contact email
 
-Minimum resources: **1 GB RAM**, **5 GB** disk.
+Minimum resources: 1 GB RAM and 5 GB disk.
 
-Services are deployed with Docker Compose: `panel-app` (NestJS and Next.js), PostgreSQL 15, Redis 7, and Nginx. Container image: `ghcr.io/neoauroraproject/hmpanel`.
-
-Host administration after installation is available through `sudo hm`.
+After installation, host administration is available with `sudo hm`.
 
 <div class="hm-actions">
 
 [Sign-in](/guide/login)
 [Command line](/guide/cli)
-[TLS](/community/settings#ssl)
+[SSL](/community/settings#ssl)
 [License](/premium/license)
 
 </div>

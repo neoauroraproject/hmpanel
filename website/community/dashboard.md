@@ -1,42 +1,20 @@
 # Dashboard
 
 ::: info Community
-Path: `/dashboard` · Roles: `SUPER_ADMIN`, `RESELLER`
+Opens after sign-in. Super Admin and Reseller both see it.
 :::
 
-Default view after sign-in. Super Admin receives platform indicators. Resellers receive `reseller-overview` (clients, remaining traffic, and capacity).
+Super Admin sees platform totals: panels, admins, clients, traffic, and expiry. A reseller sees only their own clients, remaining traffic, and capacity.
 
-## Contents
+On the dashboard you can:
 
-Data is served by `GET /api/stats/*`.
+- Follow the traffic chart and trends
+- Watch host CPU, RAM, disk, and network
+- Open the online client list
+- See offline alerts for 3x-ui or Xray
+- Sync a panel or restart Xray (Super Admin)
 
-- Indicator cards — Super Admin: `overview`; reseller: `reseller-overview`
-- Traffic series — `traffic-series`
-- Trends — `trends`
-- Host resource meters (CPU, RAM, disk, network) — `monitoring`, with Socket.IO updates
-- Online clients — `onlines`
-- Host snapshot — `system`
-- Offline alerts for 3x-ui / Xray. Eylan and Pasarguard alerts are filtered separately
-- Actions: panel sync and Xray restart (Super Admin)
-
-Premium widgets appear only after the licensed bundle is loaded.
-
-Resource meters on this page are distinct from Monitoring Pro (`/premium/monitoring`).
-
-## API
-
-| Method | Path | Notes |
-|---|---|---|
-| `GET` | `/api/stats/overview` | Super Admin indicators |
-| `GET` | `/api/stats/reseller-overview` | Reseller indicators |
-| `GET` | `/api/stats/traffic-series` | Chart series |
-| `GET` | `/api/stats/trends` | Trend cards |
-| `GET` | `/api/stats/monitoring` | CPU, RAM, disk, and network snapshot |
-| `GET` | `/api/stats/system` | Host information |
-| `GET` | `/api/stats/onlines` | Online client list |
-| `GET` | `/api/stats/diagnostics` | Diagnostic payload |
-| `POST` | `/api/stats/sync` | Panel sync |
-| `POST` | `/api/stats/restart-xray` | Restart Xray on a node |
+The resource bars on this page are not Monitoring Pro. That Premium page is separate and includes alerts and incidents.
 
 <div class="hm-actions">
 

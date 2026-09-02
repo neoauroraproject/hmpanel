@@ -1,87 +1,34 @@
 # تنظیمات
 
 ::: info Community
-مسیر: `/settings` · نقش: `SUPER_ADMIN`
+ویژهٔ Super Admin.
 :::
 
-زبانه‌ها: **General**، **License**، **SSL**، **Backup**، **About**.
+پنج زبانه: عمومی، لایسنس، SSL، پشتیبان، درباره.
 
-پاکسازی و عیب‌یابی مسیر جدا دارند (`/cleanup`، `/diagnostics`).
+پاکسازی و عیب‌یابی صفحه‌های جدا هستند.
 
-## General
+## عمومی
 
-- آستانهٔ نامزد پاکسازی (روز پس از انقضا) — `POST /api/settings`
-- منطقهٔ زمانی نمایش (پیش‌فرض Asia/Tehran) — برای تاریخ رابط و ساعت هشدار تلگرام
-- تقویم نمایش: جلالی یا میلادی (مستقل از زبان رابط)
-- زبان پنل (همچنین از نوار کناری)
+آستانهٔ نامزد پاکسازی (چند روز بعد از انقضا)، منطقهٔ زمانی نمایش (پیش‌فرض تهران)، تقویم جلالی یا میلادی، و زبان پنل.
 
-| روش | مسیر |
-|---|---|
-| `GET` | `/api/settings` |
-| `POST` | `/api/settings` — نقشهٔ تنظیمات (`cleanup_threshold_days`، `display_timezone`، `display_calendar`، …) |
-| `GET` | `/api/settings/display-timezone` — هر مدیر احراز هویت‌شده |
+## لایسنس
 
-## License
-
-همان کارت مجوز. نصب Community می‌تواند کلید را در این زبانه فعال کند.
-
-| روش | مسیر |
-|---|---|
-| `GET` | `/api/platform/license` |
-| `POST` | `/api/platform/license/activate` — `{ licenseKey }` |
-| `POST` | `/api/platform/license/deactivate` |
-| `POST` | `/api/platform/license/recheck` |
-| `POST` | `/api/platform/license/update-bundle` |
-| `POST` | `/api/platform/license/reload-plugins` |
-| `POST` | `/api/platform/license/diagnose-bundle` |
-| `GET` | `/api/platform/license/bundle-status` |
-| `GET` | `/api/settings/license` — پرچم قابلیت برای هر کاربر احراز هویت‌شده |
+همان کارت فعال‌سازی کلید. در نسخهٔ Community هم می‌توانید لایسنس را اینجا وارد کنید.
 
 ## SSL
 
-نماها: وضعیت، صدور (Let’s Encrypt یا خودامضا)، تغییر دامنه، پیشرفت (SSE).
-
-| روش | مسیر |
-|---|---|
-| `GET` | `/api/settings/ssl` |
-| `POST` | `/api/settings/ssl/issue` — `{ domain, email, selfSigned? }` |
-| `POST` | `/api/settings/ssl/renew` |
-| `POST` | `/api/settings/ssl/switch` — `{ enableHttps }` |
-| `POST` | `/api/settings/ssl/change-domain` — `{ domain, email }` |
-| `POST` | `/api/settings/ssl/repair` |
-| `GET` | `/api/settings/ssl/stream` — پیشرفت SSE |
-| `GET` | `/api/settings/ssl-diagnostic` |
-
-معادل میزبان: زیرفهرست TLS خط فرمان.
+وضعیت گواهی، صدور Let’s Encrypt یا گواهی خودامضا، تغییر دامنه، و پیشرفت کار. معادل همین کارها در منوی `sudo hm` هست.
 
 ## Backup
 
-اسنپ‌شات درخواستی. متمایز از Backup Center.
+پشتیبان **دستی** و یک‌باره. سه نوع: کامل، فقط پایگاه‌داده، فقط پیکربندی. پرونده را می‌سازید و بارگیری می‌کنید، یا بایگانی را بارگذاری و بازیابی می‌کنید.
 
-انواع (همان `hm`):
+پشتیبان زمان‌بندی‌شده در **مرکز پشتیبان** پرمیوم است.
 
-- `full` — پایگاه داده، پیکربندی، بارگذاری‌ها و premium
-- `database`
-- `config` — `.env`، nginx و ACME
+## درباره
 
-گردش: تولید سپس بارگیری؛ یا بارگذاری بایگانی، تحلیل و تأیید بازیابی.
-
-| روش | مسیر |
-|---|---|
-| `POST` | `/api/backups` — `{ type: 'full' \| 'database' \| 'config' }` |
-| `GET` | `/api/backups/:id/download` |
-| `POST` | `/api/backups/analyze-upload` — چندبخشی `file` |
-| `POST` | `/api/backups/restore-apply` — `{ id, fileName, panelId? }` |
-
-## About
-
-نسخهٔ پنل، برچسب نسخه، کانال تلگرام، و بررسی و اعمال به‌روزرسانی GitHub.
-
-| روش | مسیر |
-|---|---|
-| `GET` | `/api/settings/check-update` |
-| `POST` | `/api/settings/update-panel` |
-| `GET` | `/api/settings/update-logs` |
+نسخهٔ پنل، برچسب نسخه، پیوند کانال، و بررسی به‌روزرسانی از GitHub.
 
 <div class="hm-actions">
 
@@ -89,5 +36,6 @@
 [عیب‌یابی](/fa/community/diagnostics)
 [اشتراک](/fa/community/portal)
 [خط فرمان](/fa/guide/cli)
+[لایسنس](/fa/premium/license)
 
 </div>

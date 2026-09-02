@@ -1,30 +1,28 @@
 # Branding
 
 ::: warning Premium
-Module `branding` · Feature `WHITE_LABEL` · Kind BUSINESS · Path: `/premium/branding`
+Enable the Branding module in Premium Settings.
 :::
 
-White-label appearance for subscription and store-facing pages. Community portal settings remain a Dark-theme editor on `portalSettings`.
+Branding aligns the subscription portal and storefront with your name and marks.
 
-Themes: **Aurora, Dark, Light, Eclipse, Sunset, Glass, Vibrant**. Logo and dark-logo upload, name, description, colors, Telegram and support links. Reset to defaults.
+On this page you can:
 
-Public logo files: `GET /api/platform/premium-assets/branding/:adminId/:file`.
+- Set the company name and a short description
+- Upload a light logo and a dark logo separately
+- Edit footer text
+- Choose whether the subscription name in client apps uses the brand, the client username, or a custom phrase
+- Pick a prepared theme: Aurora, Dark, Light, Eclipse, Sunset, Glass, Vibrant
+- Enter support channels: Telegram, WhatsApp, website, email
 
-## API
+Live preview shows the result before you save. Reset restores the defaults.
 
-| Method | Path |
-|---|---|
-| `GET` | `/api/premium-modules/branding` |
-| `PUT` | `/api/premium-modules/branding` |
-| `POST` | `/api/premium-modules/branding/upload/:kind` |
-| `POST` | `/api/premium-modules/branding/reset` |
-
-Store lists `branding` as a dependency.
+Community only offers a limited Dark-theme editor under portal settings. Full themes and logos are in Branding.
 
 <div class="hm-actions">
 
 [Subscription](/community/portal)
-[Custom Domains](/premium/custom-domains)
 [Store](/premium/store)
+[Custom Domains](/premium/custom-domains)
 
 </div>

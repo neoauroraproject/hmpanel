@@ -1,38 +1,35 @@
 # Edition comparison
 
-The Community edition is included in the public distribution. Premium modules are loaded after a license key is activated.
+The Community edition ships with the public installer. Premium capabilities load after the license is activated.
 
-Writes to Eylan and Pasarguard remain disabled until Panel Plus is licensed, even if those panel types appear in the Community interface.
+Creating or editing clients on Eylan and Pasarguard stays blocked until Panel Plus is on, even if those types appear in the list.
 
 | Area | Community | Premium |
 |---|---|---|
-| Sign-in `/login` | `POST /api/auth/login`, `POST /api/auth/refresh` | Identical |
-| Dashboard `/dashboard` | KPIs and host metrics via `GET /api/stats/*` | Optional widgets after the bundle loads |
-| Admins `/admins` | Reseller accounts, quotas, inbounds | Assignment of BUSINESS modules in Premium Settings |
-| Clients `/clients` | Create, update, bulk actions, QR | Client Templates; Eylan/Pasarguard become operable with Panel Plus |
-| Panels `/panels` | Full 3x-ui operations | Operable Eylan/Pasarguard nodes require Panel Plus |
-| Traffic `/traffic` | Ledger and Super Admin top-up | Identical |
-| Migration `/migration` | Import from a WhalePanel `.db` file | Identical |
-| Settings | Timezone, ACME, on-demand backup, updates | Identical |
-| License | Key activation | Status `PREMIUM` |
-| Cleanup `/cleanup` | `POST /api/clients/bulk` with `action: cleanup` (no refund) | Identical |
-| Diagnostics `/diagnostics` | `GET /api/settings/diagnostics` | Identical |
-| Subscription `/p/:id`, `/s/:token` | Platform and native link tabs | Branding replaces logos and themes |
-| `/settings/portal` | Dark theme and support links | Full Branding editor |
-| Storefront | Routes exist; APIs require the store module | Full administration and checkout |
-| Branding, domains, templates | Not present | `/premium/branding`, `/premium/domains`, `/premium/client-templates` |
-| Store | — | `/premium/store` |
-| Admin Recharge | — | `/premium/admin-recharge` |
-| Panel Plus | Writes return `premium_unavailable` | `/premium/external-panels` |
-| Monitoring | Dashboard bars (`GET /api/stats/monitoring`) | `/premium/monitoring` |
-| Backup | Settings → Backup (`/api/backups`) | Backup Center (`/api/plugins/backup-center`) |
-| Job Center | — | Premium Settings → Jobs |
-| Developer API | — | Tab present; marked coming soon. No key-issuance API |
+| Sign-in | Login form and dashboard | Same |
+| Dashboard | Indicators and host resources | Extra widgets after the bundle loads |
+| Admins | Resellers, quotas, inbounds | Module grants and Eylan / Pasarguard quotas |
+| Clients | Create, edit, bulk actions, QR | Client Templates; Eylan and Pasarguard with Panel Plus |
+| Panels | Full 3x-ui operations | Operable Eylan and Pasarguard |
+| Traffic | Ledger and Super Admin top-up | Same; reseller self-serve credit is separate |
+| Migration | Import from a WhalePanel file | Same |
+| Settings | Timezone, SSL, manual backup, updates | Same |
+| License | Key entry | Premium status |
+| Cleanup | Remove expired clients without traffic refund | Same |
+| Subscription | Platform and native links | Logos and themes from Branding |
+| Reseller portal | Dark theme and support links | Full Branding editor |
+| Store | Storefront routes exist; full admin does not | Orders, products, checkout |
+| Custom domains | Not present | Separate hostname with a certificate |
+| Admin Recharge | Not present | Reseller credit purchase |
+| Panel Plus | Writes blocked | Eylan and Pasarguard |
+| Monitoring | Dashboard bars | Monitoring Pro page |
+| Backup | Manual only | Scheduled Backup Center |
+| Developer API | Not present | Tab exists; coming soon |
 
 <div class="hm-actions">
 
-[License activation](/premium/license)
-[Purchase a license](https://t.me/hmraysupport)
+[Activate license](/premium/license)
+[Buy license](https://t.me/hmraysupport)
 [Telegram channel](https://t.me/hmpanel)
 
 </div>

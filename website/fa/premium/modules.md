@@ -1,33 +1,29 @@
-# ماژول‌ها
+# قابلیت‌های پرمیوم
 
 ::: warning Premium
-مجوز فعال لازم است. هر ماژول را در تنظیمات Premium فعال کنید.
+پس از فعال‌سازی لایسنس، هر قابلیت را از تنظیمات پرمیوم روشن کنید.
 :::
 
-| ماژول | مسیر | مرجع |
-|---|---|---|
-| تنظیمات Premium | `/settings/premium` | تنظیمات |
-| Branding | `/premium/branding` | برندینگ |
-| Custom Domains | `/premium/domains` | دامنهٔ اختصاصی |
-| Client Templates | `/premium/client-templates` | قالب کلاینت |
-| Admin Recharge | `/premium/admin-recharge` | شارژ ادمین |
-| Panel Plus | `/premium/external-panels` | Panel Plus |
-| Monitoring Pro | `/premium/monitoring` | Monitoring Pro |
-| Backup Center | `/premium/backups` | مرکز پشتیبان |
-
-فروشگاه در فهرست مستندات جداگانه آمده است.
+| قابلیت | چه می‌کند |
+|---|---|
+| لایسنس | وارد کردن کلید و بارگذاری بسته |
+| تنظیمات پرمیوم | روشن و خاموش کردن ماژول‌ها؛ مدیریت حجم ادمین روی 3x-ui، Eylan و Pasarguard؛ ربات تلگرام |
+| پنل پلاس | اتصال پاسارگارد (Xray / sing-box) و ایلان (OpenVPN، WireGuard، L2TP، Cisco) |
+| فروشگاه | ویترین، سفارش، محصول، پورتال مشتری؛ تأمین روی 3x-ui و پنل پلاس |
+| برندینگ | نام، لوگو و قالب پورتال اشتراک و ویترین |
+| دامنه اختصاصی | نام میزبان جدا با گواهی برای ادمین یا فروشگاه |
+| قالب کلاینت | پلن آماده و سبد نام برای ساخت سریع |
+| افزایش اعتبار | ریسلر اعتبار می‌خرد؛ Super Admin رسید را تأیید می‌کند |
+| مانیتورینگ حرفه‌ای | ترافیک زنده، دسترس‌پذیری، هشدار تلگرام، حادثه و قانون خودکار |
+| مرکز پشتیبان | پشتیبان زمان‌بندی‌شده، بازیابی، ارسال تلگرام |
 
 <div class="hm-actions">
 
-[مجوز](/fa/premium/license)
+[لایسنس](/fa/premium/license)
+[تنظیمات پرمیوم](/fa/premium/settings)
+[پنل پلاس](/fa/premium/panel-plus)
+[مانیتورینگ حرفه‌ای](/fa/premium/monitoring-pro)
 [فروشگاه](/fa/premium/store)
-[تنظیمات Premium](/fa/premium/settings)
-[برندینگ](/fa/premium/branding)
-[دامنهٔ اختصاصی](/fa/premium/custom-domains)
-[قالب کلاینت](/fa/premium/client-templates)
-[شارژ ادمین](/fa/premium/admin-recharge)
-[Panel Plus](/fa/premium/panel-plus)
-[Monitoring Pro](/fa/premium/monitoring-pro)
-[مرکز پشتیبان](/fa/premium/backup-center)
+[خرید لایسنس](https://t.me/hmraysupport)
 
 </div>

@@ -1,61 +1,26 @@
 # Clients
 
 ::: info Community
-Path: `/clients` · Roles: `SUPER_ADMIN`, `RESELLER` (scoped to assigned panels and inbounds)
+Super Admin sees everyone. A reseller sees only assigned panels and inbounds.
 :::
 
-List, filter, create, bulk-edit, and export subscription links for 3x-ui clients. Native groups correspond to 3x-ui groups.
+Create, edit, bulk-change, and export subscription links for 3x-ui clients.
 
-## Filters
+Quick filters: all, online, low traffic, expiring soon, disabled, expired, no traffic. If more than one panel exists, pick a panel before create.
 
-- Panel selector: all accessible panels. Create and bulk-create require a panel when more than one is available
-- Status filters: All, Online, Low traffic, Expiring soon, Disabled, Expired, No traffic
-- Query filters: search, inbound, `panelType`, admin (Super Admin), expiry, traffic range
-
-Eylan and Pasarguard inbounds may appear in the list. Write operations remain blocked until Panel Plus is licensed (`premium_unavailable`).
+Eylan and Pasarguard may appear in the list. Creating or editing those clients waits until **Panel Plus** is on.
 
 ## Create and edit
 
-`POST /api/clients`, `PATCH /api/clients/:id` — remark, traffic, expiry, IP limit, inbounds, enable flag, group.
+Set remark, traffic, expiry, IP limit, inbounds, enabled flag, and group. If Client Templates are on, **With Template** appears.
 
-**With Template** is available when Client Templates are loaded. Otherwise create manually.
+## Bulk
 
-## Bulk operations
-
-`POST /api/clients/bulk` actions: `enable`, `disable`, `delete`, `cleanup`, `addTraffic`, `addDays`, `resetUsage`, `resetTraffic`, `assignGroup`, `assignInbounds`.
-
-Accelerated enable and disable, when supported by the remote 3x-ui: `POST /api/bulk-clients/enable` and `disable`. Export: `POST /api/bulk-clients/export-subs`.
-
-Bulk create: `POST /api/clients/bulk-create` after `POST /api/clients/bulk-create/validate` (prefix, separator, count, traffic, expiry, inbounds).
+Enable, disable, delete, cleanup, add traffic or days, reset usage, assign group or inbounds, and bulk-create with a prefix.
 
 ## Connection output
 
-Per client: protocol-aware output, QR code, and downloadable configuration (for example WireGuard `.conf`). The subscription dialog presents **platform** and **native** tabs when both URLs exist.
-
-## API
-
-| Method | Path |
-|---|---|
-| `GET` | `/api/clients` — `page`, `limit`, `search`, `status`, `inboundId`, `panelId`, `panelType`, `adminId`, `expiry`, `trafficRange` |
-| `POST` | `/api/clients` |
-| `GET` | `/api/clients/:id` |
-| `PATCH` | `/api/clients/:id` |
-| `DELETE` | `/api/clients/:id` |
-| `GET` | `/api/clients/:id/output` — optional `inboundId` |
-| `GET` | `/api/clients/:id/config` |
-| `GET` | `/api/clients/:id/qrcode` |
-| `GET` | `/api/clients/groups` |
-| `POST` | `/api/clients/bulk-create` |
-| `POST` | `/api/clients/bulk-create/validate` |
-| `POST` | `/api/clients/bulk` |
-| `GET` | `/api/clients/cleanup-candidates` |
-| `POST` | `/api/bulk-clients/enable` |
-| `POST` | `/api/bulk-clients/disable` |
-| `POST` | `/api/bulk-clients/export-subs` |
-| `GET` | `/api/inbounds` |
-| `PATCH` | `/api/inbounds/:id` |
-
-Online IP counts: `GET /api/panels/online-ips` (Super Admin and Reseller).
+Each client has protocol-aware output, a QR code, and a downloadable config. When both platform and native URLs exist, two tabs are shown.
 
 <div class="hm-actions">
 

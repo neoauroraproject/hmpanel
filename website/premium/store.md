@@ -1,73 +1,36 @@
 # Store
 
 ::: warning Premium
-Module `store` · Feature `CUSTOM_SUBSCRIPTION_PORTAL` · Depends on branding · Path: `/premium/store`
+Enable the Store module in Premium Settings. Branding should also be on for the storefront appearance.
 :::
 
-Administrator store, public shop, customer portal, and Telegram Mini App. The Community tree includes a subset of Store controllers. The licensed bundle adds coupons, wallet, IP limits, analytics, broadcast, and add-ons.
+The Store administers orders, products, customers, and the public shop from one page. There are four main tabs.
 
-## Administrator tabs
+## Overview
 
-| Tab | Contents |
-|---|---|
-| Overview | Summary (`GET .../dashboard`), Analytics (`GET .../analytics`) |
-| Commerce | Orders, Products, Categories, Provisioning profiles, Coupons, Wallet deposits, IP limits |
-| Customers | Directory, Telegram broadcast |
-| Settings | Store profile, Telegram bot, product add-ons (Eylan / Pasarguard) |
+Sales summary and revenue charts. Recent orders are visible here.
 
-Orders: approve, reject, provision, cancel, manual-deliver. Customers: attach and update services.
+## Commerce
 
-Public routes (no administrator JWT): `/shop/:slug`, `/shop/:slug/portal`, `/portal`, `/portal/dashboard`, `/track/:code`. Customer portal: **home / orders / alerts**. Mini App: **home / services / shop / orders / alerts**.
+- **Orders:** approve, reject, provision, cancel, or deliver manually
+- **Products:** sellable plans with price and duration
+- **Categories:** grouping on the storefront
+- **Provisioning profiles:** which panel, traffic, and expiry a product creates — including 3x-ui, Eylan, and Pasarguard
+- **Coupons:** limited to new purchases, renewals, or both
+- **Wallet:** customer deposits, approve or reject
+- **Add-ons:** IP limits and product extras for Eylan and Pasarguard
 
-Checkout (guest, portal, Mini App): category → products → name and add-ons → payment. Coupons may be limited to `both`, `new`, or `renewal`.
+## Customers
 
-## Administrator API (`/api/premium-modules/store`)
+The customer directory, attached services, and Telegram broadcast from the store bot.
 
-Guards: JWT, Premium, module `store`.
+## Settings
 
-| Area | Methods |
-|---|---|
-| Dashboard / profile | `GET dashboard`, `GET/PUT profile` |
-| Categories | `GET/POST categories`, `POST categories/reorder`, `PATCH/DELETE categories/:id` |
-| Profiles | `GET profiles`, `GET provisioning-options`, `POST/PATCH/DELETE profiles/:id` |
-| Templates | `GET/POST templates`, `PATCH/DELETE templates/:id`, `POST templates/:id/clone` |
-| Products | `GET/POST products`, `POST products/reorder`, `PATCH/DELETE products/:id` |
-| IP limits | `GET/POST ip-limits`, `DELETE ip-limits/:id`, `POST ip-limits/migrate-legacy` |
-| Add-ons | `GET/POST product-addons`, `DELETE product-addons/:id`; Eylan/Pasarguard `GET/PUT addons/:provider`, test, options, grants |
-| Orders | `GET orders`, `GET orders/:id`, `POST orders/:id/approve\|reject\|provision\|cancel\|manual-deliver`, `PATCH orders/:id` |
-| Customers | `GET customers`, `GET customers/:id`, `POST customers/:id/services/attach`, `PATCH customers/:id/services/:clientId` |
-| Telegram | `GET/PUT telegram`, `POST telegram/test`, `POST telegram/activate`, `GET telegram/broadcast/preview`, `POST telegram/broadcast` |
-| Coupons | `GET/POST coupons`, `DELETE coupons/:id` |
-| Referral | `GET/POST referral-rewards`, `DELETE referral-rewards/:id` |
-| Wallet | `GET wallet/deposits`, `POST wallet/deposits/:id/approve\|reject`, `POST wallet/customers/:customerId/adjust` |
-| Analytics | `GET analytics` |
+Store profile (name, storefront address, subscription link mode), the store Telegram bot, and Eylan / Pasarguard add-ons.
 
-## Public API (`/api/store`)
+## Customer side
 
-| Method | Path |
-|---|---|
-| `GET` | `/api/store/public/:slug` |
-| `GET` | `/api/store/public/by-domain` |
-| `POST` | `/api/store/public/:slug/customer` |
-| `POST` | `/api/store/public/:slug/order` |
-| `POST` | `/api/store/public/:slug/coupon/validate` |
-| `POST` | `/api/store/public/:slug/coupons/applicable` |
-| `GET` | `/api/store/track/:code` |
-| `POST` | `/api/store/customer/session` |
-| `GET` | `/api/store/customer/session` |
-| `POST` | `/api/store/customer/logout` |
-| `POST` | `/api/store/customer/order` |
-| `POST` | `/api/store/customer/renew` |
-| `POST` | `/api/store/customer/orders/:id/cancel` |
-| `POST` | `/api/store/customer/services/claim` |
-| `GET` | `/api/store/portal/:token` |
-| `POST` | `/api/store/portal/:token/renew` |
-| `POST` | `/api/store/telegram/session` |
-| `POST` | `/api/store/telegram/webhook/:slug/:secret` |
-| `GET` | `/api/store/customer/wallet` |
-| `POST` | `/api/store/customer/wallet/deposit` |
-
-Customer session header: `x-customer-session`.
+Customers buy from the public shop, review orders and alerts in the portal, or follow the same path in the Telegram Mini App. Guest, portal, and Mini App checkout share one flow: category, product, name and add-ons, then payment.
 
 <div class="hm-actions">
 

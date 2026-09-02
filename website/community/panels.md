@@ -1,50 +1,28 @@
 # Panels
 
 ::: info Community
-Path: `/panels` · Role: `SUPER_ADMIN`
+Super Admin only.
 :::
 
-Register and operate **3x-ui** nodes. The form also accepts types **3x-ui**, **Eylan**, and **Pasarguard**. Eylan and Pasarguard use Panel Plus connection fields. Write operations for those types remain blocked in Community (`premium_unavailable`) until Panel Plus is active.
+Register and operate **3x-ui** nodes. The form also accepts Eylan or Pasarguard; writes to those types wait until **Panel Plus** is on.
 
-## 3x-ui operations
+For 3x-ui you can:
 
-- Register: name, URL, optional `subUrl`, `apiToken` or username and password
-- Test connection before save
-- Synchronize inbounds and clients from the remote API
-- Scan capabilities against the bundled OpenAPI specifications
+- Save name, URL, subscription URL, and token or username
+- Test the connection before saving
+- Sync inbounds and clients from the remote panel
+- Scan API capabilities
 - Restart Xray
-- View recent logs
-- Live inbounds: `GET /api/panels/:id/inbounds`
-- Edit and delete
+- Read recent logs
+- Edit or delete
 
-Actions that the remote API does not support are hidden or disabled.
-
-## API
-
-| Method | Path |
-|---|---|
-| `GET` | `/api/panels` |
-| `POST` | `/api/panels` |
-| `GET` | `/api/panels/:id` |
-| `PATCH` | `/api/panels/:id` |
-| `DELETE` | `/api/panels/:id` |
-| `POST` | `/api/panels/test-connection` — `{ url, apiToken?, panelId? }` |
-| `GET` | `/api/panels/online-ips` — also available to `RESELLER` |
-| `GET` | `/api/panels/:id/inbounds` |
-| `POST` | `/api/panels/:id/scan-capabilities` |
-| `POST` | `/api/panels/:id/sync` |
-| `POST` | `/api/panels/:id/restart-xray` |
-| `GET` | `/api/panels/:id/logs` |
-
-Licensed bundle (not Community): `POST /api/premium-modules/native-panels` for native-panel helpers.
+Actions the remote panel does not support are hidden or disabled.
 
 <div class="hm-actions">
 
 [Dashboard](/community/dashboard)
 [Clients](/community/clients)
 [Admins](/community/admins)
-[Traffic](/community/traffic)
-[Migration](/community/migration)
 [Panel Plus](/premium/panel-plus)
 
 </div>

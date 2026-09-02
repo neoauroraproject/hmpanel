@@ -1,50 +1,28 @@
 # پنل‌ها
 
 ::: info Community
-مسیر: `/panels` · نقش: `SUPER_ADMIN`
+ویژهٔ Super Admin.
 :::
 
-ثبت و بهره‌برداری از گره‌های **3x-ui**. فرم همچنین انواع **3x-ui**، **Eylan** و **Pasarguard** را می‌پذیرد. ایلان و پاسارگارد از فیلدهای اتصال Panel Plus استفاده می‌کنند. عملیات نوشتن برای آن انواع در Community تا فعال بودن Panel Plus مسدود است (`premium_unavailable`).
+پنل‌های **3x-ui** را ثبت و اداره می‌کنید. در فرم می‌توان نوع Eylan یا Pasarguard را هم انتخاب کرد؛ عملیات نوشتن روی آن‌ها تا **پنل پلاس** انجام نمی‌شود.
 
-## عملیات 3x-ui
+برای 3x-ui می‌توانید:
 
-- ثبت: نام، URL، اختیاری `subUrl`، `apiToken` یا نام کاربری و گذرواژه
-- آزمایش اتصال پیش از ذخیره
-- همگام‌سازی اینباند و کلاینت از API دور
-- پویش قابلیت‌ها بر اساس مشخصات OpenAPI همراه
-- راه‌اندازی مجدد Xray
-- مشاهدهٔ گزارش‌های اخیر
-- اینباند زنده: `GET /api/panels/:id/inbounds`
-- ویرایش و حذف
+- نام، نشانی، پیوند اشتراک و کلید یا نام کاربری را ثبت کنید
+- اتصال را قبل از ذخیره آزمایش کنید
+- اینباند و کلاینت را از پنل دور همگام کنید
+- قابلیت‌های API را پویش کنید
+- Xray را از نو راه‌اندازی کنید
+- گزارش اخیر را ببینید
+- ویرایش یا حذف کنید
 
-اقداماتی که API دور پشتیبانی نمی‌کند پنهان یا غیرفعال می‌شوند.
-
-## API
-
-| روش | مسیر |
-|---|---|
-| `GET` | `/api/panels` |
-| `POST` | `/api/panels` |
-| `GET` | `/api/panels/:id` |
-| `PATCH` | `/api/panels/:id` |
-| `DELETE` | `/api/panels/:id` |
-| `POST` | `/api/panels/test-connection` — `{ url, apiToken?, panelId? }` |
-| `GET` | `/api/panels/online-ips` — همچنین برای `RESELLER` |
-| `GET` | `/api/panels/:id/inbounds` |
-| `POST` | `/api/panels/:id/scan-capabilities` |
-| `POST` | `/api/panels/:id/sync` |
-| `POST` | `/api/panels/:id/restart-xray` |
-| `GET` | `/api/panels/:id/logs` |
-
-باندل دارای مجوز (نه Community): `POST /api/premium-modules/native-panels` برای یاری‌گر پنل بومی.
+اقدامی که پنل دور پشتیبانی نکند، در رابط پنهان یا غیرفعال می‌شود.
 
 <div class="hm-actions">
 
 [داشبورد](/fa/community/dashboard)
 [کلاینت‌ها](/fa/community/clients)
 [ادمین‌ها](/fa/community/admins)
-[ترافیک](/fa/community/traffic)
-[مهاجرت](/fa/community/migration)
-[Panel Plus](/fa/premium/panel-plus)
+[پنل پلاس](/fa/premium/panel-plus)
 
 </div>

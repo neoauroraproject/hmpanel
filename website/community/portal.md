@@ -1,39 +1,20 @@
 # Subscription
 
 ::: info Community
-Public pages: `/p/:id`, short `/s/:token`. Administrator connection dialog on Clients.
+Public page for the customer; connection dialog on Clients.
 :::
 
-A **platform** subscription URL (`/s/…` on this panel) and a **native** 3x-ui URL (`/sub/…` on the node) may both exist. The connection interface presents two tabs when both are available (`platform` | `native`).
+Two URLs may exist: the platform link on this panel, and the native link on the 3x-ui node. If both exist, two tabs are shown.
 
-## Public page `/p/:id`
+The public subscription page ships Dark, Neo, Aurora, and Sunset in Community. Extra themes and logos are in Premium **Branding**.
 
-Community themes: Dark, Neo, Aurora, Sunset. Branding adds further themes and logos.
+## Reseller portal
 
-## Reseller portal (Community)
+Portal settings. Saves name, logo, color, and support channels (Telegram, WhatsApp, website, email). This form’s theme is Dark only. Platform QR, native QR, QR download, and direct import can be toggled separately.
 
-Path: `/settings/portal`. Distinct from Branding. Saves `portalSettings` on the administrator:
+If Super Admin has disabled portal customization, the reseller cannot open this page.
 
-- Support: Telegram, WhatsApp, website, email
-- Portal name, logo URL, primary color
-- Theme in this form: **Dark**
-- Toggles: platform QR, native QR, QR download, direct import, support section
-
-`PATCH /api/admins/:id` with `{ portalSettings }`. If the Super Admin has disabled portal customization, the reseller receives HTTP 403.
-
-## Short links
-
-Nginx: `location /s/` → `@Controller('s')`.
-
-| Method | Path |
-|---|---|
-| `GET` | `/s/:token` — public short subscription |
-| `GET` | `/api/subscriptions/:id` |
-| `GET` | `/api/subscriptions/:id/output` |
-| `GET` | `/api/subscriptions/:id/config` |
-| `GET` | `/api/subscriptions/:id/nodes` |
-
-Store subscription URL mode (`hmpanel` or `native`) is a Store profile field.
+Store subscription link mode (platform or native) is set on the Premium store profile.
 
 <div class="hm-actions">
 

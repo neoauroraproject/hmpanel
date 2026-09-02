@@ -1,36 +1,16 @@
 # Traffic
 
 ::: info Community
-Path: `/traffic` · Super Admin: any reseller ledger and top-up. Reseller: own ledger
+Super Admin sees any reseller ledger and can top up. A reseller sees only their own ledger.
 :::
 
-Traffic ledger: credits (top-ups), debits (provisioning), and usage charges. Destination chips appear when the administrator has per-panel quota (`GET /api/traffic/destinations`).
+The ledger shows credits (top-ups), debits (provisioning), and usage. Destination tabs appear when quota is per panel.
 
-## Super Admin
+Super Admin selects a reseller, optionally a panel, filters the row type, and tops up. Amounts are entered in GB in the interface.
 
-1. Select a reseller
-2. Optional destination (panel)
-3. Filter: all, credits, debits, or usage
-4. Search description or client
-5. Top-up: `POST /api/traffic/top-up/:adminId` with `{ amount, description?, panelId? }` (`amount` is integer bytes; the interface converts GB to bytes)
+A reseller cannot top up. Self-serve credit is the Premium **Admin Recharge** module.
 
-The quota card shows mode (global or per-panel), remaining, used, and the unlimited flag.
-
-## Reseller
-
-The same ledger via `GET /api/traffic/ledger` (without `:adminId`). No top-up endpoint.
-
-Accounting modes are set on the administrator record: allocation versus usage, and refunds.
-
-## API
-
-| Method | Path | Role |
-|---|---|---|
-| `GET` | `/api/traffic/ledger` | Caller’s ledger. Query: `page`, `limit`, `type`, `search`, `panelId` |
-| `GET` | `/api/traffic/ledger/:adminId` | Super Admin |
-| `GET` | `/api/traffic/destinations` | Caller’s panel tabs |
-| `GET` | `/api/traffic/destinations/:adminId` | Super Admin |
-| `POST` | `/api/traffic/top-up/:adminId` | Super Admin |
+Accounting mode is set on the admin record.
 
 <div class="hm-actions">
 

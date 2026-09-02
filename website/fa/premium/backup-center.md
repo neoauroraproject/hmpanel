@@ -1,37 +1,26 @@
 # مرکز پشتیبان
 
 ::: warning Premium
-ماژول `backup-center` · نوع PLATFORM · قابلیت `REMOTE_BACKUPS` · مسیر: `/premium/backups` · Super Admin
+ماژول مرکز پشتیبان را در تنظیمات پرمیوم روشن کنید. این صفحه ویژهٔ Super Admin است.
 :::
 
-پشتیبان زمان‌بندی‌شده و بازیابی. متمایز از Settings → Backup (`/api/backups`) که فقط درخواستی است.
+مرکز پشتیبان برای نسخهٔ زمان‌بندی‌شده است. پشتیبان دستی و یک‌باره همچنان در **تنظیمات → Backup** باقی می‌ماند.
 
-- شاخص داشبورد
-- تناوب: `hourly`، `6h`، `12h`، `daily`، `3d`، `weekly`
-- انواع: `full`، `database`، `config`
-- تاریخچه: بارگیری، بازیابی، حذف
-- گزارش ارسال تلگرام
-- بارگذاری، تحلیل، اعمال (شامل بازیابی SQLite مربوط به 3x-ui روی پنل انتخاب‌شده)
+در این صفحه می‌توانید:
 
-## API (`/api/plugins/backup-center`)
+- سلامت آخرین پشتیبان، زمان اجرای بعدی و فضای ذخیره‌سازی را ببینید
+- زمان‌بندی را روی ساعتی، هر شش ساعت، هر دوازده ساعت، روزانه، هر سه روز یا هفتگی بگذارید
+- نوع را انتخاب کنید: کامل، فقط پایگاه‌داده، فقط پیکربندی، یا پایگاه‌دادهٔ یک پنل 3x-ui
+- از تاریخچه بارگیری، بازیابی یا حذف کنید
+- گزارش ارسال به تلگرام را ببینید
+- پروندهٔ پشتیبان را بارگذاری کنید، پیش‌نمایش بگیرید، سپس بازیابی را تأیید کنید
 
-| روش | مسیر |
-|---|---|
-| `GET` | `dashboard` · `backups` · `telegram-log` |
-| `POST` | `backups` |
-| `GET` | `backups/:id/download` |
-| `DELETE` | `backups/:id` |
-| `POST` | `backups/:id/restore` |
-| `POST` | `restore/analyze` · `restore/apply` |
-| `GET/PUT` | `schedule` |
-
-زمان‌بند: `scheduled-backup` روی صف `platform-jobs` هر ۵ دقیقه در صورت مجاز بودن نوشتن.
-
-کارهای طولانی پشتیبان و TLS در تنظیمات Premium → Jobs ظاهر می‌شوند.
+کارهای طولانی در Job Center داخل تنظیمات پرمیوم دیده می‌شوند.
 
 <div class="hm-actions">
 
-[Settings → Backup](/fa/community/settings#backup)
+[پشتیبان دستی](/fa/community/settings#backup)
 [خط فرمان](/fa/guide/cli)
+[تنظیمات پرمیوم](/fa/premium/settings)
 
 </div>

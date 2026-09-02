@@ -1,36 +1,28 @@
 # Custom Domains
 
 ::: warning Premium
-Module `custom-domains` · Feature `CUSTOM_DOMAINS` · Kind BUSINESS · Path: `/premium/domains`
+Enable the Custom Domains module in Premium Settings.
 :::
 
-Per-administrator (or store) hostnames with TLS. Status: `PENDING`, `VERIFIED`, `SSL_ACTIVE`, `SSL_FAILED`, `EXPIRED`.
+Each admin or store can have a separate hostname with its own TLS certificate. That hostname is distinct from the main panel domain.
 
-- Add domain, optional administrator assignment, optional store slug
-- Verify DNS
-- Issue TLS
-- Delete
+Typical steps:
 
-Nginx templates `vhost-domain.*.template` use `${VHOST_DOMAIN}` for these virtual hosts, separate from `PANEL_DOMAIN`.
+1. Add the domain and, if needed, attach it to an admin or a store slug
+2. Verify DNS
+3. Issue the certificate
+4. Delete the domain when it is no longer required
 
-## API
+Row status is one of: pending, verified, certificate active, issuance failed, expired.
 
-| Method | Path |
-|---|---|
-| `GET` | `/api/domains` |
-| `POST` | `/api/domains` |
-| `PATCH` | `/api/domains/:id` |
-| `POST` | `/api/domains/:id/verify` |
-| `POST` | `/api/domains/:id/ssl` |
-| `DELETE` | `/api/domains/:id` |
-| `GET` | `/api/domains/resolve` — public resolve by host |
+During license grace, existing domains remain usable. Adding a domain or reissuing a certificate is blocked.
 
-During license grace: existing TLS may be viewed and used; add, issue, and change are blocked.
+The panel’s own certificate is managed under **Settings → SSL**, not on this page.
 
 <div class="hm-actions">
 
 [Branding](/premium/branding)
 [Store](/premium/store)
-[Panel TLS](/community/settings#ssl)
+[Panel SSL](/community/settings#ssl)
 
 </div>

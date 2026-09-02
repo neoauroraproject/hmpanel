@@ -1,30 +1,28 @@
 # برندینگ
 
 ::: warning Premium
-ماژول `branding` · قابلیت `WHITE_LABEL` · نوع BUSINESS · مسیر: `/premium/branding`
+ماژول برندینگ را در تنظیمات پرمیوم روشن کنید.
 :::
 
-ظاهر سفیدبرچسب برای صفحات اشتراک و فروشگاه. تنظیمات پورتال Community ویرایشگر قالب Dark روی `portalSettings` باقی می‌ماند.
+برندینگ ظاهر پورتال اشتراک و ویترین فروشگاه را با نام و نشان شما هماهنگ می‌کند.
 
-قالب‌ها: **Aurora, Dark, Light, Eclipse, Sunset, Glass, Vibrant**. بارگذاری نشان و نشان تیره، نام، شرح، رنگ، پیوند تلگرام و پشتیبانی. بازگشت به پیش‌فرض.
+در این صفحه می‌توانید:
 
-پروندهٔ نشان عمومی: `GET /api/platform/premium-assets/branding/:adminId/:file`.
+- نام شرکت و توضیح کوتاه را ثبت کنید
+- لوگوی حالت روشن و لوگوی حالت تاریک را جداگانه بارگذاری کنید
+- متن پاورقی را بنویسید
+- مشخص کنید نام اشتراک در نرم‌افزارهای کلاینت از نام برند بیاید، از نام کاربری کلاینت، یا از یک عبارت سفارشی
+- یکی از قالب‌های آماده را انتخاب کنید: Aurora، Dark، Light، Eclipse، Sunset، Glass، Vibrant
+- راه‌های پشتیبانی را وارد کنید: تلگرام، واتساپ، وب‌سایت، رایانامه
 
-## API
+پیش‌نمایش زنده همان صفحه، نتیجه را قبل از ذخیره نشان می‌دهد. بازنشانی، همه چیز را به حالت پیش‌فرض برمی‌گرداند.
 
-| روش | مسیر |
-|---|---|
-| `GET` | `/api/premium-modules/branding` |
-| `PUT` | `/api/premium-modules/branding` |
-| `POST` | `/api/premium-modules/branding/upload/:kind` |
-| `POST` | `/api/premium-modules/branding/reset` |
-
-Store مقدار `branding` را به‌عنوان وابستگی فهرست می‌کند.
+نسخهٔ رایگان فقط یک ویرایشگر محدود با قالب Dark در تنظیمات پورتال دارد. ویرایش کامل قالب‌ها و لوگو در برندینگ است.
 
 <div class="hm-actions">
 
 [اشتراک](/fa/community/portal)
-[دامنهٔ اختصاصی](/fa/premium/custom-domains)
 [فروشگاه](/fa/premium/store)
+[دامنه اختصاصی](/fa/premium/custom-domains)
 
 </div>

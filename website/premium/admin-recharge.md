@@ -1,50 +1,29 @@
 # Admin Recharge
 
 ::: warning Premium
-Module `admin-recharge` · Kind BUSINESS · Path: `/premium/admin-recharge`
+Enable the Admin Recharge module in Premium Settings.
 :::
 
-Reseller credit plans with manual payment approval. Super Admin and Reseller see different tabs.
+Resellers buy credit here. Super Admin reviews the receipt and approves it. Super Admin ledger top-up remains on the Traffic page.
 
 ## Super Admin
 
-`orders` · `plans` · `payment` · `agency` · `finance`
+- **Orders:** pending receipts; approve, reject, or retry
+- **Plans:** top-up packs, new agency, or both — with category, volume, client cap, and panel access (3x-ui, Eylan, Pasarguard)
+- **Payment:** card numbers, crypto wallets, and deposit instructions
+- **Agency:** whether the agency menu appears in the bot, and support text after a rejected order
+- **Finance:** totals and financial status
 
-- **Orders** — pending receipt review; approve, reject, retry. Badge: `GET .../pending-count`
-- **Plans** — recharge packs (`GET/POST/PATCH/DELETE plans`, categories)
-- **Payment** — `GET/PATCH settings` (alias `payment-settings`): bank cards and crypto instructions
-- **Agency** — `GET agency/catalog`
-- **Finance** — `GET finance`
+When you define a new-agency plan, you choose which panels, inbounds, Pasarguard groups, and Eylan protocols the reseller receives.
 
 ## Reseller
 
-`buy` · `history` — `GET catalog`, `POST orders`, upload receipt `POST orders/:id/receipt`, `GET my-orders`. Credential checks: `GET check-username`, `POST validate-credentials`.
-
-Telegram webhook: `POST /api/premium-modules/admin-recharge/webhook/:secret`.
-
-## API (`/api/premium-modules/admin-recharge`)
-
-| Method | Path |
-|---|---|
-| `GET` | `pending-count` / `my-pending-count` |
-| `GET/POST` | `categories` · `PATCH/DELETE categories/:id` |
-| `GET` | `agency/catalog` |
-| `GET` | `check-username` |
-| `POST` | `validate-credentials` |
-| `GET/PATCH` | `settings` or `payment-settings` |
-| `GET/POST` | `plans` · `PATCH/DELETE plans/:id` |
-| `GET` | `catalog` |
-| `POST` | `orders` |
-| `POST` | `orders/:id/receipt` |
-| `GET` | `my-orders` · `orders` |
-| `POST` | `orders/:id/approve` · `retry` · `reject` |
-| `GET` | `finance` |
-
-Eylan and Pasarguard grants for resellers are configured under Premium Settings → Admin Management (`admin-provider-access`).
+Two tabs: buy credit and history. The reseller picks a plan, places an order, and uploads a receipt. Credit is applied only after Super Admin approval.
 
 <div class="hm-actions">
 
 [Traffic](/community/traffic)
 [Premium Settings](/premium/settings)
+[Panel Plus](/premium/panel-plus)
 
 </div>

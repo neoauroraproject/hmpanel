@@ -23,8 +23,16 @@ function sidebar(prefix: string, fa: boolean): DefaultTheme.SidebarItem[] {
       text: fa ? "پرمیوم" : "Premium",
       items: [
         { text: fa ? "لایسنس" : "License", link: `${prefix}/premium/license` },
+        { text: fa ? "قابلیت‌ها" : "Capabilities", link: `${prefix}/premium/modules` },
+        { text: fa ? "تنظیمات پرمیوم" : "Premium Settings", link: `${prefix}/premium/settings` },
+        { text: fa ? "پنل پلاس" : "Panel Plus", link: `${prefix}/premium/panel-plus` },
         { text: fa ? "فروشگاه" : "Store", link: `${prefix}/premium/store` },
-        { text: fa ? "ماژول‌ها" : "Modules", link: `${prefix}/premium/modules` },
+        { text: fa ? "برندینگ" : "Branding", link: `${prefix}/premium/branding` },
+        { text: fa ? "دامنه اختصاصی" : "Custom Domains", link: `${prefix}/premium/custom-domains` },
+        { text: fa ? "قالب کلاینت" : "Client Templates", link: `${prefix}/premium/client-templates` },
+        { text: fa ? "افزایش اعتبار" : "Admin Recharge", link: `${prefix}/premium/admin-recharge` },
+        { text: fa ? "مانیتورینگ" : "Monitoring", link: `${prefix}/premium/monitoring-pro` },
+        { text: fa ? "مرکز پشتیبان" : "Backup Center", link: `${prefix}/premium/backup-center` },
       ],
     },
     {
@@ -35,12 +43,12 @@ function sidebar(prefix: string, fa: boolean): DefaultTheme.SidebarItem[] {
 }
 
 const footerEn = {
-  message: `<a href="${REPO}">GitHub</a><a href="${CHANNEL}">Telegram</a><a href="${SUPPORT}">License</a>`,
+  message: `<a href="${REPO}">GitHub</a><a href="${CHANNEL}">Telegram</a><a href="${SUPPORT}">Buy license</a>`,
   copyright: "HMPanel",
 };
 
 const footerFa = {
-  message: `<a href="${REPO}">GitHub</a><a href="${CHANNEL}">تلگرام</a><a href="${SUPPORT}">مجوز</a>`,
+  message: `<a href="${REPO}">GitHub</a><a href="${CHANNEL}">تلگرام</a><a href="${SUPPORT}">خرید لایسنس</a>`,
   copyright: "HMPanel",
 };
 

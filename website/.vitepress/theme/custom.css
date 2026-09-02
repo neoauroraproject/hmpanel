@@ -293,13 +293,27 @@ html.locale-fa .vp-doc h1,
 html.locale-fa .vp-doc h2,
 html.locale-fa .vp-doc h3,
 html.locale-fa .vp-doc p,
-html.locale-fa .vp-doc li {
+html.locale-fa .vp-doc li,
+html.locale-fa .vp-doc th,
+html.locale-fa .vp-doc td,
+html.locale-fa .custom-block {
   text-align: right;
+  font-family: Vazir, Tahoma, ui-sans-serif, sans-serif;
+}
+
+html.locale-fa .vp-doc table {
+  direction: rtl;
+  text-align: right;
+  font-family: Vazir, Tahoma, ui-sans-serif, sans-serif;
+}
+
+html.locale-fa .vp-doc th,
+html.locale-fa .vp-doc td {
+  font-family: Vazir, Tahoma, ui-sans-serif, sans-serif;
 }
 
 html.locale-fa .vp-doc pre,
-html.locale-fa .vp-doc code,
-html.locale-fa .vp-doc table {
+html.locale-fa .vp-doc code {
   direction: ltr;
   text-align: left;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;

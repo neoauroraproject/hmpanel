@@ -1,34 +1,20 @@
 # قالب کلاینت
 
 ::: warning Premium
-ماژول `client-templates` · نوع BUSINESS · مسیر: `/premium/client-templates`
+ماژول قالب کلاینت را در تنظیمات پرمیوم روشن کنید.
 :::
 
-پیش‌تنظیم برای ایجاد سریع کلاینت: قالب را انتخاب کنید، نام را وارد نمایید (یا نام بعدی را از استخر نام تخصیص دهید)، سپس ایجاد کنید. صفحهٔ کلاینت‌ها هنگام بارگذاری این ماژول **With Template** را نمایش می‌دهد.
+قالب، یک پلن آماده است تا ساخت کلاینت تکراری نباشد. حجم، روز، محدودیت IP، اینباندها و یادداشت را یک‌بار تعریف می‌کنید.
+
+در صفحهٔ کلاینت‌ها دکمهٔ **With Template** ظاهر می‌شود. قالب را انتخاب می‌کنید، نام را می‌نویسید (یا از سبد نام، نام بعدی را می‌گیرید) و کلاینت ساخته می‌شود.
 
 ## فیلدهای قالب
 
-نام، شرح، شناسهٔ اینباند، کل گیگابایت، روز انقضا، محدودیت IP، flow، نامک، فعال، ترتیب.
+نام، توضیحات، اینباندها، ترافیک به گیگابایت، روز انقضا، محدودیت IP، و ترتیب نمایش.
 
-## استخر نام
+## سبد نام
 
-پیشوند، جداکننده، شمارهٔ شروع، نام‌های نمونه. `POST .../pools/:poolId/next-name` و `POST .../:id/next-name` نامک بعدی را تخصیص می‌دهند.
-
-## API
-
-| روش | مسیر |
-|---|---|
-| `GET` | `/api/premium-modules/client-templates` |
-| `GET` | `/api/premium-modules/client-templates/:id` |
-| `POST` | `/api/premium-modules/client-templates` |
-| `PATCH` | `/api/premium-modules/client-templates/:id` |
-| `DELETE` | `/api/premium-modules/client-templates/:id` |
-| `POST` | `/api/premium-modules/client-templates/:id/next-name` |
-| `GET` | `/api/premium-modules/client-templates/pools` |
-| `POST` | `/api/premium-modules/client-templates/pools` |
-| `PATCH` | `/api/premium-modules/client-templates/pools/:poolId` |
-| `DELETE` | `/api/premium-modules/client-templates/pools/:poolId` |
-| `POST` | `/api/premium-modules/client-templates/pools/:poolId/next-name` |
+پیشوند، جداکننده و شمارهٔ شروع را مشخص می‌کنید. هر بار که کلاینت جدید از قالب ساخته شود، نام بعدی به‌ترتیب اختصاص می‌یابد. اگر پیشوند خالی باشد، نام را هنگام ساخت دستی وارد می‌کنید.
 
 <div class="hm-actions">
 

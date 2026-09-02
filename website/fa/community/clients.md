@@ -1,67 +1,32 @@
 # کلاینت‌ها
 
 ::: info Community
-مسیر: `/clients` · نقش: `SUPER_ADMIN`، `RESELLER` (محدود به پنل و اینباند تخصیص‌یافته)
+Super Admin همه را می‌بیند. Reseller فقط پنل و اینباند تخصیص‌یافته را می‌بیند.
 :::
 
-فهرست، پالایش، ایجاد، ویرایش گروهی و صدور پیوند اشتراک برای کلاینت‌های 3x-ui. گروه بومی با گروه 3x-ui متناظر است.
+در این صفحه کلاینت‌های 3x-ui را می‌سازید، ویرایش می‌کنید، گروهی تغییر می‌دهید و پیوند اشتراک می‌گیرید.
 
-## پالایش
+پالایش سریع: همه، برخط، ترافیک کم، نزدیک به انقضا، غیرفعال، منقضی، بدون ترافیک. اگر چند پنل دارید، برای ساخت باید پنل را انتخاب کنید.
 
-- انتخاب پنل: همهٔ پنل‌های در دسترس. ایجاد و ایجاد گروهی در صورت وجود بیش از یک پنل، انتخاب پنل را الزامی می‌کند
-- وضعیت: All، Online، Low traffic، Expiring soon، Disabled، Expired، No traffic
-- پالایش پرس‌وجو: جستجو، اینباند، `panelType`، ادمین (Super Admin)، انقضا، بازهٔ ترافیک
+ایلان و پاسارگارد ممکن است در فهرست دیده شوند. ساخت و ویرایش آن‌ها تا روشن بودن **پنل پلاس** انجام نمی‌شود.
 
-اینباندهای ایلان و پاسارگارد ممکن است در فهرست ظاهر شوند. عملیات نوشتن تا زمان مجوز داشتن Panel Plus مسدود است (`premium_unavailable`).
+## ساخت و ویرایش
 
-## ایجاد و ویرایش
-
-`POST /api/clients`، `PATCH /api/clients/:id` — نامک، ترافیک، انقضا، محدودیت IP، اینباند، پرچم فعال‌سازی، گروه.
-
-**With Template** هنگام بارگذاری Client Templates در دسترس است. در غیر این صورت ایجاد به‌صورت دستی انجام می‌شود.
+نامک، ترافیک، انقضا، محدودیت IP، اینباند، فعال بودن و گروه را تنظیم می‌کنید. اگر قالب کلاینت پرمیوم روشن باشد، دکمهٔ **With Template** ظاهر می‌شود.
 
 ## عملیات گروهی
 
-اقدامات `POST /api/clients/bulk`: `enable`، `disable`، `delete`، `cleanup`، `addTraffic`، `addDays`، `resetUsage`، `resetTraffic`، `assignGroup`، `assignInbounds`.
-
-فعال و غیرفعال سریع، در صورت پشتیبانی 3x-ui دور: `POST /api/bulk-clients/enable` و `disable`. صدور: `POST /api/bulk-clients/export-subs`.
-
-ایجاد گروهی: `POST /api/clients/bulk-create` پس از `POST /api/clients/bulk-create/validate` (پیشوند، جداکننده، تعداد، ترافیک، انقضا، اینباند).
+فعال و غیرفعال، حذف، پاکسازی، افزودن ترافیک یا روز، بازنشانی مصرف، تخصیص گروه یا اینباند، و ساخت تعداد زیاد با پیشوند.
 
 ## خروجی اتصال
 
-برای هر کلاینت: خروجی متناسب با پروتکل، رمزینهٔ QR و پیکربندی قابل بارگیری (برای نمونه WireGuard `.conf`). گفتگوی اشتراک در صورت وجود هر دو نشانی، زبانه‌های **platform** و **native** را نمایش می‌دهد.
-
-## API
-
-| روش | مسیر |
-|---|---|
-| `GET` | `/api/clients` — `page`، `limit`، `search`، `status`، `inboundId`، `panelId`، `panelType`، `adminId`، `expiry`، `trafficRange` |
-| `POST` | `/api/clients` |
-| `GET` | `/api/clients/:id` |
-| `PATCH` | `/api/clients/:id` |
-| `DELETE` | `/api/clients/:id` |
-| `GET` | `/api/clients/:id/output` — اختیاری `inboundId` |
-| `GET` | `/api/clients/:id/config` |
-| `GET` | `/api/clients/:id/qrcode` |
-| `GET` | `/api/clients/groups` |
-| `POST` | `/api/clients/bulk-create` |
-| `POST` | `/api/clients/bulk-create/validate` |
-| `POST` | `/api/clients/bulk` |
-| `GET` | `/api/clients/cleanup-candidates` |
-| `POST` | `/api/bulk-clients/enable` |
-| `POST` | `/api/bulk-clients/disable` |
-| `POST` | `/api/bulk-clients/export-subs` |
-| `GET` | `/api/inbounds` |
-| `PATCH` | `/api/inbounds/:id` |
-
-شمارش IP برخط: `GET /api/panels/online-ips` (Super Admin و Reseller).
+برای هر کلاینت خروجی متناسب با پروتکل، رمزینهٔ QR و پروندهٔ پیکربندی در دسترس است. اگر هم پیوند سامانه و هم پیوند نیتیو وجود داشته باشد، دو زبانه نشان داده می‌شود.
 
 <div class="hm-actions">
 
 [پنل‌ها](/fa/community/panels)
 [پاکسازی](/fa/community/cleanup)
 [قالب کلاینت](/fa/premium/client-templates)
-[Panel Plus](/fa/premium/panel-plus)
+[پنل پلاس](/fa/premium/panel-plus)
 
 </div>

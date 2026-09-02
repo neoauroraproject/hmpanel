@@ -3,7 +3,7 @@ layout: home
 hero:
   name: HMPanel
   text: Documentation
-  tagline: Installation, configuration, and reference for the Community and Premium editions.
+  tagline: Installation and operator guide for the Community and Premium editions.
   actions:
     - theme: brand
       text: Installation
@@ -13,7 +13,7 @@ hero:
       link: /compare
 features:
   - title: Community
-    details: Management of 3x-ui panels, clients, reseller accounts, and traffic accounting.
+    details: Manage 3x-ui panels, clients, reseller accounts, and traffic from one place.
   - title: Premium
-    details: Licensed modules including the store, branding, custom domains, Panel Plus, and advanced monitoring.
+    details: Store, branding, custom domains, Panel Plus for Eylan and Pasarguard, and advanced monitoring.
 ---

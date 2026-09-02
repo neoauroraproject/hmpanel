@@ -1,23 +1,14 @@
 # Diagnostics
 
 ::: info Community
-Path: `/diagnostics` · Role: `SUPER_ADMIN`
+Super Admin only.
 :::
 
-- **Version** — installed version, running image tag, latest GitHub release
-- **Host** — hostname, CPU, memory, disk
-- Docker and GitHub API reachability
-- Note when `/var/run/docker.sock` is not mounted (host management and automatic-update tracking disabled)
-- Capability matrix, TLS detection, certificate analysis, host diagnostics, automatic-update flags
+Shows the installed version, running image, latest GitHub release, hostname, CPU, memory, and disk. Docker and GitHub reachability are checked as well.
 
-Refresh interval: 15 seconds.
+If the Docker socket is not mounted into the container, host management and automatic-update tracking are off.
 
-## API
-
-| Method | Path |
-|---|---|
-| `GET` | `/api/settings/diagnostics` |
-| `GET` | `/api/stats/diagnostics` |
+The capability matrix, SSL detection, and automatic-update flags are on this page. The view refreshes every fifteen seconds.
 
 <div class="hm-actions">
 
