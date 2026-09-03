@@ -30,6 +30,7 @@ export class AuthService {
         email: true,
         passwordHash: true,
         role: true,
+        isOwner: true,
         status: true,
         expiryTime: true,
         tokenVersion: true,
@@ -53,6 +54,7 @@ export class AuthService {
         username: admin.username,
         email: admin.email,
         role: admin.role,
+        isOwner: admin.isOwner === true,
       },
     };
   }

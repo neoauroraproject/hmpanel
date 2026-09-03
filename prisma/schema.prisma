@@ -175,6 +175,8 @@ model Admin {
   refundOnEdit     Boolean     @default(true)
   unlimitedTraffic Boolean     @default(false)
   quotaMode        QuotaMode   @default(GLOBAL)
+  /// Installation Super Admin created at first boot. Extra SUPER_ADMINs are false.
+  isOwner          Boolean     @default(false)
   /// Bumped on password change / disable to invalidate outstanding JWTs.
   tokenVersion     Int         @default(0)
   createdAt        DateTime    @default(now())

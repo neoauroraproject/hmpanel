@@ -55,7 +55,7 @@ export class AdminProvisioningService {
           username: data.username,
           email: data.email,
           passwordHash: hash,
-          role: (data.role as any) || 'RESELLER',
+          role: 'RESELLER',
           trafficMode: (data.trafficMode as any) || 'ALLOCATION',
           balance: unlimited || usePerPanel ? 0 : data.balance || 0,
           totalAssigned: unlimited || usePerPanel ? 0 : data.balance || 0,

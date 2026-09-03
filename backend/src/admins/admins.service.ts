@@ -3,6 +3,7 @@ import {
   ConflictException,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
   Logger,
   OnModuleInit,
 } from '@nestjs/common';
@@ -10,7 +11,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { PanelsService } from '../panels/panels.service';
 import { calculateAdminTrafficSummary } from '../common/utils/traffic.util';
 import { AdminQuotaService } from '../traffic/admin-quota.service';
-import { QuotaMode } from '@prisma/client';
+import { AdminRole, QuotaMode } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 
 @Injectable()
@@ -40,6 +41,7 @@ export class AdminsService implements OnModuleInit {
             email,
             passwordHash: hash,
             role: 'SUPER_ADMIN',
+            isOwner: true,
             balance: 0,
             status: 'active',
             // Super Admin is never traffic-capped; flag drives clients overview UI.
@@ -48,6 +50,8 @@ export class AdminsService implements OnModuleInit {
         });
         this.logger.log('Initial SUPER_ADMIN created successfully.');
       }
+
+      await this.ensureInstallationOwner();
 
       // Backfill: existing Super Admins must never be traffic-capped.
       const fixed = await this.prisma.admin.updateMany({
@@ -74,25 +78,71 @@ export class AdminsService implements OnModuleInit {
     }
   }
 
-  async create(data: {
-    username: string;
-    email: string;
-    password: string;
-    role?: string;
-    trafficMode?: string;
-    balance?: number;
-    inboundIds?: string[];
-    expiryTime?: number;
-    maxClients?: number;
-    permissions?: string[];
-    refundOnDelete?: boolean;
-    refundOnEdit?: boolean;
-    unlimitedTraffic?: boolean;
-    storeEnabled?: boolean;
-    quotaMode?: string;
-    panelQuotas?: Array<{ panelId: string; balanceBytes: number }>;
-  }) {
-    // Allow admin creation regardless of sync state since we enforce selection in the UI.
+  private async ensureInstallationOwner() {
+    const ownerCount = await this.prisma.admin.count({
+      where: { isOwner: true },
+    });
+    if (ownerCount > 0) return;
+
+    const oldestSuper = await this.prisma.admin.findFirst({
+      where: { role: 'SUPER_ADMIN' },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, username: true },
+    });
+    if (!oldestSuper) return;
+
+    await this.prisma.admin.update({
+      where: { id: oldestSuper.id },
+      data: { isOwner: true },
+    });
+    this.logger.log(
+      `Backfilled installation owner flag on SUPER_ADMIN (${oldestSuper.username}).`,
+    );
+  }
+
+  private async getActor(actorId: string) {
+    const actor = await this.prisma.admin.findUnique({
+      where: { id: actorId },
+      select: { id: true, role: true, isOwner: true },
+    });
+    if (!actor) throw new ForbiddenException('Actor not found');
+    return actor;
+  }
+
+  private parseRole(role?: string): AdminRole {
+    if (!role || role === 'RESELLER') return 'RESELLER';
+    if (role === 'SUPER_ADMIN') return 'SUPER_ADMIN';
+    throw new BadRequestException('Invalid role');
+  }
+
+  async create(
+    data: {
+      username: string;
+      email: string;
+      password: string;
+      role?: string;
+      trafficMode?: string;
+      balance?: number;
+      inboundIds?: string[];
+      expiryTime?: number;
+      maxClients?: number;
+      permissions?: string[];
+      refundOnDelete?: boolean;
+      refundOnEdit?: boolean;
+      unlimitedTraffic?: boolean;
+      storeEnabled?: boolean;
+      quotaMode?: string;
+      panelQuotas?: Array<{ panelId: string; balanceBytes: number }>;
+    },
+    actorId: string,
+  ) {
+    const actor = await this.getActor(actorId);
+    const role = this.parseRole(data.role);
+    if (role === 'SUPER_ADMIN' && !actor.isOwner) {
+      throw new ForbiddenException(
+        'Only the installation Super Admin can create Super Admins',
+      );
+    }
 
     const exists = await this.prisma.admin.findFirst({
       where: { OR: [{ username: data.username }, { email: data.email }] },
@@ -101,23 +151,33 @@ export class AdminsService implements OnModuleInit {
     if (exists) throw new ConflictException('Username or email already exists');
 
     const hash = await bcrypt.hash(data.password, 10);
-    const unlimited = data.unlimitedTraffic === true;
-    const quotaMode = (data.quotaMode as QuotaMode) || 'GLOBAL';
-    const usePerPanel = quotaMode === 'PER_PANEL' && !unlimited;
+    const isSuper = role === 'SUPER_ADMIN';
+    const unlimited = isSuper || data.unlimitedTraffic === true;
+    const quotaMode = isSuper
+      ? 'GLOBAL'
+      : (data.quotaMode as QuotaMode) || 'GLOBAL';
+    const usePerPanel = !isSuper && quotaMode === 'PER_PANEL' && !unlimited;
     const admin = await this.prisma.admin.create({
       data: {
         username: data.username,
         email: data.email,
         passwordHash: hash,
-        role: (data.role as any) || 'RESELLER',
-        trafficMode: (data.trafficMode as any) || 'ALLOCATION',
+        role,
+        isOwner: false,
+        trafficMode: isSuper
+          ? 'ALLOCATION'
+          : (data.trafficMode as any) || 'ALLOCATION',
         balance: unlimited || usePerPanel ? 0 : data.balance || 0,
         totalAssigned: unlimited || usePerPanel ? 0 : data.balance || 0,
         quotaMode,
-        expiryTime: data.expiryTime ? BigInt(data.expiryTime) : 0n,
-        maxClients: data.maxClients || 0,
+        expiryTime: isSuper
+          ? 0n
+          : data.expiryTime
+            ? BigInt(data.expiryTime)
+            : 0n,
+        maxClients: isSuper ? 0 : data.maxClients || 0,
         permissions: data.permissions || [],
-        storeEnabled: data.storeEnabled === true,
+        storeEnabled: isSuper ? false : data.storeEnabled === true,
         refundOnDelete: unlimited ? false : (data.refundOnDelete ?? true),
         refundOnEdit: unlimited ? false : (data.refundOnEdit ?? true),
         unlimitedTraffic: unlimited,
@@ -128,6 +188,7 @@ export class AdminsService implements OnModuleInit {
         username: true,
         email: true,
         role: true,
+        isOwner: true,
         balance: true,
         trafficMode: true,
         status: true,
@@ -143,7 +204,7 @@ export class AdminsService implements OnModuleInit {
       },
     });
 
-    if (data.inboundIds?.length) {
+    if (!isSuper && data.inboundIds?.length) {
       await this.prisma.adminInbound.createMany({
         data: data.inboundIds.map((inboundId) => ({
           adminId: admin.id,
@@ -153,7 +214,7 @@ export class AdminsService implements OnModuleInit {
       });
     }
 
-    if (data.storeEnabled === true) {
+    if (!isSuper && data.storeEnabled === true) {
       await this.syncStoreModuleAssignment(admin.id, true);
     }
 
@@ -162,7 +223,7 @@ export class AdminsService implements OnModuleInit {
         action: 'ADMIN_CREATED',
         entity: 'Admin',
         entityId: admin.id,
-        adminId: admin.id,
+        adminId: actorId,
       },
     });
 
@@ -225,6 +286,7 @@ export class AdminsService implements OnModuleInit {
           username: true,
           email: true,
           role: true,
+          isOwner: true,
           balance: true,
           trafficMode: true,
           status: true,
@@ -279,6 +341,7 @@ export class AdminsService implements OnModuleInit {
         username: true,
         email: true,
         role: true,
+        isOwner: true,
         balance: true,
         trafficMode: true,
         status: true,
@@ -334,6 +397,7 @@ export class AdminsService implements OnModuleInit {
       username?: string;
       password?: string;
       email?: string;
+      role?: string;
       balance?: number;
       status?: string;
       trafficMode?: string;
@@ -349,9 +413,91 @@ export class AdminsService implements OnModuleInit {
       quotaMode?: string;
       panelQuotas?: Array<{ panelId: string; balanceBytes: number }>;
     },
+    actorId: string,
   ) {
+    const actor = await this.getActor(actorId);
     const existing = await this.findOne(id);
+    const isSelf = actor.id === id;
+    const targetIsOwner = existing.isOwner === true;
+    const targetIsSuper = existing.role === 'SUPER_ADMIN';
+
+    if (targetIsOwner && !isSelf) {
+      throw new ForbiddenException(
+        'The installation Super Admin cannot be modified by another admin',
+      );
+    }
+    if (targetIsSuper && !actor.isOwner && !isSelf) {
+      throw new ForbiddenException('You cannot modify another Super Admin');
+    }
+
+    if (data.role !== undefined) {
+      this.parseRole(data.role);
+      if (!actor.isOwner) {
+        throw new ForbiddenException(
+          'Only the installation Super Admin can change roles',
+        );
+      }
+      if (targetIsOwner && data.role !== 'SUPER_ADMIN') {
+        throw new BadRequestException(
+          'The installation Super Admin cannot be demoted',
+        );
+      }
+    }
+
+    if (isSelf && !actor.isOwner && actor.role === 'SUPER_ADMIN') {
+      data = {
+        username: data.username,
+        password: data.password,
+        email: data.email,
+        portalSettings: data.portalSettings,
+      };
+    }
+
+    const nextRole: AdminRole =
+      data.role !== undefined ? this.parseRole(data.role) : existing.role;
+    const promoting = existing.role !== 'SUPER_ADMIN' && nextRole === 'SUPER_ADMIN';
+    const demoting = existing.role === 'SUPER_ADMIN' && nextRole === 'RESELLER';
+
+    if (demoting) {
+      const inboundIds =
+        data.inboundIds !== undefined
+          ? data.inboundIds
+          : existing.adminInbounds?.map((ai: any) => ai.inbound.id) ?? [];
+      if (!inboundIds.length) {
+        throw new BadRequestException(
+          'Select at least one inbound when demoting a Super Admin',
+        );
+      }
+    }
+
+    if (existing.isOwner && data.status === 'disabled') {
+      throw new BadRequestException(
+        'The installation Super Admin cannot be disabled',
+      );
+    }
+    if (
+      nextRole === 'SUPER_ADMIN' &&
+      !actor.isOwner &&
+      data.status === 'disabled'
+    ) {
+      throw new ForbiddenException('You cannot disable a Super Admin');
+    }
+
     const updateData: any = {};
+    if (promoting || nextRole === 'SUPER_ADMIN') {
+      updateData.role = 'SUPER_ADMIN';
+      updateData.unlimitedTraffic = true;
+      updateData.expiryTime = 0n;
+      updateData.maxClients = 0;
+      updateData.refundOnDelete = false;
+      updateData.refundOnEdit = false;
+      updateData.gracePeriodStart = null;
+      updateData.quotaMode = 'GLOBAL';
+      updateData.storeEnabled = false;
+    }
+    if (demoting) {
+      updateData.role = 'RESELLER';
+    }
 
     // --- Username rename (SUPER_ADMIN only at controller) + 3x-ui group rename ---
     let normalizedUsername: string | null = null;
@@ -488,28 +634,20 @@ export class AdminsService implements OnModuleInit {
     }
 
     if (data.email !== undefined) updateData.email = data.email;
-    if (data.balance !== undefined && existing.quotaMode !== 'PER_PANEL') {
-      updateData.balance = data.balance;
-    }
-    if (data.status !== undefined) {
-      updateData.status =
-        data.status === 'suspended' ? 'disabled' : data.status;
-    }
-    if (data.maxClients !== undefined) updateData.maxClients = data.maxClients;
-    if (data.permissions !== undefined)
-      updateData.permissions = data.permissions;
-    if (data.refundOnDelete !== undefined)
-      updateData.refundOnDelete = data.refundOnDelete;
-    if (data.refundOnEdit !== undefined)
-      updateData.refundOnEdit = data.refundOnEdit;
-    if (data.storeEnabled !== undefined)
-      updateData.storeEnabled = data.storeEnabled === true;
-    if (data.unlimitedTraffic !== undefined) {
-      // Super Admin must always remain unlimited — cannot be capped via UI/API.
-      if (existing.role === 'SUPER_ADMIN') {
-        updateData.unlimitedTraffic = true;
-        updateData.gracePeriodStart = null;
-      } else {
+    if (nextRole !== 'SUPER_ADMIN') {
+      if (data.balance !== undefined && existing.quotaMode !== 'PER_PANEL') {
+        updateData.balance = data.balance;
+      }
+      if (data.maxClients !== undefined) updateData.maxClients = data.maxClients;
+      if (data.permissions !== undefined)
+        updateData.permissions = data.permissions;
+      if (data.refundOnDelete !== undefined)
+        updateData.refundOnDelete = data.refundOnDelete;
+      if (data.refundOnEdit !== undefined)
+        updateData.refundOnEdit = data.refundOnEdit;
+      if (data.storeEnabled !== undefined)
+        updateData.storeEnabled = data.storeEnabled === true;
+      if (data.unlimitedTraffic !== undefined) {
         updateData.unlimitedTraffic = data.unlimitedTraffic;
         if (data.unlimitedTraffic) {
           updateData.balance = 0;
@@ -519,6 +657,18 @@ export class AdminsService implements OnModuleInit {
           updateData.gracePeriodStart = null;
         }
       }
+      if (data.expiryTime !== undefined)
+        updateData.expiryTime = BigInt(data.expiryTime);
+      if (data.trafficMode !== undefined)
+        updateData.trafficMode = data.trafficMode as never;
+      if (data.quotaMode !== undefined) {
+        updateData.quotaMode = data.quotaMode as QuotaMode;
+      }
+    }
+
+    if (data.status !== undefined) {
+      updateData.status =
+        data.status === 'suspended' ? 'disabled' : data.status;
     }
 
     if (data.password) {
@@ -530,9 +680,8 @@ export class AdminsService implements OnModuleInit {
       updateData.tokenVersion = { increment: 1 };
     }
 
-    if (data.expiryTime !== undefined)
-      updateData.expiryTime = BigInt(data.expiryTime);
     if (
+      nextRole !== 'SUPER_ADMIN' &&
       data.expiryTime !== undefined &&
       BigInt(data.expiryTime) > 0n &&
       BigInt(data.expiryTime) <= BigInt(Date.now()) &&
@@ -541,26 +690,25 @@ export class AdminsService implements OnModuleInit {
     ) {
       updateData.tokenVersion = { increment: 1 };
     }
-    if (data.trafficMode !== undefined)
-      updateData.trafficMode = data.trafficMode as never;
     if (data.portalSettings !== undefined)
       updateData.portalSettings = data.portalSettings;
-    if (data.quotaMode !== undefined && existing.role !== 'SUPER_ADMIN') {
-      updateData.quotaMode = data.quotaMode as QuotaMode;
-    }
 
     const nextInboundIds =
-      data.inboundIds !== undefined
-        ? data.inboundIds
-        : existing.adminInbounds?.map((ai: any) => ai.inbound.id) ?? [];
+      nextRole === 'SUPER_ADMIN'
+        ? []
+        : data.inboundIds !== undefined
+          ? data.inboundIds
+          : existing.adminInbounds?.map((ai: any) => ai.inbound.id) ?? [];
     const nextQuotaMode =
-      (data.quotaMode as QuotaMode) || existing.quotaMode || 'GLOBAL';
+      nextRole === 'SUPER_ADMIN'
+        ? 'GLOBAL'
+        : (data.quotaMode as QuotaMode) || existing.quotaMode || 'GLOBAL';
     const switchingToPerPanel =
       nextQuotaMode === 'PER_PANEL' && existing.quotaMode !== 'PER_PANEL';
     const switchingToGlobal =
       nextQuotaMode === 'GLOBAL' && existing.quotaMode === 'PER_PANEL';
 
-    if (data.inboundIds !== undefined) {
+    if (nextRole !== 'SUPER_ADMIN' && data.inboundIds !== undefined) {
       await this.prisma.adminInbound.deleteMany({ where: { adminId: id } });
       if (data.inboundIds.length > 0) {
         await this.prisma.adminInbound.createMany({
@@ -608,9 +756,11 @@ export class AdminsService implements OnModuleInit {
     });
 
     const unlimitedNow =
-      data.unlimitedTraffic !== undefined
-        ? data.unlimitedTraffic
-        : existing.unlimitedTraffic;
+      nextRole === 'SUPER_ADMIN'
+        ? true
+        : data.unlimitedTraffic !== undefined
+          ? data.unlimitedTraffic
+          : existing.unlimitedTraffic;
 
     if (switchingToPerPanel || switchingToGlobal || data.quotaMode !== undefined) {
       await this.adminQuota.syncPanelQuotas(id, {
@@ -645,7 +795,7 @@ export class AdminsService implements OnModuleInit {
       });
     }
 
-    if (data.storeEnabled !== undefined) {
+    if (nextRole !== 'SUPER_ADMIN' && data.storeEnabled !== undefined) {
       await this.syncStoreModuleAssignment(id, data.storeEnabled === true);
     }
 
@@ -681,8 +831,21 @@ export class AdminsService implements OnModuleInit {
     return this.findOne(id);
   }
 
-  async remove(id: string) {
+  async remove(id: string, actorId: string) {
+    const actor = await this.getActor(actorId);
     const admin = await this.findOne(id);
+
+    if (admin.isOwner) {
+      throw new ForbiddenException(
+        'The installation Super Admin cannot be deleted',
+      );
+    }
+    if (admin.role === 'SUPER_ADMIN' && !actor.isOwner) {
+      throw new ForbiddenException(
+        'Only the installation Super Admin can delete Super Admins',
+      );
+    }
+
     const clientCount = await this.prisma.client.count({
       where: { adminId: id },
     });
@@ -691,7 +854,12 @@ export class AdminsService implements OnModuleInit {
     }
 
     await this.prisma.auditLog.create({
-      data: { action: 'ADMIN_DELETED', entity: 'Admin', entityId: id },
+      data: {
+        action: 'ADMIN_DELETED',
+        entity: 'Admin',
+        entityId: id,
+        adminId: actorId,
+      },
     });
 
     if (admin.role === 'RESELLER') {

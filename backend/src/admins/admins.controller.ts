@@ -27,9 +27,9 @@ export class AdminsController {
 
   @Post()
   @Roles('SUPER_ADMIN')
-  @ApiOperation({ summary: 'Create a reseller admin' })
-  create(@Body() dto: CreateAdminDto) {
-    return this.adminsService.create(dto);
+  @ApiOperation({ summary: 'Create a reseller or extra Super Admin' })
+  create(@Req() req: AuthRequest, @Body() dto: CreateAdminDto) {
+    return this.adminsService.create(dto, req.user.id);
   }
 
   @Get()
@@ -80,16 +80,16 @@ export class AdminsController {
     // Username rename is SUPER_ADMIN-only (also renames 3x-ui groups).
     if (req.user.role !== 'SUPER_ADMIN' && dto.username !== undefined) {
       const { username: _ignored, ...rest } = dto;
-      return this.adminsService.update(id, rest);
+      return this.adminsService.update(id, rest, req.user.id);
     }
-    return this.adminsService.update(id, dto);
+    return this.adminsService.update(id, dto, req.user.id);
   }
 
   @Delete(':id')
   @Roles('SUPER_ADMIN')
   @ApiOperation({ summary: 'Delete admin' })
-  remove(@Param('id') id: string) {
-    return this.adminsService.remove(id);
+  remove(@Req() req: AuthRequest, @Param('id') id: string) {
+    return this.adminsService.remove(id, req.user.id);
   }
 
   @Post(':id/fix-migration')

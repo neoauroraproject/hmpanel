@@ -8,6 +8,11 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [2.1.1] - 2026-09-04
+
+### Added
+- **Extra Super Admins (Community):** the installation owner can create or promote Super Admins with full panel access and no traffic, client, expiry, or inbound limits. Only that owner can delete or demote them; the owner account cannot be deleted, disabled, or demoted.
+
 ## [2.0.0] - 2026-08-31
 
 ### Added

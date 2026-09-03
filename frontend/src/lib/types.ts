@@ -6,6 +6,7 @@ export interface SessionAdmin {
   username: string;
   email: string;
   role: Role;
+  isOwner?: boolean;
   portalSettings?: any;
 }
 
@@ -20,6 +21,7 @@ export interface Admin {
   username: string;
   email: string;
   role: Role;
+  isOwner?: boolean;
   balance: number;
   trafficMode: TrafficMode;
   status: string;

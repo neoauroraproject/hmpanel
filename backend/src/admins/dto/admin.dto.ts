@@ -3,7 +3,7 @@ import {
   MinLength,
   IsOptional,
   IsNumber,
-  IsEnum,
+  IsIn,
   IsArray,
   ValidateNested,
 } from 'class-validator';
@@ -19,7 +19,10 @@ export class CreateAdminDto {
   @ApiProperty() @IsString() username: string;
   @ApiProperty() @IsString() email: string;
   @ApiProperty() @IsString() password: string;
-  @ApiPropertyOptional() @IsOptional() @IsString() role?: string;
+  @ApiPropertyOptional({ enum: ['SUPER_ADMIN', 'RESELLER'] })
+  @IsOptional()
+  @IsIn(['SUPER_ADMIN', 'RESELLER'])
+  role?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() status?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() trafficMode?: string;
   @ApiPropertyOptional() @IsOptional() @IsNumber() balance?: number;
@@ -54,6 +57,10 @@ export class CreateAdminDto {
 export class UpdateAdminDto {
   /** Super-admin only — renames 3x-ui client group oldName → newName on every panel. */
   @ApiPropertyOptional() @IsOptional() @IsString() @MinLength(3) username?: string;
+  @ApiPropertyOptional({ enum: ['SUPER_ADMIN', 'RESELLER'] })
+  @IsOptional()
+  @IsIn(['SUPER_ADMIN', 'RESELLER'])
+  role?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() email?: string;
   @ApiPropertyOptional() @IsOptional() @IsNumber() balance?: number;
   @ApiPropertyOptional() @IsOptional() @IsString() status?: string;

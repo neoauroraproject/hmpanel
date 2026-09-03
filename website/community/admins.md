@@ -4,7 +4,15 @@
 Super Admin only.
 :::
 
-Create and edit reseller operators here.
+Create and edit reseller operators here. The Super Admin created during installation (the owner) can also tick **Super Admin** when adding or editing an account. That grants the same panel access as the owner — settings, panels, clients, and resellers — and turns off traffic, client, expiry, and inbound limits.
+
+Only the installation owner can:
+
+- Create or promote extra Super Admins
+- Demote an extra Super Admin back to a reseller (at least one inbound is required after demotion)
+- Delete an extra Super Admin
+
+The owner account itself cannot be deleted, disabled, or demoted.
 
 For each reseller you set:
 

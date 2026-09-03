@@ -12,6 +12,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { MOTION_CONFIG } from "@/lib/motion";
 import { NodeInboundBadge } from "@/components/NodeInboundBadge";
 import { PluginSlot } from "@/components/PluginSlot";
+import { useAuth } from "@/store/auth";
 
 interface AdminPanelQuotaRow {
   panelId: string;
@@ -25,6 +26,7 @@ interface Admin {
   username: string;
   email: string;
   role: string;
+  isOwner?: boolean;
   status: string;
   balance: number; // Bytes. 0 = No Traffic Available
   trafficMode: string;
@@ -71,10 +73,17 @@ function adminStatusLabel(status: string, t: (key: string, params?: Record<strin
   return status;
 }
 
+function adminRoleLabel(admin: { role: string; isOwner?: boolean }, t: (key: string) => string) {
+  if (admin.isOwner) return t("admins.owner");
+  if (admin.role === "SUPER_ADMIN") return t("nav.superAdmin");
+  return t("nav.reseller");
+}
+
 export default function AdminsPage() {
   const t = useT();
   const qc = useQueryClient();
   const toast = useToast((s) => s.push);
+  const sessionAdmin = useAuth((s) => s.admin);
   const [addOpen, setAddOpen] = useState(false);
   const [editAdmin, setEditAdmin] = useState<Admin | null>(null);
   
@@ -86,6 +95,13 @@ export default function AdminsPage() {
     const timer = setTimeout(() => setDebouncedSearch(search), 300);
     return () => clearTimeout(timer);
   }, [search]);
+
+  const { data: selfProfile } = useQuery({
+    queryKey: ["admin", sessionAdmin?.id],
+    queryFn: async () => (await api.get<Admin>(`/admins/${sessionAdmin!.id}`)).data,
+    enabled: !!sessionAdmin?.id,
+  });
+  const isOwner = sessionAdmin?.isOwner === true || selfProfile?.isOwner === true;
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["admins", activeTab, debouncedSearch],
@@ -110,7 +126,15 @@ export default function AdminsPage() {
       toast(t("admins.actionSuccess"));
       qc.invalidateQueries({ queryKey: ["admins"] });
     },
-    onError: () => toast(t("admins.actionFailed"), "error"),
+    onError: (err: any) => {
+      const msg =
+        err?.response?.data?.message ||
+        (Array.isArray(err?.response?.data?.message)
+          ? err.response.data.message.join(", ")
+          : null) ||
+        t("admins.actionFailed");
+      toast(String(msg), "error");
+    },
   });
 
   const handleQuickAction = (admin: Admin, type: 'traffic' | 'expiry' | 'clients', amount: number) => {
@@ -228,7 +252,7 @@ export default function AdminsPage() {
                       <div className="font-semibold text-zinc-800 dark:text-zinc-100 flex items-center gap-2">
                         {a.username}
                       </div>
-                      <div className="text-xs text-zinc-500">{a.role === "SUPER_ADMIN" ? t("nav.superAdmin") : t("nav.reseller")}</div>
+                      <div className="text-xs text-zinc-500">{adminRoleLabel(a, t)}</div>
                     </div>
                     <div className="md:hidden">
                       <Badge tone={a.status === "active" ? "green" : "red"}>
@@ -319,7 +343,19 @@ export default function AdminsPage() {
                         <Power size={16} />
                       </motion.button>
                     )}
+                    {a.role === "SUPER_ADMIN" && !a.isOwner && isOwner && (
+                      <motion.button 
+                        whileHover={{ scale: 1.05 }} 
+                        whileTap={{ scale: 0.95 }} 
+                        onClick={() => toggleStatus(a)} 
+                        className={`p-2 rounded-lg transition-colors ${a.status === 'active' ? 'text-emerald-400 hover:bg-emerald-400/10' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}
+                        title={a.status === 'active' ? t("admins.disableAdmin") : t("admins.enableAdmin")}
+                      >
+                        <Power size={16} />
+                      </motion.button>
+                    )}
                     
+                    {(a.isOwner ? isOwner : a.role !== "SUPER_ADMIN" || isOwner || sessionAdmin?.id === a.id) && (
                     <motion.button
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
@@ -329,21 +365,35 @@ export default function AdminsPage() {
                     >
                       <Edit2 size={16} />
                     </motion.button>
+                    )}
 
+                    {(() => {
+                      const isOwnerRow = a.isOwner === true;
+                      const isExtraSuper = a.role === "SUPER_ADMIN" && !isOwnerRow;
+                      const canDelete = isOwnerRow
+                        ? false
+                        : isExtraSuper
+                          ? isOwner
+                          : true;
+                      const blockedByClients = (a._count?.clients ?? 0) > 0;
+                      if (!canDelete) return null;
+                      return (
                     <motion.button
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
-                      disabled={(a._count?.clients ?? 0) > 0}
+                      disabled={blockedByClients}
                       onClick={() => {
                         if (confirm(t("admins.deleteConfirm", { username: a.username }))) {
                           quickAction.mutate({ id: a.id, payload: { delete: true } }); 
                         }
                       }}
-                      className={`p-2 rounded-lg transition-colors ${(a._count?.clients ?? 0) > 0 ? "text-zinc-600 cursor-not-allowed" : "text-red-400 hover:bg-red-400/10"}`}
-                      title={(a._count?.clients ?? 0) > 0 ? t("admins.cannotDeleteWithClients") : t("admins.deleteAdmin")}
+                      className={`p-2 rounded-lg transition-colors ${blockedByClients ? "text-zinc-600 cursor-not-allowed" : "text-red-400 hover:bg-red-400/10"}`}
+                      title={blockedByClients ? t("admins.cannotDeleteWithClients") : isExtraSuper ? t("admins.deleteSuperAdmin") : t("admins.deleteAdmin")}
                     >
                       <Trash2 size={16} />
                     </motion.button>
+                      );
+                    })()}
                   </div>
                 </td>
               </motion.tr>
@@ -360,6 +410,7 @@ export default function AdminsPage() {
       <AnimatePresence>
         {addOpen && (
           <AddAdminModal
+            callerIsOwner={isOwner}
             onClose={() => setAddOpen(false)}
             onSaved={() => {
               setAddOpen(false);
@@ -371,6 +422,7 @@ export default function AdminsPage() {
         {editAdmin && (
           <EditAdminModal
             adminId={editAdmin.id}
+            callerIsOwner={isOwner}
             onClose={() => setEditAdmin(null)}
             onSaved={() => {
               qc.invalidateQueries({ queryKey: ["admins"] });
@@ -394,6 +446,7 @@ function PanelInboundPicker({
   enabledPanels,
   selectedInbounds,
   onChange,
+  disabled,
 }: {
   panels: PanelRow[];
   inbounds: InboundRow[];
@@ -401,6 +454,7 @@ function PanelInboundPicker({
   enabledPanels: string[];
   selectedInbounds: string[];
   onChange: (next: { enabledPanels: string[]; selectedInbounds: string[] }) => void;
+  disabled?: boolean;
 }) {
   const t = useT();
   const [expanded, setExpanded] = useState<string[]>([]);
@@ -454,7 +508,7 @@ function PanelInboundPicker({
   }
 
   return (
-    <div className="space-y-2 max-h-72 overflow-y-auto pe-2 custom-scrollbar">
+    <div className={`space-y-2 max-h-72 overflow-y-auto pe-2 custom-scrollbar ${disabled ? "opacity-50 pointer-events-none" : ""}`}>
       {panels.map((p) => {
         const panelInbounds = inboundsByPanel.get(p.id) ?? [];
         const frozen = (p as any).operable === false;
@@ -640,7 +694,7 @@ function PerPanelQuotaFields({
   );
 }
 
-function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boolean; onClose: () => void; onSaved: () => void }) {
   const t = useT();
   const toast = useToast((s) => s.push);
   const [openSection, setOpenSection] = useState("basic");
@@ -661,9 +715,11 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
     refundOnDelete: true,
     refundOnEdit: true,
     unlimitedTraffic: false,
+    superAdmin: false,
     quotaMode: "GLOBAL" as QuotaMode,
     panelQuotaGb: {} as Record<string, string>,
   });
+  const limitsLocked = form.superAdmin;
 
   const { data: inbounds, isLoading: inboundsLoading } = useQuery<InboundRow[]>({
     queryKey: ["inbounds-all"],
@@ -681,25 +737,25 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
         username: form.username,
         email: form.username + "@panel.local",
         password: form.password,
-        role: "RESELLER",
+        role: form.superAdmin ? "SUPER_ADMIN" : "RESELLER",
         status: form.status,
-        trafficMode: form.trafficMode,
-        quotaMode: form.unlimitedTraffic ? "GLOBAL" : form.quotaMode,
-        balance: form.unlimitedTraffic || form.quotaMode === "PER_PANEL"
+        trafficMode: form.superAdmin ? "ALLOCATION" : form.trafficMode,
+        quotaMode: form.superAdmin || form.unlimitedTraffic ? "GLOBAL" : form.quotaMode,
+        balance: form.superAdmin || form.unlimitedTraffic || form.quotaMode === "PER_PANEL"
           ? 0
           : (form.balanceGb ? Math.round(Number(form.balanceGb) * 1024 * 1024 * 1024) : 0),
-        panelQuotas: !form.unlimitedTraffic && form.quotaMode === "PER_PANEL"
+        panelQuotas: !form.superAdmin && !form.unlimitedTraffic && form.quotaMode === "PER_PANEL"
           ? buildPanelQuotasPayload(form.enabledPanels, form.panelQuotaGb)
           : undefined,
-        expiryTime: form.expiryDays ? Date.now() + Number(form.expiryDays) * 24 * 60 * 60 * 1000 : 0,
-        maxClients: form.maxClients ? Number(form.maxClients) : 0,
-        inboundIds: form.selectedInbounds,
+        expiryTime: form.superAdmin ? 0 : (form.expiryDays ? Date.now() + Number(form.expiryDays) * 24 * 60 * 60 * 1000 : 0),
+        maxClients: form.superAdmin ? 0 : (form.maxClients ? Number(form.maxClients) : 0),
+        inboundIds: form.superAdmin ? [] : form.selectedInbounds,
         permissions: [],
-        storeEnabled: form.storeEnabled,
+        storeEnabled: form.superAdmin ? false : form.storeEnabled,
         storePanelId: form.storePanelId,
-        refundOnDelete: form.unlimitedTraffic ? false : form.refundOnDelete,
-        refundOnEdit: form.unlimitedTraffic ? false : form.refundOnEdit,
-        unlimitedTraffic: form.unlimitedTraffic,
+        refundOnDelete: form.superAdmin || form.unlimitedTraffic ? false : form.refundOnDelete,
+        refundOnEdit: form.superAdmin || form.unlimitedTraffic ? false : form.refundOnEdit,
+        unlimitedTraffic: form.superAdmin ? true : form.unlimitedTraffic,
       };
       return (await api.post("/admins", payload)).data;
     },
@@ -707,14 +763,22 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
       toast(t("admins.adminCreated"));
       onSaved();
     },
-    onError: () => toast(t("admins.createFailed"), "error"),
+    onError: (err: any) => {
+      const msg =
+        err?.response?.data?.message ||
+        (Array.isArray(err?.response?.data?.message)
+          ? err.response.data.message.join(", ")
+          : null) ||
+        t("admins.createFailed");
+      toast(String(msg), "error");
+    },
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.username || !form.password) return toast(t("admins.usernamePasswordRequired"), "error");
     if (form.password.length < 8) return toast(t("admins.passwordMinLength"), "error");
-    if (form.selectedInbounds.length === 0) return toast(t("admins.inboundRequired"), "error");
+    if (!form.superAdmin && form.selectedInbounds.length === 0) return toast(t("admins.inboundRequired"), "error");
     create.mutate();
   };
 
@@ -723,7 +787,7 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
       <motion.div {...MOTION_CONFIG.modalContent} className="w-full max-w-3xl max-h-[90vh] flex flex-col rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-2xl overflow-hidden">
         <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between bg-zinc-50 dark:bg-zinc-950/30">
           <h2 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50 flex items-center gap-2">
-            <Shield size={20} className="text-blue-500" /> {t("admins.addResellerTitle")}
+            <Shield size={20} className="text-blue-500" /> {t("admins.addAdminTitle")}
           </h2>
           <button onClick={onClose} className="text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"><X size={20} /></button>
         </div>
@@ -756,6 +820,24 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
                       <div className="col-span-2 text-xs text-zinc-500 dark:text-zinc-400">
                         {t("admins.panelAssignmentMovedHint")}
                       </div>
+                      {callerIsOwner && (
+                        <label className="col-span-2 flex items-start gap-3 p-3 rounded-lg border border-blue-500/30 bg-blue-500/5 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={form.superAdmin}
+                            onChange={(e) => setForm({
+                              ...form,
+                              superAdmin: e.target.checked,
+                              unlimitedTraffic: e.target.checked ? true : form.unlimitedTraffic,
+                            })}
+                            className="mt-0.5 w-4 h-4 rounded text-blue-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-blue-500"
+                          />
+                          <div className="flex flex-col">
+                            <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{t("admins.makeSuperAdmin")}</span>
+                            <span className="text-xs text-zinc-500">{t("admins.makeSuperAdminHint")}</span>
+                          </div>
+                        </label>
+                      )}
                     </div>
                   </motion.div>
                 )}
@@ -771,10 +853,13 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
               <AnimatePresence initial={false}>
                 {openSection === 'permissions' && (
                   <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                    <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 space-y-4">
+                    <div className={`p-4 border-t border-zinc-200 dark:border-zinc-800 space-y-4 ${limitsLocked ? "opacity-50 pointer-events-none" : ""}`}>
+                      {limitsLocked && (
+                        <p className="text-xs text-zinc-500">{t("admins.superAdminLimitsDisabled")}</p>
+                      )}
                       <div>
                         <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.maxClients")} <span className="text-zinc-500 text-xs">{t("admins.maxClientsHint")}</span></label>
-                        <input type="number" min={0} placeholder="0" value={form.maxClients} onChange={(e) => setForm({ ...form, maxClients: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
+                        <input type="number" min={0} placeholder="0" value={form.maxClients} onChange={(e) => setForm({ ...form, maxClients: e.target.value })} disabled={limitsLocked} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
                       </div>
                       <div className="mt-4">
                         <label className="mb-2 block text-sm font-medium text-zinc-800 dark:text-zinc-100">
@@ -788,8 +873,9 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
                           enabledPanels={form.enabledPanels}
                           selectedInbounds={form.selectedInbounds}
                           onChange={(next) => setForm(f => ({ ...f, ...next }))}
+                          disabled={limitsLocked}
                         />
-                        {form.selectedInbounds.length === 0 && (
+                        {!limitsLocked && form.selectedInbounds.length === 0 && (
                           <div className="mt-3 p-3 rounded-lg border border-amber-500/20 bg-amber-500/10 text-sm text-amber-600 dark:text-amber-400 flex items-start gap-2">
                             <AlertCircle size={18} className="shrink-0 mt-0.5" />
                             <div>
@@ -814,12 +900,16 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
               <AnimatePresence initial={false}>
                 {openSection === 'limits' && (
                   <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                    <div className="p-4 grid grid-cols-2 gap-4 border-t border-zinc-200 dark:border-zinc-800">
+                    <div className={`p-4 grid grid-cols-2 gap-4 border-t border-zinc-200 dark:border-zinc-800 ${limitsLocked ? "opacity-50 pointer-events-none" : ""}`}>
+                      {limitsLocked && (
+                        <p className="col-span-2 text-xs text-zinc-500">{t("admins.superAdminLimitsDisabled")}</p>
+                      )}
                       <div className="col-span-2">
                         <label className="flex items-center gap-3 p-3 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer">
                           <input
                             type="checkbox"
-                            checked={form.unlimitedTraffic}
+                            checked={form.superAdmin || form.unlimitedTraffic}
+                            disabled={limitsLocked}
                             onChange={(e) => setForm({
                               ...form,
                               unlimitedTraffic: e.target.checked,
@@ -838,7 +928,7 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
                       <QuotaModeToggle
                         value={form.quotaMode}
                         onChange={(quotaMode) => setForm({ ...form, quotaMode })}
-                        disabled={form.unlimitedTraffic}
+                        disabled={form.unlimitedTraffic || limitsLocked}
                       />
                       {form.quotaMode === "GLOBAL" ? (
                       <div>
@@ -889,11 +979,11 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
                         <option value="disabled">{t("admins.statusDisabled")}</option>
                       </select>
                       <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.trafficAccountingMode")}</label>
-                      <select value={form.trafficMode} onChange={(e) => setForm({ ...form, trafficMode: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors">
+                      <select value={form.trafficMode} disabled={limitsLocked} onChange={(e) => setForm({ ...form, trafficMode: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors disabled:opacity-50">
                         <option value="ALLOCATION">{t("admins.allocationMode")}</option>
                         <option value="USAGE">{t("admins.usageMode")}</option>
                       </select>
-                      <div className="mt-4 space-y-3 pt-4 border-t border-zinc-200 dark:border-zinc-800">
+                      <div className={`mt-4 space-y-3 pt-4 border-t border-zinc-200 dark:border-zinc-800 ${limitsLocked ? "opacity-50 pointer-events-none" : ""}`}>
                         <label className="flex items-center gap-3 p-2 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer">
                           <input type="checkbox" checked={form.refundOnDelete} onChange={(e) => setForm({ ...form, refundOnDelete: e.target.checked })} className="w-4 h-4 rounded text-blue-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-blue-500" />
                           <div className="flex flex-col">
@@ -920,7 +1010,7 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
 
           <div className="flex justify-end gap-3 pt-6 mt-6 border-t border-zinc-200 dark:border-zinc-800">
             <button type="button" onClick={onClose} className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">{t("common.cancel")}</button>
-            <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} type="submit" disabled={create.isPending || form.selectedInbounds.length === 0} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50 transition-colors shadow-lg shadow-blue-900/20">
+            <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} type="submit" disabled={create.isPending || (!form.superAdmin && form.selectedInbounds.length === 0)} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50 transition-colors shadow-lg shadow-blue-900/20">
               {create.isPending ? t("common.creating") : t("admins.createAdmin")}
             </motion.button>
           </div>
@@ -931,7 +1021,7 @@ function AddAdminModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
   );
 }
 
-function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClose: () => void; onSaved: () => void }) {
+function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId: string; callerIsOwner: boolean; onClose: () => void; onSaved: () => void }) {
   const t = useT();
   const qc = useQueryClient();
   const toast = useToast((s) => s.push);
@@ -962,6 +1052,7 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
     refundOnDelete: true,
     refundOnEdit: true,
     unlimitedTraffic: false,
+    superAdmin: false,
     quotaMode: "GLOBAL" as QuotaMode,
     panelQuotaGb: {} as Record<string, string>,
   });
@@ -1007,6 +1098,7 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
         refundOnDelete: (admin as any).refundOnDelete ?? true,
         refundOnEdit: (admin as any).refundOnEdit ?? true,
         unlimitedTraffic: (admin as any).unlimitedTraffic ?? false,
+        superAdmin: admin.role === "SUPER_ADMIN",
         quotaMode: (admin.quotaMode as QuotaMode) || "GLOBAL",
         panelQuotaGb,
       }));
@@ -1018,14 +1110,17 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
       if (!admin) throw new Error('Admin not loaded');
       const payload: any = {
         status: form.status,
-        trafficMode: form.trafficMode,
-        inboundIds: form.selectedInbounds,
+        trafficMode: form.superAdmin ? "ALLOCATION" : form.trafficMode,
+        inboundIds: form.superAdmin ? undefined : form.selectedInbounds,
         permissions: [],
-        refundOnDelete: form.unlimitedTraffic ? false : form.refundOnDelete,
-        refundOnEdit: form.unlimitedTraffic ? false : form.refundOnEdit,
-        unlimitedTraffic: form.unlimitedTraffic,
+        refundOnDelete: form.superAdmin || form.unlimitedTraffic ? false : form.refundOnDelete,
+        refundOnEdit: form.superAdmin || form.unlimitedTraffic ? false : form.refundOnEdit,
+        unlimitedTraffic: form.superAdmin ? true : form.unlimitedTraffic,
       };
-      if (!form.unlimitedTraffic) {
+      if (callerIsOwner && !admin.isOwner) {
+        payload.role = form.superAdmin ? "SUPER_ADMIN" : "RESELLER";
+      }
+      if (!form.superAdmin && !form.unlimitedTraffic) {
         payload.quotaMode = form.quotaMode;
         if (form.quotaMode === "PER_PANEL") {
           payload.panelQuotas = buildPanelQuotasPayload(form.enabledPanels, form.panelQuotaGb);
@@ -1036,10 +1131,10 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
           payload.balance = Math.max(0, admin.balance + delta);
         }
       }
-      if (form.maxClients) payload.maxClients = Number(form.maxClients);
+      if (!form.superAdmin && form.maxClients) payload.maxClients = Number(form.maxClients);
       if (form.password.trim()) payload.password = form.password;
-      if (form.expiryDays) payload.expiryTime = Date.now() + Number(form.expiryDays) * 24 * 60 * 60 * 1000;
-      payload.storeEnabled = form.storeEnabled;
+      if (!form.superAdmin && form.expiryDays) payload.expiryTime = Date.now() + Number(form.expiryDays) * 24 * 60 * 60 * 1000;
+      payload.storeEnabled = form.superAdmin ? false : form.storeEnabled;
       const nextUsername = form.username.trim();
       if (nextUsername && nextUsername !== admin.username) {
         payload.username = nextUsername;
@@ -1091,7 +1186,7 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
 
   if (!admin) return null;
 
-  const remaining = admin.unlimitedTraffic
+  const remaining = admin.unlimitedTraffic || form.superAdmin
     ? t("common.unlimited")
     : admin.balance > 0
       ? formatBytes(admin.balance)
@@ -1102,7 +1197,10 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
       ? t("common.days", { count: Math.ceil((admin.expiryTime - Date.now()) / (1000 * 60 * 60 * 24)) })
       : t("admins.expiredDaysAgo", { count: Math.floor((Date.now() - admin.expiryTime) / (1000 * 60 * 60 * 24)) });
   // Detect migrated admins: have no adminInbounds set
-  const isMigrated = !admin.adminInbounds || admin.adminInbounds.length === 0;
+  const isMigrated = admin.role !== "SUPER_ADMIN" && !form.superAdmin && (!admin.adminInbounds || admin.adminInbounds.length === 0);
+  const limitsLocked = form.superAdmin;
+  const showSuperAdminToggle = callerIsOwner && !admin.isOwner;
+  const statusLocked = admin.isOwner === true;
 
   return (
     <motion.div {...MOTION_CONFIG.modalOverlay} className="fixed inset-0 z-[100] flex items-start sm:items-center justify-center bg-black/60 pt-[10dvh] px-4 sm:pt-0 sm:p-4 backdrop-blur-sm">
@@ -1128,11 +1226,33 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
                     <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
                       <div className="p-4 border-t border-zinc-200 dark:border-zinc-800">
                         <div className="space-y-4">
+                          {showSuperAdminToggle && (
+                            <label className="flex items-start gap-3 p-3 rounded-lg border border-blue-500/30 bg-blue-500/5 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={form.superAdmin}
+                                onChange={(e) => setForm({
+                                  ...form,
+                                  superAdmin: e.target.checked,
+                                  unlimitedTraffic: e.target.checked ? true : form.unlimitedTraffic,
+                                })}
+                                className="mt-0.5 w-4 h-4 rounded text-blue-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-blue-500"
+                              />
+                              <div className="flex flex-col">
+                                <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{t("admins.makeSuperAdmin")}</span>
+                                <span className="text-xs text-zinc-500">{t("admins.makeSuperAdminHint")}</span>
+                              </div>
+                            </label>
+                          )}
+                          {limitsLocked && (
+                            <p className="text-xs text-zinc-500">{t("admins.superAdminLimitsDisabled")}</p>
+                          )}
+                          <div className={`space-y-4 ${limitsLocked ? "opacity-50 pointer-events-none" : ""}`}>
                           <div className="col-span-2">
                             <label className="flex items-center gap-3 p-3 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer">
                               <input
                                 type="checkbox"
-                                checked={form.unlimitedTraffic}
+                                checked={form.superAdmin || form.unlimitedTraffic}
                                 onChange={(e) => setForm({
                                   ...form,
                                   unlimitedTraffic: e.target.checked,
@@ -1152,7 +1272,7 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
                           <QuotaModeToggle
                             value={form.quotaMode}
                             onChange={(quotaMode) => setForm({ ...form, quotaMode })}
-                            disabled={form.unlimitedTraffic}
+                            disabled={form.unlimitedTraffic || limitsLocked}
                           />
                           {form.quotaMode === "GLOBAL" ? (
                           <div className="grid grid-cols-2 gap-4">
@@ -1233,33 +1353,34 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
                           
                           <div>
                             <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("common.status")}</label>
-                            <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors mb-4">
+                            <select value={form.status} disabled={statusLocked} onChange={(e) => setForm({ ...form, status: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors mb-4 disabled:opacity-50">
                               <option value="active">{t("admins.statusActive")}</option>
                               <option value="disabled">{t("admins.statusDisabled")}</option>
                             </select>
                             
                             <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.trafficAccountingMode")}</label>
-                            <select value={form.trafficMode} onChange={(e) => setForm({ ...form, trafficMode: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors">
+                            <select value={form.trafficMode} disabled={limitsLocked} onChange={(e) => setForm({ ...form, trafficMode: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors disabled:opacity-50">
                               <option value="ALLOCATION">{t("admins.allocationMode")}</option>
                               <option value="USAGE">{t("admins.usageMode")}</option>
                             </select>
                             
                             <div className="mt-4 space-y-3 pt-4 border-t border-zinc-200 dark:border-zinc-800">
-                              <label className={`flex items-center gap-3 p-2 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer ${form.unlimitedTraffic ? 'opacity-50 pointer-events-none' : ''}`}>
-                                <input type="checkbox" checked={form.refundOnDelete} disabled={form.unlimitedTraffic} onChange={(e) => setForm({ ...form, refundOnDelete: e.target.checked })} className="w-4 h-4 rounded text-blue-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-blue-500" />
+                              <label className={`flex items-center gap-3 p-2 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer ${form.unlimitedTraffic || limitsLocked ? 'opacity-50 pointer-events-none' : ''}`}>
+                                <input type="checkbox" checked={form.refundOnDelete} disabled={form.unlimitedTraffic || limitsLocked} onChange={(e) => setForm({ ...form, refundOnDelete: e.target.checked })} className="w-4 h-4 rounded text-blue-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-blue-500" />
                                 <div className="flex flex-col">
                                   <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{t("admins.refundOnDelete")}</span>
                                   <span className="text-xs text-zinc-500">{t("admins.refundOnDeleteHint")}</span>
                                 </div>
                               </label>
-                              <label className={`flex items-center gap-3 p-2 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer ${form.unlimitedTraffic ? 'opacity-50 pointer-events-none' : ''}`}>
-                                <input type="checkbox" checked={form.refundOnEdit} disabled={form.unlimitedTraffic} onChange={(e) => setForm({ ...form, refundOnEdit: e.target.checked })} className="w-4 h-4 rounded text-blue-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-blue-500" />
+                              <label className={`flex items-center gap-3 p-2 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer ${form.unlimitedTraffic || limitsLocked ? 'opacity-50 pointer-events-none' : ''}`}>
+                                <input type="checkbox" checked={form.refundOnEdit} disabled={form.unlimitedTraffic || limitsLocked} onChange={(e) => setForm({ ...form, refundOnEdit: e.target.checked })} className="w-4 h-4 rounded text-blue-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-blue-500" />
                                 <div className="flex flex-col">
                                   <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{t("admins.refundOnEdit")}</span>
                                   <span className="text-xs text-zinc-500">{t("admins.refundOnEditHint")}</span>
                                 </div>
                               </label>
                             </div>
+                          </div>
                           </div>
                         </div>
                       </div>
@@ -1336,10 +1457,13 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
                 <AnimatePresence initial={false}>
                   {openSection === 'permissions' && (
                     <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                      <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 space-y-4">
+                      <div className={`p-4 border-t border-zinc-200 dark:border-zinc-800 space-y-4 ${limitsLocked ? "opacity-50 pointer-events-none" : ""}`}>
+                        {limitsLocked && (
+                          <p className="text-xs text-zinc-500">{t("admins.superAdminLimitsDisabled")}</p>
+                        )}
                         <div>
                           <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.maxClients")} <span className="text-zinc-500 text-xs">{t("admins.maxClientsHint")}</span></label>
-                          <input type="number" min={0} value={form.maxClients} onChange={(e) => setForm({ ...form, maxClients: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
+                          <input type="number" min={0} value={form.maxClients} disabled={limitsLocked} onChange={(e) => setForm({ ...form, maxClients: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
                         </div>
                         <div className="mt-4">
                           <label className="mb-2 block text-sm font-medium text-zinc-800 dark:text-zinc-100">
@@ -1353,8 +1477,9 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
                             enabledPanels={form.enabledPanels}
                             selectedInbounds={form.selectedInbounds}
                             onChange={(next) => setForm(f => ({ ...f, ...next }))}
+                            disabled={limitsLocked}
                           />
-                          {form.selectedInbounds.length === 0 && (
+                          {!limitsLocked && form.selectedInbounds.length === 0 && (
                             <div className="mt-3 p-3 rounded-lg border border-amber-500/20 bg-amber-500/10 text-sm text-amber-600 dark:text-amber-400 flex items-start gap-2">
                               <AlertCircle size={18} className="shrink-0 mt-0.5" />
                               <div>
@@ -1371,7 +1496,13 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
               </div>
 
               <div className="flex justify-end pt-4">
-                <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => directEdit.mutate()} disabled={directEdit.isPending} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50 transition-colors shadow-lg shadow-blue-900/20">
+                <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => {
+                  if (!form.superAdmin && form.selectedInbounds.length === 0) {
+                    toast(t("admins.inboundRequired"), "error");
+                    return;
+                  }
+                  directEdit.mutate();
+                }} disabled={directEdit.isPending} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50 transition-colors shadow-lg shadow-blue-900/20">
                   {directEdit.isPending ? t("common.saving") : t("common.saveChanges")}
                 </motion.button>
               </div>
@@ -1383,14 +1514,14 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
           <div className="flex justify-between items-start mb-6">
             <div>
               <h2 className="text-xl font-bold text-zinc-800 dark:text-zinc-100">{admin.username}</h2>
-              <div className="text-sm text-zinc-500 mt-1">{t("common.status")}: {adminStatusLabel(admin.status, t)}</div>
+              <div className="text-sm text-zinc-500 mt-1">{adminRoleLabel(admin, t)}</div>
             </div>
             <Badge tone={admin.status === "active" ? "green" : "red"}>{adminStatusLabel(admin.status, t)}</Badge>
           </div>
 
           <div className="space-y-4 flex-1">
             <SummaryStat icon={<Users size={16} />} label={t("admins.currentClients")} value={`${admin._count?.clients ?? 0}`} />
-            {!admin.unlimitedTraffic && (
+            {!form.superAdmin && !admin.unlimitedTraffic && (
               <>
                 <SummaryStat icon={<Activity size={16} />} label={t("admins.usedTrafficLabel")} value={formatBytes(admin.usedTraffic || 0)} />
                 {admin.quotaMode === "PER_PANEL" && admin.panelQuotas?.length ? (
@@ -1408,10 +1539,12 @@ function EditAdminModal({ adminId, onClose, onSaved }: { adminId: string; onClos
                 )}
               </>
             )}
-            {admin.unlimitedTraffic && (
+            {(form.superAdmin || admin.unlimitedTraffic) && (
               <SummaryStat icon={<Infinity size={16} />} label={t("nav.traffic")} value={t("common.unlimited")} />
             )}
+            {!form.superAdmin && (
             <SummaryStat icon={<Shield size={16} />} label={t("admins.assignedInbounds")} value={admin.adminInbounds?.length?.toString() ?? "0"} />
+            )}
             <SummaryStat icon={<Clock size={16} />} label={t("admins.daysRemainingLabel")} value={expiryDaysLabel} highlight={admin.expiryTime > 0 && admin.expiryTime < Date.now()} />
             {isMigrated && (
               <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 p-3 text-xs text-amber-400">
