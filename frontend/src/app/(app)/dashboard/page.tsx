@@ -353,7 +353,14 @@ function SuperDashboard() {
         <Card className="border-zinc-200 dark:border-zinc-800/60 shadow-sm">
           <div className="mb-2 flex items-center justify-between">
             <h2 className="font-semibold text-zinc-800 dark:text-zinc-100">{t("dashboard.usageByInbound")}</h2>
-            <div className="h-8 w-8 rounded-full bg-amber-500/10 flex items-center justify-center"><Server size={16} className="text-amber-500"/></div>
+            <div className="flex gap-1 rounded-lg border border-zinc-200 dark:border-zinc-800 p-0.5">
+              {(["allTime", "24h"] as const).map((r) => (
+                <button key={r} onClick={() => setPieRange(r)}
+                  className={`rounded-md px-2 py-0.5 text-[10px] ${pieRange === r ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100" : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"}`}>
+                  {r === "allTime" ? t("dashboard.allTime") : t("dashboard.last24h")}
+                </button>
+              ))}
+            </div>
           </div>
           {inboundData.length === 0 ? (
             <div className="h-[280px] flex items-center justify-center text-zinc-500 text-sm">{t("dashboard.noData")}</div>

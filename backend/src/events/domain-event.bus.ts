@@ -7,7 +7,8 @@ export type DomainEventType =
   | 'order.paid'
   | 'payment.verified'
   | 'panel.synced'
-  | 'theme.published';
+  | 'theme.published'
+  | 'admin.created';
 
 export interface DomainEvent<T = Record<string, unknown>> {
   type: DomainEventType | string;

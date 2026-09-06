@@ -401,6 +401,7 @@ export class StatsService {
             inbound: {
               select: {
                 tag: true,
+                remark: true,
                 panel: { select: { name: true } },
               },
             },
@@ -454,23 +455,78 @@ export class StatsService {
       return aggTop10(m);
     };
 
-    // Calculate 24h usage using TrafficTransaction for USAGE and approximating for ALLOCATION if needed,
-    // or just computing what's available. For simplicity, we use USAGE_CHARGE transactions.
+    const inboundLabel = (c: (typeof mappedClients)[number]) =>
+      c.inbound?.remark || c.inbound?.tag || 'Unknown';
+
+    // Last 24h: ALLOCATION (DEBIT) + USAGE charges. Skip manual admin deductions.
     const tx24h = await this.prisma.trafficTransaction.findMany({
       where: {
         createdAt: { gte: since24h },
-        type: 'USAGE_CHARGE',
+        type: { in: ['DEBIT', 'USAGE_CHARGE'] },
+        OR: [{ action: null }, { action: { not: 'ADMIN_DEDUCTION' } }],
       },
       select: {
         amount: true,
+        panelId: true,
         admin: { select: { username: true, trafficMode: true } },
+        client: {
+          select: {
+            inbounds: {
+              select: {
+                inbound: {
+                  select: {
+                    tag: true,
+                    remark: true,
+                    panel: { select: { name: true } },
+                  },
+                },
+              },
+            },
+          },
+        },
       },
     });
 
+    const txPanelIds = [
+      ...new Set(
+        tx24h.map((tx) => tx.panelId).filter((id): id is string => !!id),
+      ),
+    ];
+    const txPanels = txPanelIds.length
+      ? await this.prisma.panel.findMany({
+          where: { id: { in: txPanelIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+    const txPanelName = new Map(txPanels.map((p) => [p.id, p.name]));
+
     const admin24hMap = new Map<string, number>();
+    const inbound24hMap = new Map<string, number>();
+    const panel24hMap = new Map<string, number>();
+    const mode24hMap = new Map<string, number>();
+
     for (const tx of tx24h) {
-      const key = `${tx.admin.username} (${tx.admin.trafficMode})`;
-      admin24hMap.set(key, (admin24hMap.get(key) ?? 0) + Number(tx.amount));
+      const bytes = Number(tx.amount);
+      const adminKey = tx.admin
+        ? `${tx.admin.username} (${tx.admin.trafficMode})`
+        : 'Unassigned';
+      admin24hMap.set(adminKey, (admin24hMap.get(adminKey) ?? 0) + bytes);
+      const modeKey = tx.admin?.trafficMode || 'Unassigned';
+      mode24hMap.set(modeKey, (mode24hMap.get(modeKey) ?? 0) + bytes);
+
+      const inbound = tx.client?.inbounds?.[0]?.inbound;
+      const inboundKey = inbound
+        ? inbound.remark || inbound.tag || 'Unknown'
+        : tx.panelId
+          ? txPanelName.get(tx.panelId) || 'Unknown'
+          : 'Unknown';
+      inbound24hMap.set(inboundKey, (inbound24hMap.get(inboundKey) ?? 0) + bytes);
+
+      const panelKey =
+        inbound?.panel?.name ||
+        (tx.panelId ? txPanelName.get(tx.panelId) : null) ||
+        'Unknown';
+      panel24hMap.set(panelKey, (panel24hMap.get(panelKey) ?? 0) + bytes);
     }
 
     return {
@@ -481,12 +537,15 @@ export class StatsService {
             ? `${c.admin.username} (${c.admin.trafficMode})`
             : 'Unassigned',
         ),
-        byInbound: aggAllTime((c) => c.inbound?.tag || 'Unknown'),
+        byInbound: aggAllTime(inboundLabel),
         byPanel: aggAllTime((c) => c.inbound?.panel?.name || 'Unknown'),
         byTrafficMode: aggAllTime((c) => c.admin?.trafficMode || 'Unassigned'),
       },
       last24h: {
         byAdmin: aggTop10(admin24hMap),
+        byInbound: aggTop10(inbound24hMap),
+        byPanel: aggTop10(panel24hMap),
+        byTrafficMode: aggTop10(mode24hMap),
       },
     };
   }

@@ -102,6 +102,7 @@ export interface Transaction {
   balanceAfter?: number | null;
   targetClientUuid?: string | null;
   createdAt: string;
+  panel?: { id: string; name: string; panelType?: string | null } | null;
   client: { id: string; email: string; uuid: string } | null;
 }
 

@@ -49,7 +49,10 @@ export class ArchitectureController {
 
   @Get('jobs')
   jobsList() {
-    return { queues: this.jobs.queues(), items: this.jobs.list() };
+    return this.jobs.list().then((items) => ({
+      queues: this.jobs.queues(),
+      items,
+    }));
   }
 
   @Get('payments')

@@ -3,6 +3,7 @@ import {
   Logger,
   OnModuleInit,
   OnModuleDestroy,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import axios from 'axios';
@@ -10,6 +11,7 @@ import { resolvePanelApiBaseUrl } from '../common/utils/panel-url.util';
 import {
   isExternalPanelType,
 } from '../panels/native/native-panel-capabilities';
+import { UnifiedMonitoringHub } from '../monitoring/unified-monitoring.hub';
 
 export interface PanelSpeedData {
   panelId: string;
@@ -44,7 +46,10 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
     { up: bigint; down: bigint; time: number }
   > = {};
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly monitoringHub?: UnifiedMonitoringHub,
+  ) {}
 
   onModuleInit() {
     this.logger.log('Starting Monitoring Cache Loops...');
@@ -195,6 +200,16 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
       );
 
       this.serverStatusCache = results.filter((row): row is PanelSpeedData => row != null);
+      for (const row of this.serverStatusCache) {
+        this.monitoringHub?.ingest({
+          panelId: row.panelId,
+          source: 'core',
+          cpu: row.cpu,
+          memory: row.ram,
+          onlineUsers: undefined,
+          recordedAt: new Date().toISOString(),
+        });
+      }
     } catch (err) {
       this.logger.error('Failed to poll server status: ' + err.message);
     }

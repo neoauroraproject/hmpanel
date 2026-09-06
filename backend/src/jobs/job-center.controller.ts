@@ -1,4 +1,4 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Roles, RolesGuard } from '../common/roles.guard';
@@ -15,6 +15,16 @@ export class JobCenterController {
 
   @Get()
   list() {
-    return { queues: this.jobs.queues(), items: this.jobs.list() };
+    return this.jobs.listUi();
+  }
+
+  @Get('stats')
+  stats() {
+    return this.jobs.stats();
+  }
+
+  @Post(':id/retry')
+  retry(@Param('id') id: string) {
+    return this.jobs.retry(id);
   }
 }

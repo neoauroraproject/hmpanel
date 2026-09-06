@@ -1,7 +1,9 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  Param,
   Post,
   Req,
   UseGuards,
@@ -51,6 +53,14 @@ export class BotApiV1Controller {
     return this.bots.createClient(req.user.id, body.name, body.scopes || ['clients.read']);
   }
 
+  @Delete('api-clients/:id')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles('SUPER_ADMIN')
+  @ApiBearerAuth()
+  revoke(@Param('id') id: string) {
+    return this.bots.revoke(id);
+  }
+
   @Get('me')
   @UseGuards(BotApiKeyGuard)
   me(@Req() req: any) {
@@ -65,8 +75,9 @@ export class BotApiV1Controller {
 
   @Get('clients')
   @UseGuards(BotApiKeyGuard)
-  clients(@Req() req: any) {
+  async clients(@Req() req: any) {
     this.bots.assertScope(req.botApiClient, 'clients.read');
-    return { data: [], note: 'External Bot API v1 — list is provisioned via Core adapters' };
+    const data = await this.bots.listClientsForAdmin(req.botApiClient.adminId);
+    return { data };
   }
 }

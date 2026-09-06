@@ -1,7 +1,8 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Optional } from '@nestjs/common';
 import { Prisma, QuotaMode } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { calculateAdminTrafficSummary } from '../common/utils/traffic.util';
+import { DomainEventBusService } from '../events/domain-event-bus.service';
 
 export type AdminQuotaAdmin = {
   id: string;
@@ -33,7 +34,10 @@ export function panelMatchesQuotaFilter(
 
 @Injectable()
 export class AdminQuotaService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly events?: DomainEventBusService,
+  ) {}
 
   skipTrafficAccounting(admin: {
     role?: string | null;
@@ -168,6 +172,13 @@ export class AdminQuotaService {
       return { balanceBefore: admin.balance, balanceAfter: admin.balance };
     }
 
+    const description = await this.labeledDescription(
+      tx,
+      panelId,
+      meta.description,
+      meta.clientId,
+    );
+
     if (this.isPerPanel(admin)) {
       const row = await tx.adminPanelQuota.findUnique({
         where: { adminId_panelId: { adminId: admin.id, panelId } },
@@ -196,10 +207,16 @@ export class AdminQuotaService {
           amount: bytes,
           type: 'DEBIT',
           action: meta.action,
-          description: meta.description,
+          description,
           balanceBefore: before,
           balanceAfter: after,
         },
+      });
+      void this.events?.emit('traffic.debited', {
+        adminId: admin.id,
+        panelId,
+        amount: String(bytes),
+        action: meta.action,
       });
       return { balanceBefore: before, balanceAfter: after };
     }
@@ -225,10 +242,16 @@ export class AdminQuotaService {
         amount: bytes,
         type: 'DEBIT',
         action: meta.action,
-        description: meta.description,
+        description,
         balanceBefore: locked.balance,
         balanceAfter: after,
       },
+    });
+    void this.events?.emit('traffic.debited', {
+      adminId: admin.id,
+      panelId,
+      amount: String(bytes),
+      action: meta.action,
     });
     return { balanceBefore: locked.balance, balanceAfter: after };
   }
@@ -249,6 +272,13 @@ export class AdminQuotaService {
     if (this.skipTrafficAccounting(admin) || amount <= 0) {
       return { balanceBefore: admin.balance, balanceAfter: admin.balance };
     }
+
+    const description = await this.labeledDescription(
+      tx,
+      panelId,
+      meta.description,
+      meta.clientId,
+    );
 
     if (this.isPerPanel(admin)) {
       if (!panelId) {
@@ -278,7 +308,7 @@ export class AdminQuotaService {
           amount: bytes,
           type: 'CREDIT',
           action: meta.action,
-          description: meta.description,
+          description,
           balanceBefore: before,
           balanceAfter: after,
         },
@@ -304,7 +334,7 @@ export class AdminQuotaService {
         amount: bytes,
         type: 'CREDIT',
         action: meta.action,
-        description: meta.description,
+        description,
         balanceBefore: locked.balance,
         balanceAfter: after,
       },
@@ -328,6 +358,11 @@ export class AdminQuotaService {
     if (mode !== 'USAGE') return;
 
     await this.prisma.$transaction(async (tx) => {
+      const description = await this.labeledDescription(
+        tx,
+        panelId,
+        'Daily Summarized Usage Charge',
+      );
       if (this.isPerPanel(admin)) {
         const row = await tx.adminPanelQuota.findUnique({
           where: { adminId_panelId: { adminId, panelId } },
@@ -351,7 +386,7 @@ export class AdminQuotaService {
             amount: delta,
             type: 'USAGE_CHARGE',
             action: 'DAILY_USAGE_CHARGE',
-            description: 'Daily Summarized Usage Charge',
+            description,
             balanceBefore: before,
             balanceAfter: after,
           },
@@ -375,7 +410,7 @@ export class AdminQuotaService {
           amount: delta,
           type: 'USAGE_CHARGE',
           action: 'DAILY_USAGE_CHARGE',
-          description: 'Daily Summarized Usage Charge',
+          description,
           balanceBefore: locked.balance,
           balanceAfter: after,
         },
@@ -420,7 +455,11 @@ export class AdminQuotaService {
             amount: amountBytes,
             type: 'CREDIT',
             action: 'BALANCE_TOPUP',
-            description: description || 'Balance top-up',
+            description: await this.labeledDescription(
+              tx,
+              panelId,
+              description || 'Balance top-up',
+            ),
             balanceBefore: before,
             balanceAfter: after,
           },
@@ -445,7 +484,11 @@ export class AdminQuotaService {
           amount: amountBytes,
           type: 'CREDIT',
           action: 'BALANCE_TOPUP',
-          description: description || 'Balance top-up',
+          description: await this.labeledDescription(
+            tx,
+            panelId,
+            description || 'Balance top-up',
+          ),
           balanceBefore: updated.balance - Number(amountBytes),
           balanceAfter: updated.balance,
         },
@@ -594,8 +637,13 @@ export class AdminQuotaService {
               amount: BigInt(Math.abs(Math.round(diff))),
               type: diff > 0 ? 'CREDIT' : 'DEBIT',
               action: diff > 0 ? 'ADMIN_RECHARGE' : 'ADMIN_DEDUCTION',
-              description:
-                diff > 0 ? 'Per-panel admin recharge' : 'Per-panel admin deduction',
+              description: await this.labeledDescription(
+                tx,
+                q.panelId,
+                diff > 0
+                  ? 'Per-panel admin recharge'
+                  : 'Per-panel admin deduction',
+              ),
               balanceBefore: before,
               balanceAfter: q.balanceBytes,
             },
@@ -676,5 +724,56 @@ export class AdminQuotaService {
       usedTraffic: sumUsed,
       panels,
     };
+  }
+
+  /** Append panel (and inbound) names so history rows stay destination-specific. */
+  private async labeledDescription(
+    db: Tx | PrismaService,
+    panelId: string | null | undefined,
+    base?: string,
+    clientId?: string,
+  ): Promise<string | undefined> {
+    const parts: string[] = [];
+    const trimmed = base?.trim();
+    if (trimmed) parts.push(trimmed);
+
+    if (panelId) {
+      const panel = await db.panel.findUnique({
+        where: { id: panelId },
+        select: { name: true, panelType: true },
+      });
+      if (panel?.name) {
+        const type = panel.panelType || '3x-ui';
+        const typeLabel =
+          type === 'eylan'
+            ? 'Eylan'
+            : type === 'pasarguard'
+              ? 'Pasarguard'
+              : '3x-ui';
+        const label =
+          type === '3x-ui' || type === '3xui'
+            ? panel.name
+            : `${panel.name} (${typeLabel})`;
+        if (!parts.some((p) => p.includes(panel.name))) parts.push(label);
+      }
+    }
+
+    if (clientId) {
+      const links = await db.clientInbound.findMany({
+        where: { clientId },
+        take: 12,
+        select: { inbound: { select: { tag: true, remark: true } } },
+      });
+      const names = [
+        ...new Set(
+          links
+            .map((l) => (l.inbound.remark || l.inbound.tag || '').trim())
+            .filter(Boolean),
+        ),
+      ];
+      if (names.length) parts.push(names.join(', '));
+    }
+
+    return parts.length ? parts.join(' · ') : trimmed;
   }
 }

@@ -7,12 +7,13 @@ import { formatBytes, formatDate } from "@/lib/format";
 import { Card, PageHeader, Badge, Spinner, ErrorBox } from "@/components/ui";
 import { useToast } from "@/components/toast";
 import { useT } from "@/i18n";
-import { Plus, Power, Edit2, Shield, Activity, HardDrive, Cpu, CreditCard, ChevronDown, Check, X, ShieldCheck, Download, Upload, Trash2, Eye, EyeOff, Server, Database, Save, ArrowRight, Store, Users, Clock, Settings2, Zap, Lock, AlertCircle, Infinity } from "lucide-react";
+import { Plus, Power, Edit2, Shield, Activity, HardDrive, Cpu, CreditCard, ChevronDown, Check, X, ShieldCheck, Download, Upload, Trash2, Eye, EyeOff, Server, Database, Save, ArrowRight, Store, Users, Clock, Settings2, Zap, Lock, AlertCircle, Infinity, Diamond, Search, Layers } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { MOTION_CONFIG } from "@/lib/motion";
 import { NodeInboundBadge } from "@/components/NodeInboundBadge";
 import { PluginSlot } from "@/components/PluginSlot";
 import { useAuth } from "@/store/auth";
+import { useLicenseActivation } from "@/hooks/useLicenseActivation";
 
 interface AdminPanelQuotaRow {
   panelId: string;
@@ -51,12 +52,13 @@ interface Admin {
 interface InboundRow {
   id: string;
   tag: string;
+  remark?: string | null;
   port: number;
   protocol: string;
   nodeId?: number | null;
   nodeName?: string | null;
   originNodeGuid?: string | null;
-  panel: { id: string; name: string };
+  panel: { id: string; name: string; panelType?: string | null };
 }
 
 interface PanelRow {
@@ -65,6 +67,28 @@ interface PanelRow {
   url: string;
   version: string;
   status: string;
+  panelType?: string | null;
+  operable?: boolean;
+  connectionHealth?: string;
+}
+
+function isXuiPanel(panel: { panelType?: string | null }) {
+  const type = panel.panelType || "3x-ui";
+  return type !== "eylan" && type !== "pasarguard";
+}
+
+function isNativePremiumPanel(panel: { panelType?: string | null }) {
+  return panel.panelType === "eylan" || panel.panelType === "pasarguard";
+}
+
+function panelTypeI18nKey(type?: string | null) {
+  if (type === "eylan") return "panels.typeEylan";
+  if (type === "pasarguard") return "panels.typePasarguard";
+  return "panels.typeXui";
+}
+
+function inboundTitle(inbound: InboundRow) {
+  return (inbound.remark || inbound.tag || "").trim() || inbound.tag;
 }
 
 function adminStatusLabel(status: string, t: (key: string, params?: Record<string, string | number>) => string) {
@@ -447,6 +471,10 @@ function PanelInboundPicker({
   selectedInbounds,
   onChange,
   disabled,
+  allowPremiumPanels,
+  collectOnly,
+  adminId,
+  onProviderDraft,
 }: {
   panels: PanelRow[];
   inbounds: InboundRow[];
@@ -455,9 +483,30 @@ function PanelInboundPicker({
   selectedInbounds: string[];
   onChange: (next: { enabledPanels: string[]; selectedInbounds: string[] }) => void;
   disabled?: boolean;
+  allowPremiumPanels?: boolean;
+  collectOnly?: boolean;
+  adminId?: string;
+  onProviderDraft?: (items: unknown[]) => void;
 }) {
   const t = useT();
   const [expanded, setExpanded] = useState<string[]>([]);
+  const [inboundQueryByPanel, setInboundQueryByPanel] = useState<Record<string, string>>({});
+
+  React.useEffect(() => {
+    setExpanded((prev) => {
+      const missing = enabledPanels.filter((id) => !prev.includes(id));
+      return missing.length ? [...prev, ...missing] : prev;
+    });
+  }, [enabledPanels]);
+
+  const visiblePanels = React.useMemo(
+    () =>
+      panels.filter((p) => {
+        if (isXuiPanel(p)) return true;
+        return !!allowPremiumPanels;
+      }),
+    [panels, allowPremiumPanels],
+  );
 
   const inboundsByPanel = React.useMemo(() => {
     const map = new Map<string, InboundRow[]>();
@@ -470,18 +519,20 @@ function PanelInboundPicker({
     return map;
   }, [inbounds]);
 
-  const togglePanel = (panelId: string) => {
-    const panelInboundIds = (inboundsByPanel.get(panelId) ?? []).map((i) => i.id);
-    if (enabledPanels.includes(panelId)) {
+  const togglePanel = (panel: PanelRow) => {
+    const panelInboundIds = (inboundsByPanel.get(panel.id) ?? []).map((i) => i.id);
+    if (enabledPanels.includes(panel.id)) {
       onChange({
-        enabledPanels: enabledPanels.filter((id) => id !== panelId),
+        enabledPanels: enabledPanels.filter((id) => id !== panel.id),
         selectedInbounds: selectedInbounds.filter((id) => !panelInboundIds.includes(id)),
       });
     } else {
-      setExpanded((prev) => (prev.includes(panelId) ? prev : [...prev, panelId]));
+      setExpanded((prev) => (prev.includes(panel.id) ? prev : [...prev, panel.id]));
       onChange({
-        enabledPanels: [...enabledPanels, panelId],
-        selectedInbounds: Array.from(new Set([...selectedInbounds, ...panelInboundIds])),
+        enabledPanels: [...enabledPanels, panel.id],
+        selectedInbounds: isXuiPanel(panel)
+          ? Array.from(new Set([...selectedInbounds, ...panelInboundIds]))
+          : selectedInbounds,
       });
     }
   };
@@ -495,11 +546,20 @@ function PanelInboundPicker({
     });
   };
 
+  const setPanelInbounds = (panelInboundIds: string[], selected: boolean) => {
+    onChange({
+      enabledPanels,
+      selectedInbounds: selected
+        ? Array.from(new Set([...selectedInbounds, ...panelInboundIds]))
+        : selectedInbounds.filter((id) => !panelInboundIds.includes(id)),
+    });
+  };
+
   if (isLoading) {
     return <div className="text-xs text-zinc-500">{t("common.loadingInbounds")}</div>;
   }
 
-  if (panels.length === 0) {
+  if (visiblePanels.length === 0) {
     return (
       <div className="text-xs text-zinc-500 p-2 text-center border rounded-lg border-dashed border-zinc-300 dark:border-zinc-700">
         {t("common.noInboundsAvailable")}
@@ -508,94 +568,177 @@ function PanelInboundPicker({
   }
 
   return (
-    <div className={`space-y-2 max-h-72 overflow-y-auto pe-2 custom-scrollbar ${disabled ? "opacity-50 pointer-events-none" : ""}`}>
-      {panels.map((p) => {
+    <div className={`space-y-3 max-h-[28rem] overflow-y-auto pe-1 custom-scrollbar ${disabled ? "opacity-50 pointer-events-none" : ""}`}>
+      {visiblePanels.map((p) => {
+        const native = isNativePremiumPanel(p);
         const panelInbounds = inboundsByPanel.get(p.id) ?? [];
-        const frozen = (p as any).operable === false;
+        const frozen = p.operable === false && !native;
         const isEnabled = enabledPanels.includes(p.id);
         const isExpanded = expanded.includes(p.id);
+        const q = (inboundQueryByPanel[p.id] || "").trim().toLowerCase();
+        const filteredInbounds = q
+          ? panelInbounds.filter((i) => {
+              const hay = `${inboundTitle(i)} ${i.tag} ${i.protocol} ${i.port} ${i.nodeName || ""}`.toLowerCase();
+              return hay.includes(q);
+            })
+          : panelInbounds;
         const checkedCount = panelInbounds.filter((i) => selectedInbounds.includes(i.id)).length;
+        const allSelected = panelInbounds.length > 0 && checkedCount === panelInbounds.length;
+        const typeKey = panelTypeI18nKey(p.panelType);
+        const typeChip =
+          p.panelType === "eylan"
+            ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
+            : p.panelType === "pasarguard"
+              ? "bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/20"
+              : "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20";
+        const byProtocol = new Map<string, InboundRow[]>();
+        for (const inbound of filteredInbounds) {
+          const proto = inbound.protocol || "other";
+          if (!byProtocol.has(proto)) byProtocol.set(proto, []);
+          byProtocol.get(proto)!.push(inbound);
+        }
 
         return (
-          <div key={p.id} className="rounded-lg border border-zinc-200 dark:border-zinc-800 overflow-hidden">
-            <div className="flex items-center gap-3 p-3 bg-zinc-50 dark:bg-zinc-950/50">
+          <div
+            key={p.id}
+            className={`rounded-xl border overflow-hidden transition-colors ${
+              isEnabled
+                ? "border-blue-500/30 bg-white dark:bg-zinc-900 shadow-sm"
+                : "border-zinc-200 dark:border-zinc-800 bg-zinc-50/80 dark:bg-zinc-950/40"
+            }`}
+          >
+            <div className="flex items-center gap-3 p-3">
               <input
                 type="checkbox"
                 checked={isEnabled}
                 disabled={frozen}
-                onChange={() => togglePanel(p.id)}
+                onChange={() => togglePanel(p)}
                 className="w-4 h-4 rounded text-blue-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-blue-500 disabled:opacity-40"
               />
               <button
                 type="button"
                 onClick={() => setExpanded((prev) => (isExpanded ? prev.filter((id) => id !== p.id) : [...prev, p.id]))}
-                className="flex flex-1 items-center justify-between gap-2 text-start"
+                className="flex flex-1 items-center justify-between gap-2 text-start min-w-0"
               >
-                <span className="flex flex-col">
-                  <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200 inline-flex items-center gap-2">
-                    <Server size={14} className="text-blue-400" /> {p.name}
+                <span className="flex min-w-0 flex-col">
+                  <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-100 inline-flex items-center gap-2 min-w-0">
+                    <span className={`h-2 w-2 shrink-0 rounded-full ${frozen ? "bg-amber-400" : isEnabled ? "bg-emerald-500" : "bg-zinc-300 dark:bg-zinc-600"}`} />
+                    <Server size={14} className="text-blue-400 shrink-0" />
+                    <span className="truncate">{p.name}</span>
+                    <span className={`shrink-0 rounded-md border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${typeChip}`}>
+                      {t(typeKey)}
+                    </span>
+                    {native ? <Diamond size={12} className="text-emerald-500 shrink-0" /> : null}
                     {frozen ? (
                       <span className="text-[10px] font-semibold uppercase tracking-wide text-amber-500">
-                        {(p as any).connectionHealth === "DISABLED"
+                        {p.connectionHealth === "DISABLED"
                           ? t("panels.disconnected")
                           : t("panels.premiumUnavailable")}
                       </span>
                     ) : null}
                   </span>
-                  <span className="text-xs text-zinc-500">
-                    {t("admins.panelInboundCount", { selected: checkedCount, total: panelInbounds.length })}
+                  <span className="text-xs text-zinc-500 mt-0.5">
+                    {native
+                      ? t(typeKey)
+                      : t("admins.inboundSelectedCount", { selected: checkedCount, total: panelInbounds.length })}
                   </span>
                 </span>
-                <ChevronDown size={16} className={`text-zinc-500 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
+                <ChevronDown size={16} className={`text-zinc-500 shrink-0 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
               </button>
             </div>
 
             {isEnabled && isExpanded && (
-              <div className="p-2 space-y-2 border-t border-zinc-200 dark:border-zinc-800">
-                {panelInbounds.length === 0 ? (
-                  <div className="text-xs text-zinc-500 p-2 text-center border rounded-lg border-dashed border-zinc-300 dark:border-zinc-700">
+              <div className="px-3 pb-3 space-y-2 border-t border-zinc-200 dark:border-zinc-800 pt-3">
+                {native ? (
+                  <PluginSlot
+                    name="admins.panel.access"
+                    props={{
+                      adminId,
+                      collectOnly: collectOnly ?? !adminId,
+                      hideSave: true,
+                      panelId: p.id,
+                      panelType: p.panelType,
+                      panelEnabled: isEnabled,
+                      onDraftChange: onProviderDraft,
+                    }}
+                  />
+                ) : panelInbounds.length === 0 ? (
+                  <div className="text-xs text-zinc-500 p-3 text-center border rounded-xl border-dashed border-zinc-300 dark:border-zinc-700">
                     {t("common.noInboundsOnPanel")}
                   </div>
                 ) : (
                   <>
-                    <div className="flex justify-end">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="relative flex-1 min-w-[10rem]">
+                        <Search className="absolute start-2.5 top-1/2 -translate-y-1/2 text-zinc-400" size={13} />
+                        <input
+                          type="text"
+                          value={inboundQueryByPanel[p.id] || ""}
+                          onChange={(e) =>
+                            setInboundQueryByPanel((prev) => ({ ...prev, [p.id]: e.target.value }))
+                          }
+                          placeholder={t("admins.searchInbounds")}
+                          className="w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 ps-8 pe-3 py-1.5 text-xs text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500"
+                        />
+                      </div>
                       <button
                         type="button"
-                        onClick={() =>
-                          onChange({
-                            enabledPanels,
-                            selectedInbounds: Array.from(
-                              new Set([...selectedInbounds, ...panelInbounds.map((i) => i.id)]),
-                            ),
-                          })
-                        }
-                        className="text-xs text-blue-500 hover:underline"
+                        onClick={() => setPanelInbounds(panelInbounds.map((i) => i.id), true)}
+                        className={`text-[11px] font-semibold px-2 py-1 rounded-md ${allSelected ? "text-zinc-400" : "text-blue-600 dark:text-blue-400 hover:bg-blue-500/10"}`}
                       >
                         {t("common.selectAll")}
                       </button>
-                    </div>
-                    {panelInbounds.map((i) => (
-                      <label
-                        key={i.id}
-                        className="flex items-center gap-3 p-2 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer"
+                      <button
+                        type="button"
+                        onClick={() => setPanelInbounds(panelInbounds.map((i) => i.id), false)}
+                        className="text-[11px] font-semibold px-2 py-1 rounded-md text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
                       >
-                        <input
-                          type="checkbox"
-                          checked={selectedInbounds.includes(i.id)}
-                          onChange={() => toggleInbound(i.id)}
-                          className="w-4 h-4 rounded text-blue-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-blue-500"
-                        />
-                        <div className="flex flex-col">
-                          <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200 inline-flex items-center gap-1.5">
-                            <span>{(i as any).remark || i.tag}</span>
-                            <NodeInboundBadge inbound={i} />
-                          </span>
-                          <span className="text-xs text-zinc-500">
-                            {t("admins.inboundProtocolLine", { protocol: i.protocol, port: i.port })}
-                          </span>
+                        {t("common.selectNone")}
+                      </button>
+                    </div>
+                    {filteredInbounds.length === 0 ? (
+                      <div className="text-xs text-zinc-500 p-2 text-center">{t("common.noResults")}</div>
+                    ) : (
+                      [...byProtocol.entries()].map(([protocol, group]) => (
+                        <div key={protocol} className="space-y-1.5">
+                          <div className="flex items-center gap-1.5 px-0.5 pt-1 text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+                            <Layers size={11} /> {protocol}
+                            <span className="font-medium normal-case tracking-normal">({group.length})</span>
+                          </div>
+                          {group.map((i) => {
+                            const checked = selectedInbounds.includes(i.id);
+                            return (
+                              <label
+                                key={i.id}
+                                className={`flex items-center gap-3 p-2.5 rounded-xl border cursor-pointer transition-colors ${
+                                  checked
+                                    ? "border-blue-500/30 bg-blue-500/5"
+                                    : "border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => toggleInbound(i.id)}
+                                  className="w-4 h-4 rounded text-blue-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-blue-500"
+                                />
+                                <div className="flex min-w-0 flex-1 flex-col">
+                                  <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200 inline-flex items-center gap-1.5 min-w-0">
+                                    <span className="truncate">{inboundTitle(i)}</span>
+                                    <NodeInboundBadge inbound={i} />
+                                  </span>
+                                  <span className="text-xs text-zinc-500">
+                                    {t("admins.inboundProtocolLine", { protocol: i.protocol, port: i.port })}
+                                    {i.tag && i.remark && i.tag !== i.remark ? ` · ${i.tag}` : ""}
+                                  </span>
+                                </div>
+                                {checked ? <Check size={14} className="text-blue-500 shrink-0" /> : null}
+                              </label>
+                            );
+                          })}
                         </div>
-                      </label>
-                    ))}
+                      ))
+                    )}
                   </>
                 )}
               </div>
@@ -607,7 +750,33 @@ function PanelInboundPicker({
   );
 }
 
-type QuotaMode = "GLOBAL" | "PER_PANEL";
+function mergeProviderDraft(store: React.MutableRefObject<Record<string, unknown>>, items: unknown[]) {
+  for (const item of items as Array<{ provider?: string }>) {
+    if (item?.provider) store.current[item.provider] = item;
+  }
+}
+
+async function persistProviderAccess(adminId: string, drafts: Record<string, unknown>) {
+  const items = Object.values(drafts).filter(Boolean);
+  if (!items.length) return;
+  try {
+    await api.put(`/premium-modules/admin-recharge/provider-access/${adminId}`, { items });
+  } catch {
+    /* Community or module off — Core inbound save already applied */
+  }
+}
+
+function hasResellerPanelAccess(
+  form: { superAdmin: boolean; selectedInbounds: string[]; enabledPanels: string[] },
+  panels: PanelRow[] | undefined,
+) {
+  if (form.superAdmin) return true;
+  if (form.selectedInbounds.length > 0) return true;
+  return form.enabledPanels.some((id) => {
+    const panel = panels?.find((p) => p.id === id);
+    return panel ? isNativePremiumPanel(panel) : false;
+  });
+}
 
 function buildPanelQuotasPayload(
   enabledPanels: string[],
@@ -670,12 +839,27 @@ function PerPanelQuotaFields({
   return (
     <div className="col-span-2 space-y-2">
       <label className="block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.currentPanelQuotas")}</label>
-      <div className="space-y-2 rounded-lg border border-zinc-200 dark:border-zinc-800 p-3 bg-zinc-50/50 dark:bg-zinc-950/30">
+      <div className="grid gap-2 sm:grid-cols-2">
         {enabledPanels.map((panelId) => {
           const panel = panels.find((p) => p.id === panelId);
+          const type = panel?.panelType;
+          const typeChip =
+            type === "eylan"
+              ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+              : type === "pasarguard"
+                ? "bg-violet-500/10 text-violet-600 dark:text-violet-400"
+                : "bg-blue-500/10 text-blue-600 dark:text-blue-400";
           return (
-            <div key={panelId} className="flex items-center gap-3">
-              <span className="text-sm flex-1 min-w-0 truncate text-zinc-700 dark:text-zinc-300">{panel?.name || panelId}</span>
+            <div
+              key={panelId}
+              className="flex items-center gap-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 px-3 py-2.5"
+            >
+              <div className="flex min-w-0 flex-1 flex-col">
+                <span className="text-sm font-medium truncate text-zinc-800 dark:text-zinc-100">{panel?.name || panelId}</span>
+                <span className={`mt-0.5 w-fit rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${typeChip}`}>
+                  {t(panelTypeI18nKey(type))}
+                </span>
+              </div>
               <input
                 type="number"
                 min={0}
@@ -683,7 +867,7 @@ function PerPanelQuotaFields({
                 disabled={disabled}
                 value={values[panelId] ?? ""}
                 onChange={(e) => onChange(panelId, e.target.value)}
-                className="w-28 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3 py-1.5 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500"
+                className="w-24 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3 py-1.5 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500"
               />
               <span className="text-xs text-zinc-500 shrink-0">GB</span>
             </div>
@@ -697,6 +881,12 @@ function PerPanelQuotaFields({
 function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boolean; onClose: () => void; onSaved: () => void }) {
   const t = useT();
   const toast = useToast((s) => s.push);
+  const { licenseQuery } = useLicenseActivation();
+  const isPremium =
+    licenseQuery.data?.edition === "PREMIUM" &&
+    licenseQuery.data?.status !== "community" &&
+    licenseQuery.data?.mode !== "disabled";
+  const providerDrafts = React.useRef<Record<string, unknown>>({});
   const [openSection, setOpenSection] = useState("basic");
   const [showPassword, setShowPassword] = useState(false);
   const [form, setForm] = useState({
@@ -757,7 +947,19 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
         refundOnEdit: form.superAdmin || form.unlimitedTraffic ? false : form.refundOnEdit,
         unlimitedTraffic: form.superAdmin ? true : form.unlimitedTraffic,
       };
-      return (await api.post("/admins", payload)).data;
+      const created = (await api.post("/admins", payload)).data;
+      if (!form.superAdmin && created?.id) {
+        const drafts = { ...providerDrafts.current };
+        for (const panel of panels ?? []) {
+          if (!isNativePremiumPanel(panel)) continue;
+          const key = panel.panelType === "eylan" ? "eylan" : "pasarguard";
+          if (!form.enabledPanels.includes(panel.id) && drafts[key]) {
+            drafts[key] = { ...(drafts[key] as object), enabled: false, resources: [] };
+          }
+        }
+        await persistProviderAccess(created.id, drafts);
+      }
+      return created;
     },
     onSuccess: () => {
       toast(t("admins.adminCreated"));
@@ -778,7 +980,7 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
     e.preventDefault();
     if (!form.username || !form.password) return toast(t("admins.usernamePasswordRequired"), "error");
     if (form.password.length < 8) return toast(t("admins.passwordMinLength"), "error");
-    if (!form.superAdmin && form.selectedInbounds.length === 0) return toast(t("admins.inboundRequired"), "error");
+    if (!hasResellerPanelAccess(form, panels)) return toast(t("admins.inboundRequired"), "error");
     create.mutate();
   };
 
@@ -874,8 +1076,11 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
                           selectedInbounds={form.selectedInbounds}
                           onChange={(next) => setForm(f => ({ ...f, ...next }))}
                           disabled={limitsLocked}
+                          allowPremiumPanels={isPremium}
+                          collectOnly
+                          onProviderDraft={(items) => mergeProviderDraft(providerDrafts, items)}
                         />
-                        {!limitsLocked && form.selectedInbounds.length === 0 && (
+                        {!limitsLocked && !hasResellerPanelAccess(form, panels) && (
                           <div className="mt-3 p-3 rounded-lg border border-amber-500/20 bg-amber-500/10 text-sm text-amber-600 dark:text-amber-400 flex items-start gap-2">
                             <AlertCircle size={18} className="shrink-0 mt-0.5" />
                             <div>
@@ -884,6 +1089,23 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
                             </div>
                           </div>
                         )}
+                        {!limitsLocked && isPremium && (
+                          <label className="flex items-center gap-3 p-3 rounded-lg border border-zinc-200 dark:border-zinc-800 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={form.storeEnabled}
+                              onChange={(e) => setForm({ ...form, storeEnabled: e.target.checked })}
+                              className="w-4 h-4 rounded text-blue-600"
+                            />
+                            <div className="flex flex-1 flex-col">
+                              <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200 inline-flex items-center gap-1.5">
+                                {t("admins.enableStore")}
+                                <Diamond size={12} className="text-emerald-500" />
+                              </span>
+                              <span className="text-xs text-zinc-500">{t("admins.enableStoreHint")}</span>
+                            </div>
+                          </label>
+                        )}
                       </div>
                     </div>
                   </motion.div>
@@ -891,7 +1113,6 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
               </AnimatePresence>
             </div>
 
-            <PluginSlot name="admins.form.providerAccess" props={{ collectOnly: true }} />
 
             {/* Section C: Limits */}
             <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 overflow-hidden">
@@ -1012,7 +1233,7 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
 
           <div className="flex justify-end gap-3 pt-6 mt-6 border-t border-zinc-200 dark:border-zinc-800">
             <button type="button" onClick={onClose} className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">{t("common.cancel")}</button>
-            <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} type="submit" disabled={create.isPending || (!form.superAdmin && form.selectedInbounds.length === 0)} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50 transition-colors shadow-lg shadow-blue-900/20">
+            <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} type="submit" disabled={create.isPending || !hasResellerPanelAccess(form, panels)} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50 transition-colors shadow-lg shadow-blue-900/20">
               {create.isPending ? t("common.creating") : t("admins.createAdmin")}
             </motion.button>
           </div>
@@ -1027,6 +1248,12 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
   const t = useT();
   const qc = useQueryClient();
   const toast = useToast((s) => s.push);
+  const { licenseQuery } = useLicenseActivation();
+  const isPremium =
+    licenseQuery.data?.edition === "PREMIUM" &&
+    licenseQuery.data?.status !== "community" &&
+    licenseQuery.data?.mode !== "disabled";
+  const providerDrafts = React.useRef<Record<string, unknown>>({});
 
   const { data: admin, isLoading } = useQuery({
     queryKey: ["admin", adminId],
@@ -1069,16 +1296,25 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
     queryFn: async () => (await api.get<InboundRow[]>("/inbounds")).data,
   });
 
+  const { data: providerAccess = [] } = useQuery<Array<{ provider: string; enabled: boolean }>>({
+    queryKey: ["admin-provider-access", adminId],
+    enabled: isPremium && !!adminId,
+    queryFn: async () =>
+      (await api.get(`/premium-modules/admin-recharge/provider-access/${adminId}`)).data,
+    retry: false,
+  });
+
   useEffect(() => {
     if (admin) {
       const assigned = admin.adminInbounds ?? [];
-      const enabledPanels = Array.from(
-        new Set(
-          assigned
-            .map((ai: any) => ai.inbound?.panel?.id)
-            .filter((id: string | undefined): id is string => !!id),
-        ),
-      );
+      const fromInbounds = assigned
+        .map((ai: any) => ai.inbound?.panel?.id)
+        .filter((id: string | undefined): id is string => !!id);
+      const fromQuota = (admin.panelQuotas || []).map((q) => q.panelId);
+      const fromNative = (panels ?? [])
+        .filter((p) => isNativePremiumPanel(p) && providerAccess.some((r) => r.enabled && r.provider === p.panelType))
+        .map((p) => p.id);
+      const enabledPanels = Array.from(new Set([...fromInbounds, ...fromQuota, ...fromNative]));
       const panelQuotaGb = Object.fromEntries(
         (admin.panelQuotas || []).map((q) => [
           q.panelId,
@@ -1105,7 +1341,7 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
         panelQuotaGb,
       }));
     }
-  }, [admin]);
+  }, [admin, panels, providerAccess]);
 
   const directEdit = useMutation({
     mutationFn: async () => {
@@ -1143,6 +1379,27 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
       }
       
       const res = await api.patch(`/admins/${adminId}`, payload);
+      if (!form.superAdmin) {
+        const drafts = { ...providerDrafts.current };
+        for (const panel of panels ?? []) {
+          if (!isNativePremiumPanel(panel)) continue;
+          const key = panel.panelType === "eylan" ? "eylan" : "pasarguard";
+          if (!form.enabledPanels.includes(panel.id)) {
+            drafts[key] = {
+              provider: key,
+              enabled: false,
+              trafficBytes: "0",
+              maxClients: 0,
+              unlimitedClients: true,
+              unlimitedTraffic: false,
+              expiryDays: 0,
+              resources: [],
+            };
+          }
+        }
+        await persistProviderAccess(adminId, drafts);
+      }
+      return res.data;
 
 
 
@@ -1480,8 +1737,11 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
                             selectedInbounds={form.selectedInbounds}
                             onChange={(next) => setForm(f => ({ ...f, ...next }))}
                             disabled={limitsLocked}
+                            allowPremiumPanels={isPremium}
+                            adminId={adminId}
+                            onProviderDraft={(items) => mergeProviderDraft(providerDrafts, items)}
                           />
-                          {!limitsLocked && form.selectedInbounds.length === 0 && (
+                          {!limitsLocked && !hasResellerPanelAccess(form, panels) && (
                             <div className="mt-3 p-3 rounded-lg border border-amber-500/20 bg-amber-500/10 text-sm text-amber-600 dark:text-amber-400 flex items-start gap-2">
                               <AlertCircle size={18} className="shrink-0 mt-0.5" />
                               <div>
@@ -1490,6 +1750,23 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
                               </div>
                             </div>
                           )}
+                          {!limitsLocked && isPremium && (
+                            <label className="mt-3 flex items-center gap-3 p-3 rounded-lg border border-zinc-200 dark:border-zinc-800 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={form.storeEnabled}
+                                onChange={(e) => setForm({ ...form, storeEnabled: e.target.checked })}
+                                className="w-4 h-4 rounded text-blue-600"
+                              />
+                              <div className="flex flex-1 flex-col">
+                                <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200 inline-flex items-center gap-1.5">
+                                  {t("admins.enableStore")}
+                                  <Diamond size={12} className="text-emerald-500" />
+                                </span>
+                                <span className="text-xs text-zinc-500">{t("admins.enableStoreHint")}</span>
+                              </div>
+                            </label>
+                          )}
                         </div>
                       </div>
                     </motion.div>
@@ -1497,11 +1774,9 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
                 </AnimatePresence>
               </div>
 
-              <PluginSlot name="admins.edit.providerAccess" props={{ adminId }} />
-
               <div className="flex justify-end pt-4">
                 <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => {
-                  if (!form.superAdmin && form.selectedInbounds.length === 0) {
+                  if (!hasResellerPanelAccess(form, panels)) {
                     toast(t("admins.inboundRequired"), "error");
                     return;
                   }

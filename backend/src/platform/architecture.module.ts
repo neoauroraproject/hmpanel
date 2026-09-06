@@ -1,4 +1,5 @@
 import { Global, Module, OnModuleInit } from '@nestjs/common';
+import { BullModule } from '@nestjs/bull';
 import { PrismaModule } from '../prisma/prisma.module';
 import { FeatureFlagsService } from './architecture/feature-flags.service';
 import { ArchitectureController } from './architecture.controller';
@@ -7,6 +8,10 @@ import { PermissionEngine } from '../authz/permission.engine';
 import { PolicyEngine } from '../authz/policy.engine';
 import { DomainEventBusService } from '../events/domain-event-bus.service';
 import { JobCenterService } from '../jobs/job-center.service';
+import {
+  BackupsQueueProcessor,
+  CleanupQueueProcessor,
+} from '../jobs/platform-queues.processor';
 import { UnifiedMonitoringHub } from '../monitoring/unified-monitoring.hub';
 import { PaymentGatewayRegistry } from '../payments/payment-gateway.registry';
 import {
@@ -29,7 +34,14 @@ import {
 
 @Global()
 @Module({
-  imports: [PrismaModule],
+  imports: [
+    PrismaModule,
+    BullModule.registerQueue(
+      { name: 'monitoring' },
+      { name: 'backups' },
+      { name: 'cleanup' },
+    ),
+  ],
   controllers: [
     ArchitectureController,
     ThemesController,
@@ -53,6 +65,8 @@ import {
     BotApiKeyGuard,
     TelegramCoreService,
     ProvisioningEngine,
+    BackupsQueueProcessor,
+    CleanupQueueProcessor,
     {
       provide: SchemaMigrationAdapter,
       useFactory: () => new SchemaMigrationAdapter(BASELINE_MIGRATION_STEPS),

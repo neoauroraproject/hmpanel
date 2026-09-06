@@ -110,37 +110,65 @@ export class TrafficService {
         : {}),
     };
 
-    const [data, total, creditAgg, debitAgg, quota] = await Promise.all([
-      this.prisma.trafficTransaction.findMany({
-        where,
-        skip: (page - 1) * limit,
-        take: limit,
-        select: {
-          id: true,
-          amount: true,
-          type: true,
-          description: true,
-          createdAt: true,
-          balanceBefore: true,
-          balanceAfter: true,
-          action: true,
-          targetClientUuid: true,
-          panelId: true,
-          client: { select: { id: true, email: true, uuid: true } },
-        },
-        orderBy: { createdAt: 'desc' },
-      }),
-      this.prisma.trafficTransaction.count({ where }),
-      this.prisma.trafficTransaction.aggregate({
-        where: { ...where, type: 'CREDIT' },
-        _sum: { amount: true },
-      }),
-      this.prisma.trafficTransaction.aggregate({
-        where: { ...where, type: 'DEBIT' },
-        _sum: { amount: true },
-      }),
-      this.adminQuota.buildResellerOverview(adminId, panelId || undefined),
-    ]);
+    const [rows, total, creditAgg, debitAgg, usageAgg, overview] =
+      await Promise.all([
+        this.prisma.trafficTransaction.findMany({
+          where,
+          skip: (page - 1) * limit,
+          take: limit,
+          select: {
+            id: true,
+            amount: true,
+            type: true,
+            description: true,
+            createdAt: true,
+            balanceBefore: true,
+            balanceAfter: true,
+            action: true,
+            targetClientUuid: true,
+            panelId: true,
+            client: { select: { id: true, email: true, uuid: true } },
+          },
+          orderBy: { createdAt: 'desc' },
+        }),
+        this.prisma.trafficTransaction.count({ where }),
+        this.prisma.trafficTransaction.aggregate({
+          where: { ...where, type: 'CREDIT' },
+          _sum: { amount: true },
+        }),
+        this.prisma.trafficTransaction.aggregate({
+          where: { ...where, type: 'DEBIT' },
+          _sum: { amount: true },
+        }),
+        this.prisma.trafficTransaction.aggregate({
+          where: { ...where, type: 'USAGE_CHARGE' },
+          _sum: { amount: true },
+        }),
+        this.adminQuota.buildResellerOverview(adminId, panelId || undefined),
+      ]);
+
+    const panelIds = [
+      ...new Set(rows.map((r) => r.panelId).filter((id): id is string => !!id)),
+    ];
+    const panels = panelIds.length
+      ? await this.prisma.panel.findMany({
+          where: { id: { in: panelIds } },
+          select: { id: true, name: true, panelType: true },
+        })
+      : [];
+    const panelMap = new Map(panels.map((p) => [p.id, p]));
+    const data = rows.map((row) => ({
+      ...row,
+      panel: row.panelId ? panelMap.get(row.panelId) ?? null : null,
+    }));
+
+    const credit = Number(creditAgg._sum.amount || 0);
+    const debit = Number(debitAgg._sum.amount || 0);
+    const usage = Number(usageAgg._sum.amount || 0);
+    const quota = await this.resolveLedgerQuota(adminId, panelId, overview, {
+      credit,
+      used: debit + usage,
+    });
 
     return {
       data,
@@ -151,19 +179,13 @@ export class TrafficService {
         credit: creditAgg._sum.amount?.toString() || '0',
         debit: debitAgg._sum.amount?.toString() || '0',
       },
-      quota: {
-        quotaMode: quota.quotaMode,
-        unlimitedTraffic: quota.unlimitedTraffic,
-        availableTraffic: quota.availableTraffic,
-        usedTraffic: quota.usedTraffic,
-        allTimeTraffic: quota.allTimeTraffic,
-      },
+      quota,
     };
   }
 
   /**
-   * Destination tabs for Traffic Ledger: 3x-ui panels first, then Pasarguard, then Eylan.
-   * Only panels/providers this admin is allowed to use.
+   * Destination tabs for Traffic History: each 3x-ui / Eylan / Pasarguard
+   * instance this admin may use, then type-level fallbacks if needed.
    */
   async getDestinations(adminId: string) {
     const admin = await this.prisma.admin.findUnique({
@@ -245,6 +267,14 @@ export class TrafficService {
       }
     }
 
+    if (nativeEnabled.size) {
+      const extraNative = await this.prisma.panel.findMany({
+        where: { panelType: { in: [...nativeEnabled] } },
+        select: { id: true, name: true, panelType: true },
+      });
+      for (const p of extraNative) addPanel(p);
+    }
+
     const remainingFor = (filterId: string): number | null => {
       if (overview.unlimitedTraffic) return null;
       if (overview.quotaMode === 'GLOBAL') return overview.availableTraffic;
@@ -254,16 +284,58 @@ export class TrafficService {
         )
         .reduce((s, p) => s + p.availableTraffic, 0);
     };
+    const usedFor = (filterId: string): number | null => {
+      if (overview.unlimitedTraffic) return null;
+      if (overview.quotaMode === 'GLOBAL') return overview.usedTraffic;
+      return overview.panels
+        .filter((p) =>
+          panelMatchesQuotaFilter(p.panelId, p.panelType, filterId),
+        )
+        .reduce((s, p) => s + p.usedTraffic, 0);
+    };
+    const totalFor = (filterId: string): number | null => {
+      if (overview.unlimitedTraffic) return null;
+      if (overview.quotaMode === 'GLOBAL') return overview.allTimeTraffic;
+      return overview.panels
+        .filter((p) =>
+          panelMatchesQuotaFilter(p.panelId, p.panelType, filterId),
+        )
+        .reduce((s, p) => s + p.allTimeTraffic, 0);
+    };
 
-    const nativeRemaining = (providerId: 'eylan' | 'pasarguard'): number | null => {
+    const nativeSlice = (
+      providerId: 'eylan' | 'pasarguard',
+    ): {
+      remainingBytes: number | null;
+      usedBytes: number | null;
+      totalBytes: number | null;
+    } => {
       const access = accesses.find((a) => a.provider === providerId);
       if (access) {
-        if (access.unlimitedTraffic) return null;
-        return Number(access.trafficBytes) - Number(access.usedTrafficBytes);
+        if (access.unlimitedTraffic) {
+          return { remainingBytes: null, usedBytes: null, totalBytes: null };
+        }
+        const total = Number(access.trafficBytes);
+        const used = Number(access.usedTrafficBytes);
+        return {
+          remainingBytes: total - used,
+          usedBytes: used,
+          totalBytes: total,
+        };
       }
       const grant = grants.find((g) => g.providerId === providerId);
-      if (grant) return Number(grant.trafficQuotaBytes);
-      return remainingFor(providerId);
+      if (grant) {
+        return {
+          remainingBytes: Number(grant.trafficQuotaBytes),
+          usedBytes: 0,
+          totalBytes: Number(grant.trafficQuotaBytes),
+        };
+      }
+      return {
+        remainingBytes: remainingFor(providerId),
+        usedBytes: usedFor(providerId),
+        totalBytes: totalFor(providerId),
+      };
     };
 
     const destinations: Array<{
@@ -271,6 +343,8 @@ export class TrafficService {
       name: string;
       panelType: string;
       remainingBytes: number | null;
+      usedBytes: number | null;
+      totalBytes: number | null;
     }> = [];
 
     const xuiPanels = [...byId.values()]
@@ -283,6 +357,8 @@ export class TrafficService {
         name: p.name,
         panelType: p.panelType || '3x-ui',
         remainingBytes: remainingFor(p.id),
+        usedBytes: usedFor(p.id),
+        totalBytes: totalFor(p.id),
       });
     }
     if (!xuiPanels.length && xuiAccess) {
@@ -291,20 +367,132 @@ export class TrafficService {
         name: '3x-ui',
         panelType: '3x-ui',
         remainingBytes: remainingFor('3x-ui'),
+        usedBytes: usedFor('3x-ui'),
+        totalBytes: totalFor('3x-ui'),
       });
     }
 
+    const pushedNative = new Set<string>();
     for (const id of ['pasarguard', 'eylan'] as const) {
-      if (!nativeEnabled.has(id)) continue;
+      const instances = [...byId.values()]
+        .filter((p) => p.panelType === id)
+        .sort((a, b) => a.name.localeCompare(b.name));
+      const slice = nativeSlice(id);
+      if (instances.length) {
+        for (const p of instances) {
+          destinations.push({
+            id: p.id,
+            name: p.name,
+            panelType: id,
+            remainingBytes: slice.remainingBytes,
+            usedBytes: slice.usedBytes,
+            totalBytes: slice.totalBytes,
+          });
+        }
+        pushedNative.add(id);
+        continue;
+      }
+      if (!nativeEnabled.has(id) || pushedNative.has(id)) continue;
       destinations.push({
         id,
         name: id === 'eylan' ? 'Eylan' : 'Pasarguard',
         panelType: id,
-        remainingBytes: nativeRemaining(id),
+        remainingBytes: slice.remainingBytes,
+        usedBytes: slice.usedBytes,
+        totalBytes: slice.totalBytes,
       });
     }
 
     return { destinations };
+  }
+
+  private async resolveLedgerQuota(
+    adminId: string,
+    panelId: string | undefined,
+    overview: {
+      quotaMode: string;
+      unlimitedTraffic: boolean;
+      availableTraffic: number;
+      usedTraffic: number;
+      allTimeTraffic: number;
+    },
+    txSums: { credit: number; used: number },
+  ) {
+    const native = await this.nativeAccessQuota(adminId, panelId);
+    if (native) return native;
+
+    const base = {
+      quotaMode: overview.quotaMode,
+      unlimitedTraffic: overview.unlimitedTraffic,
+      availableTraffic: overview.availableTraffic,
+      usedTraffic: overview.usedTraffic,
+      allTimeTraffic: overview.allTimeTraffic,
+      sharedRemaining: overview.quotaMode === 'GLOBAL' && !overview.unlimitedTraffic,
+    };
+
+    if (
+      overview.quotaMode === 'GLOBAL' &&
+      panelId &&
+      !overview.unlimitedTraffic
+    ) {
+      return {
+        ...base,
+        usedTraffic: txSums.used,
+        allTimeTraffic:
+          txSums.credit > 0
+            ? txSums.credit
+            : txSums.used + overview.availableTraffic,
+        sharedRemaining: true,
+      };
+    }
+
+    return {
+      ...base,
+      sharedRemaining: false,
+    };
+  }
+
+  private async nativeAccessQuota(adminId: string, panelId?: string) {
+    const filter = String(panelId || '').trim();
+    if (!filter) return null;
+    let provider: 'eylan' | 'pasarguard' | null = null;
+    if (filter === 'eylan' || filter === 'pasarguard') {
+      provider = filter;
+    } else if (
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        filter,
+      )
+    ) {
+      const panel = await this.prisma.panel.findUnique({
+        where: { id: filter },
+        select: { panelType: true },
+      });
+      if (panel?.panelType === 'eylan' || panel?.panelType === 'pasarguard') {
+        provider = panel.panelType;
+      }
+    }
+    if (!provider) return null;
+
+    const access = await this.prisma.adminProviderAccess.findFirst({
+      where: { adminId, provider, enabled: true },
+      select: {
+        unlimitedTraffic: true,
+        trafficBytes: true,
+        usedTrafficBytes: true,
+      },
+    });
+    if (!access) return null;
+
+    const total = Number(access.trafficBytes);
+    const used = Number(access.usedTrafficBytes);
+    return {
+      quotaMode: 'PROVIDER',
+      unlimitedTraffic: access.unlimitedTraffic,
+      availableTraffic: access.unlimitedTraffic ? 0 : Math.max(0, total - used),
+      usedTraffic: used,
+      allTimeTraffic: total,
+      sharedRemaining: false,
+    };
   }
 
   private async ledgerPanelWhere(

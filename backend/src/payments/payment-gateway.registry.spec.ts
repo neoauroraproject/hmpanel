@@ -16,11 +16,13 @@ describe('PaymentGatewayRegistry', () => {
     expect(registry.list().sort()).toEqual(
       ['manual_bank', 'nowpayments_stub', 'wallet', 'zarinpal_stub'].sort(),
     );
-    const created = await registry.require('zarinpal_stub').createPayment({
+    const created = await registry.createPayment('zarinpal_stub', {
       amount: 1000,
       currency: 'IRT',
       orderId: 'o1',
     });
     expect(created.status).toBe('stub');
+    const verified = await registry.verifyPayment('wallet', 'wal_o1');
+    expect(verified.status).toBe('paid');
   });
 });

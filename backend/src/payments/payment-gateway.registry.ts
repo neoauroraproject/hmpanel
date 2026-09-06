@@ -1,5 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import type { PaymentGateway } from './payment-gateway.types';
+import type {
+  CreatePaymentInput,
+  PaymentGateway,
+} from './payment-gateway.types';
 
 @Injectable()
 export class PaymentGatewayRegistry {
@@ -17,6 +20,14 @@ export class PaymentGatewayRegistry {
     const g = this.get(id);
     if (!g) throw new Error(`Unknown payment gateway: ${id}`);
     return g;
+  }
+
+  createPayment(id: string, input: CreatePaymentInput) {
+    return this.require(id).createPayment(input);
+  }
+
+  verifyPayment(id: string, reference: string) {
+    return this.require(id).verifyPayment(reference);
   }
 
   list(): string[] {

@@ -19,6 +19,7 @@ import { resolvePanelApiBaseUrl } from '../common/utils/panel-url.util';
 import { getAppVersion } from '../common/utils/app-version';
 import { SchemaMigrationAdapter } from '../migration/schema-migration.adapter';
 import { DomainEventBusService } from '../events/domain-event-bus.service';
+import { JobCenterService } from '../jobs/job-center.service';
 
 const execPromise = promisify(exec);
 
@@ -57,6 +58,7 @@ export class BackupsService {
     private readonly prisma: PrismaService,
     @Optional() private readonly schemaMigration?: SchemaMigrationAdapter,
     @Optional() private readonly events?: DomainEventBusService,
+    @Optional() private readonly jobs?: JobCenterService,
   ) {
     if (!fs.existsSync(this.backupsDir)) {
       fs.mkdirSync(this.backupsDir, { recursive: true });
@@ -177,6 +179,7 @@ export class BackupsService {
   // ─── HMPanel archive create ─────────────────────────────────────────────
 
   async generateBackup(type: HmPanelBackupType = 'full') {
+    void this.jobs?.enqueue('backups', 'generate', { data: { type } });
     const databaseUrl = process.env.DATABASE_URL;
     if (!databaseUrl) {
       throw new InternalServerErrorException('DATABASE_URL is not configured');

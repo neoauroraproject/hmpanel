@@ -26,6 +26,71 @@ export class ThemesService {
     return row;
   }
 
+  async listPublished() {
+    return this.theme().findMany({
+      where: { status: 'published' },
+      orderBy: { updatedAt: 'desc' },
+      include: { versions: { orderBy: { createdAt: 'desc' }, take: 1 } },
+    });
+  }
+
+  async getStorefrontAssignment(adminId: string) {
+    try {
+      const store = await this.prismaAny().storeProfile.findUnique({
+        where: { adminId },
+        select: { id: true, theme: true, slug: true, title: true },
+      });
+      if (!store) return { themeId: null, store: null };
+      const themeId = this.isThemeId(store.theme) ? store.theme : null;
+      return { themeId, store };
+    } catch {
+      return { themeId: null, store: null };
+    }
+  }
+
+  async assignStorefront(adminId: string, themeId: string | null) {
+    if (themeId) {
+      const row = await this.get(themeId);
+      if (String(row.status) !== 'published') {
+        throw new BadRequestException('Only published themes can be assigned to the storefront');
+      }
+    }
+    try {
+      const store = await this.prismaAny().storeProfile.findUnique({
+        where: { adminId },
+        select: { id: true },
+      });
+      if (!store) {
+        throw new BadRequestException('Create a Store profile first');
+      }
+      await this.prismaAny().storeProfile.update({
+        where: { adminId },
+        data: { theme: themeId || 'modern' },
+      });
+      return this.getStorefrontAssignment(adminId);
+    } catch (err: any) {
+      if (err instanceof BadRequestException) throw err;
+      throw new BadRequestException(err?.message || 'Could not assign storefront theme');
+    }
+  }
+
+  async resolvePublished(themeId: string | null | undefined) {
+    if (!this.isThemeId(themeId)) return null;
+    try {
+      const row = await this.theme().findFirst({
+        where: { id: themeId, status: 'published' },
+        select: { id: true, slug: true, name: true, settings: true },
+      });
+      return row;
+    } catch {
+      return null;
+    }
+  }
+
+  private isThemeId(value: string | null | undefined): value is string {
+    return !!value && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+  }
+
   async create(data: {
     slug: string;
     name: string;

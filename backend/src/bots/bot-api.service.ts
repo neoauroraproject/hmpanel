@@ -50,6 +50,32 @@ export class BotApiService {
     return { ok: true };
   }
 
+  async listClientsForAdmin(adminId: string) {
+    const rows = await this.prisma.client.findMany({
+      where: { adminId, provisioningStatus: { not: 'FAILED' } },
+      take: 200,
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        email: true,
+        uuid: true,
+        enable: true,
+        expiryTime: true,
+        total: true,
+        up: true,
+        down: true,
+        panelId: true,
+      },
+    });
+    return rows.map((row) => ({
+      ...row,
+      expiryTime: row.expiryTime.toString(),
+      total: row.total.toString(),
+      up: row.up.toString(),
+      down: row.down.toString(),
+    }));
+  }
+
   async authenticate(plainKey: string) {
     if (!plainKey?.startsWith('hmp_')) {
       throw new UnauthorizedException('Invalid API key');

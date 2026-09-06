@@ -26,6 +26,7 @@ type LedgerQuota = {
   availableTraffic: number;
   usedTraffic: number;
   allTimeTraffic: number;
+  sharedRemaining?: boolean;
 };
 
 type LedgerResponse = Paginated<Transaction> & {
@@ -41,7 +42,28 @@ type LedgerDestination = {
   name: string;
   panelType: string;
   remainingBytes: number | null;
+  usedBytes?: number | null;
+  totalBytes?: number | null;
 };
+
+function panelTypeLabel(
+  type: string | null | undefined,
+  t: (key: string, params?: Record<string, string | number>) => string,
+) {
+  if (type === "eylan") return t("panels.typeEylan");
+  if (type === "pasarguard") return t("panels.typePasarguard");
+  return t("panels.typeXui");
+}
+
+function txTypeLabel(
+  type: string,
+  t: (key: string, params?: Record<string, string | number>) => string,
+) {
+  if (type === "CREDIT") return t("traffic.typeCredit");
+  if (type === "DEBIT") return t("traffic.typeDebit");
+  if (type === "USAGE_CHARGE") return t("traffic.typeUsage");
+  return type;
+}
 
 const TRAFFIC_PANEL_TAB_KEY = "hmpanel.traffic.panelId";
 
@@ -141,10 +163,14 @@ export default function TrafficPage() {
     (a) => a.role === "RESELLER" && a.status === "active",
   );
   const totalPages = Math.ceil((ledger.data?.total || 0) / 15) || 1;
-  const activeDest = destinations.find((d) => d.id === panelId);
+  const quota = ledger.data?.quota;
   const remainingBytes =
-    activeDest?.remainingBytes ??
-    (ledger.data?.quota?.unlimitedTraffic ? null : ledger.data?.quota?.availableTraffic);
+    quota?.unlimitedTraffic
+      ? null
+      : (quota?.availableTraffic ??
+        destinations.find((d) => d.id === panelId)?.remainingBytes);
+  const usedBytes = quota?.unlimitedTraffic ? null : quota?.usedTraffic;
+  const totalBytes = quota?.unlimitedTraffic ? null : quota?.allTimeTraffic;
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -211,7 +237,15 @@ export default function TrafficPage() {
                     }`}
                   >
                     <Database size={14} className={panelId === d.id ? "text-white" : "text-zinc-400"} />
-                    {d.name}
+                    <span className="flex flex-col items-start leading-tight">
+                      <span>{d.name}</span>
+                      <span className={`text-[10px] font-medium ${panelId === d.id ? "text-blue-100" : "text-zinc-400"}`}>
+                        {panelTypeLabel(d.panelType, t)}
+                        {d.remainingBytes == null
+                          ? ` · ${t("traffic.unlimited")}`
+                          : ` · ${formatBytes(d.remainingBytes)}`}
+                      </span>
+                    </span>
                   </button>
                 ))}
               </div>
@@ -219,39 +253,38 @@ export default function TrafficPage() {
           )}
 
           {ledger.data && (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <Card>
                 <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
-                  <Gauge size={16} className="text-sky-500" /> {t("traffic.remainingQuota")}
+                  <Gauge size={16} className="text-sky-500" /> {t("traffic.remainingTraffic")}
                 </div>
                 <div className="mt-2 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
-                  {remainingBytes == null || ledger.data.quota?.unlimitedTraffic
+                  {remainingBytes == null || quota?.unlimitedTraffic
                     ? t("traffic.unlimited")
                     : formatBytes(remainingBytes)}
                 </div>
+                {quota?.sharedRemaining && !quota.unlimitedTraffic ? (
+                  <p className="mt-1 text-[11px] text-zinc-400">{t("traffic.sharedPoolHint")}</p>
+                ) : null}
               </Card>
               <Card>
                 <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
-                  <ArrowUpRight size={16} className="text-emerald-500" /> {t("traffic.totalCredits")}
+                  <ArrowDownRight size={16} className="text-amber-500" /> {t("traffic.usedTraffic")}
                 </div>
                 <div className="mt-2 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
-                  {formatBytes(ledger.data.totals.credit)}
+                  {usedBytes == null || quota?.unlimitedTraffic
+                    ? t("traffic.unlimited")
+                    : formatBytes(usedBytes)}
                 </div>
               </Card>
               <Card>
                 <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
-                  <ArrowDownRight size={16} className="text-amber-500" /> {t("traffic.totalDebits")}
+                  <Activity size={16} className="text-blue-500" /> {t("traffic.totalToDate")}
                 </div>
                 <div className="mt-2 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
-                  {formatBytes(ledger.data.totals.debit)}
-                </div>
-              </Card>
-              <Card>
-                <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
-                  <Activity size={16} className="text-blue-500" /> {t("traffic.netVolume")}
-                </div>
-                <div className="mt-2 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
-                  {formatBytes(BigInt(ledger.data.totals.credit) - BigInt(ledger.data.totals.debit))}
+                  {totalBytes == null || quota?.unlimitedTraffic
+                    ? t("traffic.unlimited")
+                    : formatBytes(totalBytes)}
                 </div>
               </Card>
             </div>
@@ -299,6 +332,7 @@ export default function TrafficPage() {
                       <th className="px-4 py-3 font-medium">{t("traffic.colType")}</th>
                       <th className="px-4 py-3 font-medium">{t("traffic.colAmount")}</th>
                       <th className="px-4 py-3 font-medium">{t("traffic.colBalance")}</th>
+                      <th className="px-4 py-3 font-medium">{t("traffic.colPanel")}</th>
                       <th className="px-4 py-3 font-medium">{t("traffic.colDescription")}</th>
                       <th className="px-4 py-3 font-medium">{t("traffic.colClient")}</th>
                       <th className="px-4 py-3 font-medium">{t("traffic.colDate")}</th>
@@ -315,7 +349,7 @@ export default function TrafficPage() {
                           <td className="block md:table-cell px-4 py-3">
                             <div className="flex items-center justify-between gap-2 md:block">
                               <Badge tone={credit ? "green" : tx.type === "DEBIT" ? "amber" : "purple"}>
-                                {tx.type}
+                                {txTypeLabel(tx.type, t)}
                               </Badge>
                               <span className="md:hidden text-xs text-zinc-500">{formatDateTime(tx.createdAt)}</span>
                             </div>
@@ -341,6 +375,17 @@ export default function TrafficPage() {
                             )}
                           </td>
                           <td className="block md:table-cell px-4 py-2 md:py-3 text-zinc-700 dark:text-zinc-300">
+                            <div className="md:hidden text-[10px] uppercase text-zinc-500 font-semibold mb-1 tracking-wider">{t("traffic.colPanel")}</div>
+                            {tx.panel?.name ? (
+                              <span className="inline-flex flex-col">
+                                <span className="font-medium">{tx.panel.name}</span>
+                                <span className="text-[11px] text-zinc-400">{panelTypeLabel(tx.panel.panelType, t)}</span>
+                              </span>
+                            ) : (
+                              "—"
+                            )}
+                          </td>
+                          <td className="block md:table-cell px-4 py-2 md:py-3 text-zinc-700 dark:text-zinc-300">
                             <div className="md:hidden text-[10px] uppercase text-zinc-500 font-semibold mb-1 tracking-wider">{t("traffic.colDescription")}</div>
                             {tx.description}
                           </td>
@@ -356,7 +401,7 @@ export default function TrafficPage() {
                     })}
                     {(ledger.data?.data.length ?? 0) === 0 && (
                       <tr className="block md:table-row">
-                        <td colSpan={6} className="block md:table-cell px-4 py-10 text-center text-zinc-500">
+                        <td colSpan={7} className="block md:table-cell px-4 py-10 text-center text-zinc-500">
                           {t("traffic.noTransactions")}
                         </td>
                       </tr>

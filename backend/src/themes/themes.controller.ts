@@ -6,11 +6,13 @@ import {
   Param,
   Patch,
   Post,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Roles, RolesGuard } from '../common/roles.guard';
+import type { AuthRequest } from '../common/auth-request';
 import { ThemesService } from './themes.service';
 
 @ApiTags('Themes')
@@ -24,6 +26,24 @@ export class ThemesController {
   @Get()
   list() {
     return this.themes.list();
+  }
+
+  @Get('published')
+  listPublished() {
+    return this.themes.listPublished();
+  }
+
+  @Get('storefront')
+  getStorefront(@Req() req: AuthRequest) {
+    return this.themes.getStorefrontAssignment(req.user.id);
+  }
+
+  @Post('storefront')
+  assignStorefront(
+    @Req() req: AuthRequest,
+    @Body() body: { themeId?: string | null },
+  ) {
+    return this.themes.assignStorefront(req.user.id, body.themeId || null);
   }
 
   @Get(':id')

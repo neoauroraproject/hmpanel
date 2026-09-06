@@ -6,6 +6,7 @@ import {
   Logger,
   Inject,
   forwardRef,
+  Optional,
 } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { Prisma } from '@prisma/client';
@@ -80,6 +81,8 @@ import { FeatureFlagsService } from '../platform/architecture/feature-flags.serv
 import { PLATFORM_FLAGS } from '../platform/architecture/feature-flags';
 import { PolicyEngine } from '../authz/policy.engine';
 import { DomainEventBusService } from '../events/domain-event-bus.service';
+import { ProvisioningEngine } from '../provisioning/provisioning.engine';
+import { JobCenterService } from '../jobs/job-center.service';
 import type { PanelApiResult } from '../panels/panels.service';
 
 @Injectable()
@@ -100,6 +103,8 @@ export class ClientsService {
     private featureFlags: FeatureFlagsService,
     private policyEngine: PolicyEngine,
     private domainEvents: DomainEventBusService,
+    private provisioningEngine: ProvisioningEngine,
+    @Optional() private jobs?: JobCenterService,
   ) {}
 
   /**
@@ -130,14 +135,19 @@ export class ClientsService {
       const driver = this.panelDrivers.get('3x-ui');
       if (driver) {
         try {
-          const snap = await driver.createClient(panelId, {
-            username: payload.email,
-            inboundIds: numericIds.map(String),
-            enable: payload.enable,
-            expiryTimeMs: payload.expiryTime,
-            limitIp: payload.limitIp,
-            totalBytes: BigInt(Math.round((payload.totalGB || 0) * GB)),
-            providerExtras: { numericInboundIds: numericIds, payload },
+          const snap = await this.provisioningEngine.provisionUser({
+            panelId,
+            panelType: '3x-ui',
+            adminId: callerId || '',
+            client: {
+              username: payload.email,
+              inboundIds: numericIds.map(String),
+              enable: payload.enable,
+              expiryTimeMs: payload.expiryTime,
+              limitIp: payload.limitIp,
+              totalBytes: BigInt(Math.round((payload.totalGB || 0) * GB)),
+              providerExtras: { numericInboundIds: numericIds, payload },
+            },
           });
           return { success: true, data: snap };
         } catch (err: any) {
@@ -146,7 +156,7 @@ export class ClientsService {
             error: {
               code: 'UNKNOWN',
               message: err?.message || 'Adapter create failed',
-              endpoint: 'XuiPanelDriver.createClient',
+              endpoint: 'ProvisioningEngine.provisionUser',
               durationMs: 0,
             },
           };
@@ -3491,6 +3501,11 @@ export class ClientsService {
         }
       }
     } else if (dto.action === 'delete' || dto.action === 'cleanup') {
+      if (dto.action === 'cleanup') {
+        void this.jobs?.enqueue('cleanup', 'run', {
+          data: { count: targets.length, adminId },
+        });
+      }
       const deleteResults = await this.bulkDeleteOps(
         adminId,
         role,

@@ -6,11 +6,13 @@ import {
   ForbiddenException,
   Logger,
   OnModuleInit,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PanelsService } from '../panels/panels.service';
 import { calculateAdminTrafficSummary } from '../common/utils/traffic.util';
 import { AdminQuotaService } from '../traffic/admin-quota.service';
+import { DomainEventBusService } from '../events/domain-event-bus.service';
 import { AdminRole, QuotaMode } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 
@@ -21,6 +23,7 @@ export class AdminsService implements OnModuleInit {
     private prisma: PrismaService,
     private panelsService: PanelsService,
     private adminQuota: AdminQuotaService,
+    @Optional() private events?: DomainEventBusService,
   ) {}
 
   async onModuleInit() {
@@ -225,6 +228,11 @@ export class AdminsService implements OnModuleInit {
         entityId: admin.id,
         adminId: actorId,
       },
+    });
+    void this.events?.emit('admin.created', {
+      adminId: admin.id,
+      username: admin.username,
+      role: admin.role,
     });
 
     if (usePerPanel && data.inboundIds?.length) {
