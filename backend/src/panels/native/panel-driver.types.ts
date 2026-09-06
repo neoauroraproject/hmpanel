@@ -112,6 +112,8 @@ export interface ParsedSubLink {
 export interface PanelDriver {
   readonly panelType: PanelProviderType;
   capabilities(): NativePanelCapabilities;
+  /** Flat USERS/INBOUNDS/... map for Policy/UI (Phase 1 catalog). */
+  flatCapabilities?(): Record<string, boolean>;
   testConnection(creds: PanelCredentialsInput): Promise<TestConnectionResult>;
   /** Saved panel — driver loads credentials from StoreAddonConnection. */
   testPanel?(panelId: string): Promise<TestConnectionResult>;

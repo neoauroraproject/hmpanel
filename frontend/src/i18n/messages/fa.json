@@ -34,7 +34,13 @@
     "monitoringPro": "مانیتورینگ حرفه‌ای",
     "backupCenter": "مرکز پشتیبان",
     "jobCenter": "مرکز کارها",
-    "panelPlus": "پنل پلاس"
+    "panelPlus": "پنل پلاس",
+    "themes": "قالب‌ها",
+    "sectionOverview": "نمای کلی",
+    "sectionInfrastructure": "زیرساخت",
+    "sectionUsers": "کاربران",
+    "sectionAdministration": "مدیریت",
+    "sectionSettings": "تنظیمات"
   },
   "common": {
     "save": "ذخیره",
@@ -995,6 +1001,22 @@
     "platformModulesSubtitle": "فقط سوپر ادمین — مدیریت پلتفرم HMPanel",
     "businessModules": "ماژول‌های کسب‌وکار",
     "businessModulesSubtitle": "قابل تخصیص به ادمین‌ها"
+  },
+  "themes": {
+    "title": "قالب‌ها",
+    "subtitle": "ساخت، نسخه‌بندی، درون‌ریزی و برون‌ریزی قالب فروشگاه. محتوای مارکت بعداً اضافه می‌شود.",
+    "empty": "هنوز قالبی نیست.",
+    "create": "قالب جدید",
+    "name": "نام",
+    "slug": "نامک",
+    "import": "درون‌ریزی JSON",
+    "export": "برون‌ریزی",
+    "publish": "انتشار",
+    "unpublish": "لغو انتشار",
+    "clone": "کپی",
+    "statusDraft": "پیش‌نویس",
+    "statusPublished": "منتشرشده",
+    "statusUnpublished": "لغو انتشار"
   },
   "store": {
     "title": "فروشگاه",

@@ -1,10 +1,15 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { getAppVersionTag } from '../common/utils/app-version';
+import { FeatureFlagsService } from '../platform/architecture/feature-flags.service';
+import { PLATFORM_FLAGS_SETTING_KEY } from '../platform/architecture/feature-flags';
 
 @Injectable()
 export class SettingsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    @Optional() private featureFlags?: FeatureFlagsService,
+  ) {}
 
   async getSetting(key: string, defaultValue: any = null) {
     const setting = await this.prisma.systemSetting.findUnique({
@@ -39,6 +44,9 @@ export class SettingsService {
       result.display_calendar !== 'gregorian'
     ) {
       result.display_calendar = 'jalali';
+    }
+    if (this.featureFlags) {
+      result[PLATFORM_FLAGS_SETTING_KEY] = await this.featureFlags.getAll();
     }
     return result;
   }

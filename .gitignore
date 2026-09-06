@@ -67,3 +67,12 @@ frontend/tsconfig.tsbuildinfo
 # AI agent files
 AGENTS.md
 CLAUDE.md
+
+# Premium overlay from `dev:link` — never ship in Community
+/backend/src/plugins/monitoring/
+/backend/src/plugins/backup-center/
+/backend/src/plugins/shared/
+/backend/src/domains/
+/frontend/src/plugins/
+/frontend/src/app/(app)/monitoring/
+/frontend/src/components/monitoring/

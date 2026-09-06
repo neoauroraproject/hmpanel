@@ -211,6 +211,29 @@ export const MODULE_MANIFESTS: ModuleManifest[] = [
       write: ['enqueue_job', 'retry_job'],
     },
   },
+  {
+    id: 'themes',
+    name: 'Themes',
+    version: '1.0.0',
+    description: 'Theme marketplace structure: create, version, import/export. Store builder later.',
+    kind: 'BUSINESS',
+    phase: 3,
+    defaultEnabled: true,
+    licenseRequirement: 'business',
+    features: ['THEME_MARKETPLACE'],
+    dependencies: [],
+    permissions: [
+      { id: 'themes.view', description: 'View themes' },
+      { id: 'themes.manage', description: 'Manage themes', write: true },
+    ],
+    routes: { backend: '/themes', frontend: '/premium/themes' },
+    menus: [{ label: 'Themes', path: '/premium/themes', icon: 'Palette' }],
+    scheduler: [],
+    readOnlyCapabilities: {
+      read: ['view_themes', 'preview_theme'],
+      write: ['create_theme', 'publish_theme'],
+    },
+  },
 ];
 
 export function getManifest(moduleId: string): ModuleManifest | undefined {

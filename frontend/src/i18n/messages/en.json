@@ -34,7 +34,13 @@
     "monitoringPro": "Monitoring Pro",
     "backupCenter": "Backup Center",
     "jobCenter": "Job Center",
-    "panelPlus": "Panel Plus"
+    "panelPlus": "Panel Plus",
+    "themes": "Themes",
+    "sectionOverview": "Overview",
+    "sectionInfrastructure": "Infrastructure",
+    "sectionUsers": "Users",
+    "sectionAdministration": "Administration",
+    "sectionSettings": "Settings"
   },
   "common": {
     "save": "Save",
@@ -995,6 +1001,22 @@
     "platformModulesSubtitle": "Super Admin only — manage the HMPanel platform",
     "businessModules": "Business Modules",
     "businessModulesSubtitle": "Assignable to individual admins"
+  },
+  "themes": {
+    "title": "Themes",
+    "subtitle": "Create, version, import and export storefront themes. Marketplace content comes later.",
+    "empty": "No themes yet.",
+    "create": "New theme",
+    "name": "Name",
+    "slug": "Slug",
+    "import": "Import JSON",
+    "export": "Export",
+    "publish": "Publish",
+    "unpublish": "Unpublish",
+    "clone": "Clone",
+    "statusDraft": "Draft",
+    "statusPublished": "Published",
+    "statusUnpublished": "Unpublished"
   },
   "store": {
     "title": "Store",

@@ -891,6 +891,8 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
               </AnimatePresence>
             </div>
 
+            <PluginSlot name="admins.form.providerAccess" props={{ collectOnly: true }} />
+
             {/* Section C: Limits */}
             <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 overflow-hidden">
               <button type="button" onClick={() => setOpenSection(openSection === 'limits' ? '' : 'limits')} className="w-full flex items-center justify-between p-4 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800/80 transition-colors">
@@ -1494,6 +1496,8 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
                   )}
                 </AnimatePresence>
               </div>
+
+              <PluginSlot name="admins.edit.providerAccess" props={{ adminId }} />
 
               <div className="flex justify-end pt-4">
                 <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => {

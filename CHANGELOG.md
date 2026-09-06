@@ -8,6 +8,14 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [2.2.0] - 2026-09-06
+
+### Added
+- **Platform architecture baseline:** adapter/capability catalog for 3x-ui, Eylan, and Pasarguard; permission, policy Reserve/Commit, and feature entitlement engines; Core domain nav with Premium remaining a separate menu block.
+- **Theme + payment structure:** Theme/ThemeVersion/ThemeAsset tables with import/export, payment gateway registry (`manual_bank`, `wallet`, plus stubs), and Admin Hub slots for provider access.
+- **Platform scaffolding:** SchemaMigrationAdapter, Telegram Core, Bot API v1 (`hmp_` keys), Domain Event Bus, Job Center, and unified monitoring hub.
+- **Feature flags:** `adapter_xui_v1`, `permission_engine_v1`, and `policy_reserve_v1` default **off** so createClient/traffic stay on the current path until explicitly enabled. `nav_v2`, `theme_marketplace_v1`, and `payment_plugins_v1` default on.
+
 ## [2.1.1] - 2026-09-04
 
 ### Added

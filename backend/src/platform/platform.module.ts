@@ -10,6 +10,7 @@ import { LicenseActivationService } from './license-activation.service';
 import { LicenseHeartbeatScheduler } from './license-heartbeat.scheduler';
 import { PremiumPluginsScheduler } from './premium-plugins.scheduler';
 import { FeatureManagerService } from './feature-manager.service';
+import { FeatureEntitlementService } from './feature-entitlement.service';
 import { PremiumGuard } from '../common/guards/premium.guard';
 import { PluginsModule } from '../plugins/plugins.module';
 import { PremiumModulesListController } from '../premium-modules/premium-modules-list.controller';
@@ -21,6 +22,7 @@ import { PremiumModulesListController } from '../premium-modules/premium-modules
   providers: [
     LicenseManagerService,
     FeatureManagerService,
+    FeatureEntitlementService,
     InstanceFingerprintService,
     PremiumBundleService,
     PremiumCatalogService,
@@ -32,6 +34,7 @@ import { PremiumModulesListController } from '../premium-modules/premium-modules
   exports: [
     LicenseManagerService,
     FeatureManagerService,
+    FeatureEntitlementService,
     LicenseActivationService,
     PremiumBundleService,
     PremiumCatalogService,

@@ -76,6 +76,11 @@ import { PanelOperationGate } from '../panels/native/panel-operation-gate';
 import { isExternalPanelType } from '../panels/native/native-panel-capabilities';
 import { snapshotToClientUuid, mapSnapshotMeta } from '../panels/native/native-panel.orchestrator';
 import { ClientOutputService } from './output/client-output.service';
+import { FeatureFlagsService } from '../platform/architecture/feature-flags.service';
+import { PLATFORM_FLAGS } from '../platform/architecture/feature-flags';
+import { PolicyEngine } from '../authz/policy.engine';
+import { DomainEventBusService } from '../events/domain-event-bus.service';
+import type { PanelApiResult } from '../panels/panels.service';
 
 @Injectable()
 export class ClientsService {
@@ -92,7 +97,69 @@ export class ClientsService {
     private panelGate: PanelOperationGate,
     @Inject(forwardRef(() => ClientOutputService))
     private clientOutput: ClientOutputService,
+    private featureFlags: FeatureFlagsService,
+    private policyEngine: PolicyEngine,
+    private domainEvents: DomainEventBusService,
   ) {}
+
+  /**
+   * 3x-ui provision: existing PanelsService path unless adapter_xui_v1 is on.
+   */
+  private async createOnXuiPanel(
+    panelId: string,
+    numericIds: number[],
+    payload: {
+      email: string;
+      totalGB?: number;
+      expiryTime?: number;
+      limitIp?: number;
+      limitHwid?: number;
+      tgId?: number;
+      enable?: boolean;
+      flow?: string;
+      subId?: string;
+      comment?: string;
+      reset?: number;
+      resetMax?: number;
+      trafficReset?: string;
+      trafficResetDay?: number;
+    },
+    callerId?: string,
+  ): Promise<PanelApiResult> {
+    if (await this.featureFlags.isEnabled(PLATFORM_FLAGS.ADAPTER_XUI_V1)) {
+      const driver = this.panelDrivers.get('3x-ui');
+      if (driver) {
+        try {
+          const snap = await driver.createClient(panelId, {
+            username: payload.email,
+            inboundIds: numericIds.map(String),
+            enable: payload.enable,
+            expiryTimeMs: payload.expiryTime,
+            limitIp: payload.limitIp,
+            totalBytes: BigInt(Math.round((payload.totalGB || 0) * GB)),
+            providerExtras: { numericInboundIds: numericIds, payload },
+          });
+          return { success: true, data: snap };
+        } catch (err: any) {
+          return {
+            success: false,
+            error: {
+              code: 'UNKNOWN',
+              message: err?.message || 'Adapter create failed',
+              endpoint: 'XuiPanelDriver.createClient',
+              durationMs: 0,
+            },
+          };
+        }
+      }
+    }
+    return this.panelsService.createClientOnPanel(
+      panelId,
+      numericIds,
+      payload,
+      callerId,
+    );
+  }
 
   /** Only admins with unlimitedTraffic (or Super Admin) may own/create unlimited clients. */
   private assertUnlimitedClientAllowed(
@@ -944,6 +1011,7 @@ export class ClientsService {
       );
     }
 
+    let reservation: { id: string } | null = null;
     try {
       // ── Step 1: Validate inputs ──────────────────────────────────────────────
       if (!data.inboundIds || data.inboundIds.length === 0) {
@@ -996,7 +1064,18 @@ export class ClientsService {
         this.assertUnlimitedClientAllowed(targetAdmin, totalBytes);
       }
 
-      if (
+      if (await this.featureFlags.isEnabled(PLATFORM_FLAGS.POLICY_RESERVE_V1)) {
+        reservation = await this.policyEngine.reserve({
+          adminId: targetAdmin.id,
+          operation: 'CREATE_USER',
+          maxClients: targetAdmin.maxClients,
+          currentClients: targetAdmin._count.clients,
+          trafficBytes: totalBytes,
+          unlimitedTraffic: !!targetAdmin.unlimitedTraffic,
+          role: targetAdmin.role,
+          persist: true,
+        });
+      } else if (
         targetAdmin.maxClients > 0 &&
         targetAdmin._count.clients >= targetAdmin.maxClients
       ) {
@@ -1122,7 +1201,7 @@ export class ClientsService {
       for (const [panelId, { numericIds }] of byPanel) {
         const pData = panelPayloads.get(panelId)!;
         // 3a. Create on panel
-        const createResult = await this.panelsService.createClientOnPanel(
+        const createResult = await this.createOnXuiPanel(
           panelId,
           numericIds,
           pData.payload,
@@ -1210,7 +1289,7 @@ export class ClientsService {
 
       // ── Step 5: DB COMMIT — only now that panel is source of truth ───────────
       try {
-        return await this.prisma.$transaction(async (tx) => {
+        const created = await this.prisma.$transaction(async (tx) => {
           // Re-lock caller balance inside transaction
           const lockedCaller = await tx.admin.findUnique({
             where: { id: callerId },
@@ -1322,6 +1401,12 @@ export class ClientsService {
             ),
           };
         });
+        await this.policyEngine.commit(reservation?.id);
+        await this.domainEvents.emit('client.created', {
+          email: data.email,
+          adminId: targetAdminId,
+        });
+        return created;
       } catch (dbError: any) {
         // Ultimate fallback rollback if database transaction crashes
         for (const donePanel of createdOnPanels) {
@@ -1333,6 +1418,9 @@ export class ClientsService {
           `Database synchronization failed. Remote panels have been rolled back. Error: ${dbError.message}`,
         );
       }
+    } catch (err) {
+      await this.policyEngine.rollback(reservation?.id);
+      throw err;
     } finally {
       // Always release lock
       this.logger.log(`[LOCK] Released: email=${data.email}`);
@@ -2680,7 +2768,7 @@ export class ClientsService {
             `[BULK_CREATE] Panel ${panel?.name} has no bulkCreate — sequential fallback`,
           );
           for (const item of bulkItems) {
-            const createResult = await this.panelsService.createClientOnPanel(
+            const createResult = await this.createOnXuiPanel(
               panelId,
               item.inboundIds,
               item.client,

@@ -4,6 +4,7 @@ import {
   InternalServerErrorException,
   NotFoundException,
   BadRequestException,
+  Optional,
 } from '@nestjs/common';
 import { exec } from 'child_process';
 import * as fs from 'fs';
@@ -16,6 +17,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { parseNativeCapabilities } from '../panels/native/native-panel-capabilities';
 import { resolvePanelApiBaseUrl } from '../common/utils/panel-url.util';
 import { getAppVersion } from '../common/utils/app-version';
+import { SchemaMigrationAdapter } from '../migration/schema-migration.adapter';
+import { DomainEventBusService } from '../events/domain-event-bus.service';
 
 const execPromise = promisify(exec);
 
@@ -52,6 +55,8 @@ export class BackupsService {
   constructor(
     private readonly hmctl: HmctlClient,
     private readonly prisma: PrismaService,
+    @Optional() private readonly schemaMigration?: SchemaMigrationAdapter,
+    @Optional() private readonly events?: DomainEventBusService,
   ) {
     if (!fs.existsSync(this.backupsDir)) {
       fs.mkdirSync(this.backupsDir, { recursive: true });
@@ -786,6 +791,12 @@ export class BackupsService {
 
     const basename = path.basename(backupFilePath);
     this.logger.log(`Scheduling HMPanel restore of ${basename}`);
+    if (this.schemaMigration) {
+      this.logger.log(
+        `SchemaMigrationAdapter currentVersion=${this.schemaMigration.currentVersion()} (runs after boot on restored schema)`,
+      );
+    }
+    void this.events?.emit('panel.synced', { restore: true, file: basename });
 
     // Fire-and-forget so HTTP returns before panel stops itself during restore.
     // Host CLI must stop panel-app, terminate DB sessions, then apply dump.

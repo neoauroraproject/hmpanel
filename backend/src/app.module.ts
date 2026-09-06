@@ -17,6 +17,7 @@ import { InboundsModule } from './inbounds/inbounds.module';
 import { BackupsModule } from './backups/backups.module';
 import { BulkClientsModule } from './bulk-clients/bulk-clients.module';
 import { PlatformModule } from './platform/platform.module';
+import { ArchitectureModule } from './platform/architecture.module';
 import { PluginsModule } from './plugins/plugins.module';
 
 const COMMUNITY_IMPORTS = [
@@ -34,6 +35,7 @@ const COMMUNITY_IMPORTS = [
     },
   }),
   ScheduleModule.forRoot(),
+  ArchitectureModule,
   PlatformModule,
   PluginsModule,
   PrismaModule,

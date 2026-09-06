@@ -29,6 +29,7 @@ import {
   isExternalPanelType,
   parseNativeCapabilities,
 } from './native/native-panel-capabilities';
+import { flatCapabilitiesFor } from './native/panel-capability.catalog';
 import { generatePanelKey } from './native/panel-identity.util';
 
 // ─── Provisioning Error Classification ───────────────────────────────────────
@@ -808,6 +809,28 @@ export class PanelsService implements OnModuleInit {
     });
     if (!panel) throw new NotFoundException('Panel not found');
     return panel;
+  }
+
+  capabilityCatalog() {
+    return {
+      '3x-ui': flatCapabilitiesFor('3x-ui'),
+      eylan: flatCapabilitiesFor('eylan'),
+      pasarguard: flatCapabilitiesFor('pasarguard'),
+    };
+  }
+
+  async capabilitiesForPanel(id: string) {
+    const panel = await this.prisma.panel.findUnique({
+      where: { id },
+      select: { id: true, panelType: true, name: true },
+    });
+    if (!panel) throw new NotFoundException('Panel not found');
+    return {
+      panelId: panel.id,
+      panelType: panel.panelType || '3x-ui',
+      name: panel.name,
+      capabilities: flatCapabilitiesFor(panel.panelType),
+    };
   }
 
   async getInbounds(id: string) {

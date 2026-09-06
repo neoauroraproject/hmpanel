@@ -215,6 +215,7 @@ model Admin {
   rechargeOrdersAsBuyer  AdminRechargeOrder[] @relation("RechargeOrderAdmin")
   rechargeOrdersAsTarget AdminRechargeOrder[] @relation("RechargeOrderTarget")
   rechargeOrdersCreated  AdminRechargeOrder[] @relation("RechargeOrderCreated")
+  botApiClients          BotApiClient[]
 }
 
 // Bridging table for Admin <-> Inbound access
@@ -1582,4 +1583,83 @@ model AdminRechargeTimeline {
   order AdminRechargeOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@index([orderId, createdAt])
+}
+
+/// Theme Marketplace structure (content/catalog later). Additive — unused by createClient.
+model Theme {
+  id          String   @id @default(uuid())
+  slug        String   @unique
+  name        String
+  authorName  String?
+  description String?
+  status      String   @default("draft") // draft | published | unpublished
+  settings    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  versions ThemeVersion[]
+  assets   ThemeAsset[]
+}
+
+model ThemeVersion {
+  id          String    @id @default(uuid())
+  themeId     String
+  version     String
+  changelog   String?
+  payload     Json      @default("{}")
+  publishedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  theme Theme @relation(fields: [themeId], references: [id], onDelete: Cascade)
+
+  @@unique([themeId, version])
+  @@index([themeId, createdAt])
+}
+
+model ThemeAsset {
+  id        String   @id @default(uuid())
+  themeId   String
+  kind      String   @default("preview")
+  name      String
+  mimeType  String?
+  data      Json?
+  createdAt DateTime @default(now())
+
+  theme Theme @relation(fields: [themeId], references: [id], onDelete: Cascade)
+
+  @@index([themeId])
+}
+
+/// External Bot API v1 clients (hashed keys only).
+model BotApiClient {
+  id              String    @id @default(uuid())
+  name            String
+  adminId         String
+  keyPrefix       String
+  keyHash         String    @unique
+  scopes          Json      @default("[]")
+  rateLimitPerMin Int       @default(60)
+  webhookUrl      String?
+  enabled         Boolean   @default(true)
+  lastUsedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  admin Admin @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([adminId])
+}
+
+/// Policy Reserve/Commit rows (used when policy_reserve_v1 is on).
+model PolicyReservation {
+  id        String   @id @default(uuid())
+  adminId   String
+  operation String
+  status    String   @default("reserved")
+  payload   Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([adminId, status])
+  @@index([createdAt])
 }

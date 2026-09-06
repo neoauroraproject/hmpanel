@@ -61,6 +61,18 @@ export class PanelsController {
     return this.panelsService.findAll();
   }
 
+  @Get('capability-catalog')
+  @ApiOperation({ summary: 'Flat capability map for 3x-ui / Eylan / Pasarguard' })
+  capabilityCatalog() {
+    return this.panelsService.capabilityCatalog();
+  }
+
+  @Get(':id/capabilities')
+  @ApiOperation({ summary: 'Flat capabilities for one panel (UI/policy, not panelType checks)' })
+  capabilitiesForPanel(@Param('id') id: string) {
+    return this.panelsService.capabilitiesForPanel(id);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get panel details with inbounds' })
   findOne(@Param('id') id: string) {
