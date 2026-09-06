@@ -13,6 +13,7 @@ import { translatePremiumMenuTitle } from "@/lib/premium-nav";
 import {
   PREMIUM_MENU_ICONS,
   buildAppNav,
+  type NavIcon,
   type PremiumNavInput,
 } from "@/lib/nav-config";
 
@@ -71,7 +72,9 @@ export function useAppNav() {
             fallback: m.title,
           }),
           href: m.href,
-          icon: m.icon,
+          icon: (PREMIUM_MENU_ICONS[String(m.moduleId || "")] ||
+            (m.icon as NavIcon) ||
+            Diamond) as NavIcon,
           moduleId: m.moduleId as string | undefined,
         });
       }

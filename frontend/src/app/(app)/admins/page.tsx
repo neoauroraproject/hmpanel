@@ -49,6 +49,8 @@ interface Admin {
   panelQuotaSummary?: string | null;
 }
 
+type QuotaMode = "GLOBAL" | "PER_PANEL";
+
 interface InboundRow {
   id: string;
   tag: string;
