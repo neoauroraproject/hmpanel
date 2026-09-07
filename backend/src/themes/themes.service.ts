@@ -5,10 +5,61 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { parseThemeImport, toThemeExport } from './theme-export';
+import { STOREFRONT_STARTERS } from './storefront-skins';
 
 @Injectable()
 export class ThemesService {
   constructor(private prisma: PrismaService) {}
+
+  listStarters() {
+    return STOREFRONT_STARTERS.map((s) => ({
+      key: s.key,
+      slug: s.slug,
+      name: s.name,
+      description: s.description,
+      settings: s.settings,
+      preview: s.settings.preview,
+    }));
+  }
+
+  async installStarter(key: string) {
+    const starter = STOREFRONT_STARTERS.find((s) => s.key === key);
+    if (!starter) throw new NotFoundException(`Unknown starter theme: ${key}`);
+    const existing = await this.theme().findUnique({ where: { slug: starter.slug } });
+    if (existing) {
+      const updated = await this.theme().update({
+        where: { id: existing.id },
+        data: {
+          name: starter.name,
+          description: starter.description,
+          settings: starter.settings as object,
+          status: 'published',
+          authorName: 'HMPanel',
+        },
+        include: { versions: { orderBy: { createdAt: 'desc' }, take: 1 } },
+      });
+      return { ...updated, installed: true, reused: true };
+    }
+    const created = await this.theme().create({
+      data: {
+        slug: starter.slug,
+        name: starter.name,
+        authorName: 'HMPanel',
+        description: starter.description,
+        status: 'published',
+        settings: starter.settings as object,
+        versions: {
+          create: {
+            version: '1.0.0',
+            payload: starter.settings as object,
+            changelog: 'Starter theme install',
+          },
+        },
+      },
+      include: { versions: true },
+    });
+    return { ...created, installed: true, reused: false };
+  }
 
   async list() {
     return this.theme().findMany({

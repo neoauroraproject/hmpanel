@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import QRCode from "react-qr-code";
@@ -28,6 +28,7 @@ import {
   fadeUp,
   fadeUpTransition,
 } from "./design";
+import { resolveStorefrontSkin, skinChrome } from "./skins";
 import type {
   CustomerNotification,
   CustomerOrder,
@@ -46,12 +47,22 @@ export function StoreShell({
   children: React.ReactNode;
   topBar?: React.ReactNode;
 }) {
-  const primaryColor = store?.branding?.primaryColor || "#3b82f6";
+  const brandingPrimary = store?.branding?.primaryColor || "";
+  const skin = resolveStorefrontSkin(store?.publishedTheme?.settings);
+  const chrome = skinChrome(skin);
+  const primaryColor =
+    brandingPrimary ||
+    (skin === "atelier" ? "#0D9488" : skin === "noir" ? "#CA8A04" : "#3b82f6");
 
   return (
     <StorefrontLocaleProvider store={store}>
       <StorefrontThemeProvider>
-        <StoreShellInner store={store} primaryColor={primaryColor} topBar={topBar}>
+        <StoreShellInner
+          store={store}
+          primaryColor={primaryColor}
+          chrome={chrome}
+          topBar={topBar}
+        >
           {children}
         </StoreShellInner>
       </StorefrontThemeProvider>
@@ -62,11 +73,13 @@ export function StoreShell({
 function StoreShellInner({
   store,
   primaryColor,
+  chrome,
   topBar,
   children,
 }: {
   store?: StorefrontStore;
   primaryColor: string;
+  chrome: ReturnType<typeof skinChrome>;
   topBar?: React.ReactNode;
   children: React.ReactNode;
 }) {
@@ -75,32 +88,62 @@ function StoreShellInner({
   const logoLight = store?.logoUrl || store?.branding?.logo || null;
   const logoDark = store?.logoDarkUrl || store?.branding?.logoDark || null;
   const title = store?.branding?.name || store?.title || "Store";
+  const isNoir = chrome.rootClass.includes("store-skin-noir");
+  const isAtelier = chrome.rootClass.includes("store-skin-atelier");
+
+  useEffect(() => {
+    const id = isNoir ? "store-font-noir" : isAtelier ? "store-font-atelier" : "";
+    if (!id || typeof document === "undefined") return;
+    if (document.getElementById(id)) return;
+    const link = document.createElement("link");
+    link.id = id;
+    link.rel = "stylesheet";
+    link.href = isNoir
+      ? "https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap"
+      : "https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap";
+    document.head.appendChild(link);
+  }, [isNoir, isAtelier]);
 
   return (
     <div
-      className={`min-h-[100dvh] bg-[#F5F5F7] text-[#1D1D1F] dark:bg-[#0B0B0F] dark:text-zinc-50 ${
-        isFa ? "font-[Vazirmatn,Tahoma,sans-serif]" : "font-[ui-sans-serif,system-ui,sans-serif]"
-      }`}
+      className={`${chrome.rootClass} min-h-[100dvh] ${
+        isNoir || isAtelier
+          ? "bg-[color:var(--store-bg)] text-[color:var(--store-fg)]"
+          : "bg-[#F5F5F7] text-[#1D1D1F] dark:bg-[#0B0B0F] dark:text-zinc-50"
+      } ${isFa ? "font-[Vazirmatn,Tahoma,sans-serif]" : ""}`}
       style={{
         ["--store-primary" as string]: primaryColor,
-        ...(isFa ? { fontFamily: '"Vazirmatn", Tahoma, sans-serif' } : null),
-        // Telegram Mini App / iOS notch: keep header below TG chrome
+        ...chrome.style,
+        fontFamily:
+          chrome.style["--store-font"] ||
+          (isFa ? '"Vazirmatn", Tahoma, sans-serif' : "ui-sans-serif, system-ui, sans-serif"),
         paddingTop:
           "max(0.75rem, env(safe-area-inset-top, 0px), var(--tg-safe-top, 0px))",
         paddingBottom: "max(0px, env(safe-area-inset-bottom, 0px), var(--tg-safe-bottom, 0px))",
       }}
     >
-      {/* Soft brand wash */}
       <div
         aria-hidden
-        className="pointer-events-none fixed inset-x-0 top-0 h-72 opacity-90"
+        className={`pointer-events-none fixed inset-x-0 top-0 opacity-90 ${isNoir ? "h-[28rem]" : "h-72"}`}
         style={{
-          background: `radial-gradient(ellipse 90% 70% at 50% -20%, color-mix(in srgb, ${primaryColor} 28%, transparent), transparent 70%)`,
+          background: isNoir
+            ? `radial-gradient(ellipse 80% 60% at 50% -10%, color-mix(in srgb, ${primaryColor} 40%, transparent), transparent 65%), radial-gradient(ellipse 50% 40% at 100% 0%, rgba(250,250,249,0.08), transparent 50%)`
+            : isAtelier
+              ? `radial-gradient(ellipse 90% 70% at 80% -30%, color-mix(in srgb, ${primaryColor} 22%, transparent), transparent 60%), radial-gradient(ellipse 60% 50% at 0% 0%, rgba(15,23,42,0.06), transparent 55%)`
+              : `radial-gradient(ellipse 90% 70% at 50% -20%, color-mix(in srgb, ${primaryColor} 28%, transparent), transparent 70%)`,
         }}
       />
 
       <header className="sticky top-0 z-40 px-3 pt-1 sm:px-4">
-        <div className="mx-auto flex max-w-5xl items-center gap-3 rounded-[1.5rem] border border-black/[0.05] bg-white/80 px-3 py-2.5 shadow-[0_8px_30px_-18px_rgba(15,23,42,0.35)] backdrop-blur-2xl dark:border-white/[0.08] dark:bg-zinc-950/75 lg:px-4">
+        <div
+          className={`mx-auto flex max-w-5xl items-center gap-3 px-3 py-2.5 backdrop-blur-2xl lg:px-4 ${
+            isNoir
+              ? "rounded-[var(--store-radius)] border border-[color:var(--store-panel-border)] bg-[color:var(--store-panel)] shadow-[0_12px_40px_-20px_rgba(0,0,0,0.65)]"
+              : isAtelier
+                ? "rounded-[var(--store-radius)] border border-[color:var(--store-panel-border)] bg-[color:var(--store-panel)]/90 shadow-[0_10px_36px_-22px_rgba(15,23,42,0.35)]"
+                : "rounded-[1.5rem] border border-black/[0.05] bg-white/80 shadow-[0_8px_30px_-18px_rgba(15,23,42,0.35)] dark:border-white/[0.08] dark:bg-zinc-950/75"
+          }`}
+        }
           <div className="flex min-w-0 flex-1 items-center gap-3">
             {logoLight || logoDark ? (
               <span className="relative h-11 w-11 shrink-0">
@@ -205,12 +248,12 @@ export function WelcomeHero({
       <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-zinc-400">
         {t("فروشگاه", "Store")}
       </p>
-      <h1 className="mt-2 text-[2rem] font-black tracking-tight text-zinc-900 dark:text-zinc-50 sm:text-[2.75rem]">
-        {store?.title || store?.branding?.name || "VPN Store"}
+      <h1 className="mt-2 text-[2rem] font-black tracking-tight text-[color:var(--store-fg,#18181b)] sm:text-[2.75rem] [font-family:var(--store-display,inherit)]">
+        {store?.branding?.name || store?.title || "VPN Store"}
       </h1>
-      {store?.description ? (
-        <p className="mt-3 max-w-md whitespace-pre-line text-[15px] leading-relaxed text-zinc-500 sm:text-base">
-          {store.description}
+      {store?.branding?.description || store?.description ? (
+        <p className="mt-3 max-w-md whitespace-pre-line text-[15px] leading-relaxed text-[color:var(--store-muted,#71717a)] sm:text-base">
+          {store?.branding?.description || store?.description}
         </p>
       ) : null}
       <div className="mt-8 grid w-full gap-3 sm:grid-cols-2">

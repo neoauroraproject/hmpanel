@@ -8,6 +8,14 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [2.2.3] - 2026-09-07
+
+### Added
+- **Theme Studio:** storefront starter skins (Atelier / Noir), theme assign/create/import/clone/export, and branding-aware shop skins.
+
+### Fixed
+- **Storefront branding:** published theme CSS variables apply on the Community shop page.
+
 ## [2.2.2] - 2026-09-07
 
 ### Fixed

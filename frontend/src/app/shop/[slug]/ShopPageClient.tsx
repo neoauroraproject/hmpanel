@@ -149,6 +149,29 @@ export default function ShopPage() {
     link.href = icon;
   }, [store]);
 
+  useEffect(() => {
+    const settings = store?.publishedTheme?.settings;
+    if (!settings || typeof settings !== "object") return;
+    const root = document.documentElement;
+    const rec = settings as Record<string, unknown>;
+    const colorKeys = ["primaryColor", "accentColor", "backgroundColor", "textColor"] as const;
+    for (const key of colorKeys) {
+      const val = rec[key];
+      if (typeof val === "string" && val.trim()) {
+        root.style.setProperty(
+          `--store-${key.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`)}`,
+          val.trim(),
+        );
+      }
+    }
+    const cssVars = rec.cssVars;
+    if (cssVars && typeof cssVars === "object") {
+      for (const [k, v] of Object.entries(cssVars as Record<string, unknown>)) {
+        if (typeof v === "string") root.style.setProperty(k.startsWith("--") ? k : `--${k}`, v);
+      }
+    }
+  }, [store?.publishedTheme]);
+
   // Prefill customer token from portal session when coming from buy/renew
   useEffect(() => {
     if (!(isBuyFromPortal || isRenewFlow)) return;

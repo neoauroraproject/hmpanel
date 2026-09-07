@@ -33,6 +33,16 @@ export class ThemesController {
     return this.themes.listPublished();
   }
 
+  @Get('starters')
+  listStarters() {
+    return this.themes.listStarters();
+  }
+
+  @Post('starters/:key/install')
+  installStarter(@Param('key') key: string) {
+    return this.themes.installStarter(key);
+  }
+
   @Get('storefront')
   getStorefront(@Req() req: AuthRequest) {
     return this.themes.getStorefrontAssignment(req.user.id);

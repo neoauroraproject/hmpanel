@@ -44,6 +44,13 @@ export type StorefrontStore = {
     theme?: string | null;
     supportLinks?: Record<string, string> | null;
   };
+  publishedTheme?: {
+    id: string;
+    slug: string;
+    name: string;
+    settings?: Record<string, unknown> | null;
+  } | null;
+  themeId?: string | null;
   payment?: {
     method: string;
     instructions?: string | null;
