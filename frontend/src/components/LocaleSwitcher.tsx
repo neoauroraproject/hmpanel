@@ -26,10 +26,11 @@ export function LocaleSwitcher({ className }: { className?: string }) {
           type="button"
           onClick={() => setLocale(opt.id)}
           className={clsx(
-            "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+            "cursor-pointer rounded-md px-2.5 py-1 text-xs font-medium outline-none transition-colors duration-200",
+            "focus-visible:ring-2 focus-visible:ring-blue-500/40",
             locale === opt.id
-              ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
-              : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200",
+              ? "bg-slate-100 text-slate-900 dark:bg-zinc-800 dark:text-zinc-50"
+              : "text-slate-500 hover:text-slate-800 dark:text-zinc-400 dark:hover:text-zinc-200",
           )}
         >
           {opt.label}

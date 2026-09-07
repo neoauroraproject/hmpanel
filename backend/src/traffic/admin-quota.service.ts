@@ -23,6 +23,7 @@ export type PanelQuotaSpec = {
   maxClients?: number;
   maxDeviceLimit?: number;
   maxExpireDays?: number;
+  trafficMode?: 'ALLOCATION' | 'USAGE' | string;
 };
 
 function unique(values: string[]): string[] {
@@ -74,10 +75,22 @@ export class AdminQuotaService {
     adminId: string,
     panelType?: string | null,
     tx?: Tx,
+    panelId?: string | null,
   ): Promise<'ALLOCATION' | 'USAGE'> {
+    const db = tx ?? this.prisma;
+
+    if (panelId) {
+      const quota = await db.adminPanelQuota.findUnique({
+        where: { adminId_panelId: { adminId, panelId } },
+        select: { trafficMode: true },
+      });
+      if (quota?.trafficMode === 'USAGE' || quota?.trafficMode === 'ALLOCATION') {
+        return quota.trafficMode;
+      }
+    }
+
     const provider = this.providerFromPanelType(panelType);
     if (provider === 'eylan' || provider === 'pasarguard') {
-      const db = tx ?? this.prisma;
       const access = await db.adminProviderAccess.findUnique({
         where: { adminId_provider: { adminId, provider } },
         select: { metadata: true },
@@ -90,7 +103,7 @@ export class AdminQuotaService {
         return rec.trafficMode;
       }
     }
-    const db = tx ?? this.prisma;
+
     const admin = await db.admin.findUnique({
       where: { id: adminId },
       select: { trafficMode: true },
@@ -616,6 +629,10 @@ export class AdminQuotaService {
           maxClients: capValue(spec?.maxClients),
           maxDeviceLimit: capValue(spec?.maxDeviceLimit),
           maxExpireDays: capValue(spec?.maxExpireDays),
+          trafficMode:
+            String(spec?.trafficMode || '').toUpperCase() === 'USAGE'
+              ? ('USAGE' as const)
+              : ('ALLOCATION' as const),
         };
         await tx.adminPanelQuota.upsert({
           where: { adminId_panelId: { adminId, panelId: pid } },
@@ -714,6 +731,7 @@ export class AdminQuotaService {
         maxClients: r.maxClients,
         maxDeviceLimit: r.maxDeviceLimit,
         maxExpireDays: r.maxExpireDays,
+        trafficMode: r.trafficMode === 'USAGE' ? 'USAGE' : 'ALLOCATION',
         availableTraffic: summary.availableTraffic,
         usedTraffic: summary.usedTraffic,
       };

@@ -27,6 +27,7 @@ interface AdminPanelQuotaRow {
   maxClients?: number;
   maxDeviceLimit?: number;
   maxExpireDays?: number;
+  trafficMode?: string;
 }
 
 /** Per-panel caps as raw form strings; "" and "0" both mean unlimited. */
@@ -35,6 +36,7 @@ interface PanelQuotaForm {
   maxClients: string;
   maxDeviceLimit: string;
   maxExpireDays: string;
+  trafficMode: string;
 }
 
 const EMPTY_PANEL_QUOTA: PanelQuotaForm = {
@@ -42,6 +44,7 @@ const EMPTY_PANEL_QUOTA: PanelQuotaForm = {
   maxClients: "",
   maxDeviceLimit: "",
   maxExpireDays: "",
+  trafficMode: "ALLOCATION",
 };
 
 interface Admin {
@@ -569,6 +572,19 @@ function PanelLimitFields({
             className={fieldClass}
           />
         </div>
+        <div className="col-span-2">
+          <label className={labelClass}>{t("admins.trafficAccountingMode")}</label>
+          <select
+            disabled={disabled}
+            value={value.trafficMode || "ALLOCATION"}
+            onChange={(e) => onChange({ trafficMode: e.target.value })}
+            className={fieldClass}
+          >
+            <option value="ALLOCATION">{t("admins.allocationMode")}</option>
+            <option value="USAGE">{t("admins.usageMode")}</option>
+          </select>
+          <p className="mt-1 text-xs leading-relaxed text-zinc-500">{t("admins.panelTrafficModeHint")}</p>
+        </div>
       </div>
       <p className="text-xs leading-relaxed text-zinc-500">{t("admins.panelLimitsHint")}</p>
     </div>
@@ -970,6 +986,7 @@ function buildPanelQuotasPayload(
       maxClients: limitNumber(quota.maxClients),
       maxDeviceLimit: limitNumber(quota.maxDeviceLimit),
       maxExpireDays: limitNumber(quota.maxExpireDays),
+      trafficMode: quota.trafficMode === "USAGE" ? "USAGE" : "ALLOCATION",
     };
   });
 }
@@ -1077,7 +1094,11 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
         password: form.password,
         role: form.superAdmin ? "SUPER_ADMIN" : "RESELLER",
         status: form.status,
-        trafficMode: form.superAdmin ? "ALLOCATION" : form.trafficMode,
+        trafficMode: form.superAdmin
+          ? "ALLOCATION"
+          : form.enabledPanels.some((id) => form.panelQuotas[id]?.trafficMode === "USAGE")
+            ? "USAGE"
+            : "ALLOCATION",
         quotaMode,
         // Per-panel rows hold the traffic; the account pool stays at zero.
         balance: 0,
@@ -1319,11 +1340,7 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
                         <option value="active">{t("admins.statusActive")}</option>
                         <option value="disabled">{t("admins.statusDisabled")}</option>
                       </select>
-                      <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.trafficAccountingMode")}</label>
-                      <select value={form.trafficMode} disabled={limitsLocked} onChange={(e) => setForm({ ...form, trafficMode: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors disabled:opacity-50">
-                        <option value="ALLOCATION">{t("admins.allocationMode")}</option>
-                        <option value="USAGE">{t("admins.usageMode")}</option>
-                      </select>
+                      <p className="mb-4 text-xs leading-relaxed text-zinc-500">{t("admins.trafficModeMovedHint")}</p>
                       <div className={`mt-4 space-y-3 pt-4 border-t border-zinc-200 dark:border-zinc-800 ${limitsLocked ? "opacity-50 pointer-events-none" : ""}`}>
                         <label className="flex items-center gap-3 p-2 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer">
                           <input type="checkbox" checked={form.refundOnDelete} onChange={(e) => setForm({ ...form, refundOnDelete: e.target.checked })} className="w-4 h-4 rounded text-blue-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-blue-500" />
@@ -1439,6 +1456,7 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
             maxClients: q.maxClients ? String(q.maxClients) : "",
             maxDeviceLimit: q.maxDeviceLimit ? String(q.maxDeviceLimit) : "",
             maxExpireDays: q.maxExpireDays ? String(q.maxExpireDays) : "",
+            trafficMode: q.trafficMode === "USAGE" ? "USAGE" : "ALLOCATION",
           },
         ]),
       );
@@ -1454,6 +1472,7 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
               maxClients: admin.maxClients ? String(admin.maxClients) : "",
               maxDeviceLimit: admin.maxDeviceLimit ? String(admin.maxDeviceLimit) : "",
               maxExpireDays: admin.maxExpireDays ? String(admin.maxExpireDays) : "",
+              trafficMode: admin.trafficMode === "USAGE" ? "USAGE" : "ALLOCATION",
             }
           : { ...EMPTY_PANEL_QUOTA };
       });
@@ -1483,7 +1502,11 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
       if (!admin) throw new Error('Admin not loaded');
       const payload: any = {
         status: form.status,
-        trafficMode: form.superAdmin ? "ALLOCATION" : form.trafficMode,
+        trafficMode: form.superAdmin
+          ? "ALLOCATION"
+          : form.enabledPanels.some((id) => form.panelQuotas[id]?.trafficMode === "USAGE")
+            ? "USAGE"
+            : "ALLOCATION",
         inboundIds: form.superAdmin ? undefined : form.selectedInbounds,
         permissions: [],
         refundOnDelete: form.superAdmin ? false : form.refundOnDelete,
@@ -1721,12 +1744,7 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
                               <option value="active">{t("admins.statusActive")}</option>
                               <option value="disabled">{t("admins.statusDisabled")}</option>
                             </select>
-                            
-                            <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.trafficAccountingMode")}</label>
-                            <select value={form.trafficMode} disabled={limitsLocked} onChange={(e) => setForm({ ...form, trafficMode: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors disabled:opacity-50">
-                              <option value="ALLOCATION">{t("admins.allocationMode")}</option>
-                              <option value="USAGE">{t("admins.usageMode")}</option>
-                            </select>
+                            <p className="mb-4 text-xs leading-relaxed text-zinc-500">{t("admins.trafficModeMovedHint")}</p>
                             
                             <div className="mt-4 space-y-3 pt-4 border-t border-zinc-200 dark:border-zinc-800">
                               <label className={`flex items-center gap-3 p-2 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer ${form.unlimitedTraffic || limitsLocked ? 'opacity-50 pointer-events-none' : ''}`}>

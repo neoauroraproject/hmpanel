@@ -243,6 +243,8 @@ model AdminPanelQuota {
   maxClients     Int     @default(0)
   maxDeviceLimit Int     @default(0)
   maxExpireDays  Int     @default(0)
+  /// Per-panel traffic accounting: ALLOCATION | USAGE (falls back to Admin.trafficMode when unset)
+  trafficMode    TrafficMode @default(ALLOCATION)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 

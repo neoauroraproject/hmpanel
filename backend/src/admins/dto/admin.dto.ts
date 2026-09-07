@@ -19,6 +19,10 @@ export class AdminPanelQuotaDto {
   @ApiPropertyOptional() @IsOptional() @IsNumber() maxDeviceLimit?: number;
   /** 0 = unlimited for this panel */
   @ApiPropertyOptional() @IsOptional() @IsNumber() maxExpireDays?: number;
+  @ApiPropertyOptional({ enum: ['ALLOCATION', 'USAGE'] })
+  @IsOptional()
+  @IsIn(['ALLOCATION', 'USAGE'])
+  trafficMode?: string;
 }
 
 export class CreateAdminDto {

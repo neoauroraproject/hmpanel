@@ -8,6 +8,15 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [2.2.2] - 2026-09-07
+
+### Fixed
+- **Store order badge:** cancelled / rejected / expired orders no longer keep the “needs review” notification; sticky `pendingReview` rows are cleared on cancel and via schema ensure.
+- **Admin traffic mode:** allocation vs usage is configured per panel (not only account-wide).
+
+### Changed
+- **Admin nav:** denser shared sidebar / mobile nav composition.
+
 ## [2.2.0] - 2026-09-06
 
 ### Added

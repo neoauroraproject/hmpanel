@@ -34,6 +34,11 @@ export async function ensureCriticalSchema(prisma: PrismaClient): Promise<void> 
     `ALTER TABLE "StoreOrder" ADD COLUMN IF NOT EXISTS "discountAmount" DOUBLE PRECISION NOT NULL DEFAULT 0`,
     `CREATE INDEX IF NOT EXISTS "StoreOrder_autoDeliverAt_idx" ON "StoreOrder"("autoDeliverAt")`,
     `CREATE INDEX IF NOT EXISTS "StoreOrder_pendingReview_idx" ON "StoreOrder"("pendingReview")`,
+    // Sticky badge fix: cancelled/rejected/expired orders must not keep pendingReview
+    `UPDATE "StoreOrder"
+       SET "pendingReview" = false, "autoDeliverAt" = NULL
+     WHERE "pendingReview" = true
+       AND status IN ('CANCELLED', 'REJECTED', 'EXPIRED')`,
 
     // Sequential order numbers (checkout)
     `ALTER TABLE "StoreProfile" ADD COLUMN IF NOT EXISTS "nextOrderNumber" INTEGER NOT NULL DEFAULT 1000`,
@@ -204,6 +209,7 @@ export async function ensureCriticalSchema(prisma: PrismaClient): Promise<void> 
     `ALTER TABLE "AdminPanelQuota" ADD COLUMN IF NOT EXISTS "maxClients" INTEGER NOT NULL DEFAULT 0`,
     `ALTER TABLE "AdminPanelQuota" ADD COLUMN IF NOT EXISTS "maxDeviceLimit" INTEGER NOT NULL DEFAULT 0`,
     `ALTER TABLE "AdminPanelQuota" ADD COLUMN IF NOT EXISTS "maxExpireDays" INTEGER NOT NULL DEFAULT 0`,
+    `ALTER TABLE "AdminPanelQuota" ADD COLUMN IF NOT EXISTS "trafficMode" "TrafficMode" NOT NULL DEFAULT 'ALLOCATION'`,
 
     // Legacy: suspended → disabled (admin status is only active | disabled)
     `UPDATE "Admin" SET status = 'disabled' WHERE status = 'suspended'`,

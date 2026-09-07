@@ -1,10 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
+import { useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { clsx } from "clsx";
-import { ChevronDown, LogOut, Menu, X } from "lucide-react";
+import { LogOut, Menu, X } from "lucide-react";
 import { useAuth } from "@/store/auth";
 import { ThemeToggle } from "./ThemeToggle";
 import { LocaleSwitcher } from "./LocaleSwitcher";
@@ -12,122 +10,8 @@ import { useT } from "@/i18n";
 import { PanelLogo } from "@/components/PanelLogo";
 import { PANEL_BRAND } from "@/lib/panel-brand";
 import { useLocale } from "@/i18n";
-import { NAV_LABEL_KEYS, type AppNavItem, type AppNavSection } from "@/lib/nav-config";
 import { useAppNav } from "@/hooks/useAppNav";
-import { PremiumGem } from "@/components/PremiumGem";
-
-const COLLAPSIBLE_SECTION_IDS = new Set(["appearance", "tools", "settings"]);
-
-function MobileNavLink({
-  item,
-  pathname,
-  storeHasNewOrders,
-  rechargePendingCount,
-  onNavigate,
-}: {
-  item: AppNavItem;
-  pathname: string;
-  storeHasNewOrders: boolean;
-  rechargePendingCount: number;
-  onNavigate: () => void;
-}) {
-  const t = useT();
-  const Icon = item.icon;
-  const active = pathname.startsWith(item.href);
-  const label = item.title || t(item.labelKey || NAV_LABEL_KEYS[item.href] || item.href);
-  const showDot = item.moduleId === "store" && storeHasNewOrders;
-  const rechargeBadge =
-    item.moduleId === "admin-recharge" && rechargePendingCount > 0 ? rechargePendingCount : 0;
-
-  return (
-    <Link
-      href={item.href}
-      onClick={onNavigate}
-      className={clsx(
-        "flex items-center gap-2.5 rounded-md px-2.5 py-2.5 text-[15px] transition-colors",
-        active
-          ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
-          : "text-zinc-500 hover:bg-zinc-50 dark:text-zinc-400 dark:hover:bg-zinc-900",
-      )}
-    >
-      <Icon size={17} className="shrink-0" />
-      <span className="flex-1 truncate">{label}</span>
-      {item.isPremium ? (
-        <PremiumGem size={12} className="shrink-0 text-emerald-500" title={t("app.premium")} />
-      ) : null}
-      {rechargeBadge > 0 ? (
-        <span className="inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
-          {rechargeBadge > 99 ? "99+" : rechargeBadge}
-        </span>
-      ) : null}
-      {showDot ? (
-        <span
-          className="h-2 w-2 shrink-0 rounded-full bg-rose-500"
-          title={t("nav.newStoreOrders")}
-          aria-label={t("nav.newStoreOrders")}
-        />
-      ) : null}
-    </Link>
-  );
-}
-
-function MobileNavSection({
-  section,
-  pathname,
-  storeHasNewOrders,
-  rechargePendingCount,
-  onNavigate,
-}: {
-  section: AppNavSection;
-  pathname: string;
-  storeHasNewOrders: boolean;
-  rechargePendingCount: number;
-  onNavigate: () => void;
-}) {
-  const t = useT();
-  const collapsible = COLLAPSIBLE_SECTION_IDS.has(section.id);
-  const activeInSection = section.items.some((item) => pathname.startsWith(item.href));
-  const [open, setOpen] = useState(() => !collapsible || activeInSection);
-
-  useEffect(() => {
-    if (collapsible && activeInSection) setOpen(true);
-  }, [collapsible, activeInSection, pathname]);
-
-  const showItems = !collapsible || open;
-
-  return (
-    <nav className="space-y-1.5 px-2">
-      {section.labelKey ? (
-        collapsible ? (
-          <button
-            type="button"
-            onClick={() => setOpen((v) => !v)}
-            className="flex w-full items-center justify-between gap-2 rounded-md px-2.5 pt-3 pb-1 text-start text-[11px] font-bold uppercase tracking-wider text-zinc-400"
-          >
-            <span>{t(section.labelKey)}</span>
-            <ChevronDown size={14} className={clsx("transition-transform", open ? "rotate-180" : "")} />
-          </button>
-        ) : (
-          <div className="px-2.5 pt-3 pb-1 text-[11px] font-bold uppercase tracking-wider text-zinc-400">
-            {t(section.labelKey)}
-          </div>
-        )
-      ) : null}
-      {showItems
-        ? section.items.map((item) => (
-            <MobileNavLink
-              key={item.href}
-              item={item}
-              pathname={pathname}
-              storeHasNewOrders={storeHasNewOrders}
-              rechargePendingCount={rechargePendingCount}
-              onNavigate={onNavigate}
-            />
-          ))
-        : null}
-    </nav>
-  );
-}
+import { NavSectionBlock } from "@/components/app-nav";
 
 export function MobileNav() {
   const t = useT();
@@ -141,44 +25,44 @@ export function MobileNav() {
 
   return (
     <>
-      <div className="flex h-14 items-center justify-between border-b border-zinc-200 bg-white px-4 dark:border-zinc-800 dark:bg-zinc-950 md:hidden">
-        <div className="flex items-center gap-2">
-          <PanelLogo size={28} />
-          <span className="font-semibold text-[14px] text-zinc-800 dark:text-zinc-100">
+      <header className="flex h-14 items-center justify-between border-b border-slate-200 bg-white px-4 dark:border-zinc-800 dark:bg-zinc-950 md:hidden">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <PanelLogo size={26} />
+          <span className="truncate text-sm font-semibold tracking-tight text-slate-800 dark:text-zinc-100">
             {locale === "fa" ? PANEL_BRAND.nameFa : PANEL_BRAND.name}
           </span>
         </div>
         <button
           type="button"
           onClick={() => setIsOpen(true)}
-          className="relative rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900"
-          aria-label={t("nav.menu")}
+          className="relative flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg text-slate-500 outline-none transition-colors duration-200 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500/40 dark:text-zinc-400 dark:hover:bg-zinc-900"
+          aria-label={t("nav.openMenu")}
         >
-          <Menu size={24} />
+          <Menu size={22} />
           {storeHasNewOrders ? (
-            <span className="absolute end-1.5 top-1.5 h-2 w-2 rounded-full bg-rose-500" aria-hidden />
+            <span className="absolute end-2 top-2 h-1.5 w-1.5 rounded-full bg-rose-500" aria-hidden />
           ) : null}
         </button>
-      </div>
+      </header>
 
       {isOpen ? (
         <div className="fixed inset-0 z-50 flex bg-black/50 backdrop-blur-sm md:hidden">
-          <div className="flex h-full w-72 max-w-sm flex-col bg-white dark:bg-zinc-950">
-            <div className="flex h-14 items-center justify-between border-b border-zinc-200 px-4 dark:border-zinc-800">
-              <span className="font-semibold text-zinc-800 dark:text-zinc-100">{t("nav.menu")}</span>
+          <div className="flex h-full w-[min(20rem,88vw)] flex-col bg-white dark:bg-zinc-950">
+            <div className="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 px-4 dark:border-zinc-800">
+              <span className="text-sm font-semibold text-slate-800 dark:text-zinc-100">{t("nav.menu")}</span>
               <button
                 type="button"
                 onClick={() => setIsOpen(false)}
-                className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900"
-                aria-label={t("common.close")}
+                className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg text-slate-500 outline-none transition-colors duration-200 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500/40 dark:text-zinc-400 dark:hover:bg-zinc-900"
+                aria-label={t("nav.closeMenu")}
               >
                 <X size={20} />
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto py-2">
+            <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4" aria-label={t("nav.menu")}>
               {sections.map((section) => (
-                <MobileNavSection
+                <NavSectionBlock
                   key={section.id}
                   section={section}
                   pathname={pathname}
@@ -187,21 +71,19 @@ export function MobileNav() {
                   onNavigate={() => setIsOpen(false)}
                 />
               ))}
-            </div>
+            </nav>
 
-            <div className="mt-auto border-t border-zinc-200 p-3 dark:border-zinc-800">
-              <div className="mb-3 px-2">
-                <div className="text-sm font-medium text-zinc-700 dark:text-zinc-200">
+            <div className="shrink-0 space-y-2.5 border-t border-slate-200 p-3 dark:border-zinc-800">
+              <div className="rounded-lg bg-slate-50 px-2.5 py-2 dark:bg-zinc-900/80">
+                <div className="truncate text-sm font-medium text-slate-800 dark:text-zinc-100">
                   {admin?.username}
                 </div>
-                <div className="text-xs text-zinc-500">
+                <div className="text-xs text-slate-500 dark:text-zinc-500">
                   {admin?.role === "SUPER_ADMIN" ? t("nav.superAdmin") : t("nav.reseller")}
                 </div>
               </div>
-              <div className="mb-3 px-2">
-                <LocaleSwitcher className="w-full justify-stretch [&>button]:flex-1" />
-              </div>
-              <div className="mb-4 flex items-center justify-between px-2">
+              <div className="flex items-center gap-2">
+                <LocaleSwitcher className="min-w-0 flex-1 justify-stretch [&>button]:min-h-11 [&>button]:flex-1" />
                 <ThemeToggle />
               </div>
               <button
@@ -211,7 +93,7 @@ export function MobileNav() {
                   logout();
                   router.replace("/login");
                 }}
-                className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[14px] text-zinc-500 transition-colors hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900"
+                className="flex min-h-11 w-full cursor-pointer items-center gap-2.5 rounded-lg px-3 text-[15px] font-medium text-slate-500 outline-none transition-colors duration-200 hover:bg-rose-50 hover:text-rose-600 dark:text-zinc-400 dark:hover:bg-rose-500/10 dark:hover:text-rose-400"
               >
                 <LogOut size={18} />
                 {t("nav.logout")}

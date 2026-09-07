@@ -768,6 +768,8 @@ export class ClientsService {
       const accountingMode = await this.adminQuota.resolveTrafficMode(
         callerId,
         panel.panelType,
+        undefined,
+        panel.id,
       );
       await this.adminQuota.assertCanAllocate(callerCtx, totalBytes, panel.id, {
         usageMode: accountingMode === 'USAGE',
@@ -777,6 +779,8 @@ export class ClientsService {
     const ownerTrafficMode = await this.adminQuota.resolveTrafficMode(
       targetAdminId,
       panel.panelType,
+      undefined,
+      panel.id,
     );
 
     const providerExtras =
@@ -966,6 +970,7 @@ export class ClientsService {
               owner.id,
               panel.panelType,
               tx,
+              panel.id,
             )
           : 'ALLOCATION';
         if (owner && !skipOwnerAccounting && ownerMode === 'ALLOCATION') {

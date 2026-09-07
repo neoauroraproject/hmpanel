@@ -295,7 +295,13 @@ export class StoreService {
       this.prisma.storeOrder.count({
         where: {
           storeId: store.id,
-          status: { in: reviewStatuses },
+          OR: [
+            { status: { in: reviewStatuses } },
+            {
+              pendingReview: true,
+              status: { in: ['ACTIVE', 'RENEWED', 'APPROVED', 'PROVISIONING'] },
+            },
+          ],
         },
       }),
       this.prisma.storeOrder.count({
@@ -915,7 +921,12 @@ export class StoreService {
     await this.prisma.$transaction(async (tx) => {
       await tx.storeOrder.update({
         where: { id: orderId },
-        data: { status: 'CANCELLED', rejectReason: reason || order.rejectReason || null },
+        data: {
+          status: 'CANCELLED',
+          rejectReason: reason || order.rejectReason || null,
+          pendingReview: false,
+          autoDeliverAt: null,
+        },
       });
       await tx.storePayment.updateMany({
         where: { orderId, status: { in: ['PENDING', 'SUBMITTED'] } },
@@ -958,7 +969,7 @@ export class StoreService {
     await this.prisma.$transaction(async (tx) => {
       await tx.storeOrder.update({
         where: { id: orderId },
-        data: { status: 'CANCELLED' },
+        data: { status: 'CANCELLED', pendingReview: false, autoDeliverAt: null },
       });
       await tx.storePayment.updateMany({
         where: { orderId, status: { in: ['PENDING', 'SUBMITTED'] } },
