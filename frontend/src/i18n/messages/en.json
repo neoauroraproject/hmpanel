@@ -219,6 +219,7 @@
     "gracePeriodTitle": "Traffic Exhausted - Grace Period Active",
     "gracePeriodBody": "Your balance has reached zero. You have a 24-hour grace period (started at {startedAt}) to recharge your account. New client creation is blocked. If your balance is not recharged within 24 hours, your clients will be suspended.",
     "usedTraffic": "Used Traffic",
+    "usedOfQuota": "Used {amount}",
     "unlimitedTrafficNote": "Unlimited traffic",
     "notTracked": "Not tracked",
     "consumedFromAllocation": "Consumed from allocation",

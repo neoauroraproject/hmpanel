@@ -504,128 +504,96 @@ function ResellerDashboard() {
   }, [inboundsQuery.data]);
 
   const extraDestinations = extAccess.data?.providers?.length ?? 0;
-  const showDestinations = xuiDestinations.length + extraDestinations > 1;
+  const showDestinations = xuiDestinations.length > 1 || extraDestinations > 0;
 
   if (overview.isLoading) return <Spinner />;
   if (overview.error) return <ErrorBox message={t("dashboard.resellerLoadFailed")} />;
 
   const { admin: a, usage, attention, priorityClients } = overview.data;
 
-  const getAttentionColor = (label: string) => {
-    switch (label) {
-      case 'trafficLow': return 'bg-amber-500/10 text-amber-500 border-amber-500/20';
-      case 'expiringSoon': return 'bg-orange-500/10 text-orange-500 border-orange-500/20';
-      case 'disabled': return 'bg-zinc-500/10 text-zinc-500 dark:text-zinc-400 border-zinc-500/20';
-      case 'depleted': return 'bg-red-500/10 text-red-500 border-red-500/20';
-      default: return 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300';
-    }
-  };
-
   const cleanupCandidates = attention.cleanupCandidates || 0;
   const totalAttentionCount = attention.trafficLow + attention.expiringSoon + attention.disabled + attention.depleted + cleanupCandidates;
+  const clientCount = overview.data.clientEmails?.length || 0;
+  const expiryLabel =
+    a.expiryTime > 0
+      ? t("common.days", { count: Math.max(0, Math.ceil((a.expiryTime - Date.now()) / (1000 * 60 * 60 * 24))) })
+      : t("common.never");
+  const statCard =
+    "rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900";
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div>
-          <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-500 dark:from-blue-400 dark:to-indigo-300">{t("dashboard.welcomeBack", { username: admin?.username ?? "" })}</h1>
-          <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400 font-medium">{t("dashboard.resellerSubtitle")}</p>
-        </div>
-
+    <div className="space-y-5">
+      <div>
+        <h1 className="text-xl font-semibold text-zinc-900 sm:text-2xl dark:text-white">
+          {t("dashboard.welcomeBack", { username: admin?.username ?? "" })}
+        </h1>
+        <p className="mt-1 text-sm leading-relaxed text-zinc-500 dark:text-zinc-400">{t("dashboard.resellerSubtitle")}</p>
       </div>
 
       {a?.gracePeriodStart && !a?.unlimitedTraffic && (
-        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 p-4 rounded-xl flex items-start gap-3">
-          <AlertTriangle className="shrink-0 mt-0.5" size={20} />
+        <div className="flex items-start gap-3 rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-red-600 dark:text-red-400">
+          <AlertTriangle className="mt-0.5 shrink-0" size={18} />
           <div>
-            <h3 className="font-semibold text-sm">{t("dashboard.gracePeriodTitle")}</h3>
-            <p className="text-xs mt-1 opacity-90">
+            <h3 className="text-sm font-semibold">{t("dashboard.gracePeriodTitle")}</h3>
+            <p className="mt-1 text-xs leading-relaxed opacity-90">
               {t("dashboard.gracePeriodBody", { startedAt: new Date(a.gracePeriodStart).toLocaleString() })}
             </p>
           </div>
-        </motion.div>
+        </div>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-
-
-        <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="w-full">
-          <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all duration-300 group border-b-4 border-b-blue-500">
-            <div className="absolute -right-6 -top-6 w-32 h-32 bg-blue-500/10 rounded-full blur-3xl group-hover:bg-blue-500/20 transition-all"></div>
-            <HardDrive size={80} className="absolute -bottom-4 -right-4 text-blue-500/5 group-hover:text-blue-500/10 transition-all transform group-hover:scale-110" />
-            <div className="flex items-center gap-3 text-sm font-semibold text-blue-600 dark:text-blue-400 mb-4 relative z-10">
-              <div className="p-2.5 bg-blue-500/10 rounded-xl shadow-inner"><HardDrive size={20} /></div> {t("clients.availableTraffic")}
-            </div>
-            <div className="text-4xl font-extrabold text-zinc-900 dark:text-white relative z-10">
-              {a.unlimitedTraffic ? <span className="text-emerald-500">∞</span> : formatBytes(a.availableTraffic)}
-            </div>
-            <div className="mt-3 text-sm text-zinc-500 dark:text-zinc-400 font-medium relative z-10">
-              {a.unlimitedTraffic ? t("dashboard.unlimitedTrafficNote") : t("clients.outOf", { total: formatBytes(a.allTimeTraffic) })}
-            </div>
-            {!a.unlimitedTraffic && a.quotaMode === "PER_PANEL" && a.panelQuotas?.length > 0 && (
-              <div className="mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-800 relative z-10 space-y-1.5">
-                <div className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">{t("dashboard.perPanelTrafficBreakdown")}</div>
-                {a.panelQuotas.map((p: { panelId: string; name: string; availableTraffic: number }) => (
-                  <div key={p.panelId} className="flex justify-between text-xs gap-2">
-                    <span className="text-zinc-500 truncate">{p.name}</span>
-                    <span className="font-semibold text-zinc-800 dark:text-zinc-200 shrink-0">{formatBytes(p.availableTraffic)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+        <div className={`${statCard} col-span-2 lg:col-span-1`}>
+          <div className="flex items-center gap-2 text-xs font-medium text-zinc-500">
+            <HardDrive size={16} className="text-blue-500" /> {t("clients.availableTraffic")}
           </div>
-        </motion.div>
-
-        <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }} className="w-full">
-          <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all duration-300 group border-b-4 border-b-amber-500">
-            <div className="absolute -right-6 -top-6 w-32 h-32 bg-amber-500/10 rounded-full blur-3xl group-hover:bg-amber-500/20 transition-all"></div>
-            <Activity size={80} className="absolute -bottom-4 -right-4 text-amber-500/5 group-hover:text-amber-500/10 transition-all transform group-hover:scale-110" />
-            <div className="flex items-center gap-3 text-sm font-semibold text-amber-600 dark:text-amber-400 mb-4 relative z-10">
-              <div className="p-2.5 bg-amber-500/10 rounded-xl shadow-inner"><Activity size={20} /></div> {t("dashboard.usedTraffic")}
-            </div>
-            <div className="text-4xl font-extrabold text-zinc-900 dark:text-white relative z-10">
-              {a.unlimitedTraffic ? <span className="text-emerald-500">—</span> : formatBytes(a.usedTraffic || 0)}
-            </div>
-            <div className="mt-3 text-sm text-zinc-500 dark:text-zinc-400 font-medium relative z-10">
-              {a.unlimitedTraffic ? t("dashboard.notTracked") : t("dashboard.consumedFromAllocation")}
-            </div>
+          <div className="mt-2 text-2xl font-semibold tracking-tight text-zinc-900 dark:text-white">
+            {a.unlimitedTraffic ? <span className="text-emerald-500">∞</span> : formatBytes(a.availableTraffic)}
           </div>
-        </motion.div>
-
-        <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }} className="w-full">
-          <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all duration-300 group border-b-4 border-b-purple-500">
-            <div className="absolute -right-6 -top-6 w-32 h-32 bg-purple-500/10 rounded-full blur-3xl group-hover:bg-purple-500/20 transition-all"></div>
-            <Users size={80} className="absolute -bottom-4 -right-4 text-purple-500/5 group-hover:text-purple-500/10 transition-all transform group-hover:scale-110" />
-            <div className="flex items-center gap-3 text-sm font-semibold text-purple-600 dark:text-purple-400 mb-4 relative z-10">
-              <div className="p-2.5 bg-purple-500/10 rounded-xl shadow-inner"><Users size={20} /></div> {t("clients.clientCapacity")}
-            </div>
-            <div className="text-4xl font-extrabold text-zinc-900 dark:text-white relative z-10">{overview.data.clientEmails?.length || 0} / {a.clientCapacity === 0 ? "∞" : a.clientCapacity}</div>
-            <div className="mt-3 text-sm text-zinc-500 dark:text-zinc-400 font-medium relative z-10">{t("dashboard.totalAllowedClients")}</div>
+          <div className="mt-1 text-xs leading-relaxed text-zinc-500">
+            {a.unlimitedTraffic
+              ? t("dashboard.unlimitedTrafficNote")
+              : `${t("clients.outOf", { total: formatBytes(a.allTimeTraffic) })} · ${t("dashboard.usedOfQuota", { amount: formatBytes(a.usedTraffic || 0) })}`}
           </div>
-        </motion.div>
+          {!a.unlimitedTraffic && a.quotaMode === "PER_PANEL" && a.panelQuotas?.length > 1 && (
+            <div className="mt-3 space-y-1 border-t border-zinc-200 pt-3 dark:border-zinc-800">
+              {a.panelQuotas.map((p: { panelId: string; name: string; availableTraffic: number }) => (
+                <div key={p.panelId} className="flex justify-between gap-2 text-xs">
+                  <span className="truncate text-zinc-500">{p.name}</span>
+                  <span className="shrink-0 font-medium text-zinc-800 dark:text-zinc-200">{formatBytes(p.availableTraffic)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
-        <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="w-full">
-          <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all duration-300 group border-b-4 border-b-amber-500">
-            <div className="absolute -right-6 -top-6 w-32 h-32 bg-amber-500/10 rounded-full blur-3xl group-hover:bg-amber-500/20 transition-all"></div>
-            <CalendarDays size={80} className="absolute -bottom-4 -right-4 text-amber-500/5 group-hover:text-amber-500/10 transition-all transform group-hover:scale-110" />
-            <div className="flex items-center gap-3 text-sm font-semibold text-amber-600 dark:text-amber-400 mb-4 relative z-10">
-              <div className="p-2.5 bg-amber-500/10 rounded-xl shadow-inner"><CalendarDays size={20} /></div> {t("clients.subscriptionExpiry")}
-            </div>
-            <div className="text-4xl font-extrabold text-zinc-900 dark:text-white relative z-10">
-              {a.expiryTime > 0 ? t("common.days", { count: Math.max(0, Math.ceil((a.expiryTime - Date.now()) / (1000 * 60 * 60 * 24))) }) : t("common.never")}
-            </div>
-            <div className="mt-3 text-sm text-zinc-500 dark:text-zinc-400 font-medium relative z-10">{t("dashboard.untilAccountExpiration")}</div>
+        <div className={statCard}>
+          <div className="flex items-center gap-2 text-xs font-medium text-zinc-500">
+            <Users size={16} className="text-violet-500" /> {t("clients.clientCapacity")}
           </div>
-        </motion.div>
+          <div className="mt-2 text-2xl font-semibold tracking-tight text-zinc-900 dark:text-white">
+            {clientCount} / {a.clientCapacity === 0 ? "∞" : a.clientCapacity}
+          </div>
+          <div className="mt-1 text-xs text-zinc-500">{t("dashboard.totalAllowedClients")}</div>
+        </div>
+
+        <div className={statCard}>
+          <div className="flex items-center gap-2 text-xs font-medium text-zinc-500">
+            <CalendarDays size={16} className="text-amber-500" /> {t("clients.subscriptionExpiry")}
+          </div>
+          <div className="mt-2 text-2xl font-semibold tracking-tight text-zinc-900 dark:text-white">{expiryLabel}</div>
+          <div className="mt-1 text-xs text-zinc-500">{t("dashboard.untilAccountExpiration")}</div>
+        </div>
       </div>
 
       {showDestinations && (
         <div>
-          <h2 className="mb-3 text-sm font-semibold text-zinc-700 dark:text-zinc-200">{t("dashboard.destinations")}</h2>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <h2 className="mb-2 text-sm font-semibold text-zinc-800 dark:text-zinc-200">{t("dashboard.destinations")}</h2>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {xuiDestinations.map((p) => {
               const q = (a.panelQuotas || []).find((row: { panelId: string }) => row.panelId === p.id);
               const remaining = a.unlimitedTraffic ? null : Number(q?.availableTraffic ?? a.availableTraffic ?? 0);
+              const cap = Number(q?.maxClients ?? 0);
               const days =
                 a.expiryTime > 0
                   ? Math.max(0, Math.ceil((a.expiryTime - Date.now()) / (1000 * 60 * 60 * 24)))
@@ -635,7 +603,7 @@ function ResellerDashboard() {
                   key={p.id}
                   type="button"
                   onClick={() => router.push(`/clients?panelId=${encodeURIComponent(p.id)}`)}
-                  className="rounded-2xl border border-zinc-200 bg-white p-4 text-start shadow-sm transition-colors hover:border-blue-400/50 dark:border-zinc-800 dark:bg-zinc-900"
+                  className="min-h-11 cursor-pointer rounded-2xl border border-zinc-200 bg-white p-4 text-start transition-colors hover:border-blue-400/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:border-zinc-800 dark:bg-zinc-900"
                 >
                   <div className="flex items-center justify-between gap-2">
                     <div className="truncate text-sm font-semibold text-zinc-900 dark:text-white">{p.name}</div>
@@ -653,7 +621,7 @@ function ResellerDashboard() {
                     <div>
                       <div className="uppercase tracking-wide">{t("dashboard.clientCap")}</div>
                       <div className="mt-0.5 font-semibold text-zinc-800 dark:text-zinc-200">
-                        {overview.data.clientEmails?.length || 0}/{a.clientCapacity === 0 ? "∞" : a.clientCapacity}
+                        {cap === 0 ? "∞" : cap}
                       </div>
                     </div>
                     <div>
@@ -666,45 +634,41 @@ function ResellerDashboard() {
                 </button>
               );
             })}
-            <PluginSlot name="dashboard.reseller.destinations" />
+            <PluginSlot name="dashboard.reseller.destinations" props={{ panelQuotas: a.panelQuotas }} />
           </div>
         </div>
       )}
 
-      <div className="pt-6">
-        <div className="flex items-center gap-2 mb-4">
-          <AlertTriangle size={20} className={totalAttentionCount > 0 ? "text-red-500 drop-shadow-[0_0_8px_rgba(239,68,68,0.5)]" : "text-zinc-500"} />
-          <h2 className="text-lg font-bold text-zinc-900 dark:text-white">{t("dashboard.attentionRequired")}</h2>
+      <div>
+        <div className="mb-3 flex items-center gap-2">
+          <AlertTriangle size={16} className={totalAttentionCount > 0 ? "text-red-500" : "text-zinc-400"} />
+          <h2 className="text-sm font-semibold text-zinc-800 dark:text-white">{t("dashboard.attentionRequired")}</h2>
         </div>
 
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => router.push('/clients?filter=traffic-low')} className="flex flex-col items-start p-5 rounded-2xl bg-gradient-to-br from-amber-500/5 to-amber-600/10 border border-amber-500/20 hover:border-amber-500/40 transition-colors relative overflow-hidden">
-            <div className="pointer-events-none absolute top-0 end-0 p-4 opacity-10"><HardDrive size={48} /></div>
-            <span className="relative z-10 text-3xl font-extrabold text-amber-600 dark:text-amber-400">{attention.trafficLow}</span>
-            <span className="relative z-10 mt-1 font-semibold text-zinc-700 dark:text-zinc-200">{t("dashboard.trafficLow")}</span>
-          </motion.button>
-          <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => router.push('/clients?filter=expiring-soon')} className="flex flex-col items-start p-5 rounded-2xl bg-gradient-to-br from-orange-500/5 to-orange-600/10 border border-orange-500/20 hover:border-orange-500/40 transition-colors relative overflow-hidden">
-            <div className="pointer-events-none absolute top-0 end-0 p-4 opacity-10"><CalendarDays size={48} /></div>
-            <span className="relative z-10 text-3xl font-extrabold text-orange-600 dark:text-orange-400">{attention.expiringSoon}</span>
-            <span className="relative z-10 mt-1 font-semibold text-zinc-700 dark:text-zinc-200">{t("clients.filterExpiringSoon")}</span>
-          </motion.button>
-          <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => router.push('/clients?filter=disabled')} className="flex flex-col items-start p-5 rounded-2xl bg-gradient-to-br from-zinc-500/5 to-zinc-600/10 border border-zinc-500/20 hover:border-zinc-500/40 transition-colors relative overflow-hidden">
-            <div className="pointer-events-none absolute top-0 end-0 p-4 opacity-10"><UserCog size={48} /></div>
-            <span className="relative z-10 text-3xl font-extrabold text-zinc-600 dark:text-zinc-400">{attention.disabled}</span>
-            <span className="relative z-10 mt-1 font-semibold text-zinc-700 dark:text-zinc-200">{t("common.disabled")}</span>
-          </motion.button>
-          <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => router.push('/clients?filter=depleted')} className="flex flex-col items-start p-5 rounded-2xl bg-gradient-to-br from-red-500/5 to-red-600/10 border border-red-500/20 hover:border-red-500/40 transition-colors relative overflow-hidden">
-            <div className="pointer-events-none absolute top-0 end-0 p-4 opacity-10"><AlertTriangle size={48} /></div>
-            <span className="relative z-10 text-3xl font-extrabold text-red-600 dark:text-red-400">{attention.depleted}</span>
-            <span className="relative z-10 mt-1 font-semibold text-zinc-700 dark:text-zinc-200">{t("dashboard.trafficFinished")}</span>
-          </motion.button>
+        <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <button type="button" onClick={() => router.push("/clients?filter=traffic-low")} className="flex min-h-11 cursor-pointer flex-col items-start rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4 text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500">
+            <span className="text-2xl font-semibold text-amber-600 dark:text-amber-400">{attention.trafficLow}</span>
+            <span className="mt-1 text-xs font-medium leading-snug text-zinc-600 dark:text-zinc-300">{t("dashboard.trafficLow")}</span>
+          </button>
+          <button type="button" onClick={() => router.push("/clients?filter=expiring-soon")} className="flex min-h-11 cursor-pointer flex-col items-start rounded-2xl border border-orange-500/20 bg-orange-500/5 p-4 text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500">
+            <span className="text-2xl font-semibold text-orange-600 dark:text-orange-400">{attention.expiringSoon}</span>
+            <span className="mt-1 text-xs font-medium leading-snug text-zinc-600 dark:text-zinc-300">{t("clients.filterExpiringSoon")}</span>
+          </button>
+          <button type="button" onClick={() => router.push("/clients?filter=disabled")} className="flex min-h-11 cursor-pointer flex-col items-start rounded-2xl border border-zinc-500/20 bg-zinc-500/5 p-4 text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500">
+            <span className="text-2xl font-semibold text-zinc-600 dark:text-zinc-300">{attention.disabled}</span>
+            <span className="mt-1 text-xs font-medium leading-snug text-zinc-600 dark:text-zinc-300">{t("common.disabled")}</span>
+          </button>
+          <button type="button" onClick={() => router.push("/clients?filter=depleted")} className="flex min-h-11 cursor-pointer flex-col items-start rounded-2xl border border-red-500/20 bg-red-500/5 p-4 text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500">
+            <span className="text-2xl font-semibold text-red-600 dark:text-red-400">{attention.depleted}</span>
+            <span className="mt-1 text-xs font-medium leading-snug text-zinc-600 dark:text-zinc-300">{t("dashboard.trafficFinished")}</span>
+          </button>
           {cleanupCandidates > 0 && (
-            <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => router.push('/cleanup')} className="flex items-center justify-between p-4 rounded-2xl bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 transition-colors col-span-full lg:col-span-2">
-              <span className="font-semibold text-red-500 flex items-center gap-2"><ArchiveX size={18} /> {t("dashboard.cleanupCandidates")}</span>
-              <span className="text-xl font-bold text-red-400">{cleanupCandidates}</span>
-            </motion.button>
+            <button type="button" onClick={() => router.push("/cleanup")} className="col-span-2 flex min-h-11 cursor-pointer items-center justify-between rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 lg:col-span-2">
+              <span className="flex items-center gap-2 text-sm font-semibold text-red-500"><ArchiveX size={16} /> {t("dashboard.cleanupCandidates")}</span>
+              <span className="text-lg font-semibold text-red-400">{cleanupCandidates}</span>
+            </button>
           )}
-        </motion.div>
+        </div>
 
         {priorityClients.length > 0 && (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }} className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden">

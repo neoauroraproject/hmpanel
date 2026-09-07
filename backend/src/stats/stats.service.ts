@@ -318,7 +318,14 @@ export class StatsService {
         quotaMode: quotaOverview.quotaMode,
         availableTraffic: unlimitedTraffic ? 0 : quotaOverview.availableTraffic,
         allTimeTraffic: unlimitedTraffic ? 0 : quotaOverview.allTimeTraffic,
-        clientCapacity: admin.maxClients,
+        clientCapacity:
+          admin.maxClients > 0
+            ? admin.maxClients
+            : (quotaOverview.panels || []).reduce(
+                (sum: number, panel: { maxClients?: number }) =>
+                  sum + Number(panel.maxClients || 0),
+                0,
+              ),
         expiryTime: Number(admin.expiryTime),
         trafficMode: admin.trafficMode,
         usedTraffic: unlimitedTraffic ? 0 : quotaOverview.usedTraffic,

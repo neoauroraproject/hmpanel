@@ -2130,6 +2130,16 @@ function AddClientModal({
     create.mutate();
   };
 
+  const selectedInboundIds = form.inboundIds;
+  const allInboundsSelected =
+    availableInbounds.length > 0 &&
+    availableInbounds.every((i) => selectedInboundIds.includes(i.id));
+  const toggleAllInbounds = () => {
+    const nextIds = allInboundsSelected ? [] : availableInbounds.map((i) => i.id);
+    setForm({ ...form, inboundIds: nextIds });
+    localStorage.setItem("lastSelectedInboundIds", JSON.stringify(nextIds));
+  };
+
   if (createdClient) {
     return (
       <motion.div
@@ -2239,6 +2249,23 @@ function AddClientModal({
             <div>
               <label className="mb-1 block text-xs text-zinc-500 font-medium">{t(isPasarguard ? "clients.assignedGroups" : "clients.assignedInbounds")}</label>
               <div className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 overflow-hidden">
+                {availableInbounds.length > 1 ? (
+                  <div className="flex items-center justify-between gap-2 border-b border-zinc-200 px-3 py-1 dark:border-zinc-800">
+                    <span className="text-[11px] text-zinc-500">
+                      {t("admins.inboundSelectedCount", {
+                        selected: selectedInboundIds.length,
+                        total: availableInbounds.length,
+                      })}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={toggleAllInbounds}
+                      className="min-h-11 shrink-0 cursor-pointer rounded-lg px-2 text-[11px] font-semibold text-blue-600 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-blue-400 dark:hover:bg-blue-500/10"
+                    >
+                      {allInboundsSelected ? t("common.selectNone") : t("common.selectAll")}
+                    </button>
+                  </div>
+                ) : null}
                 <div className="max-h-[160px] overflow-y-auto divide-y divide-zinc-200 dark:divide-zinc-800">
                   {isLoadingInbounds ? (
                     <div className="px-3 py-4 text-center text-sm text-zinc-500">{t("common.loadingInbounds")}</div>
@@ -2250,7 +2277,7 @@ function AddClientModal({
                       return (
                         <label
                           key={i.id}
-                          className="flex items-center gap-3 px-3 py-2.5 text-sm text-zinc-800 dark:text-zinc-200 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/50 select-none"
+                          className="flex min-h-11 items-center gap-3 px-3 py-2.5 text-sm text-zinc-800 dark:text-zinc-200 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/50 select-none"
                         >
                           <input
                             type="checkbox"
@@ -2270,13 +2297,13 @@ function AddClientModal({
                                 <span className="truncate">{i.remark ? i.remark : i.tag}</span>
                                 <NodeInboundBadge inbound={i} />
                               </span>
-                              {!isPasarguard && (
+                              {selectedPanelType !== "pasarguard" && selectedPanelType !== "eylan" && (
                               <span className="text-[10px] uppercase tracking-wider text-zinc-400 dark:text-zinc-500 font-bold shrink-0">
                                 {i.protocol} : {i.port}
                               </span>
                               )}
                             </div>
-                            {i.remark && (
+                            {i.remark && selectedPanelType !== "eylan" && selectedPanelType !== "pasarguard" && (
                               <div className="text-[10px] text-zinc-400 dark:text-zinc-500 truncate mt-0.5">
                                 {t("common.tag")}: {i.tag}
                               </div>

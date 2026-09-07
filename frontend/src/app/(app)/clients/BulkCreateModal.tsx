@@ -207,6 +207,14 @@ export function BulkCreateModal({ onClose, inboundsList }: BulkCreateModalProps)
     && panelAvailableTraffic != null
     && totalRequiredBytes > 0
     && totalRequiredBytes > panelAvailableTraffic;
+  const allInboundsSelected =
+    availableInbounds.length > 0 &&
+    availableInbounds.every((i) => form.inboundIds.includes(i.id));
+  const toggleAllInbounds = () => {
+    const nextIds = allInboundsSelected ? [] : availableInbounds.map((i) => i.id);
+    setForm({ ...form, inboundIds: nextIds });
+    localStorage.setItem("lastSelectedInboundIds", JSON.stringify(nextIds));
+  };
 
   return (
     <motion.div
@@ -343,6 +351,23 @@ export function BulkCreateModal({ onClose, inboundsList }: BulkCreateModalProps)
               <div>
                 <label className="mb-1 block text-xs font-medium text-zinc-500">{t("clients.assignedInbounds")}</label>
                 <div className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 overflow-hidden">
+                  {availableInbounds.length > 1 ? (
+                    <div className="flex items-center justify-between gap-2 border-b border-zinc-200 px-3 py-1 dark:border-zinc-800">
+                      <span className="text-[11px] text-zinc-500">
+                        {t("admins.inboundSelectedCount", {
+                          selected: form.inboundIds.length,
+                          total: availableInbounds.length,
+                        })}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={toggleAllInbounds}
+                        className="min-h-11 shrink-0 cursor-pointer rounded-lg px-2 text-[11px] font-semibold text-blue-600 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-blue-400 dark:hover:bg-blue-500/10"
+                      >
+                        {allInboundsSelected ? t("common.selectNone") : t("common.selectAll")}
+                      </button>
+                    </div>
+                  ) : null}
                   <div className="max-h-[160px] overflow-y-auto divide-y divide-zinc-200 dark:divide-zinc-800">
                     {availableInbounds.length === 0 ? (
                       <div className="px-3 py-4 text-center text-sm text-zinc-500">{t("common.noInboundsAvailable")}</div>

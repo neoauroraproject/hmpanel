@@ -757,9 +757,11 @@ export class AdminQuotaService {
         panels: [] as Array<{
           panelId: string;
           name: string;
+          panelType?: string;
           availableTraffic: number;
           allTimeTraffic: number;
           usedTraffic: number;
+          maxClients: number;
         }>,
       };
     }
@@ -772,6 +774,7 @@ export class AdminQuotaService {
       availableTraffic: q.availableTraffic,
       allTimeTraffic: q.totalAssigned,
       usedTraffic: q.usedTraffic,
+      maxClients: q.maxClients,
     }));
 
     const matching = filterPanelId

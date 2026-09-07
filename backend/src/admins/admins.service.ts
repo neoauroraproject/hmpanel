@@ -738,7 +738,16 @@ export class AdminsService implements OnModuleInit {
       nextQuotaMode === 'GLOBAL' && existing.quotaMode === 'PER_PANEL';
 
     if (nextRole !== 'SUPER_ADMIN' && data.inboundIds !== undefined) {
-      await this.prisma.adminInbound.deleteMany({ where: { adminId: id } });
+      // Only replace 3x-ui inbounds here. Eylan/Pasarguard rows are owned by
+      // AdminProviderAccess and must survive an edit that only sent x-ui ids.
+      await this.prisma.adminInbound.deleteMany({
+        where: {
+          adminId: id,
+          inbound: {
+            panel: { NOT: { panelType: { in: ['eylan', 'pasarguard'] } } },
+          },
+        },
+      });
       if (data.inboundIds.length > 0) {
         await this.prisma.adminInbound.createMany({
           data: data.inboundIds.map((inboundId) => ({

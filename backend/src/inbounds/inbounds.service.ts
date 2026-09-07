@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { hydrateNativeAdminInbounds } from '../admins/sync-native-admin-resources';
 
 @Injectable()
 export class InboundsService {
@@ -7,6 +8,9 @@ export class InboundsService {
 
   /** List inbounds. Super-admins see all; resellers only their assigned inbounds. */
   async findAll(adminId: string, role: string) {
+    if (role !== 'SUPER_ADMIN') {
+      await hydrateNativeAdminInbounds(this.prisma, adminId);
+    }
     const where =
       role === 'SUPER_ADMIN' ? {} : { adminAccess: { some: { adminId } } };
 

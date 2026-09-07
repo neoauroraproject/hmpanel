@@ -104,11 +104,11 @@ export class AdminProvisioningService {
       return row;
     });
 
-    if (usePerPanel && data.inboundIds?.length) {
+    if (usePerPanel && (data.inboundIds?.length || data.panelQuotas?.length)) {
       await this.adminQuota.syncPanelQuotas(admin.id, {
         quotaMode: 'PER_PANEL',
         unlimited: false,
-        inboundIds: data.inboundIds,
+        inboundIds: data.inboundIds ?? [],
         panelQuotas: data.panelQuotas,
       });
     } else if (data.balance && data.balance > 0 && !unlimited && !usePerPanel) {

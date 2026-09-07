@@ -8,6 +8,16 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [2.2.5] - 2026-09-08
+
+### Fixed
+- **Reseller admin grants:** creating or editing a reseller now persists per-panel traffic (e.g. 10 GB on Eylan) and assigned native resources (OpenVPN / instances / Pasarguard groups) so the dashboard and Add Client form match what Super Admin ticked.
+- **Inbound assignment:** editing a reseller no longer wipes Eylan/Pasarguard inbounds when only 3x-ui inbound ids are sent.
+
+### Changed
+- **Reseller dashboard:** calmer, mobile-first KPI and destination cards; traffic used is shown on the available-traffic card.
+- **Add Client:** small Select all / Select none control on the inbound list.
+
 ## [2.2.4] - 2026-09-07
 
 ### Fixed

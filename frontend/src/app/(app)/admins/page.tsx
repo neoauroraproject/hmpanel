@@ -936,6 +936,68 @@ function mergeProviderDraft(store: React.MutableRefObject<Record<string, unknown
   }
 }
 
+function nativeProviderKey(panelType?: string | null): "eylan" | "pasarguard" | null {
+  if (panelType === "eylan") return "eylan";
+  if (panelType === "pasarguard") return "pasarguard";
+  return null;
+}
+
+function overlayQuotaOnProviderDraft(
+  draft: Record<string, unknown>,
+  quota: PanelQuotaForm | undefined,
+  panel: PanelRow,
+) {
+  const provider = nativeProviderKey(panel.panelType);
+  const bytes = gbToBytes(quota?.gb || "");
+  const maxClients = limitNumber(quota?.maxClients || "");
+  return {
+    ...draft,
+    provider,
+    enabled: true,
+    panelId: panel.id,
+    trafficBytes: String(bytes),
+    unlimitedTraffic: bytes <= 0,
+    maxClients,
+    unlimitedClients: maxClients <= 0,
+    quotaMode: "PER_PANEL",
+    expiryDays: Number(draft.expiryDays || 0),
+    resources: Array.isArray(draft.resources) ? draft.resources : undefined,
+  };
+}
+
+/** Native drafts hide traffic fields, so copy the Community panel-card caps before save. */
+function collectProviderAccessDrafts(
+  drafts: Record<string, unknown>,
+  panels: PanelRow[] | undefined,
+  enabledPanels: string[],
+  panelQuotas: Record<string, PanelQuotaForm>,
+) {
+  const out: Record<string, unknown> = { ...drafts };
+  for (const panel of panels ?? []) {
+    const key = nativeProviderKey(panel.panelType);
+    if (!key) continue;
+    if (!enabledPanels.includes(panel.id)) {
+      out[key] = {
+        provider: key,
+        enabled: false,
+        trafficBytes: "0",
+        maxClients: 0,
+        unlimitedClients: true,
+        unlimitedTraffic: false,
+        expiryDays: 0,
+        resources: [],
+      };
+      continue;
+    }
+    const base =
+      out[key] && typeof out[key] === "object"
+        ? (out[key] as Record<string, unknown>)
+        : { provider: key };
+    out[key] = overlayQuotaOnProviderDraft(base, panelQuotas[panel.id], panel);
+  }
+  return out;
+}
+
 async function persistProviderAccess(adminId: string, drafts: Record<string, unknown>) {
   const items = Object.values(drafts).filter(Boolean);
   if (!items.length) return;
@@ -1120,15 +1182,15 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
       };
       const created = (await api.post("/admins", payload)).data;
       if (!form.superAdmin && created?.id) {
-        const drafts = { ...providerDrafts.current };
-        for (const panel of panels ?? []) {
-          if (!isNativePremiumPanel(panel)) continue;
-          const key = panel.panelType === "eylan" ? "eylan" : "pasarguard";
-          if (!form.enabledPanels.includes(panel.id) && drafts[key]) {
-            drafts[key] = { ...(drafts[key] as object), enabled: false, resources: [] };
-          }
-        }
-        await persistProviderAccess(created.id, drafts);
+        await persistProviderAccess(
+          created.id,
+          collectProviderAccessDrafts(
+            providerDrafts.current,
+            panels,
+            form.enabledPanels,
+            form.panelQuotas,
+          ),
+        );
       }
       return created;
     },
@@ -1540,29 +1602,16 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
       
       const res = await api.patch(`/admins/${adminId}`, payload);
       if (!form.superAdmin) {
-        const drafts = { ...providerDrafts.current };
-        for (const panel of panels ?? []) {
-          if (!isNativePremiumPanel(panel)) continue;
-          const key = panel.panelType === "eylan" ? "eylan" : "pasarguard";
-          if (!form.enabledPanels.includes(panel.id)) {
-            drafts[key] = {
-              provider: key,
-              enabled: false,
-              trafficBytes: "0",
-              maxClients: 0,
-              unlimitedClients: true,
-              unlimitedTraffic: false,
-              expiryDays: 0,
-              resources: [],
-            };
-          }
-        }
-        await persistProviderAccess(adminId, drafts);
+        await persistProviderAccess(
+          adminId,
+          collectProviderAccessDrafts(
+            providerDrafts.current,
+            panels,
+            form.enabledPanels,
+            form.panelQuotas,
+          ),
+        );
       }
-      return res.data;
-
-
-
       return res.data;
     },
     onSuccess: () => {
