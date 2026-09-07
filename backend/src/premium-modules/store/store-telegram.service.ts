@@ -711,8 +711,9 @@ export class StoreTelegramService {
       await this.sendMessage(
         botToken,
         chatId,
-        '✅ این چت به‌عنوان ادمین سفارش‌ها ذخیره شد.\nاز این پس سفارش‌های جدید با دکمه تأیید/رد اینجا می‌آیند.',
+        '✅ این چت به‌عنوان ادمین فروشگاه ذخیره شد.',
       );
+      await this.sendAdminHome(store.adminId, botToken, chatId);
       return { ok: true };
     }
 
@@ -721,37 +722,9 @@ export class StoreTelegramService {
       const welcome =
         store.telegramWelcomeText?.trim() || this.defaultWelcomeText(store.title);
 
-      // If this chat is the store admin, also list pending orders for review
+      // If this chat is the store admin, open the admin management menu
       if (this.isAdminActor(store.telegramAdminChatId, String(from.id), chatId)) {
-        const pending = await this.prisma.storeOrder.findMany({
-          where: {
-            storeId: store.id,
-            status: { in: ['UNDER_REVIEW', 'PAYMENT_SUBMITTED', 'PENDING_PAYMENT'] },
-          },
-          include: {
-            product: { select: { name: true } },
-            payment: { select: { receiptText: true, receiptImage: true, amount: true, currency: true } },
-            customer: { select: { name: true, telegramUsername: true } },
-          },
-          orderBy: { createdAt: 'desc' },
-          take: 8,
-        });
-        if (pending.length) {
-          await this.sendMessage(
-            botToken,
-            chatId,
-            `👋 ادمین عزیز\n\n📋 <b>${pending.length}</b> سفارش در صف بررسی:\nاز دکمه‌های زیر هر سفارش تأیید/رد کنید.`,
-          );
-          for (const o of pending) {
-            await this.notifyAdminNewOrder(store.adminId, o.id);
-          }
-          return { ok: true };
-        }
-        await this.sendMessage(
-          botToken,
-          chatId,
-          `👋 ادمین فروشگاه\n\nفعلاً سفارش معلقی نیست.\nسفارش‌های جدید اینجا با دکمه تأیید/رد می‌آیند.\n\nبرای تنظیم مجدد ادمین: /admin`,
-        );
+        await this.sendAdminHome(store.adminId, botToken, chatId);
         return { ok: true };
       }
 
@@ -816,6 +789,486 @@ export class StoreTelegramService {
     return fromId === admin || String(chatId || '') === admin;
   }
 
+  private adminHomeKeyboard(pendingCount = 0) {
+    const pendingLabel =
+      pendingCount > 0 ? `🔔 در انتظار (${pendingCount})` : '🔔 در انتظار';
+    return {
+      inline_keyboard: [
+        [
+          { text: '📊 داشبورد', callback_data: 'a:dash' },
+          { text: pendingLabel, callback_data: 'a:ord:pending:0' },
+        ],
+        [
+          { text: '⚠️ ناموفق', callback_data: 'a:ord:failed:0' },
+          { text: '📋 همه سفارش‌ها', callback_data: 'a:ord:all:0' },
+        ],
+        [
+          { text: '📦 محصولات', callback_data: 'a:prod:0' },
+          { text: '🗂 دسته‌ها', callback_data: 'a:cat:0' },
+        ],
+        [
+          { text: '👥 مشتریان', callback_data: 'a:cust:0' },
+          { text: '🎟 کوپن‌ها', callback_data: 'a:cpn:0' },
+        ],
+        [
+          { text: '💰 کیف‌پول', callback_data: 'a:wal:0' },
+          { text: '⚙️ تنظیمات', callback_data: 'a:set' },
+        ],
+        [{ text: '🔄 بروزرسانی منو', callback_data: 'a:home' }],
+      ],
+    };
+  }
+
+  private adminBackHomeRow() {
+    return [{ text: '🏠 منوی ادمین', callback_data: 'a:home' }];
+  }
+
+  private async sendAdminHome(adminId: string, botToken: string, chatId: string | number) {
+    const dash = await this.store.getDashboard(adminId);
+    const pending = Number(dash?.newOrders || 0);
+    const text = [
+      `👋 <b>پنل ادمین فروشگاه</b>`,
+      ``,
+      `📋 سفارش جدید: <b>${pending}</b>`,
+      `⏳ در جریان: <b>${Number(dash?.pendingOrders || 0)}</b>`,
+      `✅ تکمیل‌شده: <b>${Number(dash?.completedOrders || 0)}</b>`,
+      `🛒 سفارش امروز: <b>${Number(dash?.todayOrders || 0)}</b>`,
+      `📦 محصول فعال: <b>${Number(dash?.activeProducts || 0)}</b>`,
+      `👥 مشتری: <b>${Number(dash?.customers || 0)}</b>`,
+      ``,
+      `از دکمه‌های زیر مدیریت کنید.`,
+    ].join('\n');
+    await this.sendMessage(botToken, chatId, text, {
+      reply_markup: this.adminHomeKeyboard(pending),
+    });
+  }
+
+  private formatMoney(amount: number | null | undefined, currency?: string | null) {
+    const n = Number(amount || 0);
+    const cur = String(currency || '').toUpperCase();
+    if (['TOMAN', 'IRT', 'IRR', 'TMN'].includes(cur)) {
+      return `${n.toLocaleString('fa-IR')} تومان`;
+    }
+    return `$${n.toLocaleString('en-US')}`;
+  }
+
+  private async handleAdminOrderList(
+    adminId: string,
+    botToken: string,
+    chatId: string | number,
+    kind: 'pending' | 'failed' | 'all',
+    page: number,
+  ) {
+    const pageSize = 5;
+    const store = await this.store.getOrCreateProfile(adminId);
+    const where: Record<string, unknown> = { storeId: store.id };
+    if (kind === 'pending') {
+      where.status = { in: ['PAYMENT_SUBMITTED', 'UNDER_REVIEW', 'PENDING_PAYMENT'] };
+    } else if (kind === 'failed') {
+      where.status = 'PROVISION_FAILED';
+    }
+
+    const [total, orders] = await Promise.all([
+      this.prisma.storeOrder.count({ where: where as any }),
+      this.prisma.storeOrder.findMany({
+        where: where as any,
+        include: {
+          product: { select: { name: true } },
+          customer: { select: { name: true, telegramUsername: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: page * pageSize,
+        take: pageSize,
+      }),
+    ]);
+
+    const titles = {
+      pending: 'سفارش‌های در انتظار',
+      failed: 'سفارش‌های ناموفق',
+      all: 'همه سفارش‌ها',
+    } as const;
+    if (!orders.length) {
+      await this.sendMessage(
+        botToken,
+        chatId,
+        `📭 ${titles[kind]} خالی است.`,
+        { reply_markup: { inline_keyboard: [this.adminBackHomeRow()] } },
+      );
+      return;
+    }
+
+    const rows: Array<Array<Record<string, unknown>>> = orders.map((o) => [
+      {
+        text: `${o.status === 'PROVISION_FAILED' ? '⚠️' : '🧾'} ${(o.product?.name || 'سفارش').slice(0, 22)} · ${String(o.trackingCode || o.id).slice(0, 10)}`,
+        callback_data: `a:ord:view:${o.id}`,
+      },
+    ]);
+    const nav: Array<Record<string, unknown>> = [];
+    if (page > 0) nav.push({ text: '◀️ قبلی', callback_data: `a:ord:${kind}:${page - 1}` });
+    if ((page + 1) * pageSize < total) {
+      nav.push({ text: 'بعدی ▶️', callback_data: `a:ord:${kind}:${page + 1}` });
+    }
+    if (nav.length) rows.push(nav);
+    rows.push(this.adminBackHomeRow());
+
+    await this.sendMessage(
+      botToken,
+      chatId,
+      `📋 <b>${titles[kind]}</b>\nصفحه ${page + 1} از ${Math.max(1, Math.ceil(total / pageSize))}`,
+      { reply_markup: { inline_keyboard: rows } },
+    );
+  }
+
+  private async handleAdminOrderView(
+    adminId: string,
+    botToken: string,
+    chatId: string | number,
+    orderId: string,
+  ) {
+    const order = await this.store.getOrder(adminId, orderId);
+    const customer = order.customer as {
+      name?: string | null;
+      telegramUsername?: string | null;
+      telegramUserId?: string | null;
+    } | null;
+    const customerLabel = this.escapeHtml(
+      customer?.name ||
+        (customer?.telegramUsername ? `@${customer.telegramUsername}` : '') ||
+        customer?.telegramUserId ||
+        '—',
+    );
+    const lines = [
+      `🧾 <b>جزئیات سفارش</b>`,
+      `کد: <code>${this.escapeHtml(order.trackingCode || order.id)}</code>`,
+      `وضعیت: <b>${this.escapeHtml(String(order.status).replace(/_/g, ' '))}</b>`,
+      `محصول: ${this.escapeHtml(order.product?.name || '—')}`,
+      `مبلغ: ${this.formatMoney(order.amount as any, order.currency as any)}`,
+      `مشتری: ${customerLabel}`,
+    ];
+    if (order.provisionError) {
+      lines.push(`خطا: ${this.escapeHtml(String(order.provisionError).slice(0, 200))}`);
+    }
+    const actions: Array<Array<Record<string, unknown>>> = [];
+    const status = String(order.status);
+    if (['PAYMENT_SUBMITTED', 'UNDER_REVIEW', 'APPROVED', 'PROVISIONING', 'PROVISION_FAILED'].includes(status)) {
+      actions.push([
+        { text: '✅ تأیید', callback_data: `approve:${order.id}` },
+        { text: '❌ رد', callback_data: `reject:${order.id}` },
+      ]);
+    }
+    if (['APPROVED', 'PROVISIONING', 'PROVISION_FAILED'].includes(status)) {
+      actions.push([{ text: '🔄 تلاش مجدد ساخت', callback_data: `a:ord:prov:${order.id}` }]);
+    }
+    if (!['ACTIVE', 'RENEWED', 'CANCELLED', 'REJECTED'].includes(status)) {
+      actions.push([{ text: '🚫 لغو سفارش', callback_data: `a:ord:cancel:${order.id}` }]);
+    }
+    actions.push([
+      { text: '🔔 در انتظار', callback_data: 'a:ord:pending:0' },
+      ...this.adminBackHomeRow(),
+    ]);
+    await this.sendMessage(botToken, chatId, lines.join('\n'), {
+      reply_markup: { inline_keyboard: actions },
+    });
+  }
+
+  private async handleAdminProducts(
+    adminId: string,
+    botToken: string,
+    chatId: string | number,
+    page: number,
+  ) {
+    const pageSize = 5;
+    const products = await this.store.listProducts(adminId);
+    const total = products.length;
+    const slice = products.slice(page * pageSize, page * pageSize + pageSize);
+    if (!slice.length) {
+      await this.sendMessage(botToken, chatId, '📦 محصولی ثبت نشده.', {
+        reply_markup: { inline_keyboard: [this.adminBackHomeRow()] },
+      });
+      return;
+    }
+    const rows: Array<Array<Record<string, unknown>>> = slice.map((p: any) => [
+      {
+        text: `${p.visible === false ? '🙈' : '👁'} ${(p.name || 'محصول').slice(0, 28)}`,
+        callback_data: `a:prod:tog:${p.id}`,
+      },
+    ]);
+    const nav: Array<Record<string, unknown>> = [];
+    if (page > 0) nav.push({ text: '◀️ قبلی', callback_data: `a:prod:${page - 1}` });
+    if ((page + 1) * pageSize < total) {
+      nav.push({ text: 'بعدی ▶️', callback_data: `a:prod:${page + 1}` });
+    }
+    if (nav.length) rows.push(nav);
+    rows.push(this.adminBackHomeRow());
+    await this.sendMessage(
+      botToken,
+      chatId,
+      `📦 <b>محصولات</b>\nبرای نمایش/عدم‌نمایش روی هر محصول بزنید.\nصفحه ${page + 1}`,
+      { reply_markup: { inline_keyboard: rows } },
+    );
+  }
+
+  private async handleAdminCategories(
+    adminId: string,
+    botToken: string,
+    chatId: string | number,
+    page: number,
+  ) {
+    const pageSize = 8;
+    const cats = await this.store.listCategories(adminId);
+    const slice = cats.slice(page * pageSize, page * pageSize + pageSize);
+    if (!slice.length) {
+      await this.sendMessage(botToken, chatId, '🗂 دسته‌ای ثبت نشده.', {
+        reply_markup: { inline_keyboard: [this.adminBackHomeRow()] },
+      });
+      return;
+    }
+    const lines = slice.map(
+      (c: any, i: number) =>
+        `${page * pageSize + i + 1}. ${this.escapeHtml(c.name)} — ${c._count?.products ?? 0} محصول${c.visible === false ? ' (مخفی)' : ''}`,
+    );
+    const nav: Array<Record<string, unknown>> = [];
+    if (page > 0) nav.push({ text: '◀️ قبلی', callback_data: `a:cat:${page - 1}` });
+    if ((page + 1) * pageSize < cats.length) {
+      nav.push({ text: 'بعدی ▶️', callback_data: `a:cat:${page + 1}` });
+    }
+    const rows = [nav.length ? nav : [], this.adminBackHomeRow()].filter((r) => r.length);
+    await this.sendMessage(
+      botToken,
+      chatId,
+      `🗂 <b>دسته‌بندی‌ها</b>\n${lines.join('\n')}`,
+      { reply_markup: { inline_keyboard: rows } },
+    );
+  }
+
+  private async handleAdminCustomers(
+    adminId: string,
+    botToken: string,
+    chatId: string | number,
+    page: number,
+  ) {
+    const pageSize = 8;
+    const [total, customers] = await Promise.all([
+      this.prisma.storeCustomer.count({ where: { adminId } }),
+      this.prisma.storeCustomer.findMany({
+        where: { adminId },
+        orderBy: { createdAt: 'desc' },
+        skip: page * pageSize,
+        take: pageSize,
+        select: {
+          id: true,
+          name: true,
+          telegramUsername: true,
+          telegramUserId: true,
+        },
+      }),
+    ]);
+    if (!customers.length) {
+      await this.sendMessage(botToken, chatId, '👥 هنوز مشتری‌ای نیست.', {
+        reply_markup: { inline_keyboard: [this.adminBackHomeRow()] },
+      });
+      return;
+    }
+    const lines = customers.map((c, i) => {
+      const label =
+        c.name ||
+        (c.telegramUsername ? `@${c.telegramUsername}` : '') ||
+        c.telegramUserId ||
+        c.id;
+      return `${page * pageSize + i + 1}. ${this.escapeHtml(String(label))}`;
+    });
+    const nav: Array<Record<string, unknown>> = [];
+    if (page > 0) nav.push({ text: '◀️ قبلی', callback_data: `a:cust:${page - 1}` });
+    if ((page + 1) * pageSize < total) {
+      nav.push({ text: 'بعدی ▶️', callback_data: `a:cust:${page + 1}` });
+    }
+    const rows = [nav.length ? nav : [], this.adminBackHomeRow()].filter((r) => r.length);
+    await this.sendMessage(
+      botToken,
+      chatId,
+      `👥 <b>مشتریان</b> (${total})\n${lines.join('\n')}`,
+      { reply_markup: { inline_keyboard: rows } },
+    );
+  }
+
+  private async handleAdminCoupons(
+    adminId: string,
+    botToken: string,
+    chatId: string | number,
+    page: number,
+  ) {
+    const pageSize = 6;
+    const [total, coupons] = await Promise.all([
+      this.prisma.storeCoupon.count({ where: { adminId } }),
+      this.prisma.storeCoupon.findMany({
+        where: { adminId },
+        orderBy: { createdAt: 'desc' },
+        skip: page * pageSize,
+        take: pageSize,
+      }),
+    ]);
+    if (!coupons.length) {
+      await this.sendMessage(botToken, chatId, '🎟 کوپنی ثبت نشده.', {
+        reply_markup: { inline_keyboard: [this.adminBackHomeRow()] },
+      });
+      return;
+    }
+    const rows: Array<Array<Record<string, unknown>>> = coupons.map((c) => [
+      {
+        text: `${c.enabled ? '✅' : '⏸'} ${c.code} · ${c.usedCount}${c.maxUses != null ? '/' + c.maxUses : ''}`,
+        callback_data: `a:cpn:tog:${c.id}`,
+      },
+    ]);
+    const nav: Array<Record<string, unknown>> = [];
+    if (page > 0) nav.push({ text: '◀️ قبلی', callback_data: `a:cpn:${page - 1}` });
+    if ((page + 1) * pageSize < total) {
+      nav.push({ text: 'بعدی ▶️', callback_data: `a:cpn:${page + 1}` });
+    }
+    if (nav.length) rows.push(nav);
+    rows.push(this.adminBackHomeRow());
+    await this.sendMessage(
+      botToken,
+      chatId,
+      `🎟 <b>کوپن‌ها</b>\nبرای فعال/غیرفعال روی هر مورد بزنید.`,
+      { reply_markup: { inline_keyboard: rows } },
+    );
+  }
+
+  private async handleAdminWalletDeposits(
+    adminId: string,
+    botToken: string,
+    chatId: string | number,
+    page: number,
+  ) {
+    const pageSize = 5;
+    const where = {
+      adminId,
+      status: { in: ['PENDING', 'SUBMITTED'] },
+    };
+    const [total, deposits] = await Promise.all([
+      this.prisma.storeWalletDeposit.count({ where }),
+      this.prisma.storeWalletDeposit.findMany({
+        where,
+        include: {
+          customer: { select: { name: true, telegramUsername: true, telegramUserId: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: page * pageSize,
+        take: pageSize,
+      }),
+    ]);
+    if (!deposits.length) {
+      await this.sendMessage(botToken, chatId, '💰 واریز معلقی نیست.', {
+        reply_markup: { inline_keyboard: [this.adminBackHomeRow()] },
+      });
+      return;
+    }
+    const rows: Array<Array<Record<string, unknown>>> = [];
+    for (const d of deposits) {
+      const who =
+        d.customer?.name ||
+        (d.customer?.telegramUsername ? `@${d.customer.telegramUsername}` : '') ||
+        d.customer?.telegramUserId ||
+        'مشتری';
+      rows.push([
+        {
+          text: `${this.formatMoney(d.amount, d.currency)} · ${String(who).slice(0, 18)}`,
+          callback_data: `a:wal:view:${d.id}`,
+        },
+      ]);
+    }
+    const nav: Array<Record<string, unknown>> = [];
+    if (page > 0) nav.push({ text: '◀️ قبلی', callback_data: `a:wal:${page - 1}` });
+    if ((page + 1) * pageSize < total) {
+      nav.push({ text: 'بعدی ▶️', callback_data: `a:wal:${page + 1}` });
+    }
+    if (nav.length) rows.push(nav);
+    rows.push(this.adminBackHomeRow());
+    await this.sendMessage(botToken, chatId, `💰 <b>واریزهای در انتظار</b> (${total})`, {
+      reply_markup: { inline_keyboard: rows },
+    });
+  }
+
+  private async creditWalletOnApprove(deposit: {
+    id: string;
+    adminId: string;
+    customerId: string;
+    amount: number;
+    currency: string;
+  }) {
+    const currency = String(deposit.currency || 'USD').toUpperCase();
+    const account = await this.prisma.storeWalletAccount.upsert({
+      where: { customerId: deposit.customerId },
+      create: {
+        customerId: deposit.customerId,
+        currency,
+        balance: 0,
+      },
+      update: { currency },
+    });
+    const nextBalance = Number(account.balance || 0) + Number(deposit.amount || 0);
+    await this.prisma.$transaction([
+      this.prisma.storeWalletAccount.update({
+        where: { id: account.id },
+        data: { balance: nextBalance },
+      }),
+      this.prisma.storeWalletLedger.create({
+        data: {
+          accountId: account.id,
+          type: 'deposit',
+          amount: deposit.amount,
+          balanceAfter: nextBalance,
+          depositId: deposit.id,
+          note: 'Approved via Telegram',
+        },
+      }),
+      this.prisma.storeWalletDeposit.update({
+        where: { id: deposit.id },
+        data: {
+          status: 'APPROVED',
+          reviewedAt: new Date(),
+          reviewedBy: deposit.adminId,
+        },
+      }),
+    ]);
+  }
+
+  private async handleAdminSettings(
+    adminId: string,
+    botToken: string,
+    chatId: string | number,
+  ) {
+    const profile = await this.store.getOrCreateProfile(adminId);
+    const tg = await this.getTelegramSettings(adminId);
+    const text = [
+      `⚙️ <b>تنظیمات فروشگاه</b>`,
+      `عنوان: ${this.escapeHtml(String(profile.title || '—'))}`,
+      `اسلاگ: <code>${this.escapeHtml(String(profile.slug || '—'))}</code>`,
+      `فروشگاه: ${profile.enabled ? '✅ فعال' : '❌ غیرفعال'}`,
+      `ربات: ${tg.enabled ? '✅ فعال' : '❌ غیرفعال'}`,
+      `یوزرنیم ربات: ${tg.botUsername ? '@' + this.escapeHtml(tg.botUsername) : '—'}`,
+    ].join('\n');
+    await this.sendMessage(botToken, chatId, text, {
+      reply_markup: {
+        inline_keyboard: [
+          [
+            {
+              text: profile.enabled ? '⏸ غیرفعال‌سازی فروشگاه' : '▶️ فعال‌سازی فروشگاه',
+              callback_data: 'a:set:en',
+            },
+          ],
+          [
+            {
+              text: tg.enabled ? '🤖 خاموش کردن ربات' : '🤖 روشن کردن ربات',
+              callback_data: 'a:set:bot',
+            },
+          ],
+          this.adminBackHomeRow(),
+        ],
+      },
+    });
+  }
+
   private async handleAdminCallback(adminId: string, botToken: string, callback: any) {
     const data = String(callback.data || '');
     const chatId = callback.message?.chat?.id;
@@ -825,7 +1278,7 @@ export class StoreTelegramService {
 
     const store = await this.prisma.storeProfile.findUnique({
       where: { adminId },
-      select: { telegramAdminChatId: true },
+      select: { telegramAdminChatId: true, enabled: true, telegramBotEnabled: true },
     });
 
     if (!this.isAdminActor(store?.telegramAdminChatId, fromId, chatId)) {
@@ -835,6 +1288,7 @@ export class StoreTelegramService {
 
     const approveMatch = /^approve:(.+)$/.exec(data);
     const rejectMatch = /^reject:(.+)$/.exec(data);
+    const pageOf = (raw: string) => Math.max(0, Number(raw) || 0);
 
     try {
       if (approveMatch) {
@@ -846,7 +1300,8 @@ export class StoreTelegramService {
           await this.sendMessage(
             botToken,
             chatId,
-            `✅ سفارش تأیید و در صف ساخت سرویس قرار گرفت.\n<code>${orderId}</code>`,
+            `✅ سفارش تأیید و در صف ساخت سرویس قرار گرفت.\n<code>${this.escapeHtml(orderId)}</code>`,
+            { reply_markup: { inline_keyboard: [this.adminBackHomeRow()] } },
           );
         }
         return;
@@ -860,16 +1315,244 @@ export class StoreTelegramService {
           await this.sendMessage(
             botToken,
             chatId,
-            `❌ سفارش رد شد.\n<code>${orderId}</code>`,
+            `❌ سفارش رد شد.\n<code>${this.escapeHtml(orderId)}</code>`,
+            { reply_markup: { inline_keyboard: [this.adminBackHomeRow()] } },
           );
         }
         return;
       }
+
+      if (!chatId) {
+        await this.answerCallback(botToken, callbackId);
+        return;
+      }
+
+      if (data === 'a:home') {
+        await this.answerCallback(botToken, callbackId);
+        await this.sendAdminHome(adminId, botToken, chatId);
+        return;
+      }
+
+      if (data === 'a:dash') {
+        await this.answerCallback(botToken, callbackId);
+        await this.sendAdminHome(adminId, botToken, chatId);
+        return;
+      }
+
+      const ordList = /^a:ord:(pending|failed|all):(\d+)$/.exec(data);
+      if (ordList) {
+        await this.answerCallback(botToken, callbackId);
+        await this.handleAdminOrderList(
+          adminId,
+          botToken,
+          chatId,
+          ordList[1] as 'pending' | 'failed' | 'all',
+          pageOf(ordList[2]),
+        );
+        return;
+      }
+
+      const ordView = /^a:ord:view:(.+)$/.exec(data);
+      if (ordView) {
+        await this.answerCallback(botToken, callbackId);
+        await this.handleAdminOrderView(adminId, botToken, chatId, ordView[1]);
+        return;
+      }
+
+      const ordProv = /^a:ord:prov:(.+)$/.exec(data);
+      if (ordProv) {
+        await this.store.provisionOrder(adminId, 'ADMIN', ordProv[1]);
+        await this.answerCallback(botToken, callbackId, '🔄 ساخت مجدد شروع شد');
+        await this.handleAdminOrderView(adminId, botToken, chatId, ordProv[1]);
+        return;
+      }
+
+      const ordCancel = /^a:ord:cancel:(.+)$/.exec(data);
+      if (ordCancel) {
+        await this.store.cancelOrder(adminId, ordCancel[1], 'Cancelled via Telegram');
+        await this.answerCallback(botToken, callbackId, '🚫 لغو شد');
+        await this.sendMessage(botToken, chatId, '🚫 سفارش لغو شد.', {
+          reply_markup: { inline_keyboard: [this.adminBackHomeRow()] },
+        });
+        return;
+      }
+
+      const prodList = /^a:prod:(\d+)$/.exec(data);
+      if (prodList) {
+        await this.answerCallback(botToken, callbackId);
+        await this.handleAdminProducts(adminId, botToken, chatId, pageOf(prodList[1]));
+        return;
+      }
+
+      const prodTog = /^a:prod:tog:(.+)$/.exec(data);
+      if (prodTog) {
+        const products = await this.store.listProducts(adminId);
+        const product = products.find((p: any) => p.id === prodTog[1]);
+        if (!product) throw new NotFoundException('Product not found');
+        await this.store.updateProduct(adminId, product.id, {
+          visible: product.visible === false,
+        });
+        await this.answerCallback(
+          botToken,
+          callbackId,
+          product.visible === false ? '👁 نمایش داده شد' : '🙈 مخفی شد',
+        );
+        await this.handleAdminProducts(adminId, botToken, chatId, 0);
+        return;
+      }
+
+      const catList = /^a:cat:(\d+)$/.exec(data);
+      if (catList) {
+        await this.answerCallback(botToken, callbackId);
+        await this.handleAdminCategories(adminId, botToken, chatId, pageOf(catList[1]));
+        return;
+      }
+
+      const custList = /^a:cust:(\d+)$/.exec(data);
+      if (custList) {
+        await this.answerCallback(botToken, callbackId);
+        await this.handleAdminCustomers(adminId, botToken, chatId, pageOf(custList[1]));
+        return;
+      }
+
+      const cpnList = /^a:cpn:(\d+)$/.exec(data);
+      if (cpnList) {
+        await this.answerCallback(botToken, callbackId);
+        await this.handleAdminCoupons(adminId, botToken, chatId, pageOf(cpnList[1]));
+        return;
+      }
+
+      const cpnTog = /^a:cpn:tog:(.+)$/.exec(data);
+      if (cpnTog) {
+        const coupon = await this.prisma.storeCoupon.findFirst({
+          where: { id: cpnTog[1], adminId },
+        });
+        if (!coupon) throw new NotFoundException('Coupon not found');
+        await this.prisma.storeCoupon.update({
+          where: { id: coupon.id },
+          data: { enabled: !coupon.enabled },
+        });
+        await this.answerCallback(
+          botToken,
+          callbackId,
+          coupon.enabled ? '⏸ غیرفعال شد' : '✅ فعال شد',
+        );
+        await this.handleAdminCoupons(adminId, botToken, chatId, 0);
+        return;
+      }
+
+      const walList = /^a:wal:(\d+)$/.exec(data);
+      if (walList) {
+        await this.answerCallback(botToken, callbackId);
+        await this.handleAdminWalletDeposits(adminId, botToken, chatId, pageOf(walList[1]));
+        return;
+      }
+
+      const walView = /^a:wal:view:(.+)$/.exec(data);
+      if (walView) {
+        const deposit = await this.prisma.storeWalletDeposit.findFirst({
+          where: { id: walView[1], adminId },
+          include: {
+            customer: { select: { name: true, telegramUsername: true, telegramUserId: true } },
+          },
+        });
+        if (!deposit) throw new NotFoundException('Deposit not found');
+        const who =
+          deposit.customer?.name ||
+          (deposit.customer?.telegramUsername
+            ? `@${deposit.customer.telegramUsername}`
+            : '') ||
+          deposit.customer?.telegramUserId ||
+          '—';
+        const text = [
+          `💰 <b>واریز کیف‌پول</b>`,
+          `مبلغ: ${this.formatMoney(deposit.amount, deposit.currency)}`,
+          `وضعیت: ${this.escapeHtml(deposit.status)}`,
+          `مشتری: ${this.escapeHtml(String(who))}`,
+          deposit.receiptText
+            ? `یادداشت:\n${this.escapeHtml(deposit.receiptText).slice(0, 400)}`
+            : '',
+        ]
+          .filter(Boolean)
+          .join('\n');
+        await this.answerCallback(botToken, callbackId);
+        await this.sendMessage(botToken, chatId, text, {
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: '✅ تأیید', callback_data: `a:wal:ok:${deposit.id}` },
+                { text: '❌ رد', callback_data: `a:wal:no:${deposit.id}` },
+              ],
+              [{ text: '◀️ لیست واریز', callback_data: 'a:wal:0' }, ...this.adminBackHomeRow()],
+            ],
+          },
+        });
+        return;
+      }
+
+      const walOk = /^a:wal:ok:(.+)$/.exec(data);
+      if (walOk) {
+        const deposit = await this.prisma.storeWalletDeposit.findFirst({
+          where: { id: walOk[1], adminId, status: { in: ['PENDING', 'SUBMITTED'] } },
+        });
+        if (!deposit) throw new BadRequestException('Deposit not pending');
+        await this.creditWalletOnApprove(deposit);
+        await this.answerCallback(botToken, callbackId, '✅ واریز تأیید شد');
+        await this.sendMessage(botToken, chatId, '✅ موجودی کیف‌پول شارژ شد.', {
+          reply_markup: { inline_keyboard: [this.adminBackHomeRow()] },
+        });
+        return;
+      }
+
+      const walNo = /^a:wal:no:(.+)$/.exec(data);
+      if (walNo) {
+        const deposit = await this.prisma.storeWalletDeposit.findFirst({
+          where: { id: walNo[1], adminId, status: { in: ['PENDING', 'SUBMITTED'] } },
+        });
+        if (!deposit) throw new BadRequestException('Deposit not pending');
+        await this.prisma.storeWalletDeposit.update({
+          where: { id: deposit.id },
+          data: {
+            status: 'REJECTED',
+            rejectReason: 'Rejected via Telegram',
+            reviewedAt: new Date(),
+            reviewedBy: adminId,
+          },
+        });
+        await this.answerCallback(botToken, callbackId, '❌ رد شد');
+        await this.sendMessage(botToken, chatId, '❌ واریز رد شد.', {
+          reply_markup: { inline_keyboard: [this.adminBackHomeRow()] },
+        });
+        return;
+      }
+
+      if (data === 'a:set') {
+        await this.answerCallback(botToken, callbackId);
+        await this.handleAdminSettings(adminId, botToken, chatId);
+        return;
+      }
+
+      if (data === 'a:set:en') {
+        await this.store.updateStoreProfile(adminId, { enabled: !store?.enabled });
+        await this.answerCallback(botToken, callbackId, 'ذخیره شد');
+        await this.handleAdminSettings(adminId, botToken, chatId);
+        return;
+      }
+
+      if (data === 'a:set:bot') {
+        await this.updateTelegramSettings(adminId, {
+          enabled: !store?.telegramBotEnabled,
+        });
+        await this.answerCallback(botToken, callbackId, 'ذخیره شد');
+        await this.handleAdminSettings(adminId, botToken, chatId);
+        return;
+      }
+
       await this.answerCallback(botToken, callbackId);
     } catch (err: any) {
       const msg = String(err?.message || err || 'Action failed').slice(0, 180);
       await this.answerCallback(botToken, callbackId, msg);
-      if (chatId) await this.sendMessage(botToken, chatId, `⚠️ ${msg}`);
+      if (chatId) await this.sendMessage(botToken, chatId, `⚠️ ${this.escapeHtml(msg)}`);
     }
   }
 
@@ -972,11 +1655,19 @@ export class StoreTelegramService {
               { text: '✅ تأیید و فعال‌سازی', callback_data: `approve:${order.id}` },
               { text: '❌ رد', callback_data: `reject:${order.id}` },
             ],
+            [
+              { text: '📋 جزئیات', callback_data: `a:ord:view:${order.id}` },
+              { text: '🏠 منوی ادمین', callback_data: 'a:home' },
+            ],
           ],
         }
       : {
           inline_keyboard: [
             [{ text: '❌ رد سفارش', callback_data: `reject:${order.id}` }],
+            [
+              { text: '📋 جزئیات', callback_data: `a:ord:view:${order.id}` },
+              { text: '🏠 منوی ادمین', callback_data: 'a:home' },
+            ],
           ],
         };
 

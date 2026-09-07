@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { clsx } from "clsx";
-import { LogOut, Menu, X } from "lucide-react";
+import { ChevronDown, LogOut, Menu, X } from "lucide-react";
 import { useAuth } from "@/store/auth";
 import { ThemeToggle } from "./ThemeToggle";
 import { LocaleSwitcher } from "./LocaleSwitcher";
@@ -12,9 +12,11 @@ import { useT } from "@/i18n";
 import { PanelLogo } from "@/components/PanelLogo";
 import { PANEL_BRAND } from "@/lib/panel-brand";
 import { useLocale } from "@/i18n";
-import { NAV_LABEL_KEYS, type AppNavItem } from "@/lib/nav-config";
+import { NAV_LABEL_KEYS, type AppNavItem, type AppNavSection } from "@/lib/nav-config";
 import { useAppNav } from "@/hooks/useAppNav";
 import { PremiumGem } from "@/components/PremiumGem";
+
+const COLLAPSIBLE_SECTION_IDS = new Set(["appearance", "tools", "settings"]);
 
 function MobileNavLink({
   item,
@@ -42,16 +44,16 @@ function MobileNavLink({
       href={item.href}
       onClick={onNavigate}
       className={clsx(
-        "flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] transition-colors",
+        "flex items-center gap-2.5 rounded-md px-2.5 py-2.5 text-[15px] transition-colors",
         active
           ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
           : "text-zinc-500 hover:bg-zinc-50 dark:text-zinc-400 dark:hover:bg-zinc-900",
       )}
     >
-      <Icon size={16} className="shrink-0" />
+      <Icon size={17} className="shrink-0" />
       <span className="flex-1 truncate">{label}</span>
       {item.isPremium ? (
-        <PremiumGem size={11} className="shrink-0 text-emerald-500" title={t("app.premium")} />
+        <PremiumGem size={12} className="shrink-0 text-emerald-500" title={t("app.premium")} />
       ) : null}
       {rechargeBadge > 0 ? (
         <span className="inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
@@ -66,6 +68,64 @@ function MobileNavLink({
         />
       ) : null}
     </Link>
+  );
+}
+
+function MobileNavSection({
+  section,
+  pathname,
+  storeHasNewOrders,
+  rechargePendingCount,
+  onNavigate,
+}: {
+  section: AppNavSection;
+  pathname: string;
+  storeHasNewOrders: boolean;
+  rechargePendingCount: number;
+  onNavigate: () => void;
+}) {
+  const t = useT();
+  const collapsible = COLLAPSIBLE_SECTION_IDS.has(section.id);
+  const activeInSection = section.items.some((item) => pathname.startsWith(item.href));
+  const [open, setOpen] = useState(() => !collapsible || activeInSection);
+
+  useEffect(() => {
+    if (collapsible && activeInSection) setOpen(true);
+  }, [collapsible, activeInSection, pathname]);
+
+  const showItems = !collapsible || open;
+
+  return (
+    <nav className="space-y-1.5 px-2">
+      {section.labelKey ? (
+        collapsible ? (
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            className="flex w-full items-center justify-between gap-2 rounded-md px-2.5 pt-3 pb-1 text-start text-[11px] font-bold uppercase tracking-wider text-zinc-400"
+          >
+            <span>{t(section.labelKey)}</span>
+            <ChevronDown size={14} className={clsx("transition-transform", open ? "rotate-180" : "")} />
+          </button>
+        ) : (
+          <div className="px-2.5 pt-3 pb-1 text-[11px] font-bold uppercase tracking-wider text-zinc-400">
+            {t(section.labelKey)}
+          </div>
+        )
+      ) : null}
+      {showItems
+        ? section.items.map((item) => (
+            <MobileNavLink
+              key={item.href}
+              item={item}
+              pathname={pathname}
+              storeHasNewOrders={storeHasNewOrders}
+              rechargePendingCount={rechargePendingCount}
+              onNavigate={onNavigate}
+            />
+          ))
+        : null}
+    </nav>
   );
 }
 
@@ -84,7 +144,7 @@ export function MobileNav() {
       <div className="flex h-14 items-center justify-between border-b border-zinc-200 bg-white px-4 dark:border-zinc-800 dark:bg-zinc-950 md:hidden">
         <div className="flex items-center gap-2">
           <PanelLogo size={28} />
-          <span className="font-semibold text-zinc-800 dark:text-zinc-100">
+          <span className="font-semibold text-[14px] text-zinc-800 dark:text-zinc-100">
             {locale === "fa" ? PANEL_BRAND.nameFa : PANEL_BRAND.name}
           </span>
         </div>
@@ -103,7 +163,7 @@ export function MobileNav() {
 
       {isOpen ? (
         <div className="fixed inset-0 z-50 flex bg-black/50 backdrop-blur-sm md:hidden">
-          <div className="flex h-full w-64 max-w-sm flex-col bg-white dark:bg-zinc-950">
+          <div className="flex h-full w-72 max-w-sm flex-col bg-white dark:bg-zinc-950">
             <div className="flex h-14 items-center justify-between border-b border-zinc-200 px-4 dark:border-zinc-800">
               <span className="font-semibold text-zinc-800 dark:text-zinc-100">{t("nav.menu")}</span>
               <button
@@ -118,23 +178,14 @@ export function MobileNav() {
 
             <div className="flex-1 overflow-y-auto py-2">
               {sections.map((section) => (
-                <nav key={section.id} className="space-y-0.5 px-2">
-                  {section.labelKey ? (
-                    <div className="px-2.5 pt-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-zinc-400">
-                      {t(section.labelKey)}
-                    </div>
-                  ) : null}
-                  {section.items.map((item) => (
-                    <MobileNavLink
-                      key={item.href}
-                      item={item}
-                      pathname={pathname}
-                      storeHasNewOrders={storeHasNewOrders}
-                      rechargePendingCount={rechargePendingCount}
-                      onNavigate={() => setIsOpen(false)}
-                    />
-                  ))}
-                </nav>
+                <MobileNavSection
+                  key={section.id}
+                  section={section}
+                  pathname={pathname}
+                  storeHasNewOrders={storeHasNewOrders}
+                  rechargePendingCount={rechargePendingCount}
+                  onNavigate={() => setIsOpen(false)}
+                />
               ))}
             </div>
 
@@ -160,7 +211,7 @@ export function MobileNav() {
                   logout();
                   router.replace("/login");
                 }}
-                className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-zinc-500 transition-colors hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900"
+                className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[14px] text-zinc-500 transition-colors hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900"
               >
                 <LogOut size={18} />
                 {t("nav.logout")}

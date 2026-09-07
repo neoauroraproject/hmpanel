@@ -509,18 +509,18 @@ function PanelLimitFields({
 }) {
   const t = useT();
   const fieldClass =
-    "w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-2.5 py-1.5 text-xs text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500";
-  const labelClass = "mb-1 block text-xs text-zinc-500 dark:text-zinc-400";
+    "w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500";
+  const labelClass = "mb-1.5 block text-sm font-medium text-zinc-600 dark:text-zinc-400";
   return (
     <div
-      className={`space-y-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-950/40 p-3 ${
+      className={`space-y-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-950/40 p-3.5 ${
         disabled ? "opacity-50 pointer-events-none" : ""
       }`}
     >
-      <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
-        <Database size={12} className="text-emerald-500" /> {t("admins.panelLimitsTitle")}
+      <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+        <Database size={13} className="text-emerald-500" /> {t("admins.panelLimitsTitle")}
       </div>
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-2 gap-3">
         <div>
           <label className={labelClass}>{t("admins.panelTrafficLimitGb")}</label>
           <input
@@ -570,7 +570,7 @@ function PanelLimitFields({
           />
         </div>
       </div>
-      <p className="text-[10px] leading-relaxed text-zinc-500">{t("admins.panelLimitsHint")}</p>
+      <p className="text-xs leading-relaxed text-zinc-500">{t("admins.panelLimitsHint")}</p>
     </div>
   );
 }
@@ -729,7 +729,7 @@ function PanelInboundPicker({
           <>
             <div className="flex flex-wrap items-center gap-2">
               <div className="relative flex-1 min-w-[10rem]">
-                <Search className="absolute start-2.5 top-1/2 -translate-y-1/2 text-zinc-400" size={13} />
+                <Search className="absolute start-2.5 top-1/2 -translate-y-1/2 text-zinc-400" size={14} />
                 <input
                   type="text"
                   value={inboundQueryByPanel[p.id] || ""}
@@ -737,20 +737,22 @@ function PanelInboundPicker({
                     setInboundQueryByPanel((prev) => ({ ...prev, [p.id]: e.target.value }))
                   }
                   placeholder={t("admins.searchInbounds")}
-                  className="w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 ps-8 pe-3 py-1.5 text-xs text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500"
+                  className="w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 ps-8 pe-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500"
                 />
               </div>
               <button
                 type="button"
                 onClick={() => setPanelInbounds(panelInbounds.map((i) => i.id), true)}
-                className={`text-[11px] font-semibold px-2 py-1 rounded-md ${allSelected ? "text-zinc-400" : "text-blue-600 dark:text-blue-400 hover:bg-blue-500/10"}`}
+                disabled={allSelected}
+                className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-40"
               >
                 {t("common.selectAll")}
               </button>
               <button
                 type="button"
                 onClick={() => setPanelInbounds(panelInbounds.map((i) => i.id), false)}
-                className="text-[11px] font-semibold px-2 py-1 rounded-md text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                disabled={checkedCount === 0}
+                className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
               >
                 {t("common.selectNone")}
               </button>
@@ -851,7 +853,7 @@ function PanelInboundPicker({
             </div>
 
             {isEnabled && isExpanded && (
-              <div className="px-3 pb-3 space-y-2 border-t border-zinc-200 dark:border-zinc-800 pt-3">
+              <div className="px-3 pb-3 space-y-3 border-t border-zinc-200 dark:border-zinc-800 pt-3">
                 {native ? (
                   <>
                     <PluginSlot
@@ -860,33 +862,33 @@ function PanelInboundPicker({
                         adminId,
                         collectOnly: collectOnly ?? !adminId,
                         hideSave: true,
+                        resourcesOnly: true,
                         panelId: p.id,
                         panelType: p.panelType,
                         panelEnabled: isEnabled,
                         onDraftChange: onProviderDraft,
                       }}
                     />
-                    {panelInbounds.length === 0 ? (
-                      <div className="rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 p-3 text-xs text-zinc-500 space-y-1">
+                    {!hasNativeAccessSlot && panelInbounds.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 p-3 text-sm text-zinc-500 space-y-1">
                         <div className="font-medium text-zinc-600 dark:text-zinc-300">
-                          {hasNativeAccessSlot
-                            ? t("admins.nativeResourcesViaPanelPlus")
-                            : t("admins.nativeResourcePickerMissing")}
+                          {t("admins.nativeResourcePickerMissing")}
                         </div>
-                        <p className="leading-relaxed">{t("admins.nativePanelLimitsStillApply")}</p>
+                        <p className="leading-relaxed text-xs">{t("admins.nativePanelLimitsStillApply")}</p>
                       </div>
-                    ) : (
-                      <div className="space-y-2 rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 p-2.5">
-                        <div className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+                    ) : null}
+                    {panelInbounds.length > 0 ? (
+                      <div className="space-y-2">
+                        <div className="text-sm font-medium text-zinc-700 dark:text-zinc-200">
                           {t("admins.nativeSyncedInbounds")}
                         </div>
-                        <p className="text-[10px] leading-relaxed text-zinc-500">{t("admins.nativeSyncedInboundsHint")}</p>
+                        <p className="text-xs leading-relaxed text-zinc-500">{t("admins.nativeSyncedInboundsHint")}</p>
                         {inboundChecklist}
                       </div>
-                    )}
+                    ) : null}
                   </>
                 ) : panelInbounds.length === 0 ? (
-                  <div className="text-xs text-zinc-500 p-3 text-center border rounded-xl border-dashed border-zinc-300 dark:border-zinc-700">
+                  <div className="text-sm text-zinc-500 p-3 text-center border rounded-xl border-dashed border-zinc-300 dark:border-zinc-700">
                     {t("common.noInboundsOnPanel")}
                   </div>
                 ) : (
@@ -899,7 +901,7 @@ function PanelInboundPicker({
                     onChange={(patch) => onQuotaChange(p.id, patch)}
                   />
                 ) : (
-                  <div className="rounded-xl border border-dashed border-emerald-500/30 bg-emerald-500/5 p-3 text-[11px] leading-relaxed text-emerald-600 dark:text-emerald-400">
+                  <div className="rounded-xl border border-dashed border-emerald-500/30 bg-emerald-500/5 p-3 text-sm leading-relaxed text-emerald-600 dark:text-emerald-400">
                     {t("admins.panelLimitsUnlimited")}
                   </div>
                 )}
@@ -1090,9 +1092,10 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
         permissions: [],
         storeEnabled: form.superAdmin ? false : form.storeEnabled,
         storePanelId: form.storePanelId,
-        refundOnDelete: form.superAdmin || form.unlimitedTraffic ? false : form.refundOnDelete,
-        refundOnEdit: form.superAdmin || form.unlimitedTraffic ? false : form.refundOnEdit,
-        unlimitedTraffic: form.superAdmin ? true : form.unlimitedTraffic,
+        refundOnDelete: form.superAdmin ? false : form.refundOnDelete,
+        refundOnEdit: form.superAdmin ? false : form.refundOnEdit,
+        // Caps live on each panel card — never account-wide unlimited traffic for resellers.
+        unlimitedTraffic: form.superAdmin ? true : false,
       };
       const created = (await api.post("/admins", payload)).data;
       if (!form.superAdmin && created?.id) {
@@ -1269,58 +1272,31 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
               <AnimatePresence initial={false}>
                 {openSection === 'limits' && (
                   <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                    <div className={`p-4 grid grid-cols-2 gap-4 border-t border-zinc-200 dark:border-zinc-800 ${limitsLocked ? "opacity-50 pointer-events-none" : ""}`}>
+                    <div className={`p-4 space-y-4 border-t border-zinc-200 dark:border-zinc-800 ${limitsLocked ? "opacity-50 pointer-events-none" : ""}`}>
                       {limitsLocked && (
-                        <p className="col-span-2 text-xs text-zinc-500">{t("admins.superAdminLimitsDisabled")}</p>
+                        <p className="text-xs text-zinc-500">{t("admins.superAdminLimitsDisabled")}</p>
                       )}
-                      <div className="col-span-2">
-                        <label className="flex items-center gap-3 p-3 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={form.superAdmin || form.unlimitedTraffic}
-                            disabled={limitsLocked}
-                            onChange={(e) => setForm({
-                              ...form,
-                              unlimitedTraffic: e.target.checked,
-                              refundOnDelete: e.target.checked ? false : form.refundOnDelete,
-                              refundOnEdit: e.target.checked ? false : form.refundOnEdit,
-                            })}
-                            className="w-4 h-4 rounded text-blue-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-blue-500"
-                          />
-                          <div className="flex flex-col">
-                            <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{t("admins.unlimitedTrafficLabel")}</span>
-                            <span className="text-xs text-zinc-500">{t("admins.unlimitedTrafficHint")}</span>
-                          </div>
-                        </label>
-                      </div>
-                      {limitsLocked ? null : !form.unlimitedTraffic ? (
-                        <div className="col-span-2 rounded-lg border border-violet-500/25 bg-violet-500/5 p-3 text-xs text-violet-600 dark:text-violet-400 flex items-start gap-2">
+                      {!limitsLocked ? (
+                        <div className="rounded-lg border border-violet-500/25 bg-violet-500/5 p-3 text-sm text-violet-600 dark:text-violet-400 flex items-start gap-2">
                           <Layers size={16} className="shrink-0 mt-0.5" />
                           <span className="leading-relaxed">{t("admins.limitsLiveOnPanels")}</span>
                         </div>
-                      ) : (
-                        <>
-                          <div className="col-span-2 text-xs text-zinc-500">{t("admins.accountWideCapsHint")}</div>
-                          <div>
-                            <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.maxClients")} <span className="text-zinc-500 text-xs">{t("admins.maxClientsHint")}</span></label>
-                            <input type="number" min={0} placeholder="0" value={form.maxClients} onChange={(e) => setForm({ ...form, maxClients: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
-                          </div>
-                          <div>
-                            <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.maxDeviceLimit")} <span className="text-zinc-500 text-xs">{t("admins.unlimitedHint")}</span></label>
-                            <input type="number" min={0} placeholder="0" value={form.maxDeviceLimit} onChange={(e) => setForm({ ...form, maxDeviceLimit: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
-                            <p className="mt-1 text-[10px] leading-relaxed text-zinc-500">{t("admins.maxDeviceLimitHint")}</p>
-                          </div>
-                          <div className="col-span-2">
-                            <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.maxClientExpireDays")} <span className="text-zinc-500 text-xs">{t("admins.unlimitedHint")}</span></label>
-                            <input type="number" min={0} placeholder="0" value={form.maxExpireDays} onChange={(e) => setForm({ ...form, maxExpireDays: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
-                            <p className="mt-1 text-[10px] leading-relaxed text-zinc-500">{t("admins.maxClientExpireDaysHint")}</p>
-                          </div>
-                        </>
-                      )}
-                      <div className="col-span-2">
-                        <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.expiryDays")} <span className="text-zinc-500 text-xs">{t("admins.unlimitedHint")}</span></label>
-                        <input type="number" min={0} placeholder="0" value={form.expiryDays} onChange={(e) => setForm({ ...form, expiryDays: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
-                        <p className="mt-1 text-[10px] leading-relaxed text-zinc-500">{t("admins.adminAccountExpiryHint")}</p>
+                      ) : null}
+                      <div>
+                        <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">
+                          {t("admins.expiryDays")}{" "}
+                          <span className="text-zinc-500 text-xs">{t("admins.unlimitedHint")}</span>
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          placeholder="0"
+                          disabled={limitsLocked}
+                          value={form.expiryDays}
+                          onChange={(e) => setForm({ ...form, expiryDays: e.target.value })}
+                          className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2.5 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors"
+                        />
+                        <p className="mt-1.5 text-xs leading-relaxed text-zinc-500">{t("admins.adminAccountExpiryHint")}</p>
                       </div>
                     </div>
                   </motion.div>
@@ -1495,7 +1471,7 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
         storeEnabled: admin.storeEnabled || false,
         refundOnDelete: (admin as any).refundOnDelete ?? true,
         refundOnEdit: (admin as any).refundOnEdit ?? true,
-        unlimitedTraffic: (admin as any).unlimitedTraffic ?? false,
+        unlimitedTraffic: false,
         superAdmin: admin.role === "SUPER_ADMIN",
         panelQuotas,
       }));
@@ -1510,28 +1486,29 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
         trafficMode: form.superAdmin ? "ALLOCATION" : form.trafficMode,
         inboundIds: form.superAdmin ? undefined : form.selectedInbounds,
         permissions: [],
-        refundOnDelete: form.superAdmin || form.unlimitedTraffic ? false : form.refundOnDelete,
-        refundOnEdit: form.superAdmin || form.unlimitedTraffic ? false : form.refundOnEdit,
-        unlimitedTraffic: form.superAdmin ? true : form.unlimitedTraffic,
+        refundOnDelete: form.superAdmin ? false : form.refundOnDelete,
+        refundOnEdit: form.superAdmin ? false : form.refundOnEdit,
+        unlimitedTraffic: form.superAdmin ? true : false,
       };
       if (callerIsOwner && !admin.isOwner) {
         payload.role = form.superAdmin ? "SUPER_ADMIN" : "RESELLER";
       }
       if (!form.superAdmin) {
-        // Sent even for unlimited traffic so the backend drops the per-panel
-        // rows instead of leaving stale caps behind.
         payload.quotaMode = quotaMode;
         if (perPanelQuotas) {
           payload.panelQuotas = buildPanelQuotasPayload(form.enabledPanels, form.panelQuotas);
         }
-        // Panel cards own every cap in per-panel mode, so the account-wide
-        // ceilings are cleared to keep a single source of truth.
-        payload.maxClients = perPanelQuotas ? 0 : limitNumber(form.maxClients);
-        payload.maxDeviceLimit = perPanelQuotas ? 0 : limitNumber(form.maxDeviceLimit);
-        payload.maxExpireDays = perPanelQuotas ? 0 : limitNumber(form.maxExpireDays);
+        // Panel cards own every cap — clear account-wide ceilings.
+        payload.maxClients = 0;
+        payload.maxDeviceLimit = 0;
+        payload.maxExpireDays = 0;
       }
       if (form.password.trim()) payload.password = form.password;
-      if (!form.superAdmin && form.expiryDays) payload.expiryTime = Date.now() + Number(form.expiryDays) * 24 * 60 * 60 * 1000;
+      if (!form.superAdmin) {
+        payload.expiryTime = form.expiryDays
+          ? Date.now() + Number(form.expiryDays) * 24 * 60 * 60 * 1000
+          : 0;
+      }
       payload.storeEnabled = form.superAdmin ? false : form.storeEnabled;
       const nextUsername = form.username.trim();
       if (nextUsername && nextUsername !== admin.username) {
@@ -1667,63 +1644,35 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
                             <p className="text-xs text-zinc-500">{t("admins.superAdminLimitsDisabled")}</p>
                           )}
                           <div className={`space-y-4 ${limitsLocked ? "opacity-50 pointer-events-none" : ""}`}>
-                          <div className="col-span-2">
-                            <label className="flex items-center gap-3 p-3 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={form.superAdmin || form.unlimitedTraffic}
-                                onChange={(e) => setForm({
-                                  ...form,
-                                  unlimitedTraffic: e.target.checked,
-                                  refundOnDelete: e.target.checked ? false : form.refundOnDelete,
-                                  refundOnEdit: e.target.checked ? false : form.refundOnEdit,
-                                })}
-                                className="w-4 h-4 rounded text-blue-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-blue-500"
-                              />
-                              <div className="flex flex-col">
-                                <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{t("admins.unlimitedTrafficLabel")}</span>
-                                <span className="text-xs text-zinc-500">{t("admins.unlimitedTrafficEditHint")}</span>
-                              </div>
-                            </label>
-                          </div>
-                          {perPanelQuotas ? (
+                          {!limitsLocked ? (
                             <>
-                              <div className="rounded-lg border border-violet-500/25 bg-violet-500/5 p-3 text-xs text-violet-600 dark:text-violet-400 flex items-start gap-2">
+                              <div className="rounded-lg border border-violet-500/25 bg-violet-500/5 p-3 text-sm text-violet-600 dark:text-violet-400 flex items-start gap-2">
                                 <Layers size={16} className="shrink-0 mt-0.5" />
                                 <span className="leading-relaxed">{t("admins.limitsLiveOnPanels")}</span>
                               </div>
-                              {admin.quotaMode !== "PER_PANEL" && (
+                              {admin.quotaMode !== "PER_PANEL" || admin.unlimitedTraffic ? (
                                 <div className="rounded-lg border border-amber-500/25 bg-amber-500/10 p-3 text-xs text-amber-600 dark:text-amber-400 flex items-start gap-2">
                                   <AlertCircle size={16} className="shrink-0 mt-0.5" />
                                   <span className="leading-relaxed">{t("admins.perPanelMigrationNotice")}</span>
                                 </div>
-                              )}
+                              ) : null}
                             </>
-                          ) : (
-                            <div className="grid grid-cols-2 gap-4">
-                              <div className="col-span-2 text-xs text-zinc-500">{t("admins.accountWideCapsHint")}</div>
-                              <div>
-                                <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.maxClients")} <span className="text-zinc-500 text-xs">{t("admins.maxClientsHint")}</span></label>
-                                <input type="number" min={0} placeholder="0" value={form.maxClients} onChange={(e) => setForm({ ...form, maxClients: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors placeholder:text-zinc-600" />
-                              </div>
-                              <div>
-                                <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.maxDeviceLimit")}</label>
-                                <input type="number" min={0} placeholder="0" value={form.maxDeviceLimit} onChange={(e) => setForm({ ...form, maxDeviceLimit: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors placeholder:text-zinc-600" />
-                                <p className="text-[10px] text-zinc-500 mt-1">{t("admins.maxDeviceLimitHint")}</p>
-                              </div>
-                              <div className="col-span-2">
-                                <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.maxClientExpireDays")}</label>
-                                <input type="number" min={0} placeholder="0" value={form.maxExpireDays} onChange={(e) => setForm({ ...form, maxExpireDays: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors placeholder:text-zinc-600" />
-                                <p className="text-[10px] text-zinc-500 mt-1">{t("admins.maxClientExpireDaysHint")}</p>
-                              </div>
-                            </div>
-                          )}
-                          <div className="grid grid-cols-2 gap-4">
-                            <div className="col-span-2">
-                              <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.addExpiryDays")}</label>
-                              <input type="number" placeholder={t("admins.leaveEmptyNoChange")} value={form.expiryDays} onChange={(e) => setForm({ ...form, expiryDays: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors placeholder:text-zinc-600" />
-                              <p className="text-[10px] text-zinc-500 mt-1">{t("admins.adminAccountExpiryHint")}</p>
-                            </div>
+                          ) : null}
+                          <div>
+                            <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">
+                              {t("admins.expiryDays")}{" "}
+                              <span className="text-zinc-500 text-xs">{t("admins.unlimitedHint")}</span>
+                            </label>
+                            <input
+                              type="number"
+                              min={0}
+                              placeholder="0"
+                              disabled={limitsLocked}
+                              value={form.expiryDays}
+                              onChange={(e) => setForm({ ...form, expiryDays: e.target.value })}
+                              className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-2.5 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors placeholder:text-zinc-600"
+                            />
+                            <p className="text-xs text-zinc-500 mt-1.5">{t("admins.adminAccountExpiryHint")}</p>
                           </div>
                           
                           {admin && !admin.unlimitedTraffic && !form.unlimitedTraffic && (
