@@ -143,7 +143,7 @@ function StoreShellInner({
                 ? "rounded-[var(--store-radius)] border border-[color:var(--store-panel-border)] bg-[color:var(--store-panel)]/90 shadow-[0_10px_36px_-22px_rgba(15,23,42,0.35)]"
                 : "rounded-[1.5rem] border border-black/[0.05] bg-white/80 shadow-[0_8px_30px_-18px_rgba(15,23,42,0.35)] dark:border-white/[0.08] dark:bg-zinc-950/75"
           }`}
-        }
+        >
           <div className="flex min-w-0 flex-1 items-center gap-3">
             {logoLight || logoDark ? (
               <span className="relative h-11 w-11 shrink-0">
