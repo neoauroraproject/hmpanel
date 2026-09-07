@@ -173,23 +173,31 @@ export class LicenseActivationService {
 
     let bundleSkipped = false;
     const targetVersion = bundle?.version;
-    const installedVersion = this.bundleService.getInstalledVersion();
+    const targetSha = bundle?.sha256 ?? null;
+    const alreadyCurrent = this.bundleService.isInstalledCurrent(targetVersion, targetSha);
 
-    if (
-      targetVersion &&
-      installedVersion &&
-      this.bundleService.isBundleInstalled() &&
-      installedVersion === targetVersion
-    ) {
+    if (alreadyCurrent) {
       bundleSkipped = true;
-      onProgress?.({ stage: 'bundle', percent: 90, message: 'Premium bundle already installed.' });
+      onProgress?.({
+        stage: 'bundle',
+        percent: 90,
+        message: 'Premium bundle already up to date (version + sha256 match).',
+      });
     } else if (targetVersion) {
+      const installedVersion = this.bundleService.getInstalledVersion();
+      const installedSha = this.bundleService.getInstalledSha256();
+      if (installedVersion === targetVersion && targetSha && installedSha && installedSha !== targetSha) {
+        this.logger.warn(
+          `Premium ${targetVersion} rebuilt (installed sha ${installedSha.slice(0, 12)}… ≠ remote ${String(targetSha).slice(0, 12)}…) — re-downloading`,
+        );
+      }
       onProgress?.({ stage: 'downloading', percent: 25, message: 'Downloading premium bundle...' });
-      const downloadUrl = await this.resolveBundleDownloadUrl(licenseKey, targetVersion, bundle);
+      // Always ask license server for latest URL without pinning an old client-side version.
+      const downloadUrl = await this.resolveBundleDownloadUrl(licenseKey, undefined, bundle);
       try {
         await this.bundleService.downloadAndInstall(
           downloadUrl,
-          bundle?.sha256 ?? null,
+          targetSha,
           targetVersion,
           (pct, stage) =>
             onProgress?.({ stage, percent: 25 + Math.round(pct * 0.65), message: stage }),
@@ -265,18 +273,27 @@ export class LicenseActivationService {
       }
 
       const bundleMeta = data.bundle as { version?: string; sha256?: string | null } | undefined;
-      const version =
-        bundleMeta?.version || state.bundleVersion || '1.5.6';
+      const version = bundleMeta?.version || state.bundleVersion || '1.5.6';
+      const remoteSha = bundleMeta?.sha256 ?? null;
+
+      if (this.bundleService.isInstalledCurrent(version, remoteSha)) {
+        return {
+          ok: true,
+          state: await this.licenseManager.getLicenseState(),
+          bundleVersion: version,
+          bundleSkipped: true,
+          needsReload: false,
+          needsRestart: false,
+          message: `Premium bundle ${version} is already the latest (sha256 match).`,
+        };
+      }
+
       const downloadUrl =
         typeof data.downloadUrl === 'string'
           ? data.downloadUrl
-          : await this.resolveBundleDownloadUrl(licenseKey, version);
+          : await this.resolveBundleDownloadUrl(licenseKey);
 
-      await this.bundleService.downloadAndInstall(
-        downloadUrl,
-        bundleMeta?.sha256 ?? null,
-        version,
-      );
+      await this.bundleService.downloadAndInstall(downloadUrl, remoteSha, version);
       await this.bundleService.applyDatabaseOverlay();
 
       await this.licenseManager.setLicenseState({
@@ -323,7 +340,7 @@ export class LicenseActivationService {
 
   private async resolveBundleDownloadUrl(
     licenseKey: string,
-    version: string,
+    version?: string,
     bundle?: {
       downloadUrl?: string;
     },
@@ -332,14 +349,15 @@ export class LicenseActivationService {
       return bundle.downloadUrl;
     }
 
-    let { res, data } = await this.requestBundleUrl(licenseKey, version);
+    // Omit version so the license server always resolves D1 latest_bundle_*.
+    let { res, data } = await this.requestBundleUrl(licenseKey);
 
     if (!res.ok && this.isActivationMismatch(data, res.status)) {
       this.logger.warn(
         'License server has no activation for this panel instance — re-registering…',
       );
       await this.reregisterWithLicenseServer(licenseKey);
-      ({ res, data } = await this.requestBundleUrl(licenseKey, version));
+      ({ res, data } = await this.requestBundleUrl(licenseKey));
     }
 
     if (!res.ok) {

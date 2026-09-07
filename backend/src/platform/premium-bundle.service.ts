@@ -47,6 +47,30 @@ export class PremiumBundleService {
     }
   }
 
+  getInstalledSha256(): string | null {
+    try {
+      const manifest = JSON.parse(fs.readFileSync(this.getManifestPath(), 'utf8')) as BundleManifest;
+      const sha = String(manifest.sha256 || '').trim().toLowerCase();
+      return sha || null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * True only when on-disk bundle matches the license-server target (version + sha when provided).
+   * Same version string with a rebuilt tarball must NOT count as current.
+   */
+  isInstalledCurrent(targetVersion?: string | null, targetSha256?: string | null): boolean {
+    if (!targetVersion || !this.isBundleInstalled()) return false;
+    const installedVersion = this.getInstalledVersion();
+    if (!installedVersion || installedVersion !== targetVersion) return false;
+    const expectedSha = String(targetSha256 || '').trim().toLowerCase();
+    if (!expectedSha) return true;
+    const installedSha = this.getInstalledSha256();
+    return !!installedSha && installedSha === expectedSha;
+  }
+
   /**
    * Download and install premium bundle tarball.
    * Called only from license activation and manual "Update premium bundle" — never from heartbeat/runtime.
