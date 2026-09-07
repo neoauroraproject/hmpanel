@@ -312,20 +312,18 @@ export class StatsService {
     const unlimitedTraffic =
       admin.unlimitedTraffic === true || admin.role === 'SUPER_ADMIN';
 
+    let panelClientCap = 0;
+    for (const panel of quotaOverview.panels ?? []) {
+      panelClientCap += Number(panel.maxClients || 0);
+    }
+
     return {
       admin: {
         unlimitedTraffic,
         quotaMode: quotaOverview.quotaMode,
         availableTraffic: unlimitedTraffic ? 0 : quotaOverview.availableTraffic,
         allTimeTraffic: unlimitedTraffic ? 0 : quotaOverview.allTimeTraffic,
-        clientCapacity:
-          admin.maxClients > 0
-            ? admin.maxClients
-            : (quotaOverview.panels || []).reduce(
-                (sum: number, panel: { maxClients?: number }) =>
-                  sum + Number(panel.maxClients || 0),
-                0,
-              ),
+        clientCapacity: admin.maxClients > 0 ? admin.maxClients : panelClientCap,
         expiryTime: Number(admin.expiryTime),
         trafficMode: admin.trafficMode,
         usedTraffic: unlimitedTraffic ? 0 : quotaOverview.usedTraffic,
