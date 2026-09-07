@@ -15,6 +15,12 @@ import { randomUUID } from 'crypto';
 import * as QRCode from 'qrcode';
 import { PanelsService } from '../panels/panels.service';
 import { BulkCreateClientDto, BulkClientDto } from './dto/client.dto';
+import {
+  ClientLimitCaps,
+  assertDeviceLimitAllowed,
+  assertExpireDaysAllowed,
+  resolveClientLimitCaps,
+} from '../admins/admin-client-limits.util';
 
 const GB = 1024 ** 3;
 
@@ -185,6 +191,69 @@ export class ClientsService {
         'Only admins with unlimited traffic enabled can create unlimited-traffic clients.',
       );
     }
+  }
+
+  /**
+   * Enforces the reseller-facing client caps (count / device limit / expiry)
+   * that a Super Admin configured on the owning admin, globally or per panel.
+   * Super Admins are never capped. Must run before any remote panel call.
+   */
+  private async assertClientLimitsAllowed(
+    targetAdminId: string,
+    panelId: string,
+    requested: {
+      limitIp?: number | null;
+      expiryTime?: number | null;
+      /** Extra clients this request would create; 0 skips the count check. */
+      additionalClients?: number;
+    },
+  ): Promise<ClientLimitCaps | null> {
+    const admin = await this.prisma.admin.findUnique({
+      where: { id: targetAdminId },
+      select: {
+        role: true,
+        quotaMode: true,
+        maxClients: true,
+        maxDeviceLimit: true,
+        maxExpireDays: true,
+      },
+    });
+    if (!admin || admin.role === 'SUPER_ADMIN') return null;
+
+    const panelQuota =
+      admin.quotaMode === 'PER_PANEL'
+        ? await this.prisma.adminPanelQuota.findUnique({
+            where: { adminId_panelId: { adminId: targetAdminId, panelId } },
+            select: {
+              maxClients: true,
+              maxDeviceLimit: true,
+              maxExpireDays: true,
+            },
+          })
+        : null;
+
+    const caps = resolveClientLimitCaps(admin, panelQuota);
+
+    const additional = requested.additionalClients ?? 0;
+    if (caps.maxClients > 0 && additional > 0) {
+      const count = await this.prisma.client.count({
+        where: { adminId: targetAdminId, panelId },
+      });
+      if (count + additional > caps.maxClients) {
+        throw new BadRequestException(
+          `Client limit reached for this panel. Maximum allowed: ${caps.maxClients}. Current: ${count}`,
+        );
+      }
+    }
+
+    if (requested.limitIp !== undefined) {
+      assertDeviceLimitAllowed(caps.maxDeviceLimit, requested.limitIp);
+    }
+    if (requested.expiryTime !== undefined) {
+      assertExpireDaysAllowed(caps.maxExpireDays, requested.expiryTime);
+    }
+
+    return caps;
   }
 
   private skipTrafficAccounting(admin: {
@@ -681,6 +750,11 @@ export class ClientsService {
         `Client limit reached. Maximum allowed: ${targetAdmin.maxClients}`,
       );
     }
+    await this.assertClientLimitsAllowed(targetAdminId, panel.id, {
+      limitIp: data.limitIp ?? 0,
+      expiryTime: data.expiryTime ?? 0,
+      additionalClients: 1,
+    });
 
     const clash = await this.prisma.client.findUnique({
       where: { panelId_email: { panelId: panel.id, email: data.email } },
@@ -825,6 +899,22 @@ export class ClientsService {
     if (!driver) {
       throw new BadRequestException('Premium unavailable — this panel is frozen.');
     }
+    if (
+      existing.adminId &&
+      (data.limitIp !== undefined || data.expiryTime !== undefined)
+    ) {
+      await this.assertClientLimitsAllowed(
+        existing.adminId,
+        existing.panelId || panel.id,
+        {
+          ...(data.limitIp !== undefined ? { limitIp: data.limitIp } : {}),
+          ...(data.expiryTime !== undefined
+            ? { expiryTime: data.expiryTime }
+            : {}),
+        },
+      );
+    }
+
     const username = existing.remoteUsername || existing.email;
     let providerExtras = data.providerExtras;
     if (panel.panelType === 'pasarguard') {
@@ -1116,6 +1206,12 @@ export class ClientsService {
       }
 
       const targetPanelId = [...byPanel.keys()][0];
+
+      await this.assertClientLimitsAllowed(targetAdminId, targetPanelId, {
+        limitIp: data.limitIp ?? 0,
+        expiryTime: data.expiryTime ?? 0,
+        additionalClients: 1,
+      });
 
       if (caller.role !== 'SUPER_ADMIN') {
         const callerSkipsTraffic = this.skipTrafficAccounting(caller);
@@ -1925,6 +2021,18 @@ export class ClientsService {
       this.assertUnlimitedClientAllowed(owner || {}, newTotal);
     }
 
+    if (
+      existing.adminId &&
+      (data.limitIp !== undefined || data.expiryTime !== undefined)
+    ) {
+      await this.assertClientLimitsAllowed(existing.adminId, existing.panelId, {
+        ...(data.limitIp !== undefined ? { limitIp: data.limitIp } : {}),
+        ...(data.expiryTime !== undefined
+          ? { expiryTime: data.expiryTime }
+          : {}),
+      });
+    }
+
     let autoEnable = false;
     if (data.enable === undefined && !existing.enable) {
       const isNotExpired = newExpiry === 0n || newExpiry > now;
@@ -2618,6 +2726,12 @@ export class ClientsService {
     }
 
     const bulkTargetPanelId = [...byPanel.keys()][0];
+
+    await this.assertClientLimitsAllowed(targetAdminId, bulkTargetPanelId, {
+      limitIp: dto.limitIp ?? 0,
+      expiryTime: dto.expiryTime ?? 0,
+      additionalClients: count,
+    });
 
     if (caller.role !== 'SUPER_ADMIN') {
       const callerSkipsTraffic = this.skipTrafficAccounting(caller);

@@ -6,8 +6,9 @@ import { usePluginRegistry } from "@/store/pluginRegistry";
 import { useAuth } from "@/store/auth";
 import { PageHeader, Card, Spinner, ErrorBox } from "@/components/ui";
 import Link from "next/link";
-import { Diamond, ChevronRight } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { useT } from "@/i18n";
+import { PremiumGem } from "@/components/PremiumGem";
 
 export default function PremiumSettingsPage() {
   const t = useT();
@@ -60,7 +61,7 @@ export default function PremiumSettingsPage() {
             <Link key={mod.id} href={mod.frontendPath}>
               <Card className="p-4 flex items-center justify-between hover:border-emerald-500/50 transition-colors">
                 <div className="flex items-center gap-3">
-                  <Diamond size={18} className="text-emerald-500" />
+                  <PremiumGem size={18} className="text-emerald-500" />
                   <div>
                     <p className="font-medium text-zinc-800 dark:text-zinc-100">{mod.name}</p>
                     <p className="text-xs text-zinc-500">{mod.description}</p>

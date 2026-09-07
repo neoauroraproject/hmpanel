@@ -11,7 +11,10 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { PanelsService } from '../panels/panels.service';
 import { calculateAdminTrafficSummary } from '../common/utils/traffic.util';
-import { AdminQuotaService } from '../traffic/admin-quota.service';
+import {
+  AdminQuotaService,
+  PanelQuotaSpec,
+} from '../traffic/admin-quota.service';
 import { DomainEventBusService } from '../events/domain-event-bus.service';
 import { AdminRole, QuotaMode } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
@@ -129,13 +132,15 @@ export class AdminsService implements OnModuleInit {
       inboundIds?: string[];
       expiryTime?: number;
       maxClients?: number;
+      maxDeviceLimit?: number;
+      maxExpireDays?: number;
       permissions?: string[];
       refundOnDelete?: boolean;
       refundOnEdit?: boolean;
       unlimitedTraffic?: boolean;
       storeEnabled?: boolean;
       quotaMode?: string;
-      panelQuotas?: Array<{ panelId: string; balanceBytes: number }>;
+      panelQuotas?: PanelQuotaSpec[];
     },
     actorId: string,
   ) {
@@ -179,6 +184,8 @@ export class AdminsService implements OnModuleInit {
             ? BigInt(data.expiryTime)
             : 0n,
         maxClients: isSuper ? 0 : data.maxClients || 0,
+        maxDeviceLimit: isSuper ? 0 : data.maxDeviceLimit || 0,
+        maxExpireDays: isSuper ? 0 : data.maxExpireDays || 0,
         permissions: data.permissions || [],
         storeEnabled: isSuper ? false : data.storeEnabled === true,
         refundOnDelete: unlimited ? false : (data.refundOnDelete ?? true),
@@ -197,6 +204,8 @@ export class AdminsService implements OnModuleInit {
         status: true,
         expiryTime: true,
         maxClients: true,
+        maxDeviceLimit: true,
+        maxExpireDays: true,
         permissions: true,
         refundOnDelete: true,
         refundOnEdit: true,
@@ -235,11 +244,11 @@ export class AdminsService implements OnModuleInit {
       role: admin.role,
     });
 
-    if (usePerPanel && data.inboundIds?.length) {
+    if (usePerPanel && (data.inboundIds?.length || data.panelQuotas?.length)) {
       await this.adminQuota.syncPanelQuotas(admin.id, {
         quotaMode: 'PER_PANEL',
         unlimited: false,
-        inboundIds: data.inboundIds,
+        inboundIds: data.inboundIds ?? [],
         panelQuotas: data.panelQuotas,
       });
     } else if (data.balance && data.balance > 0 && !unlimited && !usePerPanel) {
@@ -301,6 +310,8 @@ export class AdminsService implements OnModuleInit {
           createdAt: true,
           expiryTime: true,
           maxClients: true,
+          maxDeviceLimit: true,
+          maxExpireDays: true,
           permissions: true,
           portalSettings: true,
           refundOnDelete: true,
@@ -356,6 +367,8 @@ export class AdminsService implements OnModuleInit {
         createdAt: true,
         expiryTime: true,
         maxClients: true,
+        maxDeviceLimit: true,
+        maxExpireDays: true,
         permissions: true,
         portalSettings: true,
         refundOnDelete: true,
@@ -411,6 +424,8 @@ export class AdminsService implements OnModuleInit {
       trafficMode?: string;
       expiryTime?: number;
       maxClients?: number;
+      maxDeviceLimit?: number;
+      maxExpireDays?: number;
       permissions?: string[];
       inboundIds?: string[];
       portalSettings?: any;
@@ -419,7 +434,7 @@ export class AdminsService implements OnModuleInit {
       unlimitedTraffic?: boolean;
       storeEnabled?: boolean;
       quotaMode?: string;
-      panelQuotas?: Array<{ panelId: string; balanceBytes: number }>;
+      panelQuotas?: PanelQuotaSpec[];
     },
     actorId: string,
   ) {
@@ -497,6 +512,8 @@ export class AdminsService implements OnModuleInit {
       updateData.unlimitedTraffic = true;
       updateData.expiryTime = 0n;
       updateData.maxClients = 0;
+      updateData.maxDeviceLimit = 0;
+      updateData.maxExpireDays = 0;
       updateData.refundOnDelete = false;
       updateData.refundOnEdit = false;
       updateData.gracePeriodStart = null;
@@ -647,6 +664,10 @@ export class AdminsService implements OnModuleInit {
         updateData.balance = data.balance;
       }
       if (data.maxClients !== undefined) updateData.maxClients = data.maxClients;
+      if (data.maxDeviceLimit !== undefined)
+        updateData.maxDeviceLimit = data.maxDeviceLimit;
+      if (data.maxExpireDays !== undefined)
+        updateData.maxExpireDays = data.maxExpireDays;
       if (data.permissions !== undefined)
         updateData.permissions = data.permissions;
       if (data.refundOnDelete !== undefined)
@@ -754,6 +775,8 @@ export class AdminsService implements OnModuleInit {
         status: true,
         expiryTime: true,
         maxClients: true,
+        maxDeviceLimit: true,
+        maxExpireDays: true,
         permissions: true,
         refundOnDelete: true,
         refundOnEdit: true,
@@ -798,6 +821,9 @@ export class AdminsService implements OnModuleInit {
           (existing.panelQuotas || []).map((q: any) => ({
             panelId: q.panelId,
             balanceBytes: q.balance,
+            maxClients: q.maxClients,
+            maxDeviceLimit: q.maxDeviceLimit,
+            maxExpireDays: q.maxExpireDays,
           })),
         previousMode: 'PER_PANEL',
       });

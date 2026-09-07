@@ -13,6 +13,12 @@ import { Type } from 'class-transformer';
 export class AdminPanelQuotaDto {
   @ApiProperty() @IsString() panelId: string;
   @ApiProperty() @IsNumber() balanceBytes: number;
+  /** 0 = unlimited for this panel */
+  @ApiPropertyOptional() @IsOptional() @IsNumber() maxClients?: number;
+  /** 0 = unlimited for this panel */
+  @ApiPropertyOptional() @IsOptional() @IsNumber() maxDeviceLimit?: number;
+  /** 0 = unlimited for this panel */
+  @ApiPropertyOptional() @IsOptional() @IsNumber() maxExpireDays?: number;
 }
 
 export class CreateAdminDto {
@@ -33,6 +39,8 @@ export class CreateAdminDto {
   inboundIds?: string[];
   @ApiPropertyOptional() @IsOptional() @IsNumber() expiryTime?: number;
   @ApiPropertyOptional() @IsOptional() @IsNumber() maxClients?: number;
+  @ApiPropertyOptional() @IsOptional() @IsNumber() maxDeviceLimit?: number;
+  @ApiPropertyOptional() @IsOptional() @IsNumber() maxExpireDays?: number;
   @ApiPropertyOptional({ type: [String] })
   @IsOptional()
   @IsArray()
@@ -67,6 +75,8 @@ export class UpdateAdminDto {
   @ApiPropertyOptional() @IsOptional() @IsString() trafficMode?: string;
   @ApiPropertyOptional() @IsOptional() @IsNumber() expiryTime?: number;
   @ApiPropertyOptional() @IsOptional() @IsNumber() maxClients?: number;
+  @ApiPropertyOptional() @IsOptional() @IsNumber() maxDeviceLimit?: number;
+  @ApiPropertyOptional() @IsOptional() @IsNumber() maxExpireDays?: number;
   @ApiPropertyOptional({ type: [String] })
   @IsOptional()
   @IsArray()

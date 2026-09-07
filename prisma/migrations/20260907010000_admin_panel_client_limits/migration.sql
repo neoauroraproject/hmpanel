@@ -1,0 +1,7 @@
+-- Per-panel and global reseller client limits (device limit + expiry days)
+ALTER TABLE "Admin" ADD COLUMN IF NOT EXISTS "maxDeviceLimit" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "Admin" ADD COLUMN IF NOT EXISTS "maxExpireDays" INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE "AdminPanelQuota" ADD COLUMN IF NOT EXISTS "maxClients" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "AdminPanelQuota" ADD COLUMN IF NOT EXISTS "maxDeviceLimit" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "AdminPanelQuota" ADD COLUMN IF NOT EXISTS "maxExpireDays" INTEGER NOT NULL DEFAULT 0;

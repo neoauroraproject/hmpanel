@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Diamond } from "lucide-react";
+import { Gem } from "lucide-react";
 import { useAuth } from "@/store/auth";
 import { usePluginRegistry } from "@/store/pluginRegistry";
 import { usePremiumModules } from "@/hooks/usePremiumModules";
@@ -61,7 +61,7 @@ export function useAppNav() {
       items.push({
         title: t("nav.premiumSettings"),
         href: "/settings/premium",
-        icon: Diamond,
+        icon: Gem,
         moduleId: "premium-settings",
       });
       for (const m of dynamicMenus) {
@@ -74,7 +74,7 @@ export function useAppNav() {
           href: m.href,
           icon: (PREMIUM_MENU_ICONS[String(m.moduleId || "")] ||
             (m.icon as NavIcon) ||
-            Diamond) as NavIcon,
+            Gem) as NavIcon,
           moduleId: m.moduleId as string | undefined,
         });
       }
@@ -89,7 +89,7 @@ export function useAppNav() {
           fallback: m.name,
         }),
         href: m.frontendPath,
-        icon: PREMIUM_MENU_ICONS[m.id] || Diamond,
+        icon: PREMIUM_MENU_ICONS[m.id] || Gem,
         moduleId: m.id,
       });
     }

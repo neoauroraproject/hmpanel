@@ -167,6 +167,10 @@ model Admin {
   status           String      @default("active") // active | disabled
   expiryTime       BigInt      @default(0)
   maxClients       Int         @default(0)
+  /// 0 = unlimited; caps Client.limitIp / hwidLimit a reseller may set
+  maxDeviceLimit   Int         @default(0)
+  /// 0 = unlimited; caps client expiry days a reseller may set
+  maxExpireDays    Int         @default(0)
   permissions      Json?
   portalSettings   Json?       @default("{}")
   totalAssigned    Float       @default(0.0) // All-time assigned traffic
@@ -235,6 +239,10 @@ model AdminPanelQuota {
   panelId       String
   balance       Float    @default(0)
   totalAssigned Float    @default(0)
+  /// Per-panel client caps (0 = unlimited for this panel)
+  maxClients     Int     @default(0)
+  maxDeviceLimit Int     @default(0)
+  maxExpireDays  Int     @default(0)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 

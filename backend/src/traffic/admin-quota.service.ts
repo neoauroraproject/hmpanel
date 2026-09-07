@@ -16,6 +16,25 @@ export type AdminQuotaAdmin = {
 
 type Tx = Prisma.TransactionClient;
 
+/** Per-panel traffic balance plus the optional client caps for that panel. */
+export type PanelQuotaSpec = {
+  panelId: string;
+  balanceBytes: number;
+  maxClients?: number;
+  maxDeviceLimit?: number;
+  maxExpireDays?: number;
+};
+
+function unique(values: string[]): string[] {
+  return [...new Set(values.filter(Boolean))];
+}
+
+function capValue(value: unknown): number {
+  const n = Number(value ?? 0);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.floor(n);
+}
+
 export function panelMatchesQuotaFilter(
   panelId: string,
   panelType: string | undefined,
@@ -512,11 +531,16 @@ export class AdminQuotaService {
       quotaMode: QuotaMode;
       unlimited: boolean;
       inboundIds: string[];
-      panelQuotas?: Array<{ panelId: string; balanceBytes: number }>;
+      panelQuotas?: PanelQuotaSpec[];
       previousMode?: QuotaMode;
     },
   ): Promise<void> {
-    const panelIds = await this.derivePanelIds(input.inboundIds);
+    // Native panels can be assigned without inbounds, so explicit quota rows
+    // must survive even when no inbound resolves to them.
+    const panelIds = unique([
+      ...(await this.derivePanelIds(input.inboundIds)),
+      ...(input.panelQuotas ?? []).map((q) => q.panelId),
+    ]);
 
     if (input.unlimited) {
       await this.prisma.adminPanelQuota.deleteMany({ where: { adminId } });
@@ -588,6 +612,11 @@ export class AdminQuotaService {
       for (const pid of panelIds) {
         const spec = quotas.find((q) => q.panelId === pid);
         const balanceBytes = spec?.balanceBytes ?? 0;
+        const limits = {
+          maxClients: capValue(spec?.maxClients),
+          maxDeviceLimit: capValue(spec?.maxDeviceLimit),
+          maxExpireDays: capValue(spec?.maxExpireDays),
+        };
         await tx.adminPanelQuota.upsert({
           where: { adminId_panelId: { adminId, panelId: pid } },
           create: {
@@ -595,10 +624,12 @@ export class AdminQuotaService {
             panelId: pid,
             balance: balanceBytes,
             totalAssigned: balanceBytes,
+            ...limits,
           },
           update: {
             balance: balanceBytes,
             totalAssigned: balanceBytes,
+            ...limits,
           },
         });
       }
@@ -607,7 +638,7 @@ export class AdminQuotaService {
 
   async updatePanelQuotaBalances(
     adminId: string,
-    panelQuotas: Array<{ panelId: string; balanceBytes: number }>,
+    panelQuotas: PanelQuotaSpec[],
   ): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
       for (const q of panelQuotas) {
@@ -616,6 +647,17 @@ export class AdminQuotaService {
         });
         const before = existing?.balance ?? 0;
         const diff = q.balanceBytes - before;
+        const limits = {
+          ...(q.maxClients !== undefined
+            ? { maxClients: capValue(q.maxClients) }
+            : {}),
+          ...(q.maxDeviceLimit !== undefined
+            ? { maxDeviceLimit: capValue(q.maxDeviceLimit) }
+            : {}),
+          ...(q.maxExpireDays !== undefined
+            ? { maxExpireDays: capValue(q.maxExpireDays) }
+            : {}),
+        };
         await tx.adminPanelQuota.upsert({
           where: { adminId_panelId: { adminId, panelId: q.panelId } },
           create: {
@@ -623,10 +665,12 @@ export class AdminQuotaService {
             panelId: q.panelId,
             balance: q.balanceBytes,
             totalAssigned: q.balanceBytes,
+            ...limits,
           },
           update: {
             balance: q.balanceBytes,
             ...(diff > 0 ? { totalAssigned: { increment: diff } } : {}),
+            ...limits,
           },
         });
         if (diff !== 0) {
@@ -667,6 +711,9 @@ export class AdminQuotaService {
         panelType: r.panel.panelType || "3x-ui",
         balance: r.balance,
         totalAssigned: r.totalAssigned,
+        maxClients: r.maxClients,
+        maxDeviceLimit: r.maxDeviceLimit,
+        maxExpireDays: r.maxExpireDays,
         availableTraffic: summary.availableTraffic,
         usedTraffic: summary.usedTraffic,
       };

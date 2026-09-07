@@ -7,20 +7,41 @@ import { formatBytes, formatDate } from "@/lib/format";
 import { Card, PageHeader, Badge, Spinner, ErrorBox } from "@/components/ui";
 import { useToast } from "@/components/toast";
 import { useT } from "@/i18n";
-import { Plus, Power, Edit2, Shield, Activity, HardDrive, Cpu, CreditCard, ChevronDown, Check, X, ShieldCheck, Download, Upload, Trash2, Eye, EyeOff, Server, Database, Save, ArrowRight, Store, Users, Clock, Settings2, Zap, Lock, AlertCircle, Infinity, Diamond, Search, Layers } from "lucide-react";
+import { Plus, Power, Edit2, Shield, Activity, HardDrive, Cpu, CreditCard, ChevronDown, Check, X, ShieldCheck, Download, Upload, Trash2, Eye, EyeOff, Server, Database, Save, ArrowRight, Store, Users, Clock, Settings2, Zap, Lock, AlertCircle, Infinity, Search, Layers } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { MOTION_CONFIG } from "@/lib/motion";
 import { NodeInboundBadge } from "@/components/NodeInboundBadge";
 import { PluginSlot } from "@/components/PluginSlot";
 import { useAuth } from "@/store/auth";
 import { useLicenseActivation } from "@/hooks/useLicenseActivation";
+import { PremiumGem } from "@/components/PremiumGem";
 
 interface AdminPanelQuotaRow {
   panelId: string;
   panelName?: string;
+  panelType?: string | null;
   balance: number;
   totalAssigned?: number;
+  /** 0 = unlimited on this panel */
+  maxClients?: number;
+  maxDeviceLimit?: number;
+  maxExpireDays?: number;
 }
+
+/** Per-panel caps as raw form strings; "" and "0" both mean unlimited. */
+interface PanelQuotaForm {
+  gb: string;
+  maxClients: string;
+  maxDeviceLimit: string;
+  maxExpireDays: string;
+}
+
+const EMPTY_PANEL_QUOTA: PanelQuotaForm = {
+  gb: "",
+  maxClients: "",
+  maxDeviceLimit: "",
+  maxExpireDays: "",
+};
 
 interface Admin {
   id: string;
@@ -33,6 +54,8 @@ interface Admin {
   trafficMode: string;
   expiryTime: number; // ms. 0 = Unlimited
   maxClients: number; // 0 = Unlimited
+  maxDeviceLimit?: number; // 0 = Unlimited
+  maxExpireDays?: number; // 0 = Unlimited
   permissions: string[];
   totalAssigned?: number;
   usedTraffic: number;
@@ -600,6 +623,82 @@ function PanelInboundPicker({
           byProtocol.get(proto)!.push(inbound);
         }
 
+        const inboundChecklist = !(isEnabled && isExpanded && panelInbounds.length > 0) ? null : (
+          <>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative flex-1 min-w-[10rem]">
+                <Search className="absolute start-2.5 top-1/2 -translate-y-1/2 text-zinc-400" size={13} />
+                <input
+                  type="text"
+                  value={inboundQueryByPanel[p.id] || ""}
+                  onChange={(e) =>
+                    setInboundQueryByPanel((prev) => ({ ...prev, [p.id]: e.target.value }))
+                  }
+                  placeholder={t("admins.searchInbounds")}
+                  className="w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 ps-8 pe-3 py-1.5 text-xs text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => setPanelInbounds(panelInbounds.map((i) => i.id), true)}
+                className={`text-[11px] font-semibold px-2 py-1 rounded-md ${allSelected ? "text-zinc-400" : "text-blue-600 dark:text-blue-400 hover:bg-blue-500/10"}`}
+              >
+                {t("common.selectAll")}
+              </button>
+              <button
+                type="button"
+                onClick={() => setPanelInbounds(panelInbounds.map((i) => i.id), false)}
+                className="text-[11px] font-semibold px-2 py-1 rounded-md text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+              >
+                {t("common.selectNone")}
+              </button>
+            </div>
+            {filteredInbounds.length === 0 ? (
+              <div className="text-xs text-zinc-500 p-2 text-center">{t("common.noResults")}</div>
+            ) : (
+              [...byProtocol.entries()].map(([protocol, group]) => (
+                <div key={protocol} className="space-y-1.5">
+                  <div className="flex items-center gap-1.5 px-0.5 pt-1 text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+                    <Layers size={11} /> {protocol}
+                    <span className="font-medium normal-case tracking-normal">({group.length})</span>
+                  </div>
+                  {group.map((i) => {
+                    const checked = selectedInbounds.includes(i.id);
+                    return (
+                      <label
+                        key={i.id}
+                        className={`flex items-center gap-3 p-2.5 rounded-xl border cursor-pointer transition-colors ${
+                          checked
+                            ? "border-blue-500/30 bg-blue-500/5"
+                            : "border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleInbound(i.id)}
+                          className="w-4 h-4 rounded text-blue-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-blue-500"
+                        />
+                        <div className="flex min-w-0 flex-1 flex-col">
+                          <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200 inline-flex items-center gap-1.5 min-w-0">
+                            <span className="truncate">{inboundTitle(i)}</span>
+                            <NodeInboundBadge inbound={i} />
+                          </span>
+                          <span className="text-xs text-zinc-500">
+                            {t("admins.inboundProtocolLine", { protocol: i.protocol, port: i.port })}
+                            {i.tag && i.remark && i.tag !== i.remark ? ` · ${i.tag}` : ""}
+                          </span>
+                        </div>
+                        {checked ? <Check size={14} className="text-blue-500 shrink-0" /> : null}
+                      </label>
+                    );
+                  })}
+                </div>
+              ))
+            )}
+          </>
+        );
+
         return (
           <div
             key={p.id}
@@ -630,7 +729,7 @@ function PanelInboundPicker({
                     <span className={`shrink-0 rounded-md border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${typeChip}`}>
                       {t(typeKey)}
                     </span>
-                    {native ? <Diamond size={12} className="text-emerald-500 shrink-0" /> : null}
+                    {native ? <PremiumGem size={12} className="text-emerald-500 shrink-0" /> : null}
                     {frozen ? (
                       <span className="text-[10px] font-semibold uppercase tracking-wide text-amber-500">
                         {p.connectionHealth === "DISABLED"
@@ -640,7 +739,7 @@ function PanelInboundPicker({
                     ) : null}
                   </span>
                   <span className="text-xs text-zinc-500 mt-0.5">
-                    {native
+                    {native && panelInbounds.length === 0
                       ? t(typeKey)
                       : t("admins.inboundSelectedCount", { selected: checkedCount, total: panelInbounds.length })}
                   </span>
@@ -652,96 +751,39 @@ function PanelInboundPicker({
             {isEnabled && isExpanded && (
               <div className="px-3 pb-3 space-y-2 border-t border-zinc-200 dark:border-zinc-800 pt-3">
                 {native ? (
-                  <PluginSlot
-                    name="admins.panel.access"
-                    props={{
-                      adminId,
-                      collectOnly: collectOnly ?? !adminId,
-                      hideSave: true,
-                      panelId: p.id,
-                      panelType: p.panelType,
-                      panelEnabled: isEnabled,
-                      onDraftChange: onProviderDraft,
-                    }}
-                  />
+                  <>
+                    <PluginSlot
+                      name="admins.panel.access"
+                      props={{
+                        adminId,
+                        collectOnly: collectOnly ?? !adminId,
+                        hideSave: true,
+                        panelId: p.id,
+                        panelType: p.panelType,
+                        panelEnabled: isEnabled,
+                        onDraftChange: onProviderDraft,
+                      }}
+                    />
+                    {panelInbounds.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 p-3 text-center text-xs text-zinc-500">
+                        {t("admins.nativeResourcesViaPanelPlus")}
+                      </div>
+                    ) : (
+                      <div className="space-y-2 rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 p-2.5">
+                        <div className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+                          {t("admins.nativeSyncedInbounds")}
+                        </div>
+                        <p className="text-[10px] leading-relaxed text-zinc-500">{t("admins.nativeSyncedInboundsHint")}</p>
+                        {inboundChecklist}
+                      </div>
+                    )}
+                  </>
                 ) : panelInbounds.length === 0 ? (
                   <div className="text-xs text-zinc-500 p-3 text-center border rounded-xl border-dashed border-zinc-300 dark:border-zinc-700">
                     {t("common.noInboundsOnPanel")}
                   </div>
                 ) : (
-                  <>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div className="relative flex-1 min-w-[10rem]">
-                        <Search className="absolute start-2.5 top-1/2 -translate-y-1/2 text-zinc-400" size={13} />
-                        <input
-                          type="text"
-                          value={inboundQueryByPanel[p.id] || ""}
-                          onChange={(e) =>
-                            setInboundQueryByPanel((prev) => ({ ...prev, [p.id]: e.target.value }))
-                          }
-                          placeholder={t("admins.searchInbounds")}
-                          className="w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 ps-8 pe-3 py-1.5 text-xs text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500"
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setPanelInbounds(panelInbounds.map((i) => i.id), true)}
-                        className={`text-[11px] font-semibold px-2 py-1 rounded-md ${allSelected ? "text-zinc-400" : "text-blue-600 dark:text-blue-400 hover:bg-blue-500/10"}`}
-                      >
-                        {t("common.selectAll")}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setPanelInbounds(panelInbounds.map((i) => i.id), false)}
-                        className="text-[11px] font-semibold px-2 py-1 rounded-md text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                      >
-                        {t("common.selectNone")}
-                      </button>
-                    </div>
-                    {filteredInbounds.length === 0 ? (
-                      <div className="text-xs text-zinc-500 p-2 text-center">{t("common.noResults")}</div>
-                    ) : (
-                      [...byProtocol.entries()].map(([protocol, group]) => (
-                        <div key={protocol} className="space-y-1.5">
-                          <div className="flex items-center gap-1.5 px-0.5 pt-1 text-[10px] font-bold uppercase tracking-wider text-zinc-400">
-                            <Layers size={11} /> {protocol}
-                            <span className="font-medium normal-case tracking-normal">({group.length})</span>
-                          </div>
-                          {group.map((i) => {
-                            const checked = selectedInbounds.includes(i.id);
-                            return (
-                              <label
-                                key={i.id}
-                                className={`flex items-center gap-3 p-2.5 rounded-xl border cursor-pointer transition-colors ${
-                                  checked
-                                    ? "border-blue-500/30 bg-blue-500/5"
-                                    : "border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
-                                }`}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  onChange={() => toggleInbound(i.id)}
-                                  className="w-4 h-4 rounded text-blue-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-blue-500"
-                                />
-                                <div className="flex min-w-0 flex-1 flex-col">
-                                  <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200 inline-flex items-center gap-1.5 min-w-0">
-                                    <span className="truncate">{inboundTitle(i)}</span>
-                                    <NodeInboundBadge inbound={i} />
-                                  </span>
-                                  <span className="text-xs text-zinc-500">
-                                    {t("admins.inboundProtocolLine", { protocol: i.protocol, port: i.port })}
-                                    {i.tag && i.remark && i.tag !== i.remark ? ` · ${i.tag}` : ""}
-                                  </span>
-                                </div>
-                                {checked ? <Check size={14} className="text-blue-500 shrink-0" /> : null}
-                              </label>
-                            );
-                          })}
-                        </div>
-                      ))
-                    )}
-                  </>
+                  inboundChecklist
                 )}
               </div>
             )}
@@ -780,14 +822,31 @@ function hasResellerPanelAccess(
   });
 }
 
+/** Blank, negative and non-numeric limit inputs all collapse to 0 (= unlimited). */
+function limitNumber(value: string) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : 0;
+}
+
+function gbToBytes(value: string) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed * 1024 ** 3) : 0;
+}
+
 function buildPanelQuotasPayload(
   enabledPanels: string[],
-  panelQuotaGb: Record<string, string>,
+  panelQuotas: Record<string, PanelQuotaForm>,
 ) {
-  return enabledPanels.map((panelId) => ({
-    panelId,
-    balanceBytes: Math.round(Number(panelQuotaGb[panelId] || 0) * 1024 ** 3),
-  }));
+  return enabledPanels.map((panelId) => {
+    const quota = panelQuotas[panelId] ?? EMPTY_PANEL_QUOTA;
+    return {
+      panelId,
+      balanceBytes: gbToBytes(quota.gb),
+      maxClients: limitNumber(quota.maxClients),
+      maxDeviceLimit: limitNumber(quota.maxDeviceLimit),
+      maxExpireDays: limitNumber(quota.maxExpireDays),
+    };
+  });
 }
 
 function QuotaModeToggle({
@@ -823,6 +882,13 @@ function QuotaModeToggle({
   );
 }
 
+/** 3x-ui caps concurrent IPs, pasarguard caps registered HWIDs. */
+function panelDeviceLimitI18nKey(type?: string | null) {
+  if (type === "pasarguard") return "admins.panelMaxDeviceLimitHwid";
+  if (type === "eylan") return "admins.panelMaxDeviceLimit";
+  return "admins.panelMaxDeviceLimitIp";
+}
+
 function PerPanelQuotaFields({
   panels,
   enabledPanels,
@@ -832,19 +898,26 @@ function PerPanelQuotaFields({
 }: {
   panels: PanelRow[];
   enabledPanels: string[];
-  values: Record<string, string>;
-  onChange: (panelId: string, gb: string) => void;
+  values: Record<string, PanelQuotaForm>;
+  onChange: (panelId: string, patch: Partial<PanelQuotaForm>) => void;
   disabled?: boolean;
 }) {
   const t = useT();
   if (enabledPanels.length === 0) return null;
+  const fieldClass =
+    "w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-2.5 py-1.5 text-xs text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500";
+  const labelClass = "mb-1 block text-xs text-zinc-500 dark:text-zinc-400";
   return (
-    <div className="col-span-2 space-y-2">
-      <label className="block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.currentPanelQuotas")}</label>
+    <div className={`col-span-2 space-y-2 ${disabled ? "opacity-50 pointer-events-none" : ""}`}>
+      <label className="block text-sm font-medium text-zinc-500 dark:text-zinc-400">
+        {t("admins.currentPanelQuotas")}
+        <span className="block text-xs font-normal text-zinc-500 mt-0.5">{t("admins.panelQuotaFieldsHint")}</span>
+      </label>
       <div className="grid gap-2 sm:grid-cols-2">
         {enabledPanels.map((panelId) => {
           const panel = panels.find((p) => p.id === panelId);
           const type = panel?.panelType;
+          const quota = values[panelId] ?? EMPTY_PANEL_QUOTA;
           const typeChip =
             type === "eylan"
               ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
@@ -854,24 +927,66 @@ function PerPanelQuotaFields({
           return (
             <div
               key={panelId}
-              className="flex items-center gap-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 px-3 py-2.5"
+              className="space-y-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 p-3"
             >
-              <div className="flex min-w-0 flex-1 flex-col">
-                <span className="text-sm font-medium truncate text-zinc-800 dark:text-zinc-100">{panel?.name || panelId}</span>
-                <span className={`mt-0.5 w-fit rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${typeChip}`}>
+              <div className="flex min-w-0 items-center gap-2">
+                <Server size={13} className="shrink-0 text-blue-400" />
+                <span className="min-w-0 truncate text-sm font-medium text-zinc-800 dark:text-zinc-100">{panel?.name || panelId}</span>
+                <span className={`ms-auto shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${typeChip}`}>
                   {t(panelTypeI18nKey(type))}
                 </span>
               </div>
-              <input
-                type="number"
-                min={0}
-                placeholder="0"
-                disabled={disabled}
-                value={values[panelId] ?? ""}
-                onChange={(e) => onChange(panelId, e.target.value)}
-                className="w-24 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3 py-1.5 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500"
-              />
-              <span className="text-xs text-zinc-500 shrink-0">GB</span>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className={labelClass}>{t("admins.panelTrafficLimitGb")}</label>
+                  <input
+                    type="number"
+                    min={0}
+                    placeholder="0"
+                    disabled={disabled}
+                    value={quota.gb}
+                    onChange={(e) => onChange(panelId, { gb: e.target.value })}
+                    className={fieldClass}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>{t("admins.panelMaxClients")}</label>
+                  <input
+                    type="number"
+                    min={0}
+                    placeholder="0"
+                    disabled={disabled}
+                    value={quota.maxClients}
+                    onChange={(e) => onChange(panelId, { maxClients: e.target.value })}
+                    className={fieldClass}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>{t(panelDeviceLimitI18nKey(type))}</label>
+                  <input
+                    type="number"
+                    min={0}
+                    placeholder="0"
+                    disabled={disabled}
+                    value={quota.maxDeviceLimit}
+                    onChange={(e) => onChange(panelId, { maxDeviceLimit: e.target.value })}
+                    className={fieldClass}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>{t("admins.panelMaxExpireDays")}</label>
+                  <input
+                    type="number"
+                    min={0}
+                    placeholder="0"
+                    disabled={disabled}
+                    value={quota.maxExpireDays}
+                    onChange={(e) => onChange(panelId, { maxExpireDays: e.target.value })}
+                    className={fieldClass}
+                  />
+                </div>
+              </div>
+              <p className="text-[10px] leading-relaxed text-zinc-500">{t("admins.panelQuotaClientsHint")}</p>
             </div>
           );
         })}
@@ -899,6 +1014,8 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
     balanceGb: "",
     expiryDays: "",
     maxClients: "",
+    maxDeviceLimit: "",
+    maxExpireDays: "",
     enabledPanels: [] as string[],
     selectedInbounds: [] as string[],
     canCustomizeBranding: true,
@@ -909,7 +1026,7 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
     unlimitedTraffic: false,
     superAdmin: false,
     quotaMode: "GLOBAL" as QuotaMode,
-    panelQuotaGb: {} as Record<string, string>,
+    panelQuotas: {} as Record<string, PanelQuotaForm>,
   });
   const limitsLocked = form.superAdmin;
 
@@ -937,10 +1054,12 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
           ? 0
           : (form.balanceGb ? Math.round(Number(form.balanceGb) * 1024 * 1024 * 1024) : 0),
         panelQuotas: !form.superAdmin && !form.unlimitedTraffic && form.quotaMode === "PER_PANEL"
-          ? buildPanelQuotasPayload(form.enabledPanels, form.panelQuotaGb)
+          ? buildPanelQuotasPayload(form.enabledPanels, form.panelQuotas)
           : undefined,
         expiryTime: form.superAdmin ? 0 : (form.expiryDays ? Date.now() + Number(form.expiryDays) * 24 * 60 * 60 * 1000 : 0),
         maxClients: form.superAdmin ? 0 : (form.maxClients ? Number(form.maxClients) : 0),
+        maxDeviceLimit: form.superAdmin ? 0 : limitNumber(form.maxDeviceLimit),
+        maxExpireDays: form.superAdmin ? 0 : limitNumber(form.maxExpireDays),
         inboundIds: form.superAdmin ? [] : form.selectedInbounds,
         permissions: [],
         storeEnabled: form.superAdmin ? false : form.storeEnabled,
@@ -1102,7 +1221,7 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
                             <div className="flex flex-1 flex-col">
                               <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200 inline-flex items-center gap-1.5">
                                 {t("admins.enableStore")}
-                                <Diamond size={12} className="text-emerald-500" />
+                                <PremiumGem size={12} className="text-emerald-500" />
                               </span>
                               <span className="text-xs text-zinc-500">{t("admins.enableStoreHint")}</span>
                             </div>
@@ -1156,6 +1275,7 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
                         disabled={form.unlimitedTraffic || limitsLocked}
                       />
                       {form.quotaMode === "GLOBAL" ? (
+                      <>
                       <div>
                         <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.trafficLimitGb")} <span className="text-zinc-500 text-xs">{t("admins.noneValue")}</span></label>
                         {form.unlimitedTraffic ? (
@@ -1166,21 +1286,36 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
                           <input type="number" min={0} placeholder="0" value={form.balanceGb} onChange={(e) => setForm({ ...form, balanceGb: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
                         )}
                       </div>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.maxDeviceLimit")} <span className="text-zinc-500 text-xs">{t("admins.unlimitedHint")}</span></label>
+                        <input type="number" min={0} placeholder="0" value={form.maxDeviceLimit} onChange={(e) => setForm({ ...form, maxDeviceLimit: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
+                        <p className="mt-1 text-[10px] leading-relaxed text-zinc-500">{t("admins.maxDeviceLimitHint")}</p>
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.maxClientExpireDays")} <span className="text-zinc-500 text-xs">{t("admins.unlimitedHint")}</span></label>
+                        <input type="number" min={0} placeholder="0" value={form.maxExpireDays} onChange={(e) => setForm({ ...form, maxExpireDays: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
+                        <p className="mt-1 text-[10px] leading-relaxed text-zinc-500">{t("admins.maxClientExpireDaysHint")}</p>
+                      </div>
+                      </>
                       ) : (
                         <PerPanelQuotaFields
                           panels={panels ?? []}
                           enabledPanels={form.enabledPanels}
-                          values={form.panelQuotaGb}
-                          onChange={(panelId, gb) => setForm((f) => ({
+                          values={form.panelQuotas}
+                          onChange={(panelId, patch) => setForm((f) => ({
                             ...f,
-                            panelQuotaGb: { ...f.panelQuotaGb, [panelId]: gb },
+                            panelQuotas: {
+                              ...f.panelQuotas,
+                              [panelId]: { ...(f.panelQuotas[panelId] ?? EMPTY_PANEL_QUOTA), ...patch },
+                            },
                           }))}
                           disabled={form.unlimitedTraffic}
                         />
                       )}
-                      <div>
+                      <div className="col-span-2">
                         <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.expiryDays")} <span className="text-zinc-500 text-xs">{t("admins.unlimitedHint")}</span></label>
                         <input type="number" min={0} placeholder="0" value={form.expiryDays} onChange={(e) => setForm({ ...form, expiryDays: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
+                        <p className="mt-1 text-[10px] leading-relaxed text-zinc-500">{t("admins.adminAccountExpiryHint")}</p>
                       </div>
                     </div>
                   </motion.div>
@@ -1271,6 +1406,8 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
     balanceGb: "",
     trafficDeltaGb: "",
     maxClients: "",
+    maxDeviceLimit: "",
+    maxExpireDays: "",
     password: "",
     expiryDays: "",
     customTrafficDelta: "",
@@ -1285,7 +1422,7 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
     unlimitedTraffic: false,
     superAdmin: false,
     quotaMode: "GLOBAL" as QuotaMode,
-    panelQuotaGb: {} as Record<string, string>,
+    panelQuotas: {} as Record<string, PanelQuotaForm>,
   });
 
   const { data: panels } = useQuery<PanelRow[]>({
@@ -1317,10 +1454,15 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
         .filter((p) => isNativePremiumPanel(p) && providerAccess.some((r) => r.enabled && r.provider === p.panelType))
         .map((p) => p.id);
       const enabledPanels = Array.from(new Set([...fromInbounds, ...fromQuota, ...fromNative]));
-      const panelQuotaGb = Object.fromEntries(
+      const panelQuotas: Record<string, PanelQuotaForm> = Object.fromEntries(
         (admin.panelQuotas || []).map((q) => [
           q.panelId,
-          q.balance ? (q.balance / (1024 ** 3)).toFixed(2).replace(/\.?0+$/, "") : "0",
+          {
+            gb: q.balance ? (q.balance / (1024 ** 3)).toFixed(2).replace(/\.?0+$/, "") : "0",
+            maxClients: q.maxClients ? String(q.maxClients) : "0",
+            maxDeviceLimit: q.maxDeviceLimit ? String(q.maxDeviceLimit) : "0",
+            maxExpireDays: q.maxExpireDays ? String(q.maxExpireDays) : "0",
+          },
         ]),
       );
       setForm((prev) => ({
@@ -1331,6 +1473,8 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
         balanceGb: "",
         trafficDeltaGb: "",
         maxClients: admin.maxClients ? String(admin.maxClients) : "",
+        maxDeviceLimit: admin.maxDeviceLimit ? String(admin.maxDeviceLimit) : "",
+        maxExpireDays: admin.maxExpireDays ? String(admin.maxExpireDays) : "",
         selectedInbounds: assigned.map((ai: any) => ai.inbound.id),
         enabledPanels,
         canCustomizeBranding: admin.permissions ? admin.permissions.includes("canCustomizeBranding") : true,
@@ -1340,7 +1484,7 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
         unlimitedTraffic: (admin as any).unlimitedTraffic ?? false,
         superAdmin: admin.role === "SUPER_ADMIN",
         quotaMode: (admin.quotaMode as QuotaMode) || "GLOBAL",
-        panelQuotaGb,
+        panelQuotas,
       }));
     }
   }, [admin, panels, providerAccess]);
@@ -1363,7 +1507,7 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
       if (!form.superAdmin && !form.unlimitedTraffic) {
         payload.quotaMode = form.quotaMode;
         if (form.quotaMode === "PER_PANEL") {
-          payload.panelQuotas = buildPanelQuotasPayload(form.enabledPanels, form.panelQuotaGb);
+          payload.panelQuotas = buildPanelQuotasPayload(form.enabledPanels, form.panelQuotas);
         } else if (form.balanceGb) {
           payload.balance = Math.round(Number(form.balanceGb) * 1024 * 1024 * 1024);
         } else if (form.trafficDeltaGb) {
@@ -1372,6 +1516,12 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
         }
       }
       if (!form.superAdmin && form.maxClients) payload.maxClients = Number(form.maxClients);
+      if (!form.superAdmin && form.maxDeviceLimit !== "") {
+        payload.maxDeviceLimit = limitNumber(form.maxDeviceLimit);
+      }
+      if (!form.superAdmin && form.maxExpireDays !== "") {
+        payload.maxExpireDays = limitNumber(form.maxExpireDays);
+      }
       if (form.password.trim()) payload.password = form.password;
       if (!form.superAdmin && form.expiryDays) payload.expiryTime = Date.now() + Number(form.expiryDays) * 24 * 60 * 60 * 1000;
       payload.storeEnabled = form.superAdmin ? false : form.storeEnabled;
@@ -1561,15 +1711,28 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
                                 </>
                               )}
                             </div>
+                            <div>
+                              <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.maxDeviceLimit")}</label>
+                              <input type="number" min={0} placeholder="0" value={form.maxDeviceLimit} onChange={(e) => setForm({ ...form, maxDeviceLimit: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors placeholder:text-zinc-600" />
+                              <p className="text-[10px] text-zinc-500 mt-1">{t("admins.maxDeviceLimitHint")}</p>
+                            </div>
+                            <div>
+                              <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.maxClientExpireDays")}</label>
+                              <input type="number" min={0} placeholder="0" value={form.maxExpireDays} onChange={(e) => setForm({ ...form, maxExpireDays: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors placeholder:text-zinc-600" />
+                              <p className="text-[10px] text-zinc-500 mt-1">{t("admins.maxClientExpireDaysHint")}</p>
+                            </div>
                           </div>
                           ) : (
                             <PerPanelQuotaFields
                               panels={panels ?? []}
                               enabledPanels={form.enabledPanels}
-                              values={form.panelQuotaGb}
-                              onChange={(panelId, gb) => setForm((f) => ({
+                              values={form.panelQuotas}
+                              onChange={(panelId, patch) => setForm((f) => ({
                                 ...f,
-                                panelQuotaGb: { ...f.panelQuotaGb, [panelId]: gb },
+                                panelQuotas: {
+                                  ...f.panelQuotas,
+                                  [panelId]: { ...(f.panelQuotas[panelId] ?? EMPTY_PANEL_QUOTA), ...patch },
+                                },
                               }))}
                               disabled={form.unlimitedTraffic}
                             />
@@ -1578,6 +1741,7 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
                             <div className="col-span-2">
                               <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.addExpiryDays")}</label>
                               <input type="number" placeholder={t("admins.leaveEmptyNoChange")} value={form.expiryDays} onChange={(e) => setForm({ ...form, expiryDays: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors placeholder:text-zinc-600" />
+                              <p className="text-[10px] text-zinc-500 mt-1">{t("admins.adminAccountExpiryHint")}</p>
                             </div>
                           </div>
                           
@@ -1587,9 +1751,18 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
                               {admin.quotaMode === "PER_PANEL" && admin.panelQuotas?.length ? (
                                 <div className="space-y-2">
                                   {admin.panelQuotas.map((q) => (
-                                    <div key={q.panelId} className="flex justify-between items-center text-sm">
-                                      <span className="text-zinc-500 truncate">{q.panelName || q.panelId}</span>
-                                      <span className="font-medium text-blue-400 shrink-0 ms-2">{(q.balance / (1024 ** 3)).toFixed(2)} GB</span>
+                                    <div key={q.panelId} className="text-sm">
+                                      <div className="flex justify-between items-center">
+                                        <span className="text-zinc-500 truncate">{q.panelName || q.panelId}</span>
+                                        <span className="font-medium text-blue-400 shrink-0 ms-2">{(q.balance / (1024 ** 3)).toFixed(2)} GB</span>
+                                      </div>
+                                      <div className="text-[10px] text-zinc-500">
+                                        {t("admins.panelCapsSummary", {
+                                          clients: q.maxClients ? q.maxClients : "∞",
+                                          devices: q.maxDeviceLimit ? q.maxDeviceLimit : "∞",
+                                          days: q.maxExpireDays ? q.maxExpireDays : "∞",
+                                        })}
+                                      </div>
                                     </div>
                                   ))}
                                 </div>
@@ -1763,7 +1936,7 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
                               <div className="flex flex-1 flex-col">
                                 <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200 inline-flex items-center gap-1.5">
                                   {t("admins.enableStore")}
-                                  <Diamond size={12} className="text-emerald-500" />
+                                  <PremiumGem size={12} className="text-emerald-500" />
                                 </span>
                                 <span className="text-xs text-zinc-500">{t("admins.enableStoreHint")}</span>
                               </div>

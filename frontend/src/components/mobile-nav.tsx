@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { clsx } from "clsx";
-import { LogOut, Menu, X, Diamond } from "lucide-react";
+import { LogOut, Menu, X } from "lucide-react";
 import { useAuth } from "@/store/auth";
 import { ThemeToggle } from "./ThemeToggle";
 import { LocaleSwitcher } from "./LocaleSwitcher";
@@ -14,6 +14,7 @@ import { PANEL_BRAND } from "@/lib/panel-brand";
 import { useLocale } from "@/i18n";
 import { NAV_LABEL_KEYS, type AppNavItem } from "@/lib/nav-config";
 import { useAppNav } from "@/hooks/useAppNav";
+import { PremiumGem } from "@/components/PremiumGem";
 
 function MobileNavLink({
   item,
@@ -41,16 +42,16 @@ function MobileNavLink({
       href={item.href}
       onClick={onNavigate}
       className={clsx(
-        "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
+        "flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] transition-colors",
         active
           ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
           : "text-zinc-500 hover:bg-zinc-50 dark:text-zinc-400 dark:hover:bg-zinc-900",
       )}
     >
-      <Icon size={18} />
+      <Icon size={16} className="shrink-0" />
       <span className="flex-1 truncate">{label}</span>
       {item.isPremium ? (
-        <Diamond size={12} className="shrink-0 text-emerald-500" aria-label={t("app.premium")} />
+        <PremiumGem size={11} className="shrink-0 text-emerald-500" title={t("app.premium")} />
       ) : null}
       {rechargeBadge > 0 ? (
         <span className="inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
@@ -115,27 +116,20 @@ export function MobileNav() {
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto py-4">
+            <div className="flex-1 overflow-y-auto py-2">
               {sections.map((section) => (
-                <div key={section.id} className="mb-2">
-                  {section.items.length > 1 ? (
-                    <div className="px-5 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-                      {t(section.labelKey)}
-                    </div>
-                  ) : null}
-                  <nav className="space-y-1 px-3">
-                    {section.items.map((item) => (
-                      <MobileNavLink
-                        key={item.href}
-                        item={item}
-                        pathname={pathname}
-                        storeHasNewOrders={storeHasNewOrders}
-                        rechargePendingCount={rechargePendingCount}
-                        onNavigate={() => setIsOpen(false)}
-                      />
-                    ))}
-                  </nav>
-                </div>
+                <nav key={section.id} className="space-y-0.5 px-2">
+                  {section.items.map((item) => (
+                    <MobileNavLink
+                      key={item.href}
+                      item={item}
+                      pathname={pathname}
+                      storeHasNewOrders={storeHasNewOrders}
+                      rechargePendingCount={rechargePendingCount}
+                      onNavigate={() => setIsOpen(false)}
+                    />
+                  ))}
+                </nav>
               ))}
             </div>
 

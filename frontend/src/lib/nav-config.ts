@@ -14,6 +14,7 @@ import {
   Palette,
   Layers,
   LayoutTemplate,
+  Gem,
 } from "lucide-react";
 import type { Role } from "@/lib/types";
 
@@ -55,45 +56,22 @@ export interface PremiumNavInput {
   moduleId?: string;
 }
 
-/** Super Admin: dashboard → panels → users → extras → admins → settings last. */
+/** Single compact list: dashboard → admins → clients → traffic → store → panels → panel plus → rest; diagnostics last. */
 export const CORE_NAV_SECTIONS: CoreNavSection[] = [
   {
-    id: "overview",
+    id: "main",
     labelKey: "nav.sectionOverview",
-    items: [{ href: "/dashboard", icon: LayoutDashboard, labelKey: "nav.dashboard" }],
-  },
-  {
-    id: "infrastructure",
-    labelKey: "nav.sectionInfrastructure",
     items: [
-      { href: "/panels", icon: Server, labelKey: "nav.panels", roles: ["SUPER_ADMIN"] },
-      { href: "/migration", icon: Import, labelKey: "nav.migration", roles: ["SUPER_ADMIN"] },
-      { href: "/diagnostics", icon: Activity, labelKey: "nav.diagnostics", roles: ["SUPER_ADMIN"] },
-    ],
-  },
-  {
-    id: "users",
-    labelKey: "nav.sectionUsers",
-    items: [
+      { href: "/dashboard", icon: LayoutDashboard, labelKey: "nav.dashboard" },
+      { href: "/admins", icon: UserCog, labelKey: "nav.admins", roles: ["SUPER_ADMIN"] },
       { href: "/clients", icon: Users, labelKey: "nav.clients" },
       { href: "/traffic", icon: Wallet, labelKey: "nav.traffic" },
+      { href: "/panels", icon: Server, labelKey: "nav.panels", roles: ["SUPER_ADMIN"] },
       { href: "/cleanup", icon: Trash2, labelKey: "nav.cleanup", roles: ["SUPER_ADMIN"] },
+      { href: "/migration", icon: Import, labelKey: "nav.migration", roles: ["SUPER_ADMIN"] },
+      { href: "/settings", icon: Settings, labelKey: "nav.settings", roles: ["SUPER_ADMIN"] },
+      { href: "/diagnostics", icon: Activity, labelKey: "nav.diagnostics", roles: ["SUPER_ADMIN"] },
     ],
-  },
-  {
-    id: "appearance",
-    labelKey: "nav.sectionAppearance",
-    items: [],
-  },
-  {
-    id: "administration",
-    labelKey: "nav.sectionAdministration",
-    items: [{ href: "/admins", icon: UserCog, labelKey: "nav.admins", roles: ["SUPER_ADMIN"] }],
-  },
-  {
-    id: "settings",
-    labelKey: "nav.sectionSettings",
-    items: [{ href: "/settings", icon: Settings, labelKey: "nav.settings", roles: ["SUPER_ADMIN"] }],
   },
 ];
 
@@ -111,15 +89,15 @@ export function filterCoreNavItems(
 }
 
 export const PREMIUM_NAV_ORDER = [
-  "external-panels",
-  "monitoring-pro",
-  "backup-center",
-  "client-templates",
   "store",
+  "external-panels",
+  "client-templates",
   "admin-recharge",
   "branding",
   "themes",
   "custom-domains",
+  "backup-center",
+  "monitoring-pro",
   "job-center",
 ] as const;
 
@@ -134,20 +112,32 @@ export const PREMIUM_MENU_ICONS: Record<string, NavIcon> = {
   "external-panels": Layers,
   "job-center": Activity,
   themes: Palette,
+  "premium-settings": Gem,
 };
 
-const PREMIUM_SECTION: Record<string, string> = {
-  "external-panels": "infrastructure",
-  "monitoring-pro": "infrastructure",
-  "backup-center": "infrastructure",
-  "client-templates": "users",
-  store: "users",
-  "admin-recharge": "users",
-  branding: "appearance",
-  themes: "appearance",
-  "custom-domains": "appearance",
-  "job-center": "settings",
-};
+const NAV_HREF_ORDER = [
+  "/dashboard",
+  "/admins",
+  "/clients",
+  "/traffic",
+  "/premium/store",
+  "/panels",
+  "/premium/external-panels",
+  "/premium/client-templates",
+  "/premium/admin-recharge",
+  "/premium/branding",
+  "/premium/themes",
+  "/premium/domains",
+  "/premium/custom-domains",
+  "/premium/backups",
+  "/premium/monitoring",
+  "/migration",
+  "/cleanup",
+  "/premium/jobs",
+  "/settings",
+  "/settings/premium",
+  "/diagnostics",
+];
 
 const HREF_TO_MODULE: Record<string, string> = {
   "/premium/external-panels": "external-panels",
@@ -176,36 +166,6 @@ export function premiumNavRank(moduleId?: string | null, href?: string): number 
   return idx === -1 ? 500 : idx;
 }
 
-const INFRA_ORDER = [
-  "/panels",
-  "/premium/external-panels",
-  "/premium/monitoring",
-  "/premium/backups",
-  "/migration",
-  "/diagnostics",
-];
-
-const USERS_ORDER_SUPER = [
-  "/clients",
-  "/traffic",
-  "/cleanup",
-  "/premium/client-templates",
-  "/premium/store",
-  "/premium/admin-recharge",
-];
-
-const USERS_ORDER_RESELLER = [
-  "/clients",
-  "/traffic",
-  "/premium/client-templates",
-  "/premium/store",
-  "/premium/admin-recharge",
-];
-
-const APPEARANCE_ORDER = ["/premium/branding", "/premium/themes", "/premium/domains", "/premium/custom-domains"];
-
-const SETTINGS_ORDER = ["/settings", "/settings/premium", "/premium/jobs"];
-
 function sortByHref(items: AppNavItem[], order: string[]): AppNavItem[] {
   return [...items].sort((a, b) => {
     const ai = order.indexOf(a.href);
@@ -228,17 +188,14 @@ export function buildAppNav(
     }),
   }));
 
-  const byId = new Map(sections.map((s) => [s.id, s]));
+  const main = sections[0];
+  if (!main) return [];
 
   for (const raw of premiumItems) {
     if (seen.has(raw.href)) continue;
     seen.add(raw.href);
     const moduleId = resolveModuleId(raw);
-    const sectionId =
-      raw.href === "/settings/premium" ? "settings" : PREMIUM_SECTION[moduleId] || "users";
-    const section = byId.get(sectionId);
-    if (!section) continue;
-    section.items.push({
+    main.items.push({
       href: raw.href,
       icon: raw.icon || PREMIUM_MENU_ICONS[moduleId] || Store,
       title: raw.title,
@@ -247,15 +204,6 @@ export function buildAppNav(
     });
   }
 
-  const usersOrder = role === "RESELLER" ? USERS_ORDER_RESELLER : USERS_ORDER_SUPER;
-  const infra = byId.get("infrastructure");
-  if (infra) infra.items = sortByHref(infra.items, INFRA_ORDER);
-  const users = byId.get("users");
-  if (users) users.items = sortByHref(users.items, usersOrder);
-  const appearance = byId.get("appearance");
-  if (appearance) appearance.items = sortByHref(appearance.items, APPEARANCE_ORDER);
-  const settings = byId.get("settings");
-  if (settings) settings.items = sortByHref(settings.items, SETTINGS_ORDER);
-
+  main.items = sortByHref(main.items, NAV_HREF_ORDER);
   return sections.filter((section) => section.items.length > 0);
 }
