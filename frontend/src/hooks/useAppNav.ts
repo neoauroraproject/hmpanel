@@ -93,7 +93,7 @@ export function useAppNav() {
         moduleId: m.id,
       });
     }
-    if (admin?.role === "SUPER_ADMIN") {
+    if (admin?.role === "SUPER_ADMIN" || admin?.role === "RESELLER") {
       items.push({
         title: t("nav.themes"),
         href: "/premium/themes",

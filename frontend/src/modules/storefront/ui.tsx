@@ -28,7 +28,13 @@ import {
   fadeUp,
   fadeUpTransition,
 } from "./design";
-import { resolveStorefrontSkin, skinChrome } from "./skins";
+import {
+  resolveStorefrontLayout,
+  resolveStorefrontSkin,
+  sanitizeThemeCss,
+  skinChrome,
+  type StorefrontLayoutId,
+} from "./skins";
 import type {
   CustomerNotification,
   CustomerOrder,
@@ -48,11 +54,19 @@ export function StoreShell({
   topBar?: React.ReactNode;
 }) {
   const brandingPrimary = store?.branding?.primaryColor || "";
-  const skin = resolveStorefrontSkin(store?.publishedTheme?.settings);
-  const chrome = skinChrome(skin);
+  const settings = store?.publishedTheme?.settings;
+  const skin = resolveStorefrontSkin(settings);
+  const layout = resolveStorefrontLayout(settings);
+  const chrome = skinChrome(skin, layout);
   const primaryColor =
     brandingPrimary ||
-    (skin === "atelier" ? "#0D9488" : skin === "noir" ? "#CA8A04" : "#3b82f6");
+    (skin === "atelier"
+      ? "#0D9488"
+      : skin === "noir"
+        ? "#CA8A04"
+        : skin === "harbor"
+          ? "#B45309"
+          : "#3b82f6");
 
   return (
     <StorefrontLocaleProvider store={store}>
@@ -88,11 +102,25 @@ function StoreShellInner({
   const logoLight = store?.logoUrl || store?.branding?.logo || null;
   const logoDark = store?.logoDarkUrl || store?.branding?.logoDark || null;
   const title = store?.branding?.name || store?.title || "Store";
+  const layout: StorefrontLayoutId = chrome.layout || "classic";
   const isNoir = chrome.rootClass.includes("store-skin-noir");
   const isAtelier = chrome.rootClass.includes("store-skin-atelier");
+  const isHarbor = chrome.rootClass.includes("store-skin-harbor");
+  const themed = isNoir || isAtelier || isHarbor;
+  const customCss = sanitizeThemeCss(
+    store?.publishedTheme?.settings && typeof store.publishedTheme.settings === "object"
+      ? (store.publishedTheme.settings as { customCss?: string }).customCss
+      : "",
+  );
 
   useEffect(() => {
-    const id = isNoir ? "store-font-noir" : isAtelier ? "store-font-atelier" : "";
+    const id = isNoir
+      ? "store-font-noir"
+      : isAtelier
+        ? "store-font-atelier"
+        : isHarbor
+          ? "store-font-harbor"
+          : "";
     if (!id || typeof document === "undefined") return;
     if (document.getElementById(id)) return;
     const link = document.createElement("link");
@@ -100,17 +128,40 @@ function StoreShellInner({
     link.rel = "stylesheet";
     link.href = isNoir
       ? "https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap"
-      : "https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap";
+      : isHarbor
+        ? "https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&family=Fraunces:opsz,wght@9..144,500;9..144,700&display=swap"
+        : "https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap";
     document.head.appendChild(link);
-  }, [isNoir, isAtelier]);
+  }, [isNoir, isAtelier, isHarbor]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const root = document.documentElement;
+    if (chrome.forceDark) root.classList.add("dark");
+    else root.classList.remove("dark");
+  }, [chrome.forceDark]);
+
+  const headerInner =
+    layout === "market"
+      ? "mx-auto flex max-w-6xl items-center gap-3 border-b border-[color:var(--store-panel-border)] bg-[color:var(--store-panel)] px-4 py-2.5"
+      : layout === "minimal"
+        ? "mx-auto flex max-w-3xl items-end justify-between gap-3 border-b border-[color:var(--store-panel-border)] px-1 py-4"
+        : `mx-auto flex max-w-5xl items-center gap-3 px-3 py-2.5 backdrop-blur-2xl lg:px-4 ${
+            isNoir
+              ? "rounded-[var(--store-radius)] border border-[color:var(--store-panel-border)] bg-[color:var(--store-panel)] shadow-[0_12px_40px_-20px_rgba(0,0,0,0.65)]"
+              : isAtelier
+                ? "rounded-[var(--store-radius)] border border-[color:var(--store-panel-border)] bg-[color:var(--store-panel)]/90 shadow-[0_10px_36px_-22px_rgba(15,23,42,0.35)]"
+                : "rounded-[1.5rem] border border-black/[0.05] bg-white/80 shadow-[0_8px_30px_-18px_rgba(15,23,42,0.35)] dark:border-white/[0.08] dark:bg-zinc-950/75"
+          }`;
 
   return (
     <div
       className={`${chrome.rootClass} min-h-[100dvh] ${
-        isNoir || isAtelier
+        themed
           ? "bg-[color:var(--store-bg)] text-[color:var(--store-fg)]"
           : "bg-[#F5F5F7] text-[#1D1D1F] dark:bg-[#0B0B0F] dark:text-zinc-50"
-      } ${isFa ? "font-[Vazirmatn,Tahoma,sans-serif]" : ""}`}
+      } ${isFa ? "font-[Vazirmatn,Tahoma,sans-serif]" : ""} ${chrome.forceDark ? "dark" : ""}`}
+      data-store-layout={layout}
       style={{
         ["--store-primary" as string]: primaryColor,
         ...chrome.style,
@@ -122,30 +173,27 @@ function StoreShellInner({
         paddingBottom: "max(0px, env(safe-area-inset-bottom, 0px), var(--tg-safe-bottom, 0px))",
       }}
     >
+      {customCss ? <style dangerouslySetInnerHTML={{ __html: customCss }} /> : null}
       <div
         aria-hidden
-        className={`pointer-events-none fixed inset-x-0 top-0 opacity-90 ${isNoir ? "h-[28rem]" : "h-72"}`}
+        className={`pointer-events-none fixed inset-x-0 top-0 opacity-90 ${
+          layout === "market" ? "h-[36rem]" : layout === "minimal" ? "h-40" : isNoir ? "h-[28rem]" : "h-72"
+        }`}
         style={{
           background: isNoir
             ? `radial-gradient(ellipse 80% 60% at 50% -10%, color-mix(in srgb, ${primaryColor} 40%, transparent), transparent 65%), radial-gradient(ellipse 50% 40% at 100% 0%, rgba(250,250,249,0.08), transparent 50%)`
-            : isAtelier
-              ? `radial-gradient(ellipse 90% 70% at 80% -30%, color-mix(in srgb, ${primaryColor} 22%, transparent), transparent 60%), radial-gradient(ellipse 60% 50% at 0% 0%, rgba(15,23,42,0.06), transparent 55%)`
-              : `radial-gradient(ellipse 90% 70% at 50% -20%, color-mix(in srgb, ${primaryColor} 28%, transparent), transparent 70%)`,
+            : isHarbor
+              ? `linear-gradient(180deg, color-mix(in srgb, ${primaryColor} 12%, transparent), transparent 70%)`
+              : isAtelier
+                ? `radial-gradient(ellipse 90% 70% at 80% -30%, color-mix(in srgb, ${primaryColor} 22%, transparent), transparent 60%), radial-gradient(ellipse 60% 50% at 0% 0%, rgba(15,23,42,0.06), transparent 55%)`
+                : `radial-gradient(ellipse 90% 70% at 50% -20%, color-mix(in srgb, ${primaryColor} 28%, transparent), transparent 70%)`,
         }}
       />
 
-      <header className="sticky top-0 z-40 px-3 pt-1 sm:px-4">
-        <div
-          className={`mx-auto flex max-w-5xl items-center gap-3 px-3 py-2.5 backdrop-blur-2xl lg:px-4 ${
-            isNoir
-              ? "rounded-[var(--store-radius)] border border-[color:var(--store-panel-border)] bg-[color:var(--store-panel)] shadow-[0_12px_40px_-20px_rgba(0,0,0,0.65)]"
-              : isAtelier
-                ? "rounded-[var(--store-radius)] border border-[color:var(--store-panel-border)] bg-[color:var(--store-panel)]/90 shadow-[0_10px_36px_-22px_rgba(15,23,42,0.35)]"
-                : "rounded-[1.5rem] border border-black/[0.05] bg-white/80 shadow-[0_8px_30px_-18px_rgba(15,23,42,0.35)] dark:border-white/[0.08] dark:bg-zinc-950/75"
-          }`}
-        >
+      <header className={layout === "market" ? "sticky top-0 z-40" : "sticky top-0 z-40 px-3 pt-1 sm:px-4"}>
+        <div className={headerInner}>
           <div className="flex min-w-0 flex-1 items-center gap-3">
-            {logoLight || logoDark ? (
+            {layout === "minimal" ? null : logoLight || logoDark ? (
               <span className="relative h-11 w-11 shrink-0">
                 {/* CSS-driven swap so logo follows `html.dark` instantly (no refresh) */}
                 {logoLight ? (
@@ -178,18 +226,32 @@ function StoreShellInner({
               </div>
             )}
             <div className="min-w-0">
-              <div className="truncate text-[16px] font-bold leading-tight tracking-tight">{title}</div>
-              {topBar ? <div className="mt-0.5 truncate text-[12px] text-zinc-500">{topBar}</div> : null}
+              <div
+                className={`truncate font-bold leading-tight tracking-tight ${
+                  layout === "minimal"
+                    ? "text-[1.65rem] [font-family:var(--store-display,inherit)]"
+                    : "text-[16px]"
+                }`}
+              >
+                {title}
+              </div>
+              {topBar && layout !== "minimal" ? (
+                <div className="mt-0.5 truncate text-[12px] text-zinc-500">{topBar}</div>
+              ) : null}
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
-            <StorefrontThemeToggle />
+            {chrome.forceDark ? null : <StorefrontThemeToggle />}
             <LanguageSwitcher className="!shadow-none !h-11 !rounded-2xl" />
           </div>
         </div>
       </header>
 
-      <main className="relative mx-auto w-full max-w-5xl px-4 pb-[calc(6.5rem+env(safe-area-inset-bottom))] pt-4 sm:px-6 lg:px-8 lg:pb-16 lg:pt-6">
+      <main
+        className={`relative mx-auto w-full px-4 pb-[calc(6.5rem+env(safe-area-inset-bottom))] pt-4 sm:px-6 lg:px-8 lg:pb-16 lg:pt-6 ${
+          layout === "market" ? "max-w-6xl" : layout === "minimal" ? "max-w-3xl" : "max-w-5xl"
+        }`}
+      >
         {children}
       </main>
     </div>
@@ -201,15 +263,88 @@ export function WelcomeHero({
   onBuy,
   onLogin,
   onTrack,
+  layout = "classic",
 }: {
   store?: StorefrontStore;
   onBuy: () => void;
   onLogin: () => void;
   onTrack?: () => void;
+  layout?: StorefrontLayoutId;
 }) {
   const { t, isFa } = useStorefrontLocale();
   const logoLight = store?.logoUrl || store?.branding?.logo || null;
   const logoDark = store?.logoDarkUrl || store?.branding?.logoDark || null;
+  const name = store?.branding?.name || store?.title || "VPN Store";
+  const blurb = store?.branding?.description || store?.description;
+
+  if (layout === "minimal") {
+    return (
+      <motion.section
+        {...fadeUp}
+        transition={fadeUpTransition}
+        className="border-b border-[color:var(--store-panel-border)] py-6"
+      >
+        {blurb ? (
+          <p className="max-w-xl whitespace-pre-line text-[15px] leading-relaxed text-[color:var(--store-muted)]">
+            {blurb}
+          </p>
+        ) : null}
+        <div className="mt-6 flex flex-wrap gap-3">
+          <PrimaryButton onClick={onBuy}>{t("سفارش جدید", "New Order")}</PrimaryButton>
+          <SecondaryButton onClick={onLogin}>{t("ورود", "Login")}</SecondaryButton>
+          {onTrack ? (
+            <button
+              type="button"
+              onClick={onTrack}
+              className="cursor-pointer text-[14px] font-semibold text-[color:var(--store-primary)]"
+            >
+              {isFa ? "پیگیری سفارش" : "Track an order"}
+            </button>
+          ) : null}
+        </div>
+        <div className="mt-6">
+          <SupportFooter supportLinks={store?.branding?.supportLinks} />
+        </div>
+      </motion.section>
+    );
+  }
+
+  if (layout === "market") {
+    return (
+      <motion.section
+        {...fadeUp}
+        transition={fadeUpTransition}
+        className="grid gap-6 border-b border-[color:var(--store-panel-border)] py-6 lg:grid-cols-[1.2fr_0.8fr] lg:items-end"
+      >
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[color:var(--store-muted)]">
+            {t("فروشگاه", "Store")}
+          </p>
+          <h1 className="mt-2 text-[1.85rem] font-black tracking-tight [font-family:var(--store-display,inherit)] sm:text-[2.35rem]">
+            {name}
+          </h1>
+          {blurb ? (
+            <p className="mt-3 max-w-lg whitespace-pre-line text-sm leading-relaxed text-[color:var(--store-muted)]">
+              {blurb}
+            </p>
+          ) : null}
+        </div>
+        <div className="flex flex-col gap-2">
+          <PrimaryButton onClick={onBuy}>{t("سفارش جدید", "New Order")}</PrimaryButton>
+          <SecondaryButton onClick={onLogin}>{t("ورود", "Login")}</SecondaryButton>
+          {onTrack ? (
+            <button
+              type="button"
+              onClick={onTrack}
+              className="cursor-pointer text-start text-[13px] font-semibold text-[color:var(--store-primary)]"
+            >
+              {isFa ? "پیگیری سفارش" : "Track an order"}
+            </button>
+          ) : null}
+        </div>
+      </motion.section>
+    );
+  }
 
   return (
     <motion.section
@@ -249,11 +384,11 @@ export function WelcomeHero({
         {t("فروشگاه", "Store")}
       </p>
       <h1 className="mt-2 text-[2rem] font-black tracking-tight text-[color:var(--store-fg,#18181b)] sm:text-[2.75rem] [font-family:var(--store-display,inherit)]">
-        {store?.branding?.name || store?.title || "VPN Store"}
+        {name}
       </h1>
-      {store?.branding?.description || store?.description ? (
+      {blurb ? (
         <p className="mt-3 max-w-md whitespace-pre-line text-[15px] leading-relaxed text-[color:var(--store-muted,#71717a)] sm:text-base">
-          {store?.branding?.description || store?.description}
+          {blurb}
         </p>
       ) : null}
       <div className="mt-8 grid w-full gap-3 sm:grid-cols-2">
@@ -384,15 +519,25 @@ export function CategoryGrid({
   productCounts,
   onSelect,
   lockedId,
+  layout = "classic",
 }: {
   categories: StorefrontCategory[];
   selectedId?: string | null;
   productCounts?: Record<string, number>;
   onSelect: (category: StorefrontCategory) => void;
   lockedId?: string | null;
+  layout?: StorefrontLayoutId;
 }) {
   return (
-    <div className="grid grid-cols-1 items-stretch gap-3 sm:grid-cols-2">
+    <div
+      className={
+        layout === "market"
+          ? "flex flex-col gap-2"
+          : layout === "minimal"
+            ? "flex gap-2 overflow-x-auto pb-1"
+            : "grid grid-cols-1 items-stretch gap-3 sm:grid-cols-2"
+      }
+    >
       {categories.map((category, index) => (
         <motion.div
           key={category.id}
@@ -418,23 +563,35 @@ export function ProductCard({
   onSelect,
   selected = false,
   currency,
+  layout = "classic",
 }: {
   product: StorefrontProduct;
   onSelect: () => void;
   selected?: boolean;
   currency?: string | null;
+  layout?: StorefrontLayoutId;
 }) {
   const { formatProductPrice, t } = useStorefrontLocale();
   const price = formatProductPrice(product, currency);
+
+  if (layout === "market") {
+    return (
+      <PlanPickRow product={product} selected={selected} onSelect={onSelect} currency={currency} />
+    );
+  }
 
   return (
     <motion.button
       type="button"
       onClick={onSelect}
-      whileHover={{ y: -2 }}
+      whileHover={{ y: layout === "minimal" ? 0 : -2 }}
       whileTap={{ scale: 0.985 }}
       transition={{ type: "spring", stiffness: 320, damping: 24 }}
-      className={`relative w-full cursor-pointer rounded-[1.75rem] border bg-white p-5 text-start shadow-[0_8px_30px_-18px_rgba(15,23,42,0.28)] transition dark:bg-zinc-900 sm:p-5 ${
+      className={`relative w-full cursor-pointer border bg-[color:var(--store-panel,#fff)] p-5 text-start transition sm:p-5 ${
+        layout === "minimal"
+          ? "rounded-none border-x-0 border-t-0 first:border-t"
+          : "rounded-[1.75rem] shadow-[0_8px_30px_-18px_rgba(15,23,42,0.28)]"
+      } ${
         selected
           ? "border-[color:var(--store-primary)] ring-2 ring-[color:var(--store-primary)]/25"
           : "border-black/[0.04] hover:border-black/[0.08] dark:border-white/[0.06]"

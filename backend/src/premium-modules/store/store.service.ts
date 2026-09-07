@@ -6,6 +6,7 @@ import {
   ForbiddenException,
   forwardRef,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ClientsService } from '../../clients/clients.service';
@@ -16,6 +17,7 @@ import { StoreCustomerNotificationsService } from './store-customer-notification
 import { StoreProvisioningService } from './store-provisioning.service';
 import { StoreRateLimitService } from './store-rate-limit.service';
 import { StoreTelegramService } from './store-telegram.service';
+import { ThemesService } from '../../themes/themes.service';
 import {
   CheckoutPayload,
   RenewCheckoutPayload,
@@ -43,6 +45,7 @@ export class StoreService {
     private clientsService: ClientsService,
     @Inject(forwardRef(() => StoreTelegramService))
     private telegram: StoreTelegramService,
+    @Optional() private themes?: ThemesService,
   ) {}
 
   private startOfDay(d = new Date()) {
@@ -385,6 +388,59 @@ export class StoreService {
       customers,
       renewals,
       storeSlug: store.slug,
+    };
+  }
+
+  async getRevenueByMonth(adminId: string, year: number) {
+    const store = await this.getOrCreateProfile(adminId);
+    const start = new Date(year, 0, 1);
+    const end = new Date(year + 1, 0, 1);
+    const orders = await this.prisma.storeOrder.findMany({
+      where: {
+        storeId: store.id,
+        createdAt: { gte: start, lt: end },
+        status: { in: ['ACTIVE', 'RENEWED'] },
+        OR: [{ payment: { is: null } }, { payment: { status: 'APPROVED' } }],
+      },
+      select: {
+        amount: true,
+        currency: true,
+        createdAt: true,
+        product: { select: { priceToman: true, priceUsd: true } },
+      },
+    });
+    const months = Array.from({ length: 12 }, (_, i) => ({
+      month: i + 1,
+      usd: 0,
+      toman: 0,
+      orders: 0,
+    }));
+    for (const o of orders) {
+      const m = o.createdAt.getMonth();
+      const cur = String(o.currency || '').toUpperCase();
+      const isToman = ['TOMAN', 'IRT', 'IRR', 'TMN'].includes(cur);
+      const productToman = Number(o.product?.priceToman || 0);
+      const productUsd = Number(o.product?.priceUsd || 0);
+      let n = Number(o.amount) || 0;
+      if (n === 0) {
+        if (isToman || productToman > 0) n = productToman || productUsd;
+        else n = productUsd || productToman;
+      }
+      if (isToman || (Number(o.amount || 0) === 0 && productToman > 0)) {
+        months[m].toman += n;
+      } else {
+        months[m].usd += n;
+      }
+      months[m].orders += 1;
+    }
+    const yearToman = months.reduce((s, x) => s + x.toman, 0);
+    const yearUsd = months.reduce((s, x) => s + x.usd, 0);
+    return {
+      year,
+      defaultCurrency: store.defaultCurrency || 'USD',
+      months,
+      yearToman,
+      yearUsd,
     };
   }
 
@@ -1408,6 +1464,7 @@ export class StoreService {
     ]);
 
     const paymentConfig = normalizePaymentConfig(store.paymentConfig, store);
+    const publishedTheme = (await this.themes?.resolvePublished(store.theme)) || null;
     const manualBankEnabled = paymentConfig.methods.manual_bank !== false;
     const cards = manualBankEnabled
       ? paymentConfig.cards.filter(
@@ -1433,6 +1490,8 @@ export class StoreService {
         bankIban: primary?.iban || store.bankIban,
         bankAccountInfo: store.bankAccountInfo,
         branding,
+        publishedTheme,
+        themeId: publishedTheme?.id || null,
         welcome: {
           headline: store.title,
           description: store.description,

@@ -24,6 +24,7 @@ import {
   WelcomeHero,
 } from "@/modules/storefront/ui";
 import { FieldBlock } from "@/modules/storefront/design";
+import { resolveStorefrontLayout } from "@/modules/storefront/skins";
 import { BankCardVisual, resolvePaymentCards } from "@/modules/storefront/BankCardVisual";
 import { rememberStoreSlug, portalPathForSlug } from "@/modules/storefront/store-slug";
 import { computeCheckoutPreview, type CouponPreview } from "@/modules/storefront/checkout-preview";
@@ -169,6 +170,22 @@ export default function ShopPage() {
       for (const [k, v] of Object.entries(cssVars as Record<string, unknown>)) {
         if (typeof v === "string") root.style.setProperty(k.startsWith("--") ? k : `--${k}`, v);
       }
+    }
+    let styleEl = document.getElementById("store-custom-css") as HTMLStyleElement | null;
+    const customCss = String(rec.customCss || "");
+    if (customCss.trim()) {
+      if (!styleEl) {
+        styleEl = document.createElement("style");
+        styleEl.id = "store-custom-css";
+        document.head.appendChild(styleEl);
+      }
+      styleEl.textContent = customCss
+        .replace(/@import[^;]+;?/gi, "")
+        .replace(/expression\s*\([^)]*\)/gi, "none")
+        .replace(/javascript\s*:/gi, "")
+        .replace(/<\/?script[^>]*>/gi, "");
+    } else if (styleEl) {
+      styleEl.remove();
     }
   }, [store?.publishedTheme]);
 
@@ -430,6 +447,7 @@ function ShopBody(props: {
     serviceName,
   } = props;
   const { t, formatToman } = useStorefrontLocale();
+  const layout = resolveStorefrontLayout(store.publishedTheme?.settings);
   const paymentCards = useMemo(
     () => resolvePaymentCards(store?.payment),
     [store?.payment],
@@ -607,6 +625,7 @@ function ShopBody(props: {
         >
           <WelcomeHero
             store={store}
+            layout={layout}
             onBuy={() => setStep(nextShopStep("welcome", stepCtx))}
             onLogin={() => router.push(portalPathForSlug(store.slug, "login"))}
             onTrack={() => setShowTrack(true)}
@@ -662,7 +681,15 @@ function ShopBody(props: {
           <div className="mt-4">
             <Stepper labels={checkoutLabels} activeIndex={activeCheckoutIndex} />
           </div>
-          <div className="rounded-[1.75rem] border border-zinc-200 bg-white/95 p-4 shadow-sm backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/95 sm:rounded-[2rem] sm:p-8">
+          <div
+            className={
+              layout === "market"
+                ? "rounded-none border border-[color:var(--store-panel-border)] bg-[color:var(--store-panel)]/95 p-4 sm:p-6"
+                : layout === "minimal"
+                  ? "border-y border-[color:var(--store-panel-border)] bg-transparent p-0 py-6"
+                  : "rounded-[1.75rem] border border-zinc-200 bg-white/95 p-4 shadow-sm backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/95 sm:rounded-[2rem] sm:p-8"
+            }
+          >
             {selectedProduct && step !== "product" && step !== "category" ? (
               <div className="mb-5 rounded-2xl bg-zinc-50 p-4 dark:bg-zinc-950">
                 <div className="font-bold">{selectedProduct.name}</div>
@@ -713,7 +740,11 @@ function ShopBody(props: {
                       : t("محصولی در این دسته موجود نیست.", "No products in this category.")}
                   </p>
                 ) : (
-                  <div className="grid gap-3">
+                  <div
+                    className={
+                      layout === "classic" ? "grid gap-3 sm:grid-cols-2" : "grid gap-2"
+                    }
+                  >
                     {catalog.map((product, index) => (
                       <motion.div
                         key={product.id}
@@ -722,6 +753,7 @@ function ShopBody(props: {
                         transition={{ delay: index * 0.03, duration: 0.25 }}
                       >
                         <ProductCard
+                          layout={layout}
                           product={product}
                           selected={selectedProduct?.id === product.id}
                           onSelect={() => {

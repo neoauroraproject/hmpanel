@@ -18,7 +18,7 @@ import { ThemesService } from './themes.service';
 @ApiTags('Themes')
 @ApiBearerAuth()
 @UseGuards(AuthGuard('jwt'), RolesGuard)
-@Roles('SUPER_ADMIN')
+@Roles('SUPER_ADMIN', 'RESELLER')
 @Controller('themes')
 export class ThemesController {
   constructor(private themes: ThemesService) {}
@@ -54,6 +54,14 @@ export class ThemesController {
     @Body() body: { themeId?: string | null },
   ) {
     return this.themes.assignStorefront(req.user.id, body.themeId || null);
+  }
+
+  @Post('custom')
+  upsertCustom(
+    @Req() req: AuthRequest,
+    @Body() body: { customCss?: string; settings?: Record<string, unknown> },
+  ) {
+    return this.themes.upsertCustom(req.user.id, body || {});
   }
 
   @Get(':id')

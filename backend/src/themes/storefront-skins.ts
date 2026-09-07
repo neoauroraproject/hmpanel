@@ -1,12 +1,16 @@
 /**
- * Built-in storefront skins. Branding (logo, name, colors, support links)
- * always comes from the Branding / store profile — skins only change layout chrome.
+ * Built-in storefront packs. Branding (logo, name, colors, support links)
+ * always comes from Branding / store profile — packs change structure + chrome.
  */
-export type StorefrontSkinId = 'default' | 'atelier' | 'noir';
+export type StorefrontSkinId = 'default' | 'atelier' | 'noir' | 'harbor';
+export type StorefrontLayoutId = 'classic' | 'market' | 'minimal';
 
 export type StorefrontSkinSettings = {
   skin?: StorefrontSkinId | string;
+  layout?: StorefrontLayoutId | string;
   version?: number;
+  customCss?: string;
+  cssVars?: Record<string, string>;
   preview?: { accent?: string; bg?: string; label?: string };
 };
 
@@ -22,11 +26,12 @@ export const STOREFRONT_STARTERS: Array<{
     slug: 'starter-atelier',
     name: 'Atelier',
     description:
-      'Clean slate catalog with teal accents — Plus Jakarta feel, quiet surfaces, branding-led hero.',
+      'Classic catalog: centered hero, category tiles, then stacked plan cards. Light slate chrome.',
     settings: {
       skin: 'atelier',
-      version: 1,
-      preview: { accent: '#0D9488', bg: '#F1F5F9', label: 'Atelier' },
+      layout: 'classic',
+      version: 2,
+      preview: { accent: '#0D9488', bg: '#F1F5F9', label: 'Classic' },
     },
   },
   {
@@ -34,22 +39,63 @@ export const STOREFRONT_STARTERS: Array<{
     slug: 'starter-noir',
     name: 'Noir Ledger',
     description:
-      'Dark cinema storefront with gold CTA — sharp type, glass panels, branding as the only color wash.',
+      'Market layout: slim header, category rail on the side, compact plan rows. Dark cinema chrome.',
     settings: {
       skin: 'noir',
-      version: 1,
-      preview: { accent: '#CA8A04', bg: '#0C0A09', label: 'Noir' },
+      layout: 'market',
+      version: 2,
+      preview: { accent: '#CA8A04', bg: '#0C0A09', label: 'Market' },
+    },
+  },
+  {
+    key: 'harbor',
+    slug: 'starter-harbor',
+    name: 'Harbor',
+    description:
+      'Minimal layout: no oversized hero, full-width mobile plans, sticky bottom actions. Warm paper chrome.',
+    settings: {
+      skin: 'harbor',
+      layout: 'minimal',
+      version: 2,
+      preview: { accent: '#B45309', bg: '#EDE6D9', label: 'Minimal' },
     },
   },
 ];
 
-export function resolveStorefrontSkin(
-  settings: unknown,
-): StorefrontSkinId {
+export function resolveStorefrontSkin(settings: unknown): StorefrontSkinId {
   if (!settings || typeof settings !== 'object') return 'default';
   const skin = String((settings as StorefrontSkinSettings).skin || '')
     .trim()
     .toLowerCase();
-  if (skin === 'atelier' || skin === 'noir') return skin;
+  if (skin === 'atelier' || skin === 'noir' || skin === 'harbor') return skin;
   return 'default';
+}
+
+export function resolveStorefrontLayout(settings: unknown): StorefrontLayoutId {
+  if (settings && typeof settings === 'object') {
+    const layout = String((settings as StorefrontSkinSettings).layout || '')
+      .trim()
+      .toLowerCase();
+    if (layout === 'classic' || layout === 'market' || layout === 'minimal') return layout;
+  }
+  const skin = resolveStorefrontSkin(settings);
+  if (skin === 'noir') return 'market';
+  if (skin === 'harbor') return 'minimal';
+  return 'classic';
+}
+
+export function sanitizeThemeCss(raw: unknown): string {
+  const css = String(raw || '').slice(0, 24_000);
+  if (!css.trim()) return '';
+  const blocked = /@import|expression\s*\(|javascript\s*:|behavior\s*:|<script|<\/style|url\s*\(\s*['"]?\s*data:/i;
+  if (blocked.test(css)) {
+    return css
+      .replace(/@import[^;]+;?/gi, '')
+      .replace(/expression\s*\([^)]*\)/gi, 'none')
+      .replace(/javascript\s*:/gi, '')
+      .replace(/behavior\s*:[^;]+;?/gi, '')
+      .replace(/<\/?script[^>]*>/gi, '')
+      .replace(/url\s*\(\s*['"]?\s*data:[^)]*\)/gi, 'none');
+  }
+  return css;
 }

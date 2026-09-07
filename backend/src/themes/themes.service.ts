@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { parseThemeImport, toThemeExport } from './theme-export';
-import { STOREFRONT_STARTERS } from './storefront-skins';
+import { STOREFRONT_STARTERS, sanitizeThemeCss } from './storefront-skins';
 
 @Injectable()
 export class ThemesService {
@@ -132,10 +132,72 @@ export class ThemesService {
         where: { id: themeId, status: 'published' },
         select: { id: true, slug: true, name: true, settings: true },
       });
-      return row;
+      if (!row) return null;
+      return { ...row, settings: this.sanitizeSettings(row.settings) };
     } catch {
       return null;
     }
+  }
+
+  async upsertCustom(
+    adminId: string,
+    body: { customCss?: string; settings?: Record<string, unknown> },
+  ) {
+    const slug = `custom-${adminId}`.slice(0, 64);
+    const incoming =
+      body.settings && typeof body.settings === 'object' ? { ...body.settings } : {};
+    if (body.customCss != null) incoming.customCss = String(body.customCss);
+    const settings = this.sanitizeSettings(incoming);
+    const existing = await this.theme().findUnique({ where: { slug } });
+    if (existing) {
+      return this.theme().update({
+        where: { id: existing.id },
+        data: {
+          name: String(incoming.name || existing.name || 'Custom pack'),
+          description: String(incoming.description || existing.description || 'Admin custom CSS / JSON'),
+          settings: settings as object,
+          status: 'published',
+        },
+      });
+    }
+    return this.theme().create({
+      data: {
+        slug,
+        name: String(incoming.name || 'Custom pack'),
+        authorName: adminId.slice(0, 8),
+        description: 'Admin custom CSS / JSON',
+        status: 'published',
+        settings: settings as object,
+        versions: {
+          create: {
+            version: '1.0.0',
+            payload: settings as object,
+            changelog: 'Custom pack',
+          },
+        },
+      },
+    });
+  }
+
+  private sanitizeSettings(raw: unknown): Record<string, unknown> {
+    const settings =
+      raw && typeof raw === 'object' && !Array.isArray(raw)
+        ? { ...(raw as Record<string, unknown>) }
+        : {};
+    if (settings.customCss != null) {
+      settings.customCss = sanitizeThemeCss(settings.customCss);
+    }
+    if (settings.cssVars && typeof settings.cssVars === 'object') {
+      const next: Record<string, string> = {};
+      for (const [k, v] of Object.entries(settings.cssVars as Record<string, unknown>)) {
+        if (typeof v !== 'string') continue;
+        const key = k.startsWith('--') ? k : `--${k}`;
+        if (!/^--[a-zA-Z0-9_-]+$/.test(key)) continue;
+        next[key] = v.slice(0, 200);
+      }
+      settings.cssVars = next;
+    }
+    return settings;
   }
 
   private isThemeId(value: string | null | undefined): value is string {
