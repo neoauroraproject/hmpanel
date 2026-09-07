@@ -12,6 +12,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { MOTION_CONFIG } from "@/lib/motion";
 import { NodeInboundBadge } from "@/components/NodeInboundBadge";
 import { PluginSlot } from "@/components/PluginSlot";
+import { usePluginRegistry } from "@/store/pluginRegistry";
 import { useAuth } from "@/store/auth";
 import { useLicenseActivation } from "@/hooks/useLicenseActivation";
 import { PremiumGem } from "@/components/PremiumGem";
@@ -199,8 +200,6 @@ export default function AdminsPage() {
     quickAction.mutate({ id: admin.id, payload });
   };
 
-  const [expandedAdminId, setExpandedAdminId] = useState<string | null>(null);
-
   useEffect(() => {
     if (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("add") === "1") {
       setAddOpen(true);
@@ -283,23 +282,31 @@ export default function AdminsPage() {
           </thead>
           <tbody className="block md:table-row-group space-y-3 md:space-y-0 md:divide-y md:divide-zinc-800/50">
             {admins.map((a, i) => {
-              const isExpanded = expandedAdminId === a.id;
+              const canEdit = a.isOwner ? isOwner : a.role !== "SUPER_ADMIN" || isOwner || sessionAdmin?.id === a.id;
               return (
               <React.Fragment key={a.id}>
               <motion.tr 
                 initial={{ opacity: 0, y: 5 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.2, delay: i * 0.03 }}
-                className={`block md:table-row group border border-zinc-200 dark:border-zinc-800 md:border-none rounded-xl md:rounded-none bg-zinc-50 dark:bg-zinc-950 md:bg-transparent last:border-0 hover:bg-zinc-50 dark:hover:bg-zinc-900/30 transition-colors cursor-pointer ${
-                  isExpanded ? "bg-white dark:bg-zinc-900/20" : ""
-                }`}
-                onClick={() => setExpandedAdminId(isExpanded ? null : a.id)}
+                className="block md:table-row group border border-zinc-200 dark:border-zinc-800 md:border-none rounded-xl md:rounded-none bg-zinc-50 dark:bg-zinc-950 md:bg-transparent last:border-0 hover:bg-zinc-50 dark:hover:bg-zinc-900/60 transition-colors"
               >
                 <td className="block md:table-cell px-4 py-3">
                   <div className="flex justify-between items-center md:block">
                     <div>
                       <div className="font-semibold text-zinc-800 dark:text-zinc-100 flex items-center gap-2">
-                        {a.username}
+                        {canEdit ? (
+                          <button
+                            type="button"
+                            onClick={() => setEditAdmin(a)}
+                            title={t("admins.editAdminTitle")}
+                            className="text-start text-blue-600 dark:text-blue-400 hover:underline focus:outline-none focus-visible:underline"
+                          >
+                            {a.username}
+                          </button>
+                        ) : (
+                          a.username
+                        )}
                       </div>
                       <div className="text-xs text-zinc-500">{adminRoleLabel(a, t)}</div>
                     </div>
@@ -354,7 +361,12 @@ export default function AdminsPage() {
                 </td>
                 <td className="block md:table-cell px-4 py-2 md:py-3 text-zinc-600 dark:text-zinc-300">
                   <div className="md:hidden text-[10px] uppercase text-zinc-500 font-semibold mb-1 tracking-wider">{t("admins.clientsLimit")}</div>
-                  {a.role === "SUPER_ADMIN" ? <span className="text-zinc-600">—</span> : (
+                  {a.role === "SUPER_ADMIN" ? <span className="text-zinc-600">—</span> : a.quotaMode === "PER_PANEL" && a.maxClients === 0 ? (
+                    <div className="text-xs">
+                      <div className="font-medium text-purple-400">{a._count?.clients ?? 0}</div>
+                      <div className="text-zinc-500">{t("admins.quotaModePerPanel")}</div>
+                    </div>
+                  ) : (
                     <div className="text-xs">
                       <div className="font-medium text-purple-400">
                         {a.maxClients === 0 ? t("common.unlimited") : t("admins.leftCount", { count: Math.max(0, a.maxClients - (a._count?.clients ?? 0)) })}
@@ -379,7 +391,7 @@ export default function AdminsPage() {
                   )}
                 </td>
 
-                <td className="block md:table-cell px-4 py-3 border-t border-zinc-200 dark:border-zinc-800/50 md:border-0 mt-2 md:mt-0 transition-all duration-300 text-end" onClick={(e) => e.stopPropagation()}>
+                <td className="block md:table-cell px-4 py-3 border-t border-zinc-200 dark:border-zinc-800/50 md:border-0 mt-2 md:mt-0 transition-all duration-300 text-end">
                   <div className="flex items-center justify-start md:justify-end gap-1.5 md:opacity-0 md:group-hover:opacity-100 transition-opacity flex-wrap w-full">
                     {a.role !== "SUPER_ADMIN" && (
                       <motion.button 
@@ -404,7 +416,7 @@ export default function AdminsPage() {
                       </motion.button>
                     )}
                     
-                    {(a.isOwner ? isOwner : a.role !== "SUPER_ADMIN" || isOwner || sessionAdmin?.id === a.id) && (
+                    {canEdit && (
                     <motion.button
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
@@ -483,10 +495,91 @@ export default function AdminsPage() {
   );
 }
 
+/** Traffic and client caps a reseller gets on one specific panel. */
+function PanelLimitFields({
+  panelType,
+  value,
+  onChange,
+  disabled,
+}: {
+  panelType?: string | null;
+  value: PanelQuotaForm;
+  onChange: (patch: Partial<PanelQuotaForm>) => void;
+  disabled?: boolean;
+}) {
+  const t = useT();
+  const fieldClass =
+    "w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-2.5 py-1.5 text-xs text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500";
+  const labelClass = "mb-1 block text-xs text-zinc-500 dark:text-zinc-400";
+  return (
+    <div
+      className={`space-y-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-950/40 p-3 ${
+        disabled ? "opacity-50 pointer-events-none" : ""
+      }`}
+    >
+      <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+        <Database size={12} className="text-emerald-500" /> {t("admins.panelLimitsTitle")}
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className={labelClass}>{t("admins.panelTrafficLimitGb")}</label>
+          <input
+            type="number"
+            min={0}
+            placeholder="0"
+            disabled={disabled}
+            value={value.gb}
+            onChange={(e) => onChange({ gb: e.target.value })}
+            className={fieldClass}
+          />
+        </div>
+        <div>
+          <label className={labelClass}>{t("admins.panelMaxClients")}</label>
+          <input
+            type="number"
+            min={0}
+            placeholder="0"
+            disabled={disabled}
+            value={value.maxClients}
+            onChange={(e) => onChange({ maxClients: e.target.value })}
+            className={fieldClass}
+          />
+        </div>
+        <div>
+          <label className={labelClass}>{t(panelDeviceLimitI18nKey(panelType))}</label>
+          <input
+            type="number"
+            min={0}
+            placeholder="0"
+            disabled={disabled}
+            value={value.maxDeviceLimit}
+            onChange={(e) => onChange({ maxDeviceLimit: e.target.value })}
+            className={fieldClass}
+          />
+        </div>
+        <div>
+          <label className={labelClass}>{t("admins.panelMaxExpireDays")}</label>
+          <input
+            type="number"
+            min={0}
+            placeholder="0"
+            disabled={disabled}
+            value={value.maxExpireDays}
+            onChange={(e) => onChange({ maxExpireDays: e.target.value })}
+            className={fieldClass}
+          />
+        </div>
+      </div>
+      <p className="text-[10px] leading-relaxed text-zinc-500">{t("admins.panelLimitsHint")}</p>
+    </div>
+  );
+}
+
 /**
  * Multi-panel inbound assignment. A reseller may be granted inbounds on several
  * panels at once; every checked inbound is saved through the flat `inboundIds`
- * list (AdminInbound already bridges admin ↔ inbound across panels).
+ * list (AdminInbound already bridges admin ↔ inbound across panels). Each enabled
+ * panel also carries its own traffic and client caps in the same card.
  */
 function PanelInboundPicker({
   panels,
@@ -500,6 +593,9 @@ function PanelInboundPicker({
   collectOnly,
   adminId,
   onProviderDraft,
+  panelQuotas,
+  onQuotaChange,
+  showQuotaFields,
 }: {
   panels: PanelRow[];
   inbounds: InboundRow[];
@@ -512,10 +608,16 @@ function PanelInboundPicker({
   collectOnly?: boolean;
   adminId?: string;
   onProviderDraft?: (items: unknown[]) => void;
+  panelQuotas: Record<string, PanelQuotaForm>;
+  onQuotaChange: (panelId: string, patch: Partial<PanelQuotaForm>) => void;
+  showQuotaFields?: boolean;
 }) {
   const t = useT();
   const [expanded, setExpanded] = useState<string[]>([]);
   const [inboundQueryByPanel, setInboundQueryByPanel] = useState<Record<string, string>>({});
+  const hasNativeAccessSlot = usePluginRegistry(
+    (state) => (state.slots["admins.panel.access"]?.length ?? 0) > 0,
+  );
 
   React.useEffect(() => {
     setExpanded((prev) => {
@@ -765,8 +867,13 @@ function PanelInboundPicker({
                       }}
                     />
                     {panelInbounds.length === 0 ? (
-                      <div className="rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 p-3 text-center text-xs text-zinc-500">
-                        {t("admins.nativeResourcesViaPanelPlus")}
+                      <div className="rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 p-3 text-xs text-zinc-500 space-y-1">
+                        <div className="font-medium text-zinc-600 dark:text-zinc-300">
+                          {hasNativeAccessSlot
+                            ? t("admins.nativeResourcesViaPanelPlus")
+                            : t("admins.nativeResourcePickerMissing")}
+                        </div>
+                        <p className="leading-relaxed">{t("admins.nativePanelLimitsStillApply")}</p>
                       </div>
                     ) : (
                       <div className="space-y-2 rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 p-2.5">
@@ -784,6 +891,17 @@ function PanelInboundPicker({
                   </div>
                 ) : (
                   inboundChecklist
+                )}
+                {showQuotaFields ? (
+                  <PanelLimitFields
+                    panelType={p.panelType}
+                    value={panelQuotas[p.id] ?? EMPTY_PANEL_QUOTA}
+                    onChange={(patch) => onQuotaChange(p.id, patch)}
+                  />
+                ) : (
+                  <div className="rounded-xl border border-dashed border-emerald-500/30 bg-emerald-500/5 p-3 text-[11px] leading-relaxed text-emerald-600 dark:text-emerald-400">
+                    {t("admins.panelLimitsUnlimited")}
+                  </div>
                 )}
               </div>
             )}
@@ -833,6 +951,11 @@ function gbToBytes(value: string) {
   return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed * 1024 ** 3) : 0;
 }
 
+function bytesToGbInput(bytes?: number) {
+  if (!bytes || bytes <= 0) return "";
+  return String(Math.round((bytes / 1024 ** 3) * 100) / 100);
+}
+
 function buildPanelQuotasPayload(
   enabledPanels: string[],
   panelQuotas: Record<string, PanelQuotaForm>,
@@ -849,37 +972,47 @@ function buildPanelQuotasPayload(
   });
 }
 
-function QuotaModeToggle({
-  value,
-  onChange,
-  disabled,
-}: {
-  value: QuotaMode;
-  onChange: (mode: QuotaMode) => void;
-  disabled?: boolean;
-}) {
-  const t = useT();
-  return (
-    <div className="col-span-2 space-y-2">
-      <label className="block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.quotaMode")}</label>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${value === "GLOBAL" ? "border-blue-500/50 bg-blue-500/5" : "border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50"} ${disabled ? "opacity-50 pointer-events-none" : ""}`}>
-          <input type="radio" name="quotaMode" checked={value === "GLOBAL"} onChange={() => onChange("GLOBAL")} className="mt-1" disabled={disabled} />
-          <div>
-            <div className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{t("admins.quotaModeGlobal")}</div>
-            <div className="text-xs text-zinc-500">{t("admins.quotaModeGlobalHint")}</div>
-          </div>
-        </label>
-        <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${value === "PER_PANEL" ? "border-violet-500/50 bg-violet-500/5" : "border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50"} ${disabled ? "opacity-50 pointer-events-none" : ""}`}>
-          <input type="radio" name="quotaMode" checked={value === "PER_PANEL"} onChange={() => onChange("PER_PANEL")} className="mt-1" disabled={disabled} />
-          <div>
-            <div className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{t("admins.quotaModePerPanel")}</div>
-            <div className="text-xs text-zinc-500">{t("admins.quotaModePerPanelHint")}</div>
-          </div>
-        </label>
-      </div>
-    </div>
-  );
+type PanelQuotaFormState = {
+  superAdmin: boolean;
+  unlimitedTraffic: boolean;
+  enabledPanels: string[];
+  panelQuotas: Record<string, PanelQuotaForm>;
+};
+
+/**
+ * Every cap now lives on a panel card, so a reseller holding panel access is
+ * always per-panel. Unlimited traffic keeps the account on a single global row
+ * because the backend drops panel quotas for unlimited admins.
+ */
+function resolveQuotaMode(form: Pick<PanelQuotaFormState, "superAdmin" | "unlimitedTraffic" | "enabledPanels">): QuotaMode {
+  if (form.superAdmin || form.unlimitedTraffic) return "GLOBAL";
+  return form.enabledPanels.length > 0 ? "PER_PANEL" : "GLOBAL";
+}
+
+/** Enabling a panel must give its caps card a row to bind to. */
+function applyPanelSelection<T extends PanelQuotaFormState>(
+  form: T,
+  next: { enabledPanels: string[]; selectedInbounds: string[] },
+): T {
+  const panelQuotas = { ...form.panelQuotas };
+  for (const panelId of next.enabledPanels) {
+    if (!panelQuotas[panelId]) panelQuotas[panelId] = { ...EMPTY_PANEL_QUOTA };
+  }
+  return { ...form, ...next, panelQuotas };
+}
+
+function patchPanelQuota<T extends PanelQuotaFormState>(
+  form: T,
+  panelId: string,
+  patch: Partial<PanelQuotaForm>,
+): T {
+  return {
+    ...form,
+    panelQuotas: {
+      ...form.panelQuotas,
+      [panelId]: { ...(form.panelQuotas[panelId] ?? EMPTY_PANEL_QUOTA), ...patch },
+    },
+  };
 }
 
 /** 3x-ui caps concurrent IPs, pasarguard caps registered HWIDs. */
@@ -887,112 +1020,6 @@ function panelDeviceLimitI18nKey(type?: string | null) {
   if (type === "pasarguard") return "admins.panelMaxDeviceLimitHwid";
   if (type === "eylan") return "admins.panelMaxDeviceLimit";
   return "admins.panelMaxDeviceLimitIp";
-}
-
-function PerPanelQuotaFields({
-  panels,
-  enabledPanels,
-  values,
-  onChange,
-  disabled,
-}: {
-  panels: PanelRow[];
-  enabledPanels: string[];
-  values: Record<string, PanelQuotaForm>;
-  onChange: (panelId: string, patch: Partial<PanelQuotaForm>) => void;
-  disabled?: boolean;
-}) {
-  const t = useT();
-  if (enabledPanels.length === 0) return null;
-  const fieldClass =
-    "w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-2.5 py-1.5 text-xs text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500";
-  const labelClass = "mb-1 block text-xs text-zinc-500 dark:text-zinc-400";
-  return (
-    <div className={`col-span-2 space-y-2 ${disabled ? "opacity-50 pointer-events-none" : ""}`}>
-      <label className="block text-sm font-medium text-zinc-500 dark:text-zinc-400">
-        {t("admins.currentPanelQuotas")}
-        <span className="block text-xs font-normal text-zinc-500 mt-0.5">{t("admins.panelQuotaFieldsHint")}</span>
-      </label>
-      <div className="grid gap-2 sm:grid-cols-2">
-        {enabledPanels.map((panelId) => {
-          const panel = panels.find((p) => p.id === panelId);
-          const type = panel?.panelType;
-          const quota = values[panelId] ?? EMPTY_PANEL_QUOTA;
-          const typeChip =
-            type === "eylan"
-              ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-              : type === "pasarguard"
-                ? "bg-violet-500/10 text-violet-600 dark:text-violet-400"
-                : "bg-blue-500/10 text-blue-600 dark:text-blue-400";
-          return (
-            <div
-              key={panelId}
-              className="space-y-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 p-3"
-            >
-              <div className="flex min-w-0 items-center gap-2">
-                <Server size={13} className="shrink-0 text-blue-400" />
-                <span className="min-w-0 truncate text-sm font-medium text-zinc-800 dark:text-zinc-100">{panel?.name || panelId}</span>
-                <span className={`ms-auto shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${typeChip}`}>
-                  {t(panelTypeI18nKey(type))}
-                </span>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className={labelClass}>{t("admins.panelTrafficLimitGb")}</label>
-                  <input
-                    type="number"
-                    min={0}
-                    placeholder="0"
-                    disabled={disabled}
-                    value={quota.gb}
-                    onChange={(e) => onChange(panelId, { gb: e.target.value })}
-                    className={fieldClass}
-                  />
-                </div>
-                <div>
-                  <label className={labelClass}>{t("admins.panelMaxClients")}</label>
-                  <input
-                    type="number"
-                    min={0}
-                    placeholder="0"
-                    disabled={disabled}
-                    value={quota.maxClients}
-                    onChange={(e) => onChange(panelId, { maxClients: e.target.value })}
-                    className={fieldClass}
-                  />
-                </div>
-                <div>
-                  <label className={labelClass}>{t(panelDeviceLimitI18nKey(type))}</label>
-                  <input
-                    type="number"
-                    min={0}
-                    placeholder="0"
-                    disabled={disabled}
-                    value={quota.maxDeviceLimit}
-                    onChange={(e) => onChange(panelId, { maxDeviceLimit: e.target.value })}
-                    className={fieldClass}
-                  />
-                </div>
-                <div>
-                  <label className={labelClass}>{t("admins.panelMaxExpireDays")}</label>
-                  <input
-                    type="number"
-                    min={0}
-                    placeholder="0"
-                    disabled={disabled}
-                    value={quota.maxExpireDays}
-                    onChange={(e) => onChange(panelId, { maxExpireDays: e.target.value })}
-                    className={fieldClass}
-                  />
-                </div>
-              </div>
-              <p className="text-[10px] leading-relaxed text-zinc-500">{t("admins.panelQuotaClientsHint")}</p>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
 }
 
 function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boolean; onClose: () => void; onSaved: () => void }) {
@@ -1011,7 +1038,6 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
     password: "",
     status: "active",
     trafficMode: "ALLOCATION",
-    balanceGb: "",
     expiryDays: "",
     maxClients: "",
     maxDeviceLimit: "",
@@ -1025,10 +1051,11 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
     refundOnEdit: true,
     unlimitedTraffic: false,
     superAdmin: false,
-    quotaMode: "GLOBAL" as QuotaMode,
     panelQuotas: {} as Record<string, PanelQuotaForm>,
   });
   const limitsLocked = form.superAdmin;
+  const quotaMode = resolveQuotaMode(form);
+  const perPanelQuotas = quotaMode === "PER_PANEL";
 
   const { data: inbounds, isLoading: inboundsLoading } = useQuery<InboundRow[]>({
     queryKey: ["inbounds-all"],
@@ -1049,17 +1076,16 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
         role: form.superAdmin ? "SUPER_ADMIN" : "RESELLER",
         status: form.status,
         trafficMode: form.superAdmin ? "ALLOCATION" : form.trafficMode,
-        quotaMode: form.superAdmin || form.unlimitedTraffic ? "GLOBAL" : form.quotaMode,
-        balance: form.superAdmin || form.unlimitedTraffic || form.quotaMode === "PER_PANEL"
-          ? 0
-          : (form.balanceGb ? Math.round(Number(form.balanceGb) * 1024 * 1024 * 1024) : 0),
-        panelQuotas: !form.superAdmin && !form.unlimitedTraffic && form.quotaMode === "PER_PANEL"
+        quotaMode,
+        // Per-panel rows hold the traffic; the account pool stays at zero.
+        balance: 0,
+        panelQuotas: perPanelQuotas
           ? buildPanelQuotasPayload(form.enabledPanels, form.panelQuotas)
           : undefined,
         expiryTime: form.superAdmin ? 0 : (form.expiryDays ? Date.now() + Number(form.expiryDays) * 24 * 60 * 60 * 1000 : 0),
-        maxClients: form.superAdmin ? 0 : (form.maxClients ? Number(form.maxClients) : 0),
-        maxDeviceLimit: form.superAdmin ? 0 : limitNumber(form.maxDeviceLimit),
-        maxExpireDays: form.superAdmin ? 0 : limitNumber(form.maxExpireDays),
+        maxClients: form.superAdmin || perPanelQuotas ? 0 : limitNumber(form.maxClients),
+        maxDeviceLimit: form.superAdmin || perPanelQuotas ? 0 : limitNumber(form.maxDeviceLimit),
+        maxExpireDays: form.superAdmin || perPanelQuotas ? 0 : limitNumber(form.maxExpireDays),
         inboundIds: form.superAdmin ? [] : form.selectedInbounds,
         permissions: [],
         storeEnabled: form.superAdmin ? false : form.storeEnabled,
@@ -1181,13 +1207,9 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
                         <p className="text-xs text-zinc-500">{t("admins.superAdminLimitsDisabled")}</p>
                       )}
                       <div>
-                        <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.maxClients")} <span className="text-zinc-500 text-xs">{t("admins.maxClientsHint")}</span></label>
-                        <input type="number" min={0} placeholder="0" value={form.maxClients} onChange={(e) => setForm({ ...form, maxClients: e.target.value })} disabled={limitsLocked} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
-                      </div>
-                      <div className="mt-4">
                         <label className="mb-2 block text-sm font-medium text-zinc-800 dark:text-zinc-100">
                           {t("admins.allowedPanelsInbounds")}
-                          <span className="block text-xs font-normal text-zinc-500 mt-0.5">{t("admins.allowedPanelsInboundsHint")}</span>
+                          <span className="block text-xs font-normal text-zinc-500 mt-0.5">{t("admins.allowedPanelsAndLimitsHint")}</span>
                         </label>
                         <PanelInboundPicker
                           panels={panels ?? []}
@@ -1195,11 +1217,14 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
                           isLoading={inboundsLoading}
                           enabledPanels={form.enabledPanels}
                           selectedInbounds={form.selectedInbounds}
-                          onChange={(next) => setForm(f => ({ ...f, ...next }))}
+                          onChange={(next) => setForm((f) => applyPanelSelection(f, next))}
                           disabled={limitsLocked}
                           allowPremiumPanels={isPremium}
                           collectOnly
                           onProviderDraft={(items) => mergeProviderDraft(providerDrafts, items)}
+                          panelQuotas={form.panelQuotas}
+                          onQuotaChange={(panelId, patch) => setForm((f) => patchPanelQuota(f, panelId, patch))}
+                          showQuotaFields={perPanelQuotas}
                         />
                         {!limitsLocked && !hasResellerPanelAccess(form, panels) && (
                           <div className="mt-3 p-3 rounded-lg border border-amber-500/20 bg-amber-500/10 text-sm text-amber-600 dark:text-amber-400 flex items-start gap-2">
@@ -1257,7 +1282,6 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
                             onChange={(e) => setForm({
                               ...form,
                               unlimitedTraffic: e.target.checked,
-                              balanceGb: e.target.checked ? "" : form.balanceGb,
                               refundOnDelete: e.target.checked ? false : form.refundOnDelete,
                               refundOnEdit: e.target.checked ? false : form.refundOnEdit,
                             })}
@@ -1269,48 +1293,29 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
                           </div>
                         </label>
                       </div>
-                      <QuotaModeToggle
-                        value={form.quotaMode}
-                        onChange={(quotaMode) => setForm({ ...form, quotaMode })}
-                        disabled={form.unlimitedTraffic || limitsLocked}
-                      />
-                      {form.quotaMode === "GLOBAL" ? (
-                      <>
-                      <div>
-                        <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.trafficLimitGb")} <span className="text-zinc-500 text-xs">{t("admins.noneValue")}</span></label>
-                        {form.unlimitedTraffic ? (
-                          <div className="w-full rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-500 font-semibold flex items-center gap-2">
-                            <Infinity size={18} /> {t("common.unlimited")}
-                          </div>
-                        ) : (
-                          <input type="number" min={0} placeholder="0" value={form.balanceGb} onChange={(e) => setForm({ ...form, balanceGb: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
-                        )}
-                      </div>
-                      <div>
-                        <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.maxDeviceLimit")} <span className="text-zinc-500 text-xs">{t("admins.unlimitedHint")}</span></label>
-                        <input type="number" min={0} placeholder="0" value={form.maxDeviceLimit} onChange={(e) => setForm({ ...form, maxDeviceLimit: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
-                        <p className="mt-1 text-[10px] leading-relaxed text-zinc-500">{t("admins.maxDeviceLimitHint")}</p>
-                      </div>
-                      <div>
-                        <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.maxClientExpireDays")} <span className="text-zinc-500 text-xs">{t("admins.unlimitedHint")}</span></label>
-                        <input type="number" min={0} placeholder="0" value={form.maxExpireDays} onChange={(e) => setForm({ ...form, maxExpireDays: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
-                        <p className="mt-1 text-[10px] leading-relaxed text-zinc-500">{t("admins.maxClientExpireDaysHint")}</p>
-                      </div>
-                      </>
+                      {limitsLocked ? null : !form.unlimitedTraffic ? (
+                        <div className="col-span-2 rounded-lg border border-violet-500/25 bg-violet-500/5 p-3 text-xs text-violet-600 dark:text-violet-400 flex items-start gap-2">
+                          <Layers size={16} className="shrink-0 mt-0.5" />
+                          <span className="leading-relaxed">{t("admins.limitsLiveOnPanels")}</span>
+                        </div>
                       ) : (
-                        <PerPanelQuotaFields
-                          panels={panels ?? []}
-                          enabledPanels={form.enabledPanels}
-                          values={form.panelQuotas}
-                          onChange={(panelId, patch) => setForm((f) => ({
-                            ...f,
-                            panelQuotas: {
-                              ...f.panelQuotas,
-                              [panelId]: { ...(f.panelQuotas[panelId] ?? EMPTY_PANEL_QUOTA), ...patch },
-                            },
-                          }))}
-                          disabled={form.unlimitedTraffic}
-                        />
+                        <>
+                          <div className="col-span-2 text-xs text-zinc-500">{t("admins.accountWideCapsHint")}</div>
+                          <div>
+                            <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.maxClients")} <span className="text-zinc-500 text-xs">{t("admins.maxClientsHint")}</span></label>
+                            <input type="number" min={0} placeholder="0" value={form.maxClients} onChange={(e) => setForm({ ...form, maxClients: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.maxDeviceLimit")} <span className="text-zinc-500 text-xs">{t("admins.unlimitedHint")}</span></label>
+                            <input type="number" min={0} placeholder="0" value={form.maxDeviceLimit} onChange={(e) => setForm({ ...form, maxDeviceLimit: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
+                            <p className="mt-1 text-[10px] leading-relaxed text-zinc-500">{t("admins.maxDeviceLimitHint")}</p>
+                          </div>
+                          <div className="col-span-2">
+                            <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.maxClientExpireDays")} <span className="text-zinc-500 text-xs">{t("admins.unlimitedHint")}</span></label>
+                            <input type="number" min={0} placeholder="0" value={form.maxExpireDays} onChange={(e) => setForm({ ...form, maxExpireDays: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
+                            <p className="mt-1 text-[10px] leading-relaxed text-zinc-500">{t("admins.maxClientExpireDaysHint")}</p>
+                          </div>
+                        </>
                       )}
                       <div className="col-span-2">
                         <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.expiryDays")} <span className="text-zinc-500 text-xs">{t("admins.unlimitedHint")}</span></label>
@@ -1403,16 +1408,11 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
     username: "",
     status: "active",
     trafficMode: "ALLOCATION",
-    balanceGb: "",
-    trafficDeltaGb: "",
     maxClients: "",
     maxDeviceLimit: "",
     maxExpireDays: "",
     password: "",
     expiryDays: "",
-    customTrafficDelta: "",
-    customExpiryDelta: "",
-    customClientsDelta: "",
     enabledPanels: [] as string[],
     selectedInbounds: [] as string[],
     canCustomizeBranding: true,
@@ -1421,9 +1421,10 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
     refundOnEdit: true,
     unlimitedTraffic: false,
     superAdmin: false,
-    quotaMode: "GLOBAL" as QuotaMode,
     panelQuotas: {} as Record<string, PanelQuotaForm>,
   });
+  const quotaMode = resolveQuotaMode(form);
+  const perPanelQuotas = quotaMode === "PER_PANEL";
 
   const { data: panels } = useQuery<PanelRow[]>({
     queryKey: ["panels"],
@@ -1458,20 +1459,33 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
         (admin.panelQuotas || []).map((q) => [
           q.panelId,
           {
-            gb: q.balance ? (q.balance / (1024 ** 3)).toFixed(2).replace(/\.?0+$/, "") : "0",
-            maxClients: q.maxClients ? String(q.maxClients) : "0",
-            maxDeviceLimit: q.maxDeviceLimit ? String(q.maxDeviceLimit) : "0",
-            maxExpireDays: q.maxExpireDays ? String(q.maxExpireDays) : "0",
+            gb: bytesToGbInput(q.balance),
+            maxClients: q.maxClients ? String(q.maxClients) : "",
+            maxDeviceLimit: q.maxDeviceLimit ? String(q.maxDeviceLimit) : "",
+            maxExpireDays: q.maxExpireDays ? String(q.maxExpireDays) : "",
           },
         ]),
       );
+      // An admin still on the shared pool carries its balance onto the first panel
+      // so moving to per-panel caps never silently zeroes the traffic it owns.
+      const migratingFromGlobalPool =
+        admin.role !== "SUPER_ADMIN" && admin.quotaMode !== "PER_PANEL" && !admin.unlimitedTraffic;
+      enabledPanels.forEach((panelId, index) => {
+        if (panelQuotas[panelId]) return;
+        panelQuotas[panelId] = migratingFromGlobalPool
+          ? {
+              gb: index === 0 ? bytesToGbInput(admin.balance) : "",
+              maxClients: admin.maxClients ? String(admin.maxClients) : "",
+              maxDeviceLimit: admin.maxDeviceLimit ? String(admin.maxDeviceLimit) : "",
+              maxExpireDays: admin.maxExpireDays ? String(admin.maxExpireDays) : "",
+            }
+          : { ...EMPTY_PANEL_QUOTA };
+      });
       setForm((prev) => ({
         ...prev,
         username: admin.username || "",
         status: admin.status || "active",
         trafficMode: admin.trafficMode || "ALLOCATION",
-        balanceGb: "",
-        trafficDeltaGb: "",
         maxClients: admin.maxClients ? String(admin.maxClients) : "",
         maxDeviceLimit: admin.maxDeviceLimit ? String(admin.maxDeviceLimit) : "",
         maxExpireDays: admin.maxExpireDays ? String(admin.maxExpireDays) : "",
@@ -1483,7 +1497,6 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
         refundOnEdit: (admin as any).refundOnEdit ?? true,
         unlimitedTraffic: (admin as any).unlimitedTraffic ?? false,
         superAdmin: admin.role === "SUPER_ADMIN",
-        quotaMode: (admin.quotaMode as QuotaMode) || "GLOBAL",
         panelQuotas,
       }));
     }
@@ -1504,23 +1517,18 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
       if (callerIsOwner && !admin.isOwner) {
         payload.role = form.superAdmin ? "SUPER_ADMIN" : "RESELLER";
       }
-      if (!form.superAdmin && !form.unlimitedTraffic) {
-        payload.quotaMode = form.quotaMode;
-        if (form.quotaMode === "PER_PANEL") {
+      if (!form.superAdmin) {
+        // Sent even for unlimited traffic so the backend drops the per-panel
+        // rows instead of leaving stale caps behind.
+        payload.quotaMode = quotaMode;
+        if (perPanelQuotas) {
           payload.panelQuotas = buildPanelQuotasPayload(form.enabledPanels, form.panelQuotas);
-        } else if (form.balanceGb) {
-          payload.balance = Math.round(Number(form.balanceGb) * 1024 * 1024 * 1024);
-        } else if (form.trafficDeltaGb) {
-          const delta = Math.round(Number(form.trafficDeltaGb) * 1024 * 1024 * 1024);
-          payload.balance = Math.max(0, admin.balance + delta);
         }
-      }
-      if (!form.superAdmin && form.maxClients) payload.maxClients = Number(form.maxClients);
-      if (!form.superAdmin && form.maxDeviceLimit !== "") {
-        payload.maxDeviceLimit = limitNumber(form.maxDeviceLimit);
-      }
-      if (!form.superAdmin && form.maxExpireDays !== "") {
-        payload.maxExpireDays = limitNumber(form.maxExpireDays);
+        // Panel cards own every cap in per-panel mode, so the account-wide
+        // ceilings are cleared to keep a single source of truth.
+        payload.maxClients = perPanelQuotas ? 0 : limitNumber(form.maxClients);
+        payload.maxDeviceLimit = perPanelQuotas ? 0 : limitNumber(form.maxDeviceLimit);
+        payload.maxExpireDays = perPanelQuotas ? 0 : limitNumber(form.maxExpireDays);
       }
       if (form.password.trim()) payload.password = form.password;
       if (!form.superAdmin && form.expiryDays) payload.expiryTime = Date.now() + Number(form.expiryDays) * 24 * 60 * 60 * 1000;
@@ -1667,8 +1675,6 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
                                 onChange={(e) => setForm({
                                   ...form,
                                   unlimitedTraffic: e.target.checked,
-                                  balanceGb: e.target.checked ? "" : form.balanceGb,
-                                  trafficDeltaGb: e.target.checked ? "" : form.trafficDeltaGb,
                                   refundOnDelete: e.target.checked ? false : form.refundOnDelete,
                                   refundOnEdit: e.target.checked ? false : form.refundOnEdit,
                                 })}
@@ -1680,62 +1686,37 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
                               </div>
                             </label>
                           </div>
-                          <QuotaModeToggle
-                            value={form.quotaMode}
-                            onChange={(quotaMode) => setForm({ ...form, quotaMode })}
-                            disabled={form.unlimitedTraffic || limitsLocked}
-                          />
-                          {form.quotaMode === "GLOBAL" ? (
-                          <div className="grid grid-cols-2 gap-4">
-                            <div>
-                              <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.setAvailableTraffic")}</label>
-                              {form.unlimitedTraffic ? (
-                                <div className="w-full rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-emerald-500 font-semibold flex items-center gap-2">
-                                  <Infinity size={18} /> {t("common.unlimited")}
+                          {perPanelQuotas ? (
+                            <>
+                              <div className="rounded-lg border border-violet-500/25 bg-violet-500/5 p-3 text-xs text-violet-600 dark:text-violet-400 flex items-start gap-2">
+                                <Layers size={16} className="shrink-0 mt-0.5" />
+                                <span className="leading-relaxed">{t("admins.limitsLiveOnPanels")}</span>
+                              </div>
+                              {admin.quotaMode !== "PER_PANEL" && (
+                                <div className="rounded-lg border border-amber-500/25 bg-amber-500/10 p-3 text-xs text-amber-600 dark:text-amber-400 flex items-start gap-2">
+                                  <AlertCircle size={16} className="shrink-0 mt-0.5" />
+                                  <span className="leading-relaxed">{t("admins.perPanelMigrationNotice")}</span>
                                 </div>
-                              ) : (
-                                <input type="number" placeholder={t("admins.leaveEmptyNoChange")} value={form.balanceGb} onChange={(e) => setForm({ ...form, balanceGb: e.target.value, trafficDeltaGb: "" })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors placeholder:text-zinc-600" />
                               )}
-                              {!form.unlimitedTraffic && <p className="text-[10px] text-zinc-500 mt-1">{t("admins.setsAbsoluteTraffic")}</p>}
-                            </div>
-                            <div>
-                              <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.adjustTraffic")}</label>
-                              {form.unlimitedTraffic ? (
-                                <div className="w-full rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-emerald-500 font-semibold flex items-center gap-2">
-                                  <Infinity size={18} /> {t("common.unlimited")}
-                                </div>
-                              ) : (
-                                <>
-                                  <input type="number" placeholder={t("admins.adjustTrafficPlaceholder")} value={form.trafficDeltaGb} onChange={(e) => setForm({ ...form, trafficDeltaGb: e.target.value, balanceGb: "" })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors placeholder:text-zinc-600" />
-                                  <p className="text-[10px] text-zinc-500 mt-1">{t("admins.adjustTrafficHint")}</p>
-                                </>
-                              )}
-                            </div>
-                            <div>
-                              <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.maxDeviceLimit")}</label>
-                              <input type="number" min={0} placeholder="0" value={form.maxDeviceLimit} onChange={(e) => setForm({ ...form, maxDeviceLimit: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors placeholder:text-zinc-600" />
-                              <p className="text-[10px] text-zinc-500 mt-1">{t("admins.maxDeviceLimitHint")}</p>
-                            </div>
-                            <div>
-                              <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.maxClientExpireDays")}</label>
-                              <input type="number" min={0} placeholder="0" value={form.maxExpireDays} onChange={(e) => setForm({ ...form, maxExpireDays: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors placeholder:text-zinc-600" />
-                              <p className="text-[10px] text-zinc-500 mt-1">{t("admins.maxClientExpireDaysHint")}</p>
-                            </div>
-                          </div>
+                            </>
                           ) : (
-                            <PerPanelQuotaFields
-                              panels={panels ?? []}
-                              enabledPanels={form.enabledPanels}
-                              values={form.panelQuotas}
-                              onChange={(panelId, patch) => setForm((f) => ({
-                                ...f,
-                                panelQuotas: {
-                                  ...f.panelQuotas,
-                                  [panelId]: { ...(f.panelQuotas[panelId] ?? EMPTY_PANEL_QUOTA), ...patch },
-                                },
-                              }))}
-                              disabled={form.unlimitedTraffic}
-                            />
+                            <div className="grid grid-cols-2 gap-4">
+                              <div className="col-span-2 text-xs text-zinc-500">{t("admins.accountWideCapsHint")}</div>
+                              <div>
+                                <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.maxClients")} <span className="text-zinc-500 text-xs">{t("admins.maxClientsHint")}</span></label>
+                                <input type="number" min={0} placeholder="0" value={form.maxClients} onChange={(e) => setForm({ ...form, maxClients: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors placeholder:text-zinc-600" />
+                              </div>
+                              <div>
+                                <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.maxDeviceLimit")}</label>
+                                <input type="number" min={0} placeholder="0" value={form.maxDeviceLimit} onChange={(e) => setForm({ ...form, maxDeviceLimit: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors placeholder:text-zinc-600" />
+                                <p className="text-[10px] text-zinc-500 mt-1">{t("admins.maxDeviceLimitHint")}</p>
+                              </div>
+                              <div className="col-span-2">
+                                <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.maxClientExpireDays")}</label>
+                                <input type="number" min={0} placeholder="0" value={form.maxExpireDays} onChange={(e) => setForm({ ...form, maxExpireDays: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors placeholder:text-zinc-600" />
+                                <p className="text-[10px] text-zinc-500 mt-1">{t("admins.maxClientExpireDaysHint")}</p>
+                              </div>
+                            </div>
                           )}
                           <div className="grid grid-cols-2 gap-4">
                             <div className="col-span-2">
@@ -1896,13 +1877,9 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
                           <p className="text-xs text-zinc-500">{t("admins.superAdminLimitsDisabled")}</p>
                         )}
                         <div>
-                          <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.maxClients")} <span className="text-zinc-500 text-xs">{t("admins.maxClientsHint")}</span></label>
-                          <input type="number" min={0} value={form.maxClients} disabled={limitsLocked} onChange={(e) => setForm({ ...form, maxClients: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
-                        </div>
-                        <div className="mt-4">
                           <label className="mb-2 block text-sm font-medium text-zinc-800 dark:text-zinc-100">
                             {t("admins.allowedPanelsInbounds")}
-                            <span className="block text-xs font-normal text-zinc-500 mt-0.5">{t("admins.allowedPanelsInboundsHint")}</span>
+                            <span className="block text-xs font-normal text-zinc-500 mt-0.5">{t("admins.allowedPanelsAndLimitsHint")}</span>
                           </label>
                           <PanelInboundPicker
                             panels={panels ?? []}
@@ -1910,11 +1887,14 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
                             isLoading={inboundsLoading}
                             enabledPanels={form.enabledPanels}
                             selectedInbounds={form.selectedInbounds}
-                            onChange={(next) => setForm(f => ({ ...f, ...next }))}
+                            onChange={(next) => setForm((f) => applyPanelSelection(f, next))}
                             disabled={limitsLocked}
                             allowPremiumPanels={isPremium}
                             adminId={adminId}
                             onProviderDraft={(items) => mergeProviderDraft(providerDrafts, items)}
+                            panelQuotas={form.panelQuotas}
+                            onQuotaChange={(panelId, patch) => setForm((f) => patchPanelQuota(f, panelId, patch))}
+                            showQuotaFields={perPanelQuotas}
                           />
                           {!limitsLocked && !hasResellerPanelAccess(form, panels) && (
                             <div className="mt-3 p-3 rounded-lg border border-amber-500/20 bg-amber-500/10 text-sm text-amber-600 dark:text-amber-400 flex items-start gap-2">

@@ -119,6 +119,11 @@ export function MobileNav() {
             <div className="flex-1 overflow-y-auto py-2">
               {sections.map((section) => (
                 <nav key={section.id} className="space-y-0.5 px-2">
+                  {section.labelKey ? (
+                    <div className="px-2.5 pt-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+                      {t(section.labelKey)}
+                    </div>
+                  ) : null}
                   {section.items.map((item) => (
                     <MobileNavLink
                       key={item.href}

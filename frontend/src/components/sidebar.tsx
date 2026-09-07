@@ -94,6 +94,11 @@ export function Sidebar() {
       <div className="flex-1 overflow-y-auto overflow-x-hidden px-2 pb-2">
         {sections.map((section) => (
           <nav key={section.id} className="space-y-0.5">
+            {section.labelKey ? (
+              <div className="px-2.5 pt-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+                {t(section.labelKey)}
+              </div>
+            ) : null}
             {section.items.map((item) => (
               <NavLink
                 key={item.href}

@@ -29,6 +29,7 @@ export interface CoreNavItem {
 
 export interface CoreNavSection {
   id: string;
+  /** Empty string renders the section without a header. */
   labelKey: string;
   items: CoreNavItem[];
 }
@@ -45,6 +46,7 @@ export interface AppNavItem {
 
 export interface AppNavSection {
   id: string;
+  /** Empty string renders the section without a header. */
   labelKey: string;
   items: AppNavItem[];
 }
@@ -56,22 +58,45 @@ export interface PremiumNavInput {
   moduleId?: string;
 }
 
-/** Single compact list: dashboard → admins → clients → traffic → store → panels → panel plus → rest; diagnostics last. */
+/** Categorized nav: overview (headerless) → management → sales → appearance → tools → settings. */
 export const CORE_NAV_SECTIONS: CoreNavSection[] = [
   {
-    id: "main",
-    labelKey: "nav.sectionOverview",
+    id: "overview",
+    labelKey: "",
+    items: [{ href: "/dashboard", icon: LayoutDashboard, labelKey: "nav.dashboard" }],
+  },
+  {
+    id: "management",
+    labelKey: "nav.sectionManagement",
     items: [
-      { href: "/dashboard", icon: LayoutDashboard, labelKey: "nav.dashboard" },
       { href: "/admins", icon: UserCog, labelKey: "nav.admins", roles: ["SUPER_ADMIN"] },
       { href: "/clients", icon: Users, labelKey: "nav.clients" },
-      { href: "/traffic", icon: Wallet, labelKey: "nav.traffic" },
       { href: "/panels", icon: Server, labelKey: "nav.panels", roles: ["SUPER_ADMIN"] },
-      { href: "/cleanup", icon: Trash2, labelKey: "nav.cleanup", roles: ["SUPER_ADMIN"] },
+    ],
+  },
+  {
+    id: "sales",
+    labelKey: "nav.sectionSales",
+    items: [{ href: "/traffic", icon: Wallet, labelKey: "nav.traffic" }],
+  },
+  {
+    id: "appearance",
+    labelKey: "nav.sectionAppearance",
+    items: [],
+  },
+  {
+    id: "tools",
+    labelKey: "nav.sectionTools",
+    items: [
       { href: "/migration", icon: Import, labelKey: "nav.migration", roles: ["SUPER_ADMIN"] },
-      { href: "/settings", icon: Settings, labelKey: "nav.settings", roles: ["SUPER_ADMIN"] },
+      { href: "/cleanup", icon: Trash2, labelKey: "nav.cleanup", roles: ["SUPER_ADMIN"] },
       { href: "/diagnostics", icon: Activity, labelKey: "nav.diagnostics", roles: ["SUPER_ADMIN"] },
     ],
+  },
+  {
+    id: "settings",
+    labelKey: "nav.sectionSettings",
+    items: [{ href: "/settings", icon: Settings, labelKey: "nav.settings", roles: ["SUPER_ADMIN"] }],
   },
 ];
 
@@ -115,29 +140,49 @@ export const PREMIUM_MENU_ICONS: Record<string, NavIcon> = {
   "premium-settings": Gem,
 };
 
-const NAV_HREF_ORDER = [
-  "/dashboard",
-  "/admins",
-  "/clients",
-  "/traffic",
-  "/premium/store",
-  "/panels",
-  "/premium/external-panels",
-  "/premium/client-templates",
-  "/premium/admin-recharge",
-  "/premium/branding",
-  "/premium/themes",
-  "/premium/domains",
-  "/premium/custom-domains",
-  "/premium/backups",
-  "/premium/monitoring",
-  "/migration",
-  "/cleanup",
-  "/premium/jobs",
-  "/settings",
-  "/settings/premium",
-  "/diagnostics",
-];
+/** Section each premium module joins; unknown modules fall back to tools. */
+const PREMIUM_SECTION: Record<string, string> = {
+  "external-panels": "management",
+  "client-templates": "management",
+  store: "sales",
+  "admin-recharge": "sales",
+  branding: "appearance",
+  themes: "appearance",
+  "custom-domains": "appearance",
+  "monitoring-pro": "tools",
+  "backup-center": "tools",
+  "job-center": "tools",
+  "premium-settings": "settings",
+};
+
+const FALLBACK_SECTION = "tools";
+
+const SECTION_HREF_ORDER: Record<string, string[]> = {
+  overview: ["/dashboard"],
+  management: [
+    "/admins",
+    "/clients",
+    "/panels",
+    "/premium/external-panels",
+    "/premium/client-templates",
+  ],
+  sales: ["/premium/store", "/traffic", "/premium/admin-recharge"],
+  appearance: [
+    "/premium/branding",
+    "/premium/themes",
+    "/premium/domains",
+    "/premium/custom-domains",
+  ],
+  tools: [
+    "/premium/monitoring",
+    "/premium/backups",
+    "/migration",
+    "/cleanup",
+    "/premium/jobs",
+    "/diagnostics",
+  ],
+  settings: ["/settings", "/settings/premium"],
+};
 
 const HREF_TO_MODULE: Record<string, string> = {
   "/premium/external-panels": "external-panels",
@@ -188,14 +233,15 @@ export function buildAppNav(
     }),
   }));
 
-  const main = sections[0];
-  if (!main) return [];
+  const byId = new Map(sections.map((s) => [s.id, s]));
 
   for (const raw of premiumItems) {
     if (seen.has(raw.href)) continue;
     seen.add(raw.href);
     const moduleId = resolveModuleId(raw);
-    main.items.push({
+    const section = byId.get(PREMIUM_SECTION[moduleId] || FALLBACK_SECTION);
+    if (!section) continue;
+    section.items.push({
       href: raw.href,
       icon: raw.icon || PREMIUM_MENU_ICONS[moduleId] || Store,
       title: raw.title,
@@ -204,6 +250,9 @@ export function buildAppNav(
     });
   }
 
-  main.items = sortByHref(main.items, NAV_HREF_ORDER);
+  for (const section of sections) {
+    section.items = sortByHref(section.items, SECTION_HREF_ORDER[section.id] || []);
+  }
+
   return sections.filter((section) => section.items.length > 0);
 }
