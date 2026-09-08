@@ -639,6 +639,35 @@ function PanelLimitFields({
   );
 }
 
+function ResourceAccordion({
+  title,
+  count,
+  children,
+}: {
+  title: string;
+  count: number;
+  children: React.ReactNode;
+}) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-start hover:bg-zinc-50 dark:hover:bg-zinc-800/40"
+      >
+        <span className="text-sm font-medium text-zinc-800 dark:text-zinc-100">{title}</span>
+        <span className="flex shrink-0 items-center gap-2 text-xs font-medium text-zinc-500">
+          {t("admins.resourceItemCount", { count })}
+          <ChevronDown size={16} className={`transition-transform ${open ? "rotate-180" : ""}`} />
+        </span>
+      </button>
+      {open ? <div className="space-y-2 border-t border-zinc-200 px-3 py-3 dark:border-zinc-800">{children}</div> : null}
+    </div>
+  );
+}
+
 /**
  * Multi-panel inbound assignment. A reseller may be granted inbounds on several
  * panels at once; every checked inbound is saved through the flat `inboundIds`
@@ -791,7 +820,7 @@ function PanelInboundPicker({
           byProtocol.get(proto)!.push(inbound);
         }
 
-        const inboundChecklist = !(isEnabled && isExpanded && panelInbounds.length > 0) ? null : (
+        const inboundChecklist = panelInbounds.length === 0 ? null : (
           <>
             <div className="flex flex-wrap items-center gap-2">
               <div className="relative flex-1 min-w-[10rem]">
@@ -908,11 +937,7 @@ function PanelInboundPicker({
                       </span>
                     ) : null}
                   </span>
-                  <span className="text-xs text-zinc-500 mt-0.5">
-                    {native && panelInbounds.length === 0
-                      ? t(typeKey)
-                      : t("admins.inboundSelectedCount", { selected: checkedCount, total: panelInbounds.length })}
-                  </span>
+                  <span className="text-xs text-zinc-500 mt-0.5">{t(typeKey)}</span>
                 </span>
                 <ChevronDown size={16} className={`text-zinc-500 shrink-0 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
               </button>
@@ -920,6 +945,18 @@ function PanelInboundPicker({
 
             {isEnabled && isExpanded && (
               <div className="px-3 pb-3 space-y-3 border-t border-zinc-200 dark:border-zinc-800 pt-3">
+                {showQuotaFields ? (
+                  <PanelLimitFields
+                    panelType={p.panelType}
+                    value={panelQuotas[p.id] ?? EMPTY_PANEL_QUOTA}
+                    current={quotaBaselines?.[p.id]}
+                    onChange={(patch) => onQuotaChange(p.id, patch)}
+                  />
+                ) : (
+                  <div className="rounded-xl border border-dashed border-emerald-500/30 bg-emerald-500/5 p-3 text-sm leading-relaxed text-emerald-600 dark:text-emerald-400">
+                    {t("admins.panelLimitsUnlimited")}
+                  </div>
+                )}
                 {native ? (
                   <>
                     <PluginSlot
@@ -944,33 +981,21 @@ function PanelInboundPicker({
                       </div>
                     ) : null}
                     {panelInbounds.length > 0 ? (
-                      <div className="space-y-2">
-                        <div className="text-sm font-medium text-zinc-700 dark:text-zinc-200">
-                          {t("admins.nativeSyncedInbounds")}
-                        </div>
-                        <p className="text-xs leading-relaxed text-zinc-500">{t("admins.nativeSyncedInboundsHint")}</p>
+                      <ResourceAccordion title={t("admins.nativeSyncedInbounds")} count={checkedCount}>
                         {inboundChecklist}
-                      </div>
+                      </ResourceAccordion>
                     ) : null}
                   </>
-                ) : panelInbounds.length === 0 ? (
-                  <div className="text-sm text-zinc-500 p-3 text-center border rounded-xl border-dashed border-zinc-300 dark:border-zinc-700">
-                    {t("common.noInboundsOnPanel")}
-                  </div>
                 ) : (
-                  inboundChecklist
-                )}
-                {showQuotaFields ? (
-                  <PanelLimitFields
-                    panelType={p.panelType}
-                    value={panelQuotas[p.id] ?? EMPTY_PANEL_QUOTA}
-                    current={quotaBaselines?.[p.id]}
-                    onChange={(patch) => onQuotaChange(p.id, patch)}
-                  />
-                ) : (
-                  <div className="rounded-xl border border-dashed border-emerald-500/30 bg-emerald-500/5 p-3 text-sm leading-relaxed text-emerald-600 dark:text-emerald-400">
-                    {t("admins.panelLimitsUnlimited")}
-                  </div>
+                  <ResourceAccordion title={t("admins.allowedInbounds")} count={checkedCount}>
+                    {panelInbounds.length === 0 ? (
+                      <div className="text-sm text-zinc-500 p-2 text-center">
+                        {t("common.noInboundsOnPanel")}
+                      </div>
+                    ) : (
+                      inboundChecklist
+                    )}
+                  </ResourceAccordion>
                 )}
               </div>
             )}

@@ -547,6 +547,7 @@
     "maxClients": "حداکثر کلاینت",
     "maxClientsHint": "(۰ = نامحدود)",
     "allowedInbounds": "اینباندهای مجاز",
+    "resourceItemCount": "{count} مورد",
     "allowedPanelsInbounds": "پنل‌ها و اینباندهای مجاز",
     "allowedPanelsInboundsHint": "هر پنل نصب‌شده را فعال کنید. 3x-ui اینباند دارد؛ پنل‌های پرمیوم منابع خودشان را نشان می‌دهند.",
     "allowedPanelsAndLimitsHint": "پنل را فعال کنید، منابع مجاز را انتخاب کنید و محدودیت همان پنل را در کارت زیر تنظیم کنید.",

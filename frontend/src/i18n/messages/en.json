@@ -547,6 +547,7 @@
     "maxClients": "Max Clients",
     "maxClientsHint": "(0 = Unlimited)",
     "allowedInbounds": "Allowed Inbounds",
+    "resourceItemCount": "{count} items",
     "allowedPanelsInbounds": "Allowed Panels & Inbounds",
     "allowedPanelsInboundsHint": "Enable each installed panel. 3x-ui uses inbounds; Premium panels show their own resources.",
     "allowedPanelsAndLimitsHint": "Enable a panel, pick allowed resources, then set that panel's caps in the same card.",
