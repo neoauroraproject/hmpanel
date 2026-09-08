@@ -680,7 +680,7 @@ function ShopBody(props: {
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -8 }}
           transition={{ duration: 0.3, ease: "easeOut" }}
-          className={layout === "market" ? "py-2" : layout === "funnel" ? "py-4 sm:py-6" : "px-1 py-6 sm:py-10"}
+          className={layout === "market" ? "py-2" : layout === "funnel" ? "py-3 sm:py-5" : "px-1 py-6 sm:py-10"}
         >
           {contextBanner}
           <div className="mt-4">
@@ -693,14 +693,20 @@ function ShopBody(props: {
                 : layout === "split"
                   ? "rounded-[1rem] border border-[color:var(--store-panel-border)] bg-white p-0 py-2 sm:p-1"
                   : layout === "funnel"
-                    ? "store-glass rounded-[1.4rem] p-4 sm:p-7"
+                    ? "store-glass rounded-[1.1rem] p-4 sm:p-6"
                     : "rounded-[1.75rem] border border-zinc-200 bg-white/95 p-4 shadow-sm backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/95 sm:rounded-[2rem] sm:p-8"
             }
           >
             {selectedProduct && step !== "product" && step !== "category" ? (
-              <div className="mb-5 rounded-2xl bg-zinc-50 p-4 dark:bg-zinc-950">
-                <div className="font-bold">{selectedProduct.name}</div>
-                {selectedProduct.description ? (
+              <div
+                className={
+                  layout === "funnel"
+                    ? "mb-5 rounded-[1.1rem] border border-slate-200/80 bg-white/70 p-4"
+                    : "mb-5 rounded-2xl bg-zinc-50 p-4 dark:bg-zinc-950"
+                }
+              >
+                <div className={layout === "funnel" ? "font-semibold" : "font-bold"}>{selectedProduct.name}</div>
+                {selectedProduct.description && layout !== "funnel" ? (
                   <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-zinc-500">
                     {selectedProduct.description}
                   </p>
@@ -711,10 +717,14 @@ function ShopBody(props: {
             {step === "category" ? (
               <div className="space-y-4">
                 <div>
-                  <div className="text-lg font-bold">{t("انتخاب دسته", "Choose category")}</div>
-                  <p className="mt-1 text-sm text-zinc-500">
-                    {t("اول دسته را انتخاب کنید، بعد پلن‌های همان دسته.", "Pick a category first, then its plans.")}
-                  </p>
+                  <div className={layout === "funnel" ? "text-[17px] font-semibold" : "text-lg font-bold"}>
+                    {layout === "funnel" ? t("دسته", "Category") : t("انتخاب دسته", "Choose category")}
+                  </div>
+                  {layout === "funnel" ? null : (
+                    <p className="mt-1 text-sm text-zinc-500">
+                      {t("اول دسته را انتخاب کنید، بعد پلن‌های همان دسته.", "Pick a category first, then its plans.")}
+                    </p>
+                  )}
                 </div>
                 <CategoryPicker
                   layout={layout}
@@ -733,10 +743,14 @@ function ShopBody(props: {
             {step === "product" ? (
               <div className="space-y-4">
                 <div>
-                  <div className="text-lg font-bold">{t("انتخاب پلن", "Choose Product")}</div>
-                  <p className="mt-1 text-sm text-zinc-500">
-                    {t("پلن‌های این دسته، به ترتیب فروشگاه.", "Plans in this category, in store order.")}
-                  </p>
+                  <div className={layout === "funnel" ? "text-[17px] font-semibold" : "text-lg font-bold"}>
+                    {layout === "funnel" ? t("پلن", "Plan") : t("انتخاب پلن", "Choose Product")}
+                  </div>
+                  {layout === "funnel" ? null : (
+                    <p className="mt-1 text-sm text-zinc-500">
+                      {t("پلن‌های این دسته، به ترتیب فروشگاه.", "Plans in this category, in store order.")}
+                    </p>
+                  )}
                 </div>
                 {!catalog.length ? (
                   <p className="rounded-2xl border border-dashed border-zinc-300 px-4 py-8 text-center text-sm text-zinc-500 dark:border-zinc-700">
@@ -787,7 +801,7 @@ function ShopBody(props: {
                 {!isRenewFlow ? (
                   <FieldBlock
                     title={t("نام کانفیگ", "Config name")}
-                    hint={t("مثلاً phone-1 یا laptop", "e.g. phone-1 or laptop")}
+                    hint={layout === "funnel" ? undefined : t("مثلاً phone-1 یا laptop", "e.g. phone-1 or laptop")}
                     accent
                   >
                     <input
@@ -795,7 +809,7 @@ function ShopBody(props: {
                       onChange={(event) =>
                         setForm((current: any) => ({ ...current, configName: event.target.value }))
                       }
-                      placeholder={t("مثلاً phone-1", "e.g. phone-1")}
+                      placeholder={layout === "funnel" ? t("نام کانفیگ", "Config name") : t("مثلاً phone-1", "e.g. phone-1")}
                       className="w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3.5 outline-none dark:border-zinc-700 dark:bg-zinc-950"
                       style={{ fontSize: 16 }}
                     />
@@ -806,13 +820,17 @@ function ShopBody(props: {
                   </p>
                 )}
                 <div>
-                  <div className="text-lg font-bold">{t("افزونه‌ها", "Add-ons")}</div>
-                  <p className="mt-1 text-sm text-zinc-500">
-                    {t(
-                      "کاربر اضافه و زمان اضافه اختیاری است. مشخصات و قیمت همین‌جا به‌روز می‌شود.",
-                      "Extra users and extra time are optional. Specs and price update here.",
-                    )}
-                  </p>
+                  <div className={layout === "funnel" ? "text-[17px] font-semibold" : "text-lg font-bold"}>
+                    {t("افزونه‌ها", "Add-ons")}
+                  </div>
+                  {layout === "funnel" ? null : (
+                    <p className="mt-1 text-sm text-zinc-500">
+                      {t(
+                        "کاربر اضافه و زمان اضافه اختیاری است. مشخصات و قیمت همین‌جا به‌روز می‌شود.",
+                        "Extra users and extra time are optional. Specs and price update here.",
+                      )}
+                    </p>
+                  )}
                 </div>
                 <AddonPicker
                   product={selectedProduct}
@@ -838,15 +856,19 @@ function ShopBody(props: {
             {step === "profile" ? (
               <div className="space-y-5">
                 <div>
-                  <div className="text-lg font-bold">{t("اطلاعات تماس و پروفایل", "Contact & profile")}</div>
-                  <p className="mt-1 text-sm text-zinc-500">
-                    {isRenewFlow
-                      ? t("تمدید با پروفایل مشتری شما انجام می‌شود.", "Renewal uses your customer profile.")
-                      : t(
-                          "مشتری جدید پروفایل می‌سازد؛ مشتری قبلی می‌تواند توکن وب بزند.",
-                          "New customers create a profile. Returning customers can use a web token.",
-                        )}
-                  </p>
+                  <div className={layout === "funnel" ? "text-[17px] font-semibold" : "text-lg font-bold"}>
+                    {layout === "funnel" ? t("پروفایل", "Profile") : t("اطلاعات تماس و پروفایل", "Contact & profile")}
+                  </div>
+                  {layout === "funnel" ? null : (
+                    <p className="mt-1 text-sm text-zinc-500">
+                      {isRenewFlow
+                        ? t("تمدید با پروفایل مشتری شما انجام می‌شود.", "Renewal uses your customer profile.")
+                        : t(
+                            "مشتری جدید پروفایل می‌سازد؛ مشتری قبلی می‌تواند توکن وب بزند.",
+                            "New customers create a profile. Returning customers can use a web token.",
+                          )}
+                    </p>
+                  )}
                 </div>
                 {!isRenewFlow ? (
                   <div className="grid gap-3 sm:grid-cols-2">
@@ -855,20 +877,31 @@ function ShopBody(props: {
                       onClick={() => setHaveToken(true)}
                       className={`rounded-2xl border px-4 py-3 text-start ${haveToken ? "border-[color:var(--store-primary)] bg-[color:var(--store-primary)]/5" : "border-zinc-200 dark:border-zinc-800"}`}
                     >
-                      <div className="font-semibold">{t("توکن وب دارم", "Have web token")}</div>
-                      <div className="mt-1 text-xs text-zinc-500">{t("بارگذاری پروفایل", "Load your customer profile")}</div>
+                      <div className="font-semibold">
+                        {layout === "funnel" ? t("توکن وب", "Web token") : t("توکن وب دارم", "Have web token")}
+                      </div>
+                      {layout === "funnel" ? null : (
+                        <div className="mt-1 text-xs text-zinc-500">{t("بارگذاری پروفایل", "Load your customer profile")}</div>
+                      )}
                     </button>
                     <button
                       type="button"
                       onClick={() => setHaveToken(false)}
                       className={`rounded-2xl border px-4 py-3 text-start ${!haveToken ? "border-[color:var(--store-primary)] bg-[color:var(--store-primary)]/5" : "border-zinc-200 dark:border-zinc-800"}`}
                     >
-                      <div className="font-semibold">{t("خرید اول", "First Purchase")}</div>
-                      <div className="mt-1 text-xs text-zinc-500">{t("ساخت پروفایل جدید", "Create a new customer profile")}</div>
+                      <div className="font-semibold">
+                        {layout === "funnel" ? t("مشتری جدید", "New customer") : t("خرید اول", "First Purchase")}
+                      </div>
+                      {layout === "funnel" ? null : (
+                        <div className="mt-1 text-xs text-zinc-500">{t("ساخت پروفایل جدید", "Create a new customer profile")}</div>
+                      )}
                     </button>
                   </div>
                 ) : null}
-                <FieldBlock title={t("اطلاعات تماس", "Contact details")} hint={t("نام و راه‌های ارتباطی", "Name and contact channels")}>
+                <FieldBlock
+                  title={t("اطلاعات تماس", "Contact details")}
+                  hint={layout === "funnel" ? undefined : t("نام و راه‌های ارتباطی", "Name and contact channels")}
+                >
                   {haveToken ? (
                     <div className="space-y-3">
                       <div className="flex gap-2">
@@ -930,13 +963,17 @@ function ShopBody(props: {
             {step === "payment" ? (
               <div className="space-y-4">
                 <div>
-                  <div className="text-lg font-bold">{t("پرداخت", "Payment")}</div>
-                  <p className="mt-1 text-sm text-zinc-500">
-                    {t(
-                      "مبلغ نهایی را ببینید، کد تخفیف را انتخاب کنید، سپس رسید را بفرستید.",
-                      "See the final amount, pick a discount code, then send the receipt.",
-                    )}
-                  </p>
+                  <div className={layout === "funnel" ? "text-[17px] font-semibold" : "text-lg font-bold"}>
+                    {t("پرداخت", "Payment")}
+                  </div>
+                  {layout === "funnel" ? null : (
+                    <p className="mt-1 text-sm text-zinc-500">
+                      {t(
+                        "مبلغ نهایی را ببینید، کد تخفیف را انتخاب کنید، سپس رسید را بفرستید.",
+                        "See the final amount, pick a discount code, then send the receipt.",
+                      )}
+                    </p>
+                  )}
                 </div>
                 <div className="rounded-2xl border border-[color:var(--store-primary)]/30 bg-[color:var(--store-primary)]/5 px-4 py-4">
                   <div className="text-xs font-semibold text-zinc-500">{t("مبلغ قابل پرداخت", "Amount due")}</div>

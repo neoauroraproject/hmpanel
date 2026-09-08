@@ -83,28 +83,20 @@ const lumenCopy = {
 };
 
 const cascadeCopy = {
-  kicker: { en: 'Checkout', fa: 'تسویه' },
-  headline: { en: 'Complete your order in a few calm steps', fa: 'سفارش را در چند مرحله آرام تمام کنید' },
+  kicker: { en: 'Order', fa: 'سفارش' },
+  headline: { en: 'Checkout', fa: 'ثبت سفارش' },
   subhead: {
-    en: 'Follow the stepper, fill in only what is needed, and submit when you are ready.',
-    fa: 'Stepper را دنبال کنید، فقط فیلدهای لازم را پر کنید و وقتی آماده بودید ثبت کنید.',
+    en: 'Select a plan, then complete payment.',
+    fa: 'پلن را انتخاب کنید، سپس پرداخت را تکمیل کنید.',
   },
-  ctaPrimary: { en: 'Next', fa: 'بعدی' },
-  ctaSecondary: { en: 'Previous', fa: 'قبلی' },
-  ctaTrack: { en: 'Track an order', fa: 'پیگیری سفارش' },
-  timeLabel: { en: 'Typical review', fa: 'زمان بررسی معمول' },
-  timeValue: { en: 'A few minutes', fa: 'چند دقیقه' },
-  statusDone: { en: 'Completed', fa: 'انجام شد' },
-  statusNow: { en: 'In progress', fa: 'در حال انجام' },
-  statusNext: { en: 'Pending', fa: 'در انتظار' },
-  footerNote: {
-    en: 'Your details stay on this store. You can go back a step at any time.',
-    fa: 'اطلاعات فقط در همین فروشگاه می‌ماند. هر زمان می‌توانید یک مرحله برگردید.',
-  },
+  ctaPrimary: { en: 'Continue', fa: 'ادامه' },
+  ctaSecondary: { en: 'Sign in', fa: 'ورود' },
+  ctaTrack: { en: 'Track order', fa: 'پیگیری سفارش' },
+  footerNote: { en: '', fa: '' },
   features: [
-    { title: { en: 'Catalog', fa: 'کاتالوگ' }, body: { en: 'Choose a category and a plan.', fa: 'دسته و پلن را انتخاب کنید.' } },
-    { title: { en: 'Details', fa: 'جزئیات' }, body: { en: 'Add-ons and a config name if needed.', fa: 'افزونه و نام کانفیگ در صورت نیاز.' } },
-    { title: { en: 'Payment', fa: 'پرداخت' }, body: { en: 'Send the receipt and wait for approval.', fa: 'رسید را بفرستید و منتظر تأیید بمانید.' } },
+    { title: { en: 'Catalog', fa: 'کاتالوگ' }, body: { en: '', fa: '' } },
+    { title: { en: 'Details', fa: 'مشخصات' }, body: { en: '', fa: '' } },
+    { title: { en: 'Payment', fa: 'پرداخت' }, body: { en: '', fa: '' } },
   ],
 };
 
@@ -183,11 +175,11 @@ export const STOREFRONT_STARTERS: Array<{
     slug: 'starter-cascade',
     name: 'Cascade',
     description:
-      'Glass-on-gradient checkout: frosted cards, status stepper, form-like catalog on a blue-violet field.',
+      'Glass checkout on a blue–violet gradient. Compact stepper and frosted cards.',
     settings: {
       skin: 'cascade',
       layout: 'funnel',
-      version: 3,
+      version: 4,
       preview: { accent: '#3B82F6', bg: '#4F46E5', label: 'Funnel' },
       copy: cascadeCopy,
     },

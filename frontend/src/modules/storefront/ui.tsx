@@ -215,7 +215,7 @@ export function ProductCard({
         layout === "split"
           ? "rounded-[0.9rem] shadow-none"
           : layout === "funnel"
-            ? "store-glass rounded-[1.35rem]"
+            ? "store-glass rounded-[1.1rem]"
             : "rounded-[1.75rem] shadow-[0_8px_30px_-18px_rgba(15,23,42,0.28)]"
       } ${
         selected
@@ -399,43 +399,42 @@ export function Stepper({
 }) {
   if (layout === "funnel") {
     return (
-      <div className="store-glass mb-6 overflow-x-auto rounded-[1.4rem] p-3 sm:mb-8 sm:p-4">
-        <div className="flex min-w-[28rem] items-center gap-3 sm:min-w-0 sm:justify-between">
-          {labels.map((label, index) => {
-            const done = index < activeIndex;
-            const now = index === activeIndex;
-            return (
-              <div key={`${index}-${label}`} className="flex min-w-0 flex-1 items-center gap-2.5">
-                <div
-                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[12px] font-bold ${
-                    done
-                      ? "bg-emerald-500 text-white"
-                      : now
-                        ? "bg-[color:var(--store-primary)] text-white"
-                        : "bg-slate-100 text-slate-400"
+      <ol className="store-glass mb-5 flex items-center gap-2 overflow-x-auto rounded-[1.1rem] px-3 py-3 sm:mb-6 sm:px-4">
+        {labels.map((label, index) => {
+          const done = index < activeIndex;
+          const now = index === activeIndex;
+          return (
+            <li key={`${index}-${label}`} className="flex min-w-0 flex-1 items-center gap-2">
+              {index > 0 ? (
+                <span
+                  aria-hidden
+                  className={`hidden h-px w-4 shrink-0 sm:block ${
+                    done || now ? "bg-[color:var(--store-primary)]/40" : "bg-slate-200"
                   }`}
-                >
-                  {done ? <Check size={15} strokeWidth={3} /> : index + 1}
-                </div>
-                <div className="min-w-0">
-                  <div className="truncate text-[13px] font-bold">{label}</div>
-                  <span
-                    className={`mt-0.5 inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
-                      done
-                        ? "bg-emerald-50 text-emerald-700"
-                        : now
-                          ? "bg-blue-50 text-blue-700"
-                          : "bg-slate-100 text-slate-500"
-                    }`}
-                  >
-                    {done ? "Done" : now ? "Now" : "Next"}
-                  </span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
+                />
+              ) : null}
+              <span
+                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[12px] font-semibold ${
+                  done
+                    ? "bg-emerald-500 text-white"
+                    : now
+                      ? "bg-[color:var(--store-primary)] text-white"
+                      : "bg-slate-100 text-slate-400"
+                }`}
+              >
+                {done ? <Check size={14} strokeWidth={3} /> : index + 1}
+              </span>
+              <span
+                className={`min-w-0 truncate text-[13px] ${
+                  now ? "font-semibold text-slate-900" : "font-medium text-slate-500"
+                }`}
+              >
+                {label}
+              </span>
+            </li>
+          );
+        })}
+      </ol>
     );
   }
 

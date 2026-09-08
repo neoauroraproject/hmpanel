@@ -10,6 +10,24 @@
 .store-skin-cascade.store-shell {
   background-color: #4f46e5;
   background-image: var(--store-backdrop);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "cv11", "ss01", "kern";
+}
+
+.store-skin-cascade h1 {
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.2;
+}
+
+[dir="rtl"] .store-skin-cascade h1 {
+  letter-spacing: 0;
+}
+
+.store-skin-cascade .store-cta-glow {
+  animation: none;
+  box-shadow: 0 10px 22px -12px var(--store-primary);
 }
 
 .store-cta-glow {
@@ -53,10 +71,10 @@
 }
 
 .store-skin-cascade .store-glass {
-  border: 1px solid rgba(255, 255, 255, 0.55);
-  background: rgba(255, 255, 255, 0.86);
-  box-shadow: 0 24px 60px -28px rgba(15, 23, 42, 0.35);
-  backdrop-filter: blur(18px);
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 20px 48px -28px rgba(15, 23, 42, 0.38);
+  backdrop-filter: blur(20px);
 }
 
 @keyframes store-glow-pulse {

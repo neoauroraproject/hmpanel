@@ -1096,7 +1096,7 @@
     "docsStep3": "Assign it to the shop. Open the storefront to preview.",
     "docsStep4": "Edit Branding for name, logos, primary color, and support links — the skin will pick them up automatically.",
     "docsBranding": "Shop name, logos, and brand colors stay in Branding. Packs may ship generic bilingual microcopy in settings.copy — never put a shop name there.",
-    "docsSkins": "Built-in packs: atelier (classic catalog), pulse (dark neon desk), lumen (light split cards), cascade (glass funnel). Generic copy lives in settings.copy. customCss is sanitized (no @import / javascript URLs). Legacy noir/harbor ids still resolve.",
+    "docsSkins": "Built-in packs: atelier (classic catalog), pulse (dark neon desk), lumen (light split cards), cascade (glass checkout). Generic copy lives in settings.copy. customCss is sanitized (no @import / javascript URLs). Legacy noir/harbor ids still resolve.",
     "docsLink": "Full documentation",
     "saveAssign": "Save active theme",
     "customTitle": "Custom pack",

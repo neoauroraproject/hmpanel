@@ -138,7 +138,7 @@ function StoreShellInner({
       <div
         className={`store-shell ${chrome.rootClass} min-h-[100dvh] ${
           themed ? "bg-[color:var(--store-bg)] text-[color:var(--store-fg)]" : ""
-        } ${isFa ? "font-[Vazirmatn,Tahoma,sans-serif]" : ""} ${chrome.forceDark ? "dark" : ""}`}
+        } ${isFa && skin !== "cascade" ? "font-[Vazirmatn,Tahoma,sans-serif]" : ""} ${chrome.forceDark ? "dark" : ""}`}
         data-store-layout={layout}
         data-store-skin={skin}
         style={cssVars}
@@ -189,7 +189,7 @@ function StoreShellInner({
     layout === "market"
       ? "mx-auto flex max-w-xl items-center gap-3 border-b border-[color:var(--store-panel-border)] bg-[color:var(--store-panel)] px-4 py-2.5 sm:max-w-lg lg:max-w-xl"
       : layout === "funnel"
-        ? "mx-auto flex max-w-5xl items-center gap-3 rounded-[1.4rem] border border-white/50 bg-white/80 px-4 py-2.5 shadow-[0_16px_50px_-28px_rgba(15,23,42,0.45)] backdrop-blur-xl"
+        ? "mx-auto flex max-w-3xl items-center gap-3 rounded-[1.1rem] border border-white/60 bg-white/90 px-4 py-2.5 shadow-[0_14px_40px_-28px_rgba(15,23,42,0.4)] backdrop-blur-xl"
         : `mx-auto flex max-w-5xl items-center gap-3 px-3 py-2.5 backdrop-blur-2xl lg:px-4 ${
             skin === "atelier"
               ? "rounded-[var(--store-radius)] border border-[color:var(--store-panel-border)] bg-[color:var(--store-panel)]/90 shadow-[0_10px_36px_-22px_rgba(15,23,42,0.35)]"
@@ -202,7 +202,7 @@ function StoreShellInner({
         themed
           ? "text-[color:var(--store-fg)]"
           : "bg-[#F5F5F7] text-[#1D1D1F] dark:bg-[#0B0B0F] dark:text-zinc-50"
-      } ${isFa ? "font-[Vazirmatn,Tahoma,sans-serif]" : ""} ${chrome.forceDark ? "dark" : ""}`}
+      } ${isFa && skin !== "cascade" ? "font-[Vazirmatn,Tahoma,sans-serif]" : ""} ${chrome.forceDark ? "dark" : ""}`}
       data-store-layout={layout}
       data-store-skin={skin}
       style={cssVars}
@@ -243,7 +243,7 @@ function StoreShellInner({
 
       <main
         className={`relative mx-auto w-full px-4 pb-[calc(6.5rem+env(safe-area-inset-bottom))] pt-4 sm:px-6 lg:px-8 lg:pb-16 lg:pt-6 ${
-          layout === "market" ? "max-w-lg sm:max-w-lg lg:max-w-xl" : layout === "funnel" ? "max-w-5xl" : "max-w-5xl"
+          layout === "market" ? "max-w-lg sm:max-w-lg lg:max-w-xl" : layout === "funnel" ? "max-w-3xl" : "max-w-5xl"
         }`}
       >
         {children}

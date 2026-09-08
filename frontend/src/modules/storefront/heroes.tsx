@@ -7,7 +7,6 @@ import {
   Clock,
   CreditCard,
   Headphones,
-  Lock,
   ShieldCheck,
   Sparkles,
   Zap,
@@ -379,87 +378,34 @@ function CascadeHero({
   const { isFa } = useStorefrontLocale();
   const copy = resolveStorefrontCopy(store?.publishedTheme?.settings, isFa);
   const reduce = useReducedMotion();
-  const steps = [
-    { label: copy.features[0]?.title || copy.kicker, status: copy.statusNow, tone: "now" as const },
-    { label: copy.features[1]?.title || copy.tabDetails, status: copy.statusNext, tone: "next" as const },
-    { label: copy.features[2]?.title || copy.tabPay, status: copy.statusNext, tone: "next" as const },
-  ];
 
   return (
-    <motion.section {...(reduce ? {} : fadeUp)} transition={fadeUpTransition} className="store-enter space-y-4">
-      <div className="store-glass hidden overflow-x-auto rounded-[1.4rem] p-4 sm:block">
-        <div className="flex min-w-[520px] items-center justify-between gap-4">
-          {steps.map((step, index) => (
-            <div key={step.label} className="flex min-w-0 flex-1 items-center gap-3">
-              <span
-                className={`flex h-10 w-10 items-center justify-center rounded-full ${
-                  step.tone === "now" ? "bg-[color:var(--store-primary)] text-white" : "bg-slate-100 text-slate-400"
-                }`}
-              >
-                {index === 0 ? <Lock size={16} /> : index + 1}
-              </span>
-              <div className="min-w-0">
-                <div className="truncate text-[14px] font-bold">{step.label}</div>
-                <span
-                  className={`mt-0.5 inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
-                    step.tone === "now" ? "bg-blue-50 text-blue-600" : "bg-slate-100 text-slate-500"
-                  }`}
-                >
-                  {step.status}
-                </span>
-              </div>
-            </div>
-          ))}
+    <motion.section
+      {...(reduce ? {} : fadeUp)}
+      transition={fadeUpTransition}
+      className="store-enter mx-auto w-full max-w-lg"
+    >
+      <div className="store-glass rounded-[1.1rem] p-6 sm:p-8">
+        <p className="text-[13px] font-medium text-slate-500">{copy.kicker}</p>
+        <h1 className="mt-2 text-[1.75rem] font-semibold leading-tight text-slate-900 [font-family:var(--store-display,inherit)] sm:text-[2rem]">
+          {copy.headline}
+        </h1>
+        {copy.subhead ? (
+          <p className="mt-3 text-[15px] leading-[1.55] text-slate-600">{copy.subhead}</p>
+        ) : null}
+        <div className="mt-7 space-y-3">
+          <PrimaryButton onClick={onBuy}>{copy.ctaPrimary}</PrimaryButton>
+          <SecondaryButton onClick={onLogin}>{copy.ctaSecondary}</SecondaryButton>
         </div>
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-[0.9fr_1.2fr]">
-        <div className="space-y-4">
-          <div className="rounded-[1.4rem] bg-[#1E3A8A] p-5 text-white shadow-[0_20px_50px_-24px_rgba(15,23,42,0.55)]">
-            <div className="text-[12px] font-semibold uppercase tracking-[0.14em] text-blue-100">{copy.kicker}</div>
-            <ol className="mt-4 space-y-3">
-              {copy.features.slice(0, 3).map((feature, index) => (
-                <li key={feature.title} className="flex items-start gap-3">
-                  <span className="mt-0.5 flex h-6 w-6 items-center justify-center rounded-full bg-white/15 text-[11px] font-bold">
-                    {index + 1}
-                  </span>
-                  <span>
-                    <span className="block text-[14px] font-semibold">{feature.title}</span>
-                    <span className="text-[12px] text-blue-100">{feature.body}</span>
-                  </span>
-                </li>
-              ))}
-            </ol>
-          </div>
-          <div className="store-glass rounded-[1.4rem] p-5">
-            <div className="text-[13px] font-semibold text-slate-500">{copy.timeLabel}</div>
-            <div className="mt-1 text-[1.65rem] font-black tracking-tight">{copy.timeValue}</div>
-            <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
-              <div className="h-full w-1/3 rounded-full bg-[color:var(--store-primary)]" />
-            </div>
-          </div>
-        </div>
-
-        <div className="store-glass rounded-[1.4rem] p-5 sm:p-7">
-          <p className="text-[12px] font-bold uppercase tracking-[0.16em] text-slate-400">STEP 1/3</p>
-          <h1 className="mt-2 text-[1.55rem] font-black tracking-tight [font-family:var(--store-display,inherit)]">
-            {copy.headline}
-          </h1>
-          <p className="mt-2 text-[14px] leading-relaxed text-slate-500">{copy.subhead}</p>
-          <div className="mt-6 grid gap-3 sm:grid-cols-2">
-            <SecondaryButton onClick={onLogin}>{copy.ctaSecondary}</SecondaryButton>
-            <PrimaryButton onClick={onBuy}>{copy.ctaPrimary}</PrimaryButton>
-          </div>
-          {onTrack ? (
-            <button
-              type="button"
-              onClick={onTrack}
-              className="store-focus-ring mt-4 min-h-11 cursor-pointer text-[14px] font-semibold text-[color:var(--store-primary)]"
-            >
-              {copy.ctaTrack}
-            </button>
-          ) : null}
-        </div>
+        {onTrack ? (
+          <button
+            type="button"
+            onClick={onTrack}
+            className="store-focus-ring mt-4 min-h-11 w-full cursor-pointer text-[14px] font-medium text-slate-600"
+          >
+            {copy.ctaTrack}
+          </button>
+        ) : null}
       </div>
     </motion.section>
   );

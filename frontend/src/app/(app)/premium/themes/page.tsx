@@ -418,16 +418,13 @@ function LayoutSketch({ layout, accent }: { layout: string; accent: string }) {
   }
   if (kind.includes("funnel")) {
     return (
-      <div className="flex h-full flex-col gap-1.5">
-        <div className="flex gap-1">
-          <div className="h-2 flex-1 rounded-full bg-emerald-400" />
-          <div className="h-2 flex-1 rounded-full" style={{ background: accent }} />
-          <div className="h-2 flex-1 rounded-full bg-black/15" />
+      <div className="flex h-full flex-col items-center justify-center gap-1.5 px-3">
+        <div className="flex w-full gap-1">
+          <div className="h-1.5 flex-1 rounded-full" style={{ background: accent }} />
+          <div className="h-1.5 flex-1 rounded-full bg-white/35" />
+          <div className="h-1.5 flex-1 rounded-full bg-white/20" />
         </div>
-        <div className="flex flex-1 gap-1">
-          <div className="w-1/3 rounded-md bg-black/20" />
-          <div className="flex-1 rounded-md bg-white/70" />
-        </div>
+        <div className="w-[72%] flex-1 rounded-md bg-white/85" />
       </div>
     );
   }

@@ -63,7 +63,7 @@ export const SKIN_FONT_HREF: Record<Exclude<StorefrontSkinId, "default">, string
   lumen:
     "https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap",
   cascade:
-    "https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap",
+    "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap",
 };
 
 export function skinChrome(
@@ -141,11 +141,11 @@ export function skinChrome(
         "--store-backdrop": "linear-gradient(165deg, #38BDF8 0%, #4F46E5 52%, #6D28D9 100%)",
         "--store-fg": "#0F172A",
         "--store-muted": "#475569",
-        "--store-panel": "rgba(255,255,255,0.88)",
-        "--store-panel-border": "rgba(255,255,255,0.55)",
-        "--store-radius": "1.35rem",
-        "--store-font": '"Plus Jakarta Sans", "Vazirmatn", ui-sans-serif, system-ui, sans-serif',
-        "--store-display": '"Plus Jakarta Sans", "Vazirmatn", ui-sans-serif, system-ui, sans-serif',
+        "--store-panel": "rgba(255,255,255,0.94)",
+        "--store-panel-border": "rgba(255,255,255,0.65)",
+        "--store-radius": "1.1rem",
+        "--store-font": '"Inter", "Vazirmatn", ui-sans-serif, system-ui, sans-serif',
+        "--store-display": '"Inter", "Vazirmatn", ui-sans-serif, system-ui, sans-serif',
       },
     };
   }
