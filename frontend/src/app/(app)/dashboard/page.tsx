@@ -555,6 +555,11 @@ function ResellerDashboard() {
               ? t("dashboard.unlimitedTrafficNote")
               : `${t("clients.outOf", { total: formatBytes(a.allTimeTraffic) })} · ${t("dashboard.usedOfQuota", { amount: formatBytes(a.usedTraffic || 0) })}`}
           </div>
+          {!a.unlimitedTraffic && a.quotaMode === "GLOBAL" ? (
+            <div className="mt-3 border-t border-zinc-200 pt-3 text-xs font-medium text-blue-600 dark:border-zinc-800 dark:text-blue-400">
+              {t("dashboard.sharedPoolLabel")} · {t("dashboard.sharedPoolHint")}
+            </div>
+          ) : null}
           {!a.unlimitedTraffic && a.quotaMode === "PER_PANEL" && a.panelQuotas?.length > 1 && (
             <div className="mt-3 space-y-1 border-t border-zinc-200 pt-3 dark:border-zinc-800">
               {a.panelQuotas.map((p: { panelId: string; name: string; availableTraffic: number }) => (
@@ -592,8 +597,11 @@ function ResellerDashboard() {
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {xuiDestinations.map((p) => {
               const q = (a.panelQuotas || []).find((row: { panelId: string }) => row.panelId === p.id);
-              const remaining = a.unlimitedTraffic ? null : Number(q?.availableTraffic ?? a.availableTraffic ?? 0);
-              const cap = Number(q?.maxClients ?? 0);
+              const sharedPool = a.quotaMode === "GLOBAL" && !a.unlimitedTraffic;
+              const remaining = a.unlimitedTraffic
+                ? null
+                : Number(sharedPool ? a.availableTraffic : (q?.availableTraffic ?? a.availableTraffic ?? 0));
+              const cap = sharedPool ? Number(a.clientCapacity || 0) : Number(q?.maxClients ?? 0);
               const days =
                 a.expiryTime > 0
                   ? Math.max(0, Math.ceil((a.expiryTime - Date.now()) / (1000 * 60 * 60 * 24)))
@@ -617,6 +625,11 @@ function ResellerDashboard() {
                       <div className="mt-0.5 font-semibold text-zinc-800 dark:text-zinc-200">
                         {a.unlimitedTraffic ? "∞" : formatBytes(remaining || 0)}
                       </div>
+                      {sharedPool ? (
+                        <div className="mt-0.5 text-[10px] font-medium text-blue-600 dark:text-blue-400">
+                          {t("dashboard.sharedPoolLabel")}
+                        </div>
+                      ) : null}
                     </div>
                     <div>
                       <div className="uppercase tracking-wide">{t("dashboard.clientCap")}</div>
@@ -634,7 +647,16 @@ function ResellerDashboard() {
                 </button>
               );
             })}
-            <PluginSlot name="dashboard.reseller.destinations" props={{ panelQuotas: a.panelQuotas }} />
+            <PluginSlot
+              name="dashboard.reseller.destinations"
+              props={{
+                panelQuotas: a.panelQuotas,
+                quotaMode: a.quotaMode,
+                availableTraffic: a.availableTraffic,
+                clientCapacity: a.clientCapacity,
+                unlimitedTraffic: a.unlimitedTraffic,
+              }}
+            />
           </div>
         </div>
       )}

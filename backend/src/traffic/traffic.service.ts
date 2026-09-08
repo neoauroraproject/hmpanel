@@ -95,7 +95,14 @@ export class TrafficService {
     search?: string,
     panelId?: string,
   ) {
-    const panelWhere = await this.ledgerPanelWhere(panelId);
+    const overview = await this.adminQuota.buildResellerOverview(
+      adminId,
+      panelId || undefined,
+    );
+    const panelWhere = await this.ledgerPanelWhere(
+      panelId,
+      overview.quotaMode === 'GLOBAL' && !overview.unlimitedTraffic,
+    );
     const where: Prisma.TrafficTransactionWhereInput = {
       adminId,
       ...panelWhere,
@@ -110,7 +117,7 @@ export class TrafficService {
         : {}),
     };
 
-    const [rows, total, creditAgg, debitAgg, usageAgg, overview] =
+    const [rows, total, creditAgg, debitAgg, usageAgg] =
       await Promise.all([
         this.prisma.trafficTransaction.findMany({
           where,
@@ -144,7 +151,6 @@ export class TrafficService {
           where: { ...where, type: 'USAGE_CHARGE' },
           _sum: { amount: true },
         }),
-        this.adminQuota.buildResellerOverview(adminId, panelId || undefined),
       ]);
 
     const panelIds = [
@@ -418,7 +424,10 @@ export class TrafficService {
     },
     txSums: { credit: number; used: number },
   ) {
-    const native = await this.nativeAccessQuota(adminId, panelId);
+    const native =
+      overview.quotaMode === 'GLOBAL'
+        ? null
+        : await this.nativeAccessQuota(adminId, panelId);
     if (native) return native;
 
     const base = {
@@ -497,16 +506,23 @@ export class TrafficService {
 
   private async ledgerPanelWhere(
     panelId?: string,
+    includeGlobalPool = false,
   ): Promise<Prisma.TrafficTransactionWhereInput> {
     const filter = String(panelId || '').trim();
     if (!filter) return {};
-    if (
+    const scoped: Prisma.TrafficTransactionWhereInput =
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
         filter,
       )
-    ) {
-      return { panelId: filter };
-    }
+        ? { panelId: filter }
+        : await this.ledgerTypeWhere(filter);
+    if (!includeGlobalPool) return scoped;
+    return { OR: [scoped, { panelId: null }] };
+  }
+
+  private async ledgerTypeWhere(
+    filter: string,
+  ): Promise<Prisma.TrafficTransactionWhereInput> {
     const panels = await this.prisma.panel.findMany({
       select: { id: true, panelType: true },
     });

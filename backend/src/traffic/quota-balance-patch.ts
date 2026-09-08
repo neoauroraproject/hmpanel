@@ -3,6 +3,9 @@ export type QuotaLedgerAction =
   | 'ADMIN_RECHARGE'
   | 'ADMIN_DEDUCTION';
 
+/** Ledger label when the reseller spends one shared bucket on every assigned panel. */
+export const GLOBAL_POOL_TX_DESCRIPTION = 'Global pool — all panels';
+
 export function nextQuotaLedger(
   existing: { balance: number; totalAssigned: number } | null,
   nextBalance: number,

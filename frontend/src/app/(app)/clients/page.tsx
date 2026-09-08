@@ -884,6 +884,9 @@ export default function ClientsPage() {
                   {overviewData.admin.unlimitedTraffic
                     ? t("common.unlimited")
                     : t("clients.outOf", { total: formatBytes(overviewData.admin.allTimeTraffic || 0) })}
+                  {overviewData.admin.quotaMode === "GLOBAL" && !overviewData.admin.unlimitedTraffic
+                    ? ` · ${t("clients.sharedPoolHint")}`
+                    : ""}
                 </div>
               </div>
             </div>
@@ -2007,6 +2010,7 @@ function AddClientModal({
 
   const panelAvailableTraffic = panelOverview?.admin?.availableTraffic ?? null;
   const panelUnlimited = panelOverview?.admin?.unlimitedTraffic === true;
+  const panelSharedPool = panelOverview?.admin?.quotaMode === "GLOBAL";
 
   useEffect(() => {
     if (derivedPanels.length === 0) return;
@@ -2234,7 +2238,7 @@ function AddClientModal({
                 <p className="mt-1 text-[10px] text-zinc-500 dark:text-zinc-400">{t("clients.panelServerHint")}</p>
                 {!panelUnlimited && panelAvailableTraffic != null && (
                   <p className={`mt-1 text-[11px] font-medium ${panelAvailableTraffic <= 0 ? "text-red-400" : "text-blue-500"}`}>
-                    {t("clients.panelRemainingTraffic", { amount: formatBytes(panelAvailableTraffic) })}
+                    {t(panelSharedPool ? "clients.sharedPoolRemaining" : "clients.panelRemainingTraffic", { amount: formatBytes(panelAvailableTraffic) })}
                   </p>
                 )}
               </div>
@@ -2242,7 +2246,7 @@ function AddClientModal({
 
             {(derivedPanels.length <= 1 && selectedPanelId && !panelUnlimited && panelAvailableTraffic != null) && (
               <p className={`text-[11px] font-medium ${panelAvailableTraffic <= 0 ? "text-red-400" : "text-blue-500"}`}>
-                {t("clients.panelRemainingTraffic", { amount: formatBytes(panelAvailableTraffic) })}
+                {t(panelSharedPool ? "clients.sharedPoolRemaining" : "clients.panelRemainingTraffic", { amount: formatBytes(panelAvailableTraffic) })}
               </p>
             )}
 
@@ -2347,7 +2351,7 @@ function AddClientModal({
                 />
                 <p className="mt-1 text-[10px] text-zinc-500 dark:text-zinc-400">{t("clients.allocationDeductHint")}</p>
                 {panelInsufficient && (
-                  <p className="mt-1 text-[11px] text-red-400 font-medium">{t("clients.insufficientPanelBalance")}</p>
+                  <p className="mt-1 text-[11px] text-red-400 font-medium">{t(panelSharedPool ? "clients.insufficientSharedBalance" : "clients.insufficientPanelBalance")}</p>
                 )}
               </div>
               <div className="mt-4">
@@ -2486,6 +2490,7 @@ export function EditClientModal({
   });
   const adminPanelAvailable = panelOverview?.admin?.availableTraffic ?? null;
   const adminPanelUnlimited = panelOverview?.admin?.unlimitedTraffic === true;
+  const adminSharedPool = panelOverview?.admin?.quotaMode === "GLOBAL";
 
   const [form, setForm] = useState({
     expiryDays: "",
@@ -2691,11 +2696,11 @@ export function EditClientModal({
 
               {!adminPanelUnlimited && adminPanelAvailable != null && trafficMode === "add" && (
                 <p className={`text-[11px] font-medium ${adminPanelAvailable <= 0 ? "text-red-400" : "text-blue-500"}`}>
-                  {t("clients.panelRemainingTraffic", { amount: formatBytes(adminPanelAvailable) })}
+                  {t(adminSharedPool ? "clients.sharedPoolRemaining" : "clients.panelRemainingTraffic", { amount: formatBytes(adminPanelAvailable) })}
                 </p>
               )}
               {adminPanelInsufficient && (
-                <p className="text-[11px] text-red-400 font-medium">{t("clients.insufficientPanelBalance")}</p>
+                <p className="text-[11px] text-red-400 font-medium">{t(adminSharedPool ? "clients.insufficientSharedBalance" : "clients.insufficientPanelBalance")}</p>
               )}
 
               <div className="mt-4">

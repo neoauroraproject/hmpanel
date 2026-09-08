@@ -15,6 +15,7 @@ import {
   AdminQuotaService,
   PanelQuotaSpec,
 } from '../traffic/admin-quota.service';
+import { GLOBAL_POOL_TX_DESCRIPTION } from '../traffic/quota-balance-patch';
 import { DomainEventBusService } from '../events/domain-event-bus.service';
 import { AdminRole, QuotaMode } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
@@ -258,7 +259,7 @@ export class AdminsService implements OnModuleInit {
           amount: BigInt(data.balance),
           type: 'CREDIT',
           action: 'ADMIN_INITIAL_ALLOCATION',
-          description: 'Initial Allocation',
+          description: GLOBAL_POOL_TX_DESCRIPTION,
           balanceBefore: 0,
           balanceAfter: data.balance,
         },
@@ -809,6 +810,7 @@ export class AdminsService implements OnModuleInit {
         inboundIds: nextInboundIds,
         panelQuotas: data.panelQuotas,
         previousMode: existing.quotaMode as QuotaMode,
+        balanceBytes: switchingToGlobal ? data.balance : undefined,
       });
     } else if (
       nextQuotaMode === 'PER_PANEL' &&
@@ -864,7 +866,10 @@ export class AdminsService implements OnModuleInit {
           amount: BigInt(Math.round(Math.abs(diff))),
           type: diff > 0 ? 'CREDIT' : 'DEBIT',
           action: diff > 0 ? 'ADMIN_RECHARGE' : 'ADMIN_DEDUCTION',
-          description: diff > 0 ? 'Admin Recharge' : 'Admin Deduction',
+          description:
+            diff > 0
+              ? GLOBAL_POOL_TX_DESCRIPTION
+              : GLOBAL_POOL_TX_DESCRIPTION,
           balanceBefore: existing.balance,
           balanceAfter: data.balance,
         },

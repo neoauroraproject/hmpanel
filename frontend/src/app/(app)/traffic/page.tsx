@@ -382,7 +382,7 @@ export default function TrafficPage() {
                                 <span className="text-[11px] text-zinc-400">{panelTypeLabel(tx.panel.panelType, t)}</span>
                               </span>
                             ) : (
-                              "—"
+                              <span className="font-medium text-blue-600 dark:text-blue-400">{t("traffic.globalPoolPanel")}</span>
                             )}
                           </td>
                           <td className="block md:table-cell px-4 py-2 md:py-3 text-zinc-700 dark:text-zinc-300">

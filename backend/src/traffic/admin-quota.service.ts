@@ -3,7 +3,7 @@ import { Prisma, QuotaMode } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { calculateAdminTrafficSummary } from '../common/utils/traffic.util';
 import { DomainEventBusService } from '../events/domain-event-bus.service';
-import { nextQuotaLedger } from './quota-balance-patch';
+import { GLOBAL_POOL_TX_DESCRIPTION, nextQuotaLedger } from './quota-balance-patch';
 
 export type AdminQuotaAdmin = {
   id: string;
@@ -547,6 +547,8 @@ export class AdminQuotaService {
       inboundIds: string[];
       panelQuotas?: PanelQuotaSpec[];
       previousMode?: QuotaMode;
+      /** Absolute next global balance after a PER_PANEL → GLOBAL switch (merged + delta). */
+      balanceBytes?: number;
     },
   ): Promise<void> {
     // Native panels can be assigned without inbounds, so explicit quota rows
@@ -569,33 +571,60 @@ export class AdminQuotaService {
       const rows = await this.prisma.adminPanelQuota.findMany({
         where: { adminId },
       });
-      const mergedBalance =
-        rows.reduce((sum, r) => sum + r.balance, 0) +
-        (input.previousMode === 'PER_PANEL' ? 0 : 0);
+      const mergedBalance = rows.reduce((sum, r) => sum + r.balance, 0);
       const mergedAssigned = rows.reduce((sum, r) => sum + r.totalAssigned, 0);
       const admin = await this.prisma.admin.findUniqueOrThrow({
         where: { id: adminId },
         select: { balance: true, totalAssigned: true, quotaMode: true },
       });
-      const nextBalance =
-        input.previousMode === 'PER_PANEL'
-          ? mergedBalance
-          : admin.balance;
-      const nextAssigned =
-        input.previousMode === 'PER_PANEL'
-          ? mergedAssigned
-          : admin.totalAssigned;
-      await this.prisma.$transaction([
-        this.prisma.adminPanelQuota.deleteMany({ where: { adminId } }),
-        this.prisma.admin.update({
+      const startingBalance =
+        input.previousMode === 'PER_PANEL' ? mergedBalance : admin.balance;
+      let nextBalance = startingBalance;
+      let nextAssigned =
+        input.previousMode === 'PER_PANEL' ? mergedAssigned : admin.totalAssigned;
+      const target =
+        input.previousMode === 'PER_PANEL' &&
+        typeof input.balanceBytes === 'number' &&
+        Number.isFinite(input.balanceBytes)
+          ? Math.max(0, Math.round(input.balanceBytes))
+          : null;
+      const patch =
+        target == null
+          ? null
+          : nextQuotaLedger(
+              { balance: startingBalance, totalAssigned: nextAssigned },
+              target,
+            );
+      if (patch) {
+        nextBalance = patch.balance;
+        if (patch.totalAssignedIncrement > 0) {
+          nextAssigned += patch.totalAssignedIncrement;
+        }
+      }
+      await this.prisma.$transaction(async (tx) => {
+        await tx.adminPanelQuota.deleteMany({ where: { adminId } });
+        await tx.admin.update({
           where: { id: adminId },
           data: {
             quotaMode: 'GLOBAL',
             balance: nextBalance,
             totalAssigned: nextAssigned,
           },
-        }),
-      ]);
+        });
+        if (patch?.action && patch.diff !== 0) {
+          await tx.trafficTransaction.create({
+            data: {
+              adminId,
+              amount: BigInt(Math.abs(Math.round(patch.diff))),
+              type: patch.diff > 0 ? 'CREDIT' : 'DEBIT',
+              action: patch.action,
+              description: GLOBAL_POOL_TX_DESCRIPTION,
+              balanceBefore: startingBalance,
+              balanceAfter: nextBalance,
+            },
+          });
+        }
+      });
       return;
     }
 
