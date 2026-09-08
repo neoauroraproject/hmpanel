@@ -16,6 +16,11 @@ import { usePluginRegistry } from "@/store/pluginRegistry";
 import { useAuth } from "@/store/auth";
 import { useLicenseActivation } from "@/hooks/useLicenseActivation";
 import { PremiumGem } from "@/components/PremiumGem";
+import {
+  applyCountDelta,
+  applyExpiryDeltaMs,
+  applyTrafficDeltaBytes,
+} from "./quota-adjust";
 
 interface AdminPanelQuotaRow {
   panelId: string;
@@ -30,7 +35,7 @@ interface AdminPanelQuotaRow {
   trafficMode?: string;
 }
 
-/** Per-panel caps as raw form strings; "" and "0" both mean unlimited. */
+/** Per-panel caps as raw form strings. On edit these are +/- deltas; empty = no change. */
 interface PanelQuotaForm {
   gb: string;
   maxClients: string;
@@ -39,12 +44,26 @@ interface PanelQuotaForm {
   trafficMode: string;
 }
 
+type QuotaBaseline = {
+  balance: number;
+  maxClients: number;
+  maxDeviceLimit: number;
+  maxExpireDays: number;
+};
+
 const EMPTY_PANEL_QUOTA: PanelQuotaForm = {
   gb: "",
   maxClients: "",
   maxDeviceLimit: "",
   maxExpireDays: "",
   trafficMode: "ALLOCATION",
+};
+
+const EMPTY_QUOTA_BASELINE: QuotaBaseline = {
+  balance: 0,
+  maxClients: 0,
+  maxDeviceLimit: 0,
+  maxExpireDays: 0,
 };
 
 interface Admin {
@@ -504,16 +523,25 @@ function PanelLimitFields({
   value,
   onChange,
   disabled,
+  current,
 }: {
   panelType?: string | null;
   value: PanelQuotaForm;
   onChange: (patch: Partial<PanelQuotaForm>) => void;
   disabled?: boolean;
+  current?: QuotaBaseline;
 }) {
   const t = useT();
   const fieldClass =
     "w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500";
-  const labelClass = "mb-1.5 block text-sm font-medium text-zinc-600 dark:text-zinc-400";
+  const labelClass = "block text-sm font-medium text-zinc-600 dark:text-zinc-400";
+  const stock = current ?? EMPTY_QUOTA_BASELINE;
+  const stockCount = (n: number) => (n > 0 ? String(n) : t("admins.stockUnlimited"));
+  const stockGb =
+    stock.balance > 0
+      ? `${(Math.round((stock.balance / 1024 ** 3) * 100) / 100).toString()} GB`
+      : "0 GB";
+
   return (
     <div
       className={`space-y-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-950/40 p-3.5 ${
@@ -525,11 +553,16 @@ function PanelLimitFields({
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className={labelClass}>{t("admins.panelTrafficLimitGb")}</label>
+          <div className="mb-1.5 flex items-baseline justify-between gap-2">
+            <label className={labelClass}>{t("admins.adjustTraffic")}</label>
+            <span className="shrink-0 text-xs font-medium text-zinc-500">
+              {t("admins.stockAvailable", { value: stockGb })}
+            </span>
+          </div>
           <input
             type="number"
-            min={0}
-            placeholder="0"
+            step="any"
+            placeholder={t("admins.adjustTrafficPlaceholder")}
             disabled={disabled}
             value={value.gb}
             onChange={(e) => onChange({ gb: e.target.value })}
@@ -537,11 +570,16 @@ function PanelLimitFields({
           />
         </div>
         <div>
-          <label className={labelClass}>{t("admins.panelMaxClients")}</label>
+          <div className="mb-1.5 flex items-baseline justify-between gap-2">
+            <label className={labelClass}>{t("admins.adjustClients")}</label>
+            <span className="shrink-0 text-xs font-medium text-zinc-500">
+              {t("admins.stockAvailable", { value: stockCount(stock.maxClients) })}
+            </span>
+          </div>
           <input
             type="number"
-            min={0}
-            placeholder="0"
+            step={1}
+            placeholder={t("admins.adjustTrafficPlaceholder")}
             disabled={disabled}
             value={value.maxClients}
             onChange={(e) => onChange({ maxClients: e.target.value })}
@@ -549,11 +587,16 @@ function PanelLimitFields({
           />
         </div>
         <div>
-          <label className={labelClass}>{t(panelDeviceLimitI18nKey(panelType))}</label>
+          <div className="mb-1.5 flex items-baseline justify-between gap-2">
+            <label className={labelClass}>{t(panelDeviceLimitI18nKey(panelType))}</label>
+            <span className="shrink-0 text-xs font-medium text-zinc-500">
+              {t("admins.stockAvailable", { value: stockCount(stock.maxDeviceLimit) })}
+            </span>
+          </div>
           <input
             type="number"
-            min={0}
-            placeholder="0"
+            step={1}
+            placeholder={t("admins.adjustTrafficPlaceholder")}
             disabled={disabled}
             value={value.maxDeviceLimit}
             onChange={(e) => onChange({ maxDeviceLimit: e.target.value })}
@@ -561,11 +604,16 @@ function PanelLimitFields({
           />
         </div>
         <div>
-          <label className={labelClass}>{t("admins.panelMaxExpireDays")}</label>
+          <div className="mb-1.5 flex items-baseline justify-between gap-2">
+            <label className={labelClass}>{t("admins.adjustExpireDays")}</label>
+            <span className="shrink-0 text-xs font-medium text-zinc-500">
+              {t("admins.stockAvailable", { value: stockCount(stock.maxExpireDays) })}
+            </span>
+          </div>
           <input
             type="number"
-            min={0}
-            placeholder="0"
+            step={1}
+            placeholder={t("admins.adjustTrafficPlaceholder")}
             disabled={disabled}
             value={value.maxExpireDays}
             onChange={(e) => onChange({ maxExpireDays: e.target.value })}
@@ -573,7 +621,7 @@ function PanelLimitFields({
           />
         </div>
         <div className="col-span-2">
-          <label className={labelClass}>{t("admins.trafficAccountingMode")}</label>
+          <label className={`${labelClass} mb-1.5`}>{t("admins.trafficAccountingMode")}</label>
           <select
             disabled={disabled}
             value={value.trafficMode || "ALLOCATION"}
@@ -586,7 +634,7 @@ function PanelLimitFields({
           <p className="mt-1 text-xs leading-relaxed text-zinc-500">{t("admins.panelTrafficModeHint")}</p>
         </div>
       </div>
-      <p className="text-xs leading-relaxed text-zinc-500">{t("admins.panelLimitsHint")}</p>
+      <p className="text-xs leading-relaxed text-zinc-500">{t("admins.adjustDeltaHint")}</p>
     </div>
   );
 }
@@ -612,6 +660,7 @@ function PanelInboundPicker({
   panelQuotas,
   onQuotaChange,
   showQuotaFields,
+  quotaBaselines,
 }: {
   panels: PanelRow[];
   inbounds: InboundRow[];
@@ -627,6 +676,7 @@ function PanelInboundPicker({
   panelQuotas: Record<string, PanelQuotaForm>;
   onQuotaChange: (panelId: string, patch: Partial<PanelQuotaForm>) => void;
   showQuotaFields?: boolean;
+  quotaBaselines?: Record<string, QuotaBaseline>;
 }) {
   const t = useT();
   const [expanded, setExpanded] = useState<string[]>([]);
@@ -914,6 +964,7 @@ function PanelInboundPicker({
                   <PanelLimitFields
                     panelType={p.panelType}
                     value={panelQuotas[p.id] ?? EMPTY_PANEL_QUOTA}
+                    current={quotaBaselines?.[p.id]}
                     onChange={(patch) => onQuotaChange(p.id, patch)}
                   />
                 ) : (
@@ -944,19 +995,19 @@ function nativeProviderKey(panelType?: string | null): "eylan" | "pasarguard" | 
 
 function overlayQuotaOnProviderDraft(
   draft: Record<string, unknown>,
-  quota: PanelQuotaForm | undefined,
+  resolved: { balanceBytes: number; maxClients: number } | undefined,
   panel: PanelRow,
 ) {
   const provider = nativeProviderKey(panel.panelType);
-  const bytes = gbToBytes(quota?.gb || "");
-  const maxClients = limitNumber(quota?.maxClients || "");
+  const bytes = Math.max(0, Number(resolved?.balanceBytes) || 0);
+  const maxClients = Math.max(0, Number(resolved?.maxClients) || 0);
   return {
     ...draft,
     provider,
     enabled: true,
     panelId: panel.id,
     trafficBytes: String(bytes),
-    unlimitedTraffic: bytes <= 0,
+    unlimitedTraffic: false,
     maxClients,
     unlimitedClients: maxClients <= 0,
     quotaMode: "PER_PANEL",
@@ -970,8 +1021,9 @@ function collectProviderAccessDrafts(
   drafts: Record<string, unknown>,
   panels: PanelRow[] | undefined,
   enabledPanels: string[],
-  panelQuotas: Record<string, PanelQuotaForm>,
+  resolvedQuotas: Array<{ panelId: string; balanceBytes: number; maxClients: number }>,
 ) {
+  const resolvedByPanel = Object.fromEntries(resolvedQuotas.map((q) => [q.panelId, q]));
   const out: Record<string, unknown> = { ...drafts };
   for (const panel of panels ?? []) {
     const key = nativeProviderKey(panel.panelType);
@@ -993,7 +1045,7 @@ function collectProviderAccessDrafts(
       out[key] && typeof out[key] === "object"
         ? (out[key] as Record<string, unknown>)
         : { provider: key };
-    out[key] = overlayQuotaOnProviderDraft(base, panelQuotas[panel.id], panel);
+    out[key] = overlayQuotaOnProviderDraft(base, resolvedByPanel[panel.id], panel);
   }
   return out;
 }
@@ -1020,34 +1072,20 @@ function hasResellerPanelAccess(
   });
 }
 
-/** Blank, negative and non-numeric limit inputs all collapse to 0 (= unlimited). */
-function limitNumber(value: string) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : 0;
-}
-
-function gbToBytes(value: string) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed * 1024 ** 3) : 0;
-}
-
-function bytesToGbInput(bytes?: number) {
-  if (!bytes || bytes <= 0) return "";
-  return String(Math.round((bytes / 1024 ** 3) * 100) / 100);
-}
-
 function buildPanelQuotasPayload(
   enabledPanels: string[],
   panelQuotas: Record<string, PanelQuotaForm>,
+  baselines: Record<string, QuotaBaseline> = {},
 ) {
   return enabledPanels.map((panelId) => {
     const quota = panelQuotas[panelId] ?? EMPTY_PANEL_QUOTA;
+    const base = baselines[panelId] ?? EMPTY_QUOTA_BASELINE;
     return {
       panelId,
-      balanceBytes: gbToBytes(quota.gb),
-      maxClients: limitNumber(quota.maxClients),
-      maxDeviceLimit: limitNumber(quota.maxDeviceLimit),
-      maxExpireDays: limitNumber(quota.maxExpireDays),
+      balanceBytes: applyTrafficDeltaBytes(base.balance, quota.gb),
+      maxClients: applyCountDelta(base.maxClients, quota.maxClients),
+      maxDeviceLimit: applyCountDelta(base.maxDeviceLimit, quota.maxDeviceLimit),
+      maxExpireDays: applyCountDelta(base.maxExpireDays, quota.maxExpireDays),
       trafficMode: quota.trafficMode === "USAGE" ? "USAGE" : "ALLOCATION",
     };
   });
@@ -1167,10 +1205,10 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
         panelQuotas: perPanelQuotas
           ? buildPanelQuotasPayload(form.enabledPanels, form.panelQuotas)
           : undefined,
-        expiryTime: form.superAdmin ? 0 : (form.expiryDays ? Date.now() + Number(form.expiryDays) * 24 * 60 * 60 * 1000 : 0),
-        maxClients: form.superAdmin || perPanelQuotas ? 0 : limitNumber(form.maxClients),
-        maxDeviceLimit: form.superAdmin || perPanelQuotas ? 0 : limitNumber(form.maxDeviceLimit),
-        maxExpireDays: form.superAdmin || perPanelQuotas ? 0 : limitNumber(form.maxExpireDays),
+        expiryTime: form.superAdmin ? 0 : applyExpiryDeltaMs(0, form.expiryDays),
+        maxClients: form.superAdmin || perPanelQuotas ? 0 : applyCountDelta(0, form.maxClients),
+        maxDeviceLimit: form.superAdmin || perPanelQuotas ? 0 : applyCountDelta(0, form.maxDeviceLimit),
+        maxExpireDays: form.superAdmin || perPanelQuotas ? 0 : applyCountDelta(0, form.maxExpireDays),
         inboundIds: form.superAdmin ? [] : form.selectedInbounds,
         permissions: [],
         storeEnabled: form.superAdmin ? false : form.storeEnabled,
@@ -1188,7 +1226,7 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
             providerDrafts.current,
             panels,
             form.enabledPanels,
-            form.panelQuotas,
+            payload.panelQuotas || [],
           ),
         );
       }
@@ -1366,20 +1404,24 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
                         </div>
                       ) : null}
                       <div>
-                        <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">
-                          {t("admins.expiryDays")}{" "}
-                          <span className="text-zinc-500 text-xs">{t("admins.unlimitedHint")}</span>
-                        </label>
+                        <div className="mb-1 flex items-baseline justify-between gap-2">
+                          <label className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+                            {t("admins.addExpiryDays")}
+                          </label>
+                          <span className="text-xs font-medium text-zinc-500">
+                            {t("admins.stockAvailable", { value: t("admins.stockUnlimited") })}
+                          </span>
+                        </div>
                         <input
                           type="number"
-                          min={0}
-                          placeholder="0"
+                          step={1}
+                          placeholder={t("admins.adjustTrafficPlaceholder")}
                           disabled={limitsLocked}
                           value={form.expiryDays}
                           onChange={(e) => setForm({ ...form, expiryDays: e.target.value })}
                           className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2.5 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors"
                         />
-                        <p className="mt-1.5 text-xs leading-relaxed text-zinc-500">{t("admins.adminAccountExpiryHint")}</p>
+                        <p className="mt-1.5 text-xs leading-relaxed text-zinc-500">{t("admins.adjustAccountExpiryHint")}</p>
                       </div>
                     </div>
                   </motion.div>
@@ -1477,6 +1519,7 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
     unlimitedTraffic: false,
     superAdmin: false,
     panelQuotas: {} as Record<string, PanelQuotaForm>,
+    quotaBaselines: {} as Record<string, QuotaBaseline>,
   });
   const quotaMode = resolveQuotaMode(form);
   const perPanelQuotas = quotaMode === "PER_PANEL";
@@ -1510,42 +1553,55 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
         .filter((p) => isNativePremiumPanel(p) && providerAccess.some((r) => r.enabled && r.provider === p.panelType))
         .map((p) => p.id);
       const enabledPanels = Array.from(new Set([...fromInbounds, ...fromQuota, ...fromNative]));
+      const quotaBaselines: Record<string, QuotaBaseline> = {};
       const panelQuotas: Record<string, PanelQuotaForm> = Object.fromEntries(
-        (admin.panelQuotas || []).map((q) => [
-          q.panelId,
-          {
-            gb: bytesToGbInput(q.balance),
-            maxClients: q.maxClients ? String(q.maxClients) : "",
-            maxDeviceLimit: q.maxDeviceLimit ? String(q.maxDeviceLimit) : "",
-            maxExpireDays: q.maxExpireDays ? String(q.maxExpireDays) : "",
-            trafficMode: q.trafficMode === "USAGE" ? "USAGE" : "ALLOCATION",
-          },
-        ]),
+        (admin.panelQuotas || []).map((q) => {
+          quotaBaselines[q.panelId] = {
+            balance: q.balance || 0,
+            maxClients: q.maxClients || 0,
+            maxDeviceLimit: q.maxDeviceLimit || 0,
+            maxExpireDays: q.maxExpireDays || 0,
+          };
+          return [
+            q.panelId,
+            {
+              gb: "",
+              maxClients: "",
+              maxDeviceLimit: "",
+              maxExpireDays: "",
+              trafficMode: q.trafficMode === "USAGE" ? "USAGE" : "ALLOCATION",
+            },
+          ];
+        }),
       );
-      // An admin still on the shared pool carries its balance onto the first panel
-      // so moving to per-panel caps never silently zeroes the traffic it owns.
+      // Keep a shared-pool balance as the first panel's current stock so +/- still applies to it.
       const migratingFromGlobalPool =
         admin.role !== "SUPER_ADMIN" && admin.quotaMode !== "PER_PANEL" && !admin.unlimitedTraffic;
       enabledPanels.forEach((panelId, index) => {
         if (panelQuotas[panelId]) return;
-        panelQuotas[panelId] = migratingFromGlobalPool
-          ? {
-              gb: index === 0 ? bytesToGbInput(admin.balance) : "",
-              maxClients: admin.maxClients ? String(admin.maxClients) : "",
-              maxDeviceLimit: admin.maxDeviceLimit ? String(admin.maxDeviceLimit) : "",
-              maxExpireDays: admin.maxExpireDays ? String(admin.maxExpireDays) : "",
-              trafficMode: admin.trafficMode === "USAGE" ? "USAGE" : "ALLOCATION",
-            }
-          : { ...EMPTY_PANEL_QUOTA };
+        panelQuotas[panelId] = {
+          ...EMPTY_PANEL_QUOTA,
+          trafficMode: admin.trafficMode === "USAGE" ? "USAGE" : "ALLOCATION",
+        };
+        quotaBaselines[panelId] =
+          migratingFromGlobalPool && index === 0
+            ? {
+                balance: admin.balance || 0,
+                maxClients: admin.maxClients || 0,
+                maxDeviceLimit: admin.maxDeviceLimit || 0,
+                maxExpireDays: admin.maxExpireDays || 0,
+              }
+            : { ...EMPTY_QUOTA_BASELINE };
       });
       setForm((prev) => ({
         ...prev,
         username: admin.username || "",
         status: admin.status || "active",
         trafficMode: admin.trafficMode || "ALLOCATION",
-        maxClients: admin.maxClients ? String(admin.maxClients) : "",
-        maxDeviceLimit: admin.maxDeviceLimit ? String(admin.maxDeviceLimit) : "",
-        maxExpireDays: admin.maxExpireDays ? String(admin.maxExpireDays) : "",
+        maxClients: "",
+        maxDeviceLimit: "",
+        maxExpireDays: "",
+        expiryDays: "",
         selectedInbounds: assigned.map((ai: any) => ai.inbound.id),
         enabledPanels,
         canCustomizeBranding: admin.permissions ? admin.permissions.includes("canCustomizeBranding") : true,
@@ -1555,6 +1611,7 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
         unlimitedTraffic: false,
         superAdmin: admin.role === "SUPER_ADMIN",
         panelQuotas,
+        quotaBaselines,
       }));
     }
   }, [admin, panels, providerAccess]);
@@ -1581,7 +1638,11 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
       if (!form.superAdmin) {
         payload.quotaMode = quotaMode;
         if (perPanelQuotas) {
-          payload.panelQuotas = buildPanelQuotasPayload(form.enabledPanels, form.panelQuotas);
+          payload.panelQuotas = buildPanelQuotasPayload(
+            form.enabledPanels,
+            form.panelQuotas,
+            form.quotaBaselines,
+          );
         }
         // Panel cards own every cap — clear account-wide ceilings.
         payload.maxClients = 0;
@@ -1589,10 +1650,8 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
         payload.maxExpireDays = 0;
       }
       if (form.password.trim()) payload.password = form.password;
-      if (!form.superAdmin) {
-        payload.expiryTime = form.expiryDays
-          ? Date.now() + Number(form.expiryDays) * 24 * 60 * 60 * 1000
-          : 0;
+      if (!form.superAdmin && form.expiryDays.trim()) {
+        payload.expiryTime = applyExpiryDeltaMs(admin.expiryTime, form.expiryDays);
       }
       payload.storeEnabled = form.superAdmin ? false : form.storeEnabled;
       const nextUsername = form.username.trim();
@@ -1608,7 +1667,7 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
             providerDrafts.current,
             panels,
             form.enabledPanels,
-            form.panelQuotas,
+            payload.panelQuotas || [],
           ),
         );
       }
@@ -1731,20 +1790,24 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
                             </>
                           ) : null}
                           <div>
-                            <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">
-                              {t("admins.expiryDays")}{" "}
-                              <span className="text-zinc-500 text-xs">{t("admins.unlimitedHint")}</span>
-                            </label>
+                            <div className="mb-1 flex items-baseline justify-between gap-2">
+                              <label className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+                                {t("admins.addExpiryDays")}
+                              </label>
+                              <span className="text-xs font-medium text-zinc-500">
+                                {t("admins.stockAvailable", { value: expiryDaysLabel })}
+                              </span>
+                            </div>
                             <input
                               type="number"
-                              min={0}
-                              placeholder="0"
+                              step={1}
+                              placeholder={t("admins.adjustTrafficPlaceholder")}
                               disabled={limitsLocked}
                               value={form.expiryDays}
                               onChange={(e) => setForm({ ...form, expiryDays: e.target.value })}
                               className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-2.5 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors placeholder:text-zinc-600"
                             />
-                            <p className="text-xs text-zinc-500 mt-1.5">{t("admins.adminAccountExpiryHint")}</p>
+                            <p className="text-xs text-zinc-500 mt-1.5">{t("admins.adjustAccountExpiryHint")}</p>
                           </div>
                           
                           {admin && !admin.unlimitedTraffic && !form.unlimitedTraffic && (
@@ -1909,6 +1972,7 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
                             adminId={adminId}
                             onProviderDraft={(items) => mergeProviderDraft(providerDrafts, items)}
                             panelQuotas={form.panelQuotas}
+                            quotaBaselines={form.quotaBaselines}
                             onQuotaChange={(panelId, patch) => setForm((f) => patchPanelQuota(f, panelId, patch))}
                             showQuotaFields={perPanelQuotas}
                           />

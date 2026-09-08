@@ -3,6 +3,7 @@ import { Prisma, QuotaMode } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { calculateAdminTrafficSummary } from '../common/utils/traffic.util';
 import { DomainEventBusService } from '../events/domain-event-bus.service';
+import { nextQuotaLedger } from './quota-balance-patch';
 
 export type AdminQuotaAdmin = {
   id: string;
@@ -624,30 +625,13 @@ export class AdminQuotaService {
       });
       for (const pid of panelIds) {
         const spec = quotas.find((q) => q.panelId === pid);
-        const balanceBytes = spec?.balanceBytes ?? 0;
-        const limits = {
-          maxClients: capValue(spec?.maxClients),
-          maxDeviceLimit: capValue(spec?.maxDeviceLimit),
-          maxExpireDays: capValue(spec?.maxExpireDays),
-          trafficMode:
-            String(spec?.trafficMode || '').toUpperCase() === 'USAGE'
-              ? ('USAGE' as const)
-              : ('ALLOCATION' as const),
-        };
-        await tx.adminPanelQuota.upsert({
-          where: { adminId_panelId: { adminId, panelId: pid } },
-          create: {
-            adminId,
-            panelId: pid,
-            balance: balanceBytes,
-            totalAssigned: balanceBytes,
-            ...limits,
-          },
-          update: {
-            balance: balanceBytes,
-            totalAssigned: balanceBytes,
-            ...limits,
-          },
+        await this.upsertPanelQuotaWithLedger(tx, adminId, {
+          panelId: pid,
+          balanceBytes: spec?.balanceBytes ?? 0,
+          maxClients: spec?.maxClients,
+          maxDeviceLimit: spec?.maxDeviceLimit,
+          maxExpireDays: spec?.maxExpireDays,
+          trafficMode: spec?.trafficMode,
         });
       }
     });
@@ -659,58 +643,91 @@ export class AdminQuotaService {
   ): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
       for (const q of panelQuotas) {
-        const existing = await tx.adminPanelQuota.findUnique({
-          where: { adminId_panelId: { adminId, panelId: q.panelId } },
-        });
-        const before = existing?.balance ?? 0;
-        const diff = q.balanceBytes - before;
-        const limits = {
-          ...(q.maxClients !== undefined
-            ? { maxClients: capValue(q.maxClients) }
-            : {}),
-          ...(q.maxDeviceLimit !== undefined
-            ? { maxDeviceLimit: capValue(q.maxDeviceLimit) }
-            : {}),
-          ...(q.maxExpireDays !== undefined
-            ? { maxExpireDays: capValue(q.maxExpireDays) }
-            : {}),
-        };
-        await tx.adminPanelQuota.upsert({
-          where: { adminId_panelId: { adminId, panelId: q.panelId } },
-          create: {
-            adminId,
-            panelId: q.panelId,
-            balance: q.balanceBytes,
-            totalAssigned: q.balanceBytes,
-            ...limits,
-          },
-          update: {
-            balance: q.balanceBytes,
-            ...(diff > 0 ? { totalAssigned: { increment: diff } } : {}),
-            ...limits,
-          },
-        });
-        if (diff !== 0) {
-          await tx.trafficTransaction.create({
-            data: {
-              adminId,
-              panelId: q.panelId,
-              amount: BigInt(Math.abs(Math.round(diff))),
-              type: diff > 0 ? 'CREDIT' : 'DEBIT',
-              action: diff > 0 ? 'ADMIN_RECHARGE' : 'ADMIN_DEDUCTION',
-              description: await this.labeledDescription(
-                tx,
-                q.panelId,
-                diff > 0
-                  ? 'Per-panel admin recharge'
-                  : 'Per-panel admin deduction',
-              ),
-              balanceBefore: before,
-              balanceAfter: q.balanceBytes,
-            },
-          });
-        }
+        await this.upsertPanelQuotaWithLedger(tx, adminId, q);
       }
+    });
+  }
+
+  private async upsertPanelQuotaWithLedger(
+    tx: Tx,
+    adminId: string,
+    spec: PanelQuotaSpec,
+  ) {
+    const existing = await tx.adminPanelQuota.findUnique({
+      where: { adminId_panelId: { adminId, panelId: spec.panelId } },
+    });
+    const patch = nextQuotaLedger(
+      existing
+        ? { balance: existing.balance, totalAssigned: existing.totalAssigned }
+        : null,
+      spec.balanceBytes,
+    );
+    const trafficMode =
+      String(spec.trafficMode || existing?.trafficMode || '').toUpperCase() ===
+      'USAGE'
+        ? ('USAGE' as const)
+        : ('ALLOCATION' as const);
+    const limits = {
+      ...(spec.maxClients !== undefined
+        ? { maxClients: capValue(spec.maxClients) }
+        : existing
+          ? {}
+          : { maxClients: 0 }),
+      ...(spec.maxDeviceLimit !== undefined
+        ? { maxDeviceLimit: capValue(spec.maxDeviceLimit) }
+        : existing
+          ? {}
+          : { maxDeviceLimit: 0 }),
+      ...(spec.maxExpireDays !== undefined
+        ? { maxExpireDays: capValue(spec.maxExpireDays) }
+        : existing
+          ? {}
+          : { maxExpireDays: 0 }),
+      trafficMode,
+    };
+
+    if (!existing) {
+      await tx.adminPanelQuota.create({
+        data: {
+          adminId,
+          panelId: spec.panelId,
+          balance: patch.balance,
+          totalAssigned: patch.totalAssigned ?? patch.balance,
+          ...limits,
+        },
+      });
+    } else {
+      await tx.adminPanelQuota.update({
+        where: { adminId_panelId: { adminId, panelId: spec.panelId } },
+        data: {
+          balance: patch.balance,
+          ...(patch.totalAssignedIncrement > 0
+            ? { totalAssigned: { increment: patch.totalAssignedIncrement } }
+            : {}),
+          ...limits,
+        },
+      });
+    }
+
+    if (!patch.action || patch.diff === 0) return;
+
+    const verb =
+      patch.action === 'ADMIN_INITIAL_ALLOCATION'
+        ? 'Initial allocation'
+        : patch.action === 'ADMIN_RECHARGE'
+          ? 'Per-panel admin recharge'
+          : 'Per-panel admin deduction';
+    await tx.trafficTransaction.create({
+      data: {
+        adminId,
+        panelId: spec.panelId,
+        amount: BigInt(Math.abs(Math.round(patch.diff))),
+        type: patch.diff > 0 ? 'CREDIT' : 'DEBIT',
+        action: patch.action,
+        description: await this.labeledDescription(tx, spec.panelId, verb),
+        balanceBefore: existing?.balance ?? 0,
+        balanceAfter: patch.balance,
+      },
     });
   }
 
