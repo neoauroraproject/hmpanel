@@ -30,4 +30,30 @@ export class FeatureEntitlementService {
     if (await this.features.isFeatureEnabled(id)) return true;
     return this.features.isFeatureEnabled(id.toUpperCase());
   }
+
+  /** Catalog / module list: licensed premium, including read-only. */
+  async isPremiumEdition(): Promise<boolean> {
+    const state = await this.license.getLicenseState();
+    return (
+      state.edition === 'PREMIUM' &&
+      state.mode !== 'disabled' &&
+      state.status !== 'community' &&
+      state.status !== 'invalid'
+    );
+  }
+
+  /** Bundle runtime: premium license that should load/guard APIs. */
+  async isPremiumRuntimeActive(): Promise<boolean> {
+    const state = await this.license.getLicenseState();
+    return (
+      state.edition === 'PREMIUM' &&
+      state.mode !== 'disabled' &&
+      state.status !== 'invalid' &&
+      state.status !== 'community' &&
+      state.status !== 'expired' &&
+      (state.status === 'active' ||
+        state.status === 'grace' ||
+        state.status === 'read_only')
+    );
+  }
 }

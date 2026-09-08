@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { LicenseManagerService } from './license-manager.service';
+import { FeatureEntitlementService } from './feature-entitlement.service';
 import { MODULE_MANIFESTS } from './manifests';
 
 /** Community-side premium module list — works even before the premium bundle backend loads. */
@@ -10,6 +11,7 @@ export class PremiumCatalogService {
   constructor(
     private licenseManager: LicenseManagerService,
     private prisma: PrismaService,
+    private entitlement: FeatureEntitlementService,
   ) {}
 
   async listForLicensedAdmin(
@@ -31,11 +33,7 @@ export class PremiumCatalogService {
     }>
   > {
     const license = await this.licenseManager.getLicenseState();
-    const licensed =
-      license.edition === 'PREMIUM' &&
-      license.status !== 'community' &&
-      license.status !== 'invalid' &&
-      license.mode !== 'disabled';
+    const licensed = await this.entitlement.isPremiumEdition();
 
     if (!licensed) return [];
 
@@ -109,11 +107,7 @@ export class PremiumCatalogService {
     }>
   > {
     const license = await this.licenseManager.getLicenseState();
-    const licensed =
-      license.edition === 'PREMIUM' &&
-      license.status !== 'community' &&
-      license.status !== 'invalid' &&
-      license.mode !== 'disabled';
+    const licensed = await this.entitlement.isPremiumEdition();
 
     if (!licensed) return [];
 

@@ -10,7 +10,10 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PanelsService } from '../panels/panels.service';
-import { calculateAdminTrafficSummary } from '../common/utils/traffic.util';
+import {
+  calculateAdminTrafficSummary,
+  sumPanelQuotaTraffic,
+} from '../common/utils/traffic.util';
 import {
   AdminQuotaService,
   PanelQuotaSpec,
@@ -335,16 +338,21 @@ export class AdminsService implements OnModuleInit {
           admin.balance,
         );
         let panelQuotaSummary: string | null = null;
+        let usedTraffic = summary.usedTraffic;
+        let totalAssigned = summary.totalAllocated;
         if (admin.quotaMode === 'PER_PANEL' && !admin.unlimitedTraffic) {
           const quotas = await this.adminQuota.listPanelQuotas(admin.id);
           const totalAvail = quotas.reduce((s, q) => s + q.availableTraffic, 0);
           panelQuotaSummary = `${quotas.length} panels · ${(totalAvail / (1024 ** 3)).toFixed(2)} GB`;
+          const pooled = sumPanelQuotaTraffic(quotas);
+          usedTraffic = pooled.usedTraffic;
+          totalAssigned = pooled.totalAllocated;
         }
         return {
           ...admin,
           expiryTime: Number(admin.expiryTime),
-          usedTraffic: summary.usedTraffic,
-          totalAssigned: summary.totalAllocated,
+          usedTraffic,
+          totalAssigned,
           panelQuotaSummary,
         };
       }),
@@ -404,11 +412,15 @@ export class AdminsService implements OnModuleInit {
       admin.quotaMode === 'PER_PANEL'
         ? await this.adminQuota.listPanelQuotas(admin.id)
         : [];
+    const pooled =
+      admin.quotaMode === 'PER_PANEL' && !admin.unlimitedTraffic
+        ? sumPanelQuotaTraffic(panelQuotas)
+        : { usedTraffic: summary.usedTraffic, totalAllocated: summary.totalAllocated };
     return {
       ...admin,
       expiryTime: Number(admin.expiryTime),
-      usedTraffic: summary.usedTraffic,
-      totalAssigned: summary.totalAllocated,
+      usedTraffic: pooled.usedTraffic,
+      totalAssigned: pooled.totalAllocated,
       panelQuotas,
     };
   }

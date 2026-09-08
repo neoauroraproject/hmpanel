@@ -35,4 +35,20 @@ describe('FeatureEntitlementService', () => {
     expect(await entitlement.can('feature.external-panels')).toBe(true);
     expect(await entitlement.can('store')).toBe(false);
   });
+
+  it('exposes edition vs runtime gates without callers reading license.edition', async () => {
+    const entitlement = new FeatureEntitlementService(
+      { isEnabled: jest.fn(), isFeatureEnabled: jest.fn() } as any,
+      {
+        getLicenseState: jest.fn().mockResolvedValue({
+          edition: 'PREMIUM',
+          mode: 'full',
+          status: 'read_only',
+        }),
+      } as any,
+    );
+    expect(await entitlement.isPremiumEdition()).toBe(true);
+    expect(await entitlement.isPremiumRuntimeActive()).toBe(true);
+    expect(await entitlement.can('premium')).toBe(false);
+  });
 });

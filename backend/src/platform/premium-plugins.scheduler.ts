@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { LicenseManagerService } from './license-manager.service';
+import { FeatureEntitlementService } from './feature-entitlement.service';
 import { PremiumBundleService } from './premium-bundle.service';
 import { PluginsService } from '../plugins/plugins.service';
 import { getPremiumBootstrapResult } from '../plugins/premium-bootstrap';
@@ -16,9 +16,9 @@ export class PremiumPluginsScheduler {
   private restartScheduled = false;
 
   constructor(
-    private licenseManager: LicenseManagerService,
     private bundleService: PremiumBundleService,
     private pluginsService: PluginsService,
+    private entitlement: FeatureEntitlementService,
   ) {}
 
   @Cron(CronExpression.EVERY_MINUTE)
@@ -27,14 +27,7 @@ export class PremiumPluginsScheduler {
     if (!this.bundleService.isBundleInstalled()) return;
     if (this.restartScheduled) return;
 
-    const state = await this.licenseManager.getLicenseState();
-    const active =
-      state.edition === 'PREMIUM' &&
-      state.mode !== 'disabled' &&
-      state.status !== 'invalid' &&
-      state.status !== 'community' &&
-      state.status !== 'expired';
-
+    const active = await this.entitlement.isPremiumRuntimeActive();
     if (!active) return;
 
     const boot = getPremiumBootstrapResult();

@@ -27,6 +27,11 @@ import { BotApiKeyGuard } from '../bots/bot-api.guard';
 import { BotApiV1Controller } from '../bots/bot-api.controller';
 import { TelegramCoreService } from '../bots/telegram-core.service';
 import { ProvisioningEngine } from '../provisioning/provisioning.engine';
+import { WebhookDispatcher } from '../events/webhook-dispatcher.service';
+import { PaymentSurfaceService } from '../payments/payment-surface.service';
+import { PluginSlotRegistry } from '../plugins/plugin-slot.registry';
+import { PluginHostService } from '../plugins/plugin-host.service';
+import { DefaultCommercePipeline } from '../commerce/default-commerce.pipeline';
 import {
   BASELINE_MIGRATION_STEPS,
   SchemaMigrationAdapter,
@@ -65,6 +70,11 @@ import {
     BotApiKeyGuard,
     TelegramCoreService,
     ProvisioningEngine,
+    WebhookDispatcher,
+    PaymentSurfaceService,
+    PluginSlotRegistry,
+    PluginHostService,
+    DefaultCommercePipeline,
     BackupsQueueProcessor,
     CleanupQueueProcessor,
     {
@@ -84,6 +94,11 @@ import {
     BotApiService,
     TelegramCoreService,
     ProvisioningEngine,
+    WebhookDispatcher,
+    PaymentSurfaceService,
+    PluginSlotRegistry,
+    PluginHostService,
+    DefaultCommercePipeline,
     SchemaMigrationAdapter,
   ],
 })

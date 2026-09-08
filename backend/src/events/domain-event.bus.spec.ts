@@ -11,4 +11,14 @@ describe('DomainEventBus', () => {
     expect(seen).toEqual(['client.created']);
     expect(bus.recent()[0].payload).toEqual({ email: 'a@b.c' });
   });
+
+  it('fans out contract aliases without replacing the original type', async () => {
+    const bus = new DomainEventBus();
+    const seen: string[] = [];
+    bus.on('payment.verified', (e) => seen.push(e.type));
+    bus.on('payment.completed', (e) => seen.push(e.type));
+    await bus.emit('payment.verified', { orderId: 'o1' });
+    expect(seen).toEqual(['payment.verified', 'payment.completed']);
+    expect(bus.recent().map((e) => e.type)).toEqual(['payment.verified']);
+  });
 });

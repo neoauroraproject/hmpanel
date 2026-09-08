@@ -4,6 +4,9 @@ import { PrismaService } from '../prisma/prisma.service';
 import { calculateAdminTrafficSummary } from '../common/utils/traffic.util';
 import { DomainEventBusService } from '../events/domain-event-bus.service';
 import { GLOBAL_POOL_TX_DESCRIPTION, nextQuotaLedger } from './quota-balance-patch';
+import { PolicyEngine } from '../authz/policy.engine';
+import { FeatureFlagsService } from '../platform/architecture/feature-flags.service';
+import { PLATFORM_FLAGS } from '../platform/architecture/feature-flags';
 
 export type AdminQuotaAdmin = {
   id: string;
@@ -58,6 +61,8 @@ export class AdminQuotaService {
   constructor(
     private readonly prisma: PrismaService,
     @Optional() private readonly events?: DomainEventBusService,
+    @Optional() private readonly policy?: PolicyEngine,
+    @Optional() private readonly featureFlags?: FeatureFlagsService,
   ) {}
 
   skipTrafficAccounting(admin: {
@@ -205,6 +210,49 @@ export class AdminQuotaService {
       return { balanceBefore: admin.balance, balanceAfter: admin.balance };
     }
 
+    let balanceForReserve = admin.balance;
+    if (this.isPerPanel(admin)) {
+      const row = await tx.adminPanelQuota.findUnique({
+        where: { adminId_panelId: { adminId: admin.id, panelId } },
+      });
+      balanceForReserve = row?.balance ?? 0;
+    }
+
+    const apply = () => this.applyDebit(tx, admin, panelId, bytes, amount, meta);
+
+    if (
+      this.policy &&
+      (await this.featureFlags?.isEnabled(PLATFORM_FLAGS.POLICY_RESERVE_V1))
+    ) {
+      return this.policy.runReserved(
+        {
+          adminId: admin.id,
+          operation: 'DEBIT_TRAFFIC',
+          trafficBytes: amount,
+          balance: balanceForReserve,
+          unlimitedTraffic: admin.unlimitedTraffic,
+          role: admin.role,
+          persist: true,
+        },
+        apply,
+      );
+    }
+    return apply();
+  }
+
+  private async applyDebit(
+    tx: Tx,
+    admin: AdminQuotaAdmin,
+    panelId: string,
+    bytes: bigint,
+    amount: number,
+    meta: {
+      clientId?: string;
+      targetClientUuid?: string;
+      action: string;
+      description?: string;
+    },
+  ): Promise<{ balanceBefore: number; balanceAfter: number }> {
     const description = await this.labeledDescription(
       tx,
       panelId,

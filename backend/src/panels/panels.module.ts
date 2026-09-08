@@ -9,6 +9,7 @@ import { ClientsModule } from '../clients/clients.module';
 import { TrafficModule } from '../traffic/traffic.module';
 import { PanelDriverRegistry } from './native/panel-driver.registry';
 import { PanelOperationGate } from './native/panel-operation-gate';
+import { PanelOperationRouter } from './native/panel-operation.router';
 import { NativePanelOrchestrator } from './native/native-panel.orchestrator';
 import { XuiPanelDriver } from './native/xui-panel.driver';
 
@@ -26,6 +27,7 @@ import { XuiPanelDriver } from './native/xui-panel.driver';
     ApiCapabilityResolver,
     PanelDriverRegistry,
     PanelOperationGate,
+    PanelOperationRouter,
     NativePanelOrchestrator,
     XuiPanelDriver,
   ],
@@ -35,6 +37,7 @@ import { XuiPanelDriver } from './native/xui-panel.driver';
     ApiCapabilityResolver,
     PanelDriverRegistry,
     PanelOperationGate,
+    PanelOperationRouter,
     NativePanelOrchestrator,
   ],
 })

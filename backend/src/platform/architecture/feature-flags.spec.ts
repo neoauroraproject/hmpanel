@@ -6,6 +6,9 @@ describe('platform feature flags', () => {
     expect(flags.adapter_xui_v1).toBe(false);
     expect(flags.permission_engine_v1).toBe(false);
     expect(flags.policy_reserve_v1).toBe(false);
+    expect(flags.payment_surface_v1).toBe(false);
+    expect(flags.outbound_webhooks_v1).toBe(false);
+    expect(flags.plugin_host_v1).toBe(false);
   });
 
   it('defaults nav and structure flags to on', () => {

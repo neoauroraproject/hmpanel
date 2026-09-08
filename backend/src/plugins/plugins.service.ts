@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { LicenseManagerService } from '../platform/license-manager.service';
+import { FeatureEntitlementService } from '../platform/feature-entitlement.service';
 import * as fs from 'fs';
 import * as path from 'path';
 import {
@@ -23,7 +23,7 @@ export class PluginsService {
   /** Soft flag: license inactive hides premium even if modules were bootstrapped. */
   private licenseAllowsPremium = true;
 
-  constructor(private licenseManager: LicenseManagerService) {
+  constructor(private entitlement: FeatureEntitlementService) {
     const boot = getPremiumBootstrapResult();
     if (boot.loaded) {
       this.logger.log(
@@ -70,13 +70,7 @@ export class PluginsService {
 
   /** Keep plugin load flag aligned with license — bundle stays on disk, only activation/update downloads. */
   async syncWithLicenseState(): Promise<void> {
-    const state = await this.licenseManager.getLicenseState();
-    const active =
-      state.edition === 'PREMIUM' &&
-      state.mode !== 'disabled' &&
-      state.status !== 'invalid' &&
-      state.status !== 'community' &&
-      state.status !== 'expired';
+    const active = await this.entitlement.isPremiumRuntimeActive();
 
     if (!active) {
       if (this.licenseAllowsPremium && this.boot().loaded) {

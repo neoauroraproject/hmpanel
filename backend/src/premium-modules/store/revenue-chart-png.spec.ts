@@ -1,4 +1,8 @@
-import { formatMonthTable, renderYearlyRevenueChartPng } from './revenue-chart-png';
+import {
+  formatCompactRevenue,
+  formatMonthTable,
+  renderYearlyRevenueChartPng,
+} from './revenue-chart-png';
 
 describe('yearly revenue chart', () => {
   const months = Array.from({ length: 12 }, (_, i) => ({
@@ -29,5 +33,12 @@ describe('yearly revenue chart', () => {
     expect(table).toContain('ژان: 1000000T (1)');
     expect(table).toContain('فور: 0T · $50 (1)');
     expect(table.split('\n')).toHaveLength(12);
+  });
+
+  it('formats compact revenue labels for the PNG glyphs', () => {
+    expect(formatCompactRevenue(12)).toBe('12');
+    expect(formatCompactRevenue(850_000)).toBe('850K');
+    expect(formatCompactRevenue(1_200_000)).toBe('1.2M');
+    expect(formatCompactRevenue(1_000_000)).toBe('1M');
   });
 });

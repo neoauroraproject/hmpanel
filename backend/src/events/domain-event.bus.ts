@@ -1,3 +1,5 @@
+import { aliasesFor } from './event-aliases';
+
 export type DomainEventType =
   | 'client.created'
   | 'client.updated'
@@ -5,10 +7,22 @@ export type DomainEventType =
   | 'traffic.debited'
   | 'order.created'
   | 'order.paid'
+  | 'order.completed'
   | 'payment.verified'
+  | 'payment.completed'
+  | 'payment.failed'
   | 'panel.synced'
   | 'theme.published'
-  | 'admin.created';
+  | 'admin.created'
+  | 'user.created'
+  | 'user.updated'
+  | 'user.deleted'
+  | 'user.expiring'
+  | 'user.expired'
+  | 'subscription.created'
+  | 'subscription.updated'
+  | 'subscription.expiring'
+  | 'subscription.expired';
 
 export interface DomainEvent<T = Record<string, unknown>> {
   type: DomainEventType | string;
@@ -36,23 +50,28 @@ export class DomainEventBus {
   }
 
   async emit(type: string, payload: Record<string, unknown> = {}): Promise<void> {
-    const event: DomainEvent = {
-      type,
-      occurredAt: new Date().toISOString(),
-      payload,
-    };
+    const occurredAt = new Date().toISOString();
+    const event: DomainEvent = { type, occurredAt, payload };
     this.history.push(event);
     if (this.history.length > this.maxHistory) this.history.shift();
-    const list = [
-      ...(this.handlers.get(type) || []),
-      ...(this.handlers.get('*') || []),
-    ];
-    for (const handler of list) {
-      await handler(event);
+
+    await this.notify(type, event, true);
+    for (const alias of aliasesFor(type)) {
+      await this.notify(alias, { ...event, type: alias }, false);
     }
   }
 
   recent(limit = 50): DomainEvent[] {
     return this.history.slice(-limit);
+  }
+
+  private async notify(type: string, event: DomainEvent, includeStar: boolean) {
+    const list = [
+      ...(this.handlers.get(type) || []),
+      ...(includeStar ? this.handlers.get('*') || [] : []),
+    ];
+    for (const handler of list) {
+      await handler(event);
+    }
   }
 }

@@ -5,6 +5,9 @@ export const PLATFORM_FLAGS = {
   NAV_V2: 'nav_v2',
   THEME_MARKETPLACE_V1: 'theme_marketplace_v1',
   PAYMENT_PLUGINS_V1: 'payment_plugins_v1',
+  PAYMENT_SURFACE_V1: 'payment_surface_v1',
+  OUTBOUND_WEBHOOKS_V1: 'outbound_webhooks_v1',
+  PLUGIN_HOST_V1: 'plugin_host_v1',
 } as const;
 
 export type PlatformFlagName = (typeof PLATFORM_FLAGS)[keyof typeof PLATFORM_FLAGS];
@@ -17,6 +20,9 @@ export const PLATFORM_FLAG_DEFAULTS: Record<PlatformFlagName, boolean> = {
   nav_v2: true,
   theme_marketplace_v1: true,
   payment_plugins_v1: true,
+  payment_surface_v1: false,
+  outbound_webhooks_v1: false,
+  plugin_host_v1: false,
 };
 
 export const PLATFORM_FLAGS_SETTING_KEY = 'platform_feature_flags';
