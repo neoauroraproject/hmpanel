@@ -560,8 +560,9 @@ function PanelLimitFields({
             </span>
           </div>
           <input
-            type="number"
-            step="any"
+            type="text"
+            inputMode="decimal"
+            autoComplete="off"
             placeholder={t("admins.adjustTrafficPlaceholder")}
             disabled={disabled}
             value={value.gb}
@@ -577,8 +578,9 @@ function PanelLimitFields({
             </span>
           </div>
           <input
-            type="number"
-            step={1}
+            type="text"
+            inputMode="decimal"
+            autoComplete="off"
             placeholder={t("admins.adjustTrafficPlaceholder")}
             disabled={disabled}
             value={value.maxClients}
@@ -594,8 +596,9 @@ function PanelLimitFields({
             </span>
           </div>
           <input
-            type="number"
-            step={1}
+            type="text"
+            inputMode="decimal"
+            autoComplete="off"
             placeholder={t("admins.adjustTrafficPlaceholder")}
             disabled={disabled}
             value={value.maxDeviceLimit}
@@ -611,8 +614,9 @@ function PanelLimitFields({
             </span>
           </div>
           <input
-            type="number"
-            step={1}
+            type="text"
+            inputMode="decimal"
+            autoComplete="off"
             placeholder={t("admins.adjustTrafficPlaceholder")}
             disabled={disabled}
             value={value.maxExpireDays}
@@ -1159,6 +1163,122 @@ function patchPanelQuota<T extends PanelQuotaFormState>(
   };
 }
 
+type ProviderAccessRow = { provider: string; enabled: boolean };
+
+/** Stable fallback so a disabled premium query does not rehydrate the edit form every render. */
+const EMPTY_PROVIDER_ACCESS: ProviderAccessRow[] = [];
+
+function adminQuotaStamp(admin: Admin) {
+  const quotas = admin.panelQuotas ?? [];
+  return [
+    admin.id,
+    admin.balance,
+    admin.expiryTime,
+    admin.maxClients,
+    admin.maxDeviceLimit ?? 0,
+    admin.maxExpireDays ?? 0,
+    admin.status,
+    admin.username,
+    admin.role,
+    admin.quotaMode ?? "",
+    ...quotas.map(
+      (q) =>
+        `${q.panelId}:${q.balance}:${q.maxClients ?? 0}:${q.maxDeviceLimit ?? 0}:${q.maxExpireDays ?? 0}:${q.trafficMode ?? ""}`,
+    ),
+  ].join("|");
+}
+
+function keepQuotaDrafts(
+  next: Record<string, PanelQuotaForm>,
+  prev: Record<string, PanelQuotaForm>,
+): Record<string, PanelQuotaForm> {
+  const out: Record<string, PanelQuotaForm> = { ...next };
+  for (const [panelId, draft] of Object.entries(prev)) {
+    out[panelId] = {
+      ...(out[panelId] ?? EMPTY_PANEL_QUOTA),
+      gb: draft.gb,
+      maxClients: draft.maxClients,
+      maxDeviceLimit: draft.maxDeviceLimit,
+      maxExpireDays: draft.maxExpireDays,
+    };
+  }
+  return out;
+}
+
+function buildEditAdminForm(
+  admin: Admin,
+  panels: PanelRow[] | undefined,
+  providerAccess: ProviderAccessRow[],
+) {
+  const assigned = admin.adminInbounds ?? [];
+  const fromInbounds = assigned
+    .map((ai: { inbound?: { panel?: { id?: string } } }) => ai.inbound?.panel?.id)
+    .filter((id: string | undefined): id is string => !!id);
+  const fromQuota = (admin.panelQuotas || []).map((q) => q.panelId);
+  const fromNative = (panels ?? [])
+    .filter((p) => isNativePremiumPanel(p) && providerAccess.some((r) => r.enabled && r.provider === p.panelType))
+    .map((p) => p.id);
+  const enabledPanels = Array.from(new Set([...fromInbounds, ...fromQuota, ...fromNative]));
+  const quotaBaselines: Record<string, QuotaBaseline> = {};
+  const panelQuotas: Record<string, PanelQuotaForm> = Object.fromEntries(
+    (admin.panelQuotas || []).map((q) => {
+      quotaBaselines[q.panelId] = {
+        balance: q.balance || 0,
+        maxClients: q.maxClients || 0,
+        maxDeviceLimit: q.maxDeviceLimit || 0,
+        maxExpireDays: q.maxExpireDays || 0,
+      };
+      return [
+        q.panelId,
+        {
+          gb: "",
+          maxClients: "",
+          maxDeviceLimit: "",
+          maxExpireDays: "",
+          trafficMode: q.trafficMode === "USAGE" ? "USAGE" : "ALLOCATION",
+        },
+      ];
+    }),
+  );
+  const migratingFromGlobalPool =
+    admin.role !== "SUPER_ADMIN" && admin.quotaMode !== "PER_PANEL" && !admin.unlimitedTraffic;
+  enabledPanels.forEach((panelId, index) => {
+    if (panelQuotas[panelId]) return;
+    panelQuotas[panelId] = {
+      ...EMPTY_PANEL_QUOTA,
+      trafficMode: admin.trafficMode === "USAGE" ? "USAGE" : "ALLOCATION",
+    };
+    quotaBaselines[panelId] =
+      migratingFromGlobalPool && index === 0
+        ? {
+            balance: admin.balance || 0,
+            maxClients: admin.maxClients || 0,
+            maxDeviceLimit: admin.maxDeviceLimit || 0,
+            maxExpireDays: admin.maxExpireDays || 0,
+          }
+        : { ...EMPTY_QUOTA_BASELINE };
+  });
+  return {
+    username: admin.username || "",
+    status: admin.status || "active",
+    trafficMode: admin.trafficMode || "ALLOCATION",
+    maxClients: "",
+    maxDeviceLimit: "",
+    maxExpireDays: "",
+    expiryDays: "",
+    selectedInbounds: assigned.map((ai: { inbound: { id: string } }) => ai.inbound.id),
+    enabledPanels,
+    canCustomizeBranding: admin.permissions ? admin.permissions.includes("canCustomizeBranding") : true,
+    storeEnabled: admin.storeEnabled || false,
+    refundOnDelete: admin.refundOnDelete ?? true,
+    refundOnEdit: admin.refundOnEdit ?? true,
+    unlimitedTraffic: false,
+    superAdmin: admin.role === "SUPER_ADMIN",
+    panelQuotas,
+    quotaBaselines,
+  };
+}
+
 /** 3x-ui caps concurrent IPs, pasarguard caps registered HWIDs. */
 function panelDeviceLimitI18nKey(type?: string | null) {
   if (type === "pasarguard") return "admins.panelMaxDeviceLimitHwid";
@@ -1438,8 +1558,9 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
                           </span>
                         </div>
                         <input
-                          type="number"
-                          step={1}
+                          type="text"
+                          inputMode="decimal"
+                          autoComplete="off"
                           placeholder={t("admins.adjustTrafficPlaceholder")}
                           disabled={limitsLocked}
                           value={form.expiryDays}
@@ -1559,87 +1680,42 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
     queryFn: async () => (await api.get<InboundRow[]>("/inbounds")).data,
   });
 
-  const { data: providerAccess = [] } = useQuery<Array<{ provider: string; enabled: boolean }>>({
+  const { data: providerAccessData } = useQuery<ProviderAccessRow[]>({
     queryKey: ["admin-provider-access", adminId],
     enabled: isPremium && !!adminId,
     queryFn: async () =>
       (await api.get(`/premium-modules/admin-recharge/provider-access/${adminId}`)).data,
     retry: false,
   });
+  const providerAccess = providerAccessData ?? EMPTY_PROVIDER_ACCESS;
+  const quotaStamp = admin ? adminQuotaStamp(admin) : "";
+  const lastQuotaStamp = React.useRef("");
 
   useEffect(() => {
-    if (admin) {
-      const assigned = admin.adminInbounds ?? [];
-      const fromInbounds = assigned
-        .map((ai: any) => ai.inbound?.panel?.id)
-        .filter((id: string | undefined): id is string => !!id);
-      const fromQuota = (admin.panelQuotas || []).map((q) => q.panelId);
-      const fromNative = (panels ?? [])
-        .filter((p) => isNativePremiumPanel(p) && providerAccess.some((r) => r.enabled && r.provider === p.panelType))
-        .map((p) => p.id);
-      const enabledPanels = Array.from(new Set([...fromInbounds, ...fromQuota, ...fromNative]));
-      const quotaBaselines: Record<string, QuotaBaseline> = {};
-      const panelQuotas: Record<string, PanelQuotaForm> = Object.fromEntries(
-        (admin.panelQuotas || []).map((q) => {
-          quotaBaselines[q.panelId] = {
-            balance: q.balance || 0,
-            maxClients: q.maxClients || 0,
-            maxDeviceLimit: q.maxDeviceLimit || 0,
-            maxExpireDays: q.maxExpireDays || 0,
-          };
-          return [
-            q.panelId,
-            {
-              gb: "",
-              maxClients: "",
-              maxDeviceLimit: "",
-              maxExpireDays: "",
-              trafficMode: q.trafficMode === "USAGE" ? "USAGE" : "ALLOCATION",
-            },
-          ];
-        }),
-      );
-      // Keep a shared-pool balance as the first panel's current stock so +/- still applies to it.
-      const migratingFromGlobalPool =
-        admin.role !== "SUPER_ADMIN" && admin.quotaMode !== "PER_PANEL" && !admin.unlimitedTraffic;
-      enabledPanels.forEach((panelId, index) => {
-        if (panelQuotas[panelId]) return;
-        panelQuotas[panelId] = {
-          ...EMPTY_PANEL_QUOTA,
-          trafficMode: admin.trafficMode === "USAGE" ? "USAGE" : "ALLOCATION",
+    if (!admin) return;
+    const next = buildEditAdminForm(admin, panels, providerAccess);
+    if (lastQuotaStamp.current === quotaStamp) {
+      setForm((prev) => {
+        const extra = next.enabledPanels.filter((id) => !prev.enabledPanels.includes(id));
+        if (!extra.length) return prev;
+        const merged = applyPanelSelection(prev, {
+          enabledPanels: [...prev.enabledPanels, ...extra],
+          selectedInbounds: prev.selectedInbounds,
+        });
+        return {
+          ...merged,
+          quotaBaselines: {
+            ...next.quotaBaselines,
+            ...prev.quotaBaselines,
+          },
+          panelQuotas: keepQuotaDrafts(next.panelQuotas, merged.panelQuotas),
         };
-        quotaBaselines[panelId] =
-          migratingFromGlobalPool && index === 0
-            ? {
-                balance: admin.balance || 0,
-                maxClients: admin.maxClients || 0,
-                maxDeviceLimit: admin.maxDeviceLimit || 0,
-                maxExpireDays: admin.maxExpireDays || 0,
-              }
-            : { ...EMPTY_QUOTA_BASELINE };
       });
-      setForm((prev) => ({
-        ...prev,
-        username: admin.username || "",
-        status: admin.status || "active",
-        trafficMode: admin.trafficMode || "ALLOCATION",
-        maxClients: "",
-        maxDeviceLimit: "",
-        maxExpireDays: "",
-        expiryDays: "",
-        selectedInbounds: assigned.map((ai: any) => ai.inbound.id),
-        enabledPanels,
-        canCustomizeBranding: admin.permissions ? admin.permissions.includes("canCustomizeBranding") : true,
-        storeEnabled: admin.storeEnabled || false,
-        refundOnDelete: (admin as any).refundOnDelete ?? true,
-        refundOnEdit: (admin as any).refundOnEdit ?? true,
-        unlimitedTraffic: false,
-        superAdmin: admin.role === "SUPER_ADMIN",
-        panelQuotas,
-        quotaBaselines,
-      }));
+      return;
     }
-  }, [admin, panels, providerAccess]);
+    lastQuotaStamp.current = quotaStamp;
+    setForm((prev) => ({ ...prev, ...next }));
+  }, [admin, panels, providerAccess, quotaStamp]);
 
   const directEdit = useMutation({
     mutationFn: async () => {
@@ -1824,8 +1900,9 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
                               </span>
                             </div>
                             <input
-                              type="number"
-                              step={1}
+                              type="text"
+                              inputMode="decimal"
+                              autoComplete="off"
                               placeholder={t("admins.adjustTrafficPlaceholder")}
                               disabled={limitsLocked}
                               value={form.expiryDays}
