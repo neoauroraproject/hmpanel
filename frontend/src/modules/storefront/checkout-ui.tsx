@@ -1,9 +1,10 @@
 "use client";
 
-import { LoaderCircle } from "lucide-react";
+import { LoaderCircle, Check } from "lucide-react";
 import { formatBytes } from "@/lib/format";
 import { useStorefrontLocale } from "./locale";
 import type { StorefrontCategory, StorefrontProduct } from "./types";
+import type { StorefrontLayoutId } from "./skins";
 import { computeCheckoutPreview, productAddons, type CouponPreview } from "./checkout-preview";
 
 export function CategoryFilterChips({
@@ -49,21 +50,27 @@ export function CategoryPicker({
   categories,
   selectedId,
   onSelect,
+  layout = "classic",
 }: {
   categories: StorefrontCategory[];
   selectedId: string;
   onSelect: (id: string) => void;
+  layout?: StorefrontLayoutId;
 }) {
   const { t } = useStorefrontLocale();
   if (!categories.length) {
     return (
-      <p className="rounded-2xl border border-dashed border-zinc-300 px-4 py-8 text-center text-sm text-zinc-500 dark:border-zinc-700">
+      <p className="rounded-2xl border border-dashed border-[color:var(--store-panel-border)] px-4 py-8 text-center text-sm text-[color:var(--store-muted)]">
         {t("دسته‌بندی‌ای موجود نیست.", "No categories available.")}
       </p>
     );
   }
+  const grid =
+    layout === "split" || layout === "funnel" || layout === "classic"
+      ? "grid grid-cols-1 gap-3 sm:grid-cols-2"
+      : "space-y-2";
   return (
-    <div className="space-y-2">
+    <div className={grid}>
       {categories.map((category) => {
         const active = selectedId === category.id;
         return (
@@ -71,20 +78,29 @@ export function CategoryPicker({
             key={category.id}
             type="button"
             onClick={() => onSelect(category.id)}
-            className={`w-full rounded-2xl border px-3.5 py-3.5 text-start transition ${
+            className={`store-focus-ring relative w-full min-h-14 cursor-pointer rounded-[var(--store-radius,1rem)] border px-3.5 py-3.5 text-start transition duration-200 ${
               active
-                ? "border-[color:var(--store-primary)] bg-[color:var(--store-primary)]/10"
-                : "border-zinc-200 dark:border-zinc-800"
+                ? "border-[color:var(--store-primary)] bg-[color:var(--store-primary)]/10 ring-2 ring-[color:var(--store-primary)]/20"
+                : "border-[color:var(--store-panel-border)] bg-[color:var(--store-panel)]"
             }`}
           >
+            {layout === "split" ? (
+              <span
+                className={`absolute end-3 top-3 flex h-6 w-6 items-center justify-center rounded-full border ${
+                  active ? "border-transparent bg-[color:var(--store-primary)] text-white" : "border-slate-300 bg-white"
+                }`}
+              >
+                {active ? <Check size={14} strokeWidth={3} /> : null}
+              </span>
+            ) : null}
             <div className="flex items-center gap-3">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-zinc-100 text-lg dark:bg-zinc-900">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[color:var(--store-primary)]/10 text-lg">
                 {category.icon || "•"}
               </span>
-              <div className="min-w-0">
+              <div className="min-w-0 pr-8">
                 <div className="font-semibold">{category.name}</div>
                 {category.description ? (
-                  <p className="mt-0.5 text-xs text-zinc-500">{category.description}</p>
+                  <p className="mt-0.5 text-xs text-[color:var(--store-muted)]">{category.description}</p>
                 ) : null}
               </div>
             </div>

@@ -5,13 +5,19 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { parseThemeImport, toThemeExport } from './theme-export';
-import { STOREFRONT_STARTERS, sanitizeThemeCss } from './storefront-skins';
+import {
+  STOREFRONT_STARTERS,
+  STARTER_SLUG_ALIASES,
+  resolveStarterKey,
+  sanitizeThemeCss,
+} from './storefront-skins';
 
 @Injectable()
 export class ThemesService {
   constructor(private prisma: PrismaService) {}
 
-  listStarters() {
+  async listStarters() {
+    await this.syncLegacyStarters();
     return STOREFRONT_STARTERS.map((s) => ({
       key: s.key,
       slug: s.slug,
@@ -23,16 +29,21 @@ export class ThemesService {
   }
 
   async installStarter(key: string) {
-    const starter = STOREFRONT_STARTERS.find((s) => s.key === key);
+    const resolved = resolveStarterKey(key);
+    const starter = STOREFRONT_STARTERS.find((s) => s.key === resolved);
     if (!starter) throw new NotFoundException(`Unknown starter theme: ${key}`);
-    const existing = await this.theme().findUnique({ where: { slug: starter.slug } });
+    const existing = await this.findStarterRow(starter.slug);
     if (existing) {
       const updated = await this.theme().update({
         where: { id: existing.id },
         data: {
+          slug: starter.slug,
           name: starter.name,
           description: starter.description,
-          settings: starter.settings as object,
+          settings: this.mergeStarterSettings(
+            existing.settings,
+            starter.settings as Record<string, unknown>,
+          ),
           status: 'published',
           authorName: 'HMPanel',
         },
@@ -197,7 +208,78 @@ export class ThemesService {
       }
       settings.cssVars = next;
     }
+    if (settings.copy && typeof settings.copy === 'object' && !Array.isArray(settings.copy)) {
+      settings.copy = this.sanitizeCopy(settings.copy as Record<string, unknown>);
+    }
     return settings;
+  }
+
+  private sanitizeCopy(raw: Record<string, unknown>): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(raw).slice(0, 40)) {
+      if (!/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(key)) continue;
+      if (typeof value === 'string') {
+        out[key] = value.slice(0, 400);
+        continue;
+      }
+      if (Array.isArray(value)) {
+        out[key] = value.slice(0, 8).map((item) => {
+          if (!item || typeof item !== 'object' || Array.isArray(item)) return item;
+          return this.sanitizeCopy(item as Record<string, unknown>);
+        });
+        continue;
+      }
+      if (value && typeof value === 'object') {
+        out[key] = this.sanitizeCopy(value as Record<string, unknown>);
+      }
+    }
+    return out;
+  }
+
+  private mergeStarterSettings(existing: unknown, starter: Record<string, unknown>) {
+    const prev =
+      existing && typeof existing === 'object' && !Array.isArray(existing)
+        ? (existing as Record<string, unknown>)
+        : {};
+    const customCss = typeof prev.customCss === 'string' ? prev.customCss : '';
+    const cssVars =
+      prev.cssVars && typeof prev.cssVars === 'object' ? prev.cssVars : undefined;
+    return this.sanitizeSettings({
+      ...starter,
+      customCss,
+      ...(cssVars ? { cssVars } : {}),
+    });
+  }
+
+  private async findStarterRow(slug: string) {
+    const direct = await this.theme().findUnique({ where: { slug } });
+    if (direct) return direct;
+    const legacySlug = Object.entries(STARTER_SLUG_ALIASES).find(([, next]) => next === slug)?.[0];
+    if (!legacySlug) return null;
+    return this.theme().findUnique({ where: { slug: legacySlug } });
+  }
+
+  private async syncLegacyStarters() {
+    try {
+      for (const starter of STOREFRONT_STARTERS) {
+        const row = await this.findStarterRow(starter.slug);
+        if (!row || row.slug === starter.slug) continue;
+        const taken = await this.theme().findUnique({ where: { slug: starter.slug } });
+        if (taken && taken.id !== row.id) continue;
+        await this.theme().update({
+          where: { id: row.id },
+          data: {
+            slug: starter.slug,
+            name: starter.name,
+            description: starter.description,
+            settings: this.mergeStarterSettings(row.settings, starter.settings as Record<string, unknown>),
+            status: 'published',
+          },
+        });
+      }
+    } catch {
+      /* Theme table may be missing on older installs */
+    }
   }
 
   private isThemeId(value: string | null | undefined): value is string {

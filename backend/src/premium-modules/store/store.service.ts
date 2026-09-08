@@ -1349,6 +1349,10 @@ export class StoreService {
       'PROVISION_FAILED',
     ];
 
+    const publishedTheme = store
+      ? (await this.themes?.resolvePublished(store.theme)) || null
+      : null;
+
     return {
       token: customer.token,
       profile: {
@@ -1361,6 +1365,9 @@ export class StoreService {
       store: {
         slug: store?.slug,
         title: store?.title,
+        description: store?.description,
+        logoUrl: branding.logo || store?.logo,
+        logoDarkUrl: branding.logoDark || null,
         defaultCurrency: store?.defaultCurrency,
         payment: store
           ? (() => {
@@ -1408,8 +1415,10 @@ export class StoreService {
               };
             })()
           : null,
+        publishedTheme,
       },
       branding,
+      publishedTheme,
       supportLinks: branding.supportLinks,
       services,
       activeServices: services.filter((service) => service.status === 'active'),
@@ -1871,9 +1880,12 @@ export class StoreService {
     const lastTimeline = order.timeline[order.timeline.length - 1];
     const store = await this.prisma.storeProfile.findUnique({
       where: { id: order.storeId },
-      select: { slug: true, title: true, adminId: true },
+      select: { slug: true, title: true, adminId: true, theme: true },
     });
     const branding = store ? await this.branding.getBranding(store.adminId) : null;
+    const publishedTheme = store
+      ? (await this.themes?.resolvePublished(store.theme)) || null
+      : null;
 
     return {
       trackingCode: order.trackingCode,
@@ -1896,9 +1908,12 @@ export class StoreService {
             logo: branding.logo,
             logoDark: branding.logoDark,
             primaryColor: branding.primaryColor,
+            accentColor: branding.accentColor,
+            footerText: branding.footerText,
             theme: branding.theme,
           }
         : null,
+      publishedTheme,
     };
   }
 

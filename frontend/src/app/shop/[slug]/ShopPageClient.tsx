@@ -626,6 +626,11 @@ function ShopBody(props: {
           <WelcomeHero
             store={store}
             layout={layout}
+            categories={chipCategories}
+            onPickCategory={(id) => {
+              setSelectedCategoryId(id);
+              setSelectedProduct(null);
+            }}
             onBuy={() => setStep(nextShopStep("welcome", stepCtx))}
             onLogin={() => router.push(portalPathForSlug(store.slug, "login"))}
             onTrack={() => setShowTrack(true)}
@@ -675,19 +680,21 @@ function ShopBody(props: {
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -8 }}
           transition={{ duration: 0.3, ease: "easeOut" }}
-          className="px-4 py-6 sm:py-10"
+          className={layout === "market" ? "py-2" : layout === "funnel" ? "py-4 sm:py-6" : "px-1 py-6 sm:py-10"}
         >
           {contextBanner}
           <div className="mt-4">
-            <Stepper labels={checkoutLabels} activeIndex={activeCheckoutIndex} />
+            <Stepper layout={layout} labels={checkoutLabels} activeIndex={activeCheckoutIndex} />
           </div>
           <div
             className={
               layout === "market"
-                ? "rounded-none border border-[color:var(--store-panel-border)] bg-[color:var(--store-panel)]/95 p-4 sm:p-6"
-                : layout === "minimal"
-                  ? "border-y border-[color:var(--store-panel-border)] bg-transparent p-0 py-6"
-                  : "rounded-[1.75rem] border border-zinc-200 bg-white/95 p-4 shadow-sm backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/95 sm:rounded-[2rem] sm:p-8"
+                ? "store-panel rounded-[0.9rem] p-4 sm:p-5"
+                : layout === "split"
+                  ? "rounded-[1rem] border border-[color:var(--store-panel-border)] bg-white p-0 py-2 sm:p-1"
+                  : layout === "funnel"
+                    ? "store-glass rounded-[1.4rem] p-4 sm:p-7"
+                    : "rounded-[1.75rem] border border-zinc-200 bg-white/95 p-4 shadow-sm backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/95 sm:rounded-[2rem] sm:p-8"
             }
           >
             {selectedProduct && step !== "product" && step !== "category" ? (
@@ -710,6 +717,7 @@ function ShopBody(props: {
                   </p>
                 </div>
                 <CategoryPicker
+                  layout={layout}
                   categories={chipCategories}
                   selectedId={selectedCategoryId}
                   onSelect={(id) => {
@@ -742,7 +750,7 @@ function ShopBody(props: {
                 ) : (
                   <div
                     className={
-                      layout === "classic" ? "grid gap-3 sm:grid-cols-2" : "grid gap-2"
+                      layout === "market" ? "grid gap-2" : "grid gap-3 sm:grid-cols-2"
                     }
                   >
                     {catalog.map((product, index) => (

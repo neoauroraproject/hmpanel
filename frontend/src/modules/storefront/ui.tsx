@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import QRCode from "react-qr-code";
@@ -9,405 +9,27 @@ import {
   Copy,
   KeyRound,
   LoaderCircle,
-  MessageCircle,
-  Phone,
   QrCode,
-  ShieldCheck,
-  Globe,
-  Mail,
   X,
 } from "lucide-react";
 import { formatBytes, formatDate, formatExpiry } from "@/lib/format";
 import { copyToClipboard } from "@/lib/clipboard";
-import { normalizeTelegramLink } from "@/lib/telegram-link";
-import { LanguageSwitcher, StorefrontLocaleProvider, useStorefrontLocale } from "./locale";
-import {
-  StorefrontThemeProvider,
-  StorefrontThemeToggle,
-  useStorefrontTheme,
-  fadeUp,
-  fadeUpTransition,
-} from "./design";
-import {
-  resolveStorefrontLayout,
-  resolveStorefrontSkin,
-  sanitizeThemeCss,
-  skinChrome,
-  type StorefrontLayoutId,
-} from "./skins";
+import { useStorefrontLocale } from "./locale";
+import { fadeUp } from "./design";
+import { type StorefrontLayoutId } from "./skins";
+import { PrimaryButton, SecondaryButton } from "./buttons";
 import type {
   CustomerNotification,
   CustomerOrder,
   CustomerService,
   StorefrontCategory,
   StorefrontProduct,
-  StorefrontStore,
 } from "./types";
 
-export function StoreShell({
-  store,
-  children,
-  topBar,
-}: {
-  store?: StorefrontStore;
-  children: React.ReactNode;
-  topBar?: React.ReactNode;
-}) {
-  const brandingPrimary = store?.branding?.primaryColor || "";
-  const settings = store?.publishedTheme?.settings;
-  const skin = resolveStorefrontSkin(settings);
-  const layout = resolveStorefrontLayout(settings);
-  const chrome = skinChrome(skin, layout);
-  const primaryColor =
-    brandingPrimary ||
-    (skin === "atelier"
-      ? "#0D9488"
-      : skin === "noir"
-        ? "#CA8A04"
-        : skin === "harbor"
-          ? "#B45309"
-          : "#3b82f6");
+export { StoreShell } from "./shell";
+export { WelcomeHero } from "./heroes";
+export { PrimaryButton, SecondaryButton };
 
-  return (
-    <StorefrontLocaleProvider store={store}>
-      <StorefrontThemeProvider>
-        <StoreShellInner
-          store={store}
-          primaryColor={primaryColor}
-          chrome={chrome}
-          topBar={topBar}
-        >
-          {children}
-        </StoreShellInner>
-      </StorefrontThemeProvider>
-    </StorefrontLocaleProvider>
-  );
-}
-
-function StoreShellInner({
-  store,
-  primaryColor,
-  chrome,
-  topBar,
-  children,
-}: {
-  store?: StorefrontStore;
-  primaryColor: string;
-  chrome: ReturnType<typeof skinChrome>;
-  topBar?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  const { isFa } = useStorefrontLocale();
-  useStorefrontTheme(); // keep provider consumers subscribed
-  const logoLight = store?.logoUrl || store?.branding?.logo || null;
-  const logoDark = store?.logoDarkUrl || store?.branding?.logoDark || null;
-  const title = store?.branding?.name || store?.title || "Store";
-  const layout: StorefrontLayoutId = chrome.layout || "classic";
-  const isNoir = chrome.rootClass.includes("store-skin-noir");
-  const isAtelier = chrome.rootClass.includes("store-skin-atelier");
-  const isHarbor = chrome.rootClass.includes("store-skin-harbor");
-  const themed = isNoir || isAtelier || isHarbor;
-  const customCss = sanitizeThemeCss(
-    store?.publishedTheme?.settings && typeof store.publishedTheme.settings === "object"
-      ? (store.publishedTheme.settings as { customCss?: string }).customCss
-      : "",
-  );
-
-  useEffect(() => {
-    const id = isNoir
-      ? "store-font-noir"
-      : isAtelier
-        ? "store-font-atelier"
-        : isHarbor
-          ? "store-font-harbor"
-          : "";
-    if (!id || typeof document === "undefined") return;
-    if (document.getElementById(id)) return;
-    const link = document.createElement("link");
-    link.id = id;
-    link.rel = "stylesheet";
-    link.href = isNoir
-      ? "https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap"
-      : isHarbor
-        ? "https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&family=Fraunces:opsz,wght@9..144,500;9..144,700&display=swap"
-        : "https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap";
-    document.head.appendChild(link);
-  }, [isNoir, isAtelier, isHarbor]);
-
-  useEffect(() => {
-    if (typeof document === "undefined") return;
-    const root = document.documentElement;
-    if (chrome.forceDark) root.classList.add("dark");
-    else root.classList.remove("dark");
-  }, [chrome.forceDark]);
-
-  const headerInner =
-    layout === "market"
-      ? "mx-auto flex max-w-6xl items-center gap-3 border-b border-[color:var(--store-panel-border)] bg-[color:var(--store-panel)] px-4 py-2.5"
-      : layout === "minimal"
-        ? "mx-auto flex max-w-3xl items-end justify-between gap-3 border-b border-[color:var(--store-panel-border)] px-1 py-4"
-        : `mx-auto flex max-w-5xl items-center gap-3 px-3 py-2.5 backdrop-blur-2xl lg:px-4 ${
-            isNoir
-              ? "rounded-[var(--store-radius)] border border-[color:var(--store-panel-border)] bg-[color:var(--store-panel)] shadow-[0_12px_40px_-20px_rgba(0,0,0,0.65)]"
-              : isAtelier
-                ? "rounded-[var(--store-radius)] border border-[color:var(--store-panel-border)] bg-[color:var(--store-panel)]/90 shadow-[0_10px_36px_-22px_rgba(15,23,42,0.35)]"
-                : "rounded-[1.5rem] border border-black/[0.05] bg-white/80 shadow-[0_8px_30px_-18px_rgba(15,23,42,0.35)] dark:border-white/[0.08] dark:bg-zinc-950/75"
-          }`;
-
-  return (
-    <div
-      className={`${chrome.rootClass} min-h-[100dvh] ${
-        themed
-          ? "bg-[color:var(--store-bg)] text-[color:var(--store-fg)]"
-          : "bg-[#F5F5F7] text-[#1D1D1F] dark:bg-[#0B0B0F] dark:text-zinc-50"
-      } ${isFa ? "font-[Vazirmatn,Tahoma,sans-serif]" : ""} ${chrome.forceDark ? "dark" : ""}`}
-      data-store-layout={layout}
-      style={{
-        ["--store-primary" as string]: primaryColor,
-        ...chrome.style,
-        fontFamily:
-          chrome.style["--store-font"] ||
-          (isFa ? '"Vazirmatn", Tahoma, sans-serif' : "ui-sans-serif, system-ui, sans-serif"),
-        paddingTop:
-          "max(0.75rem, env(safe-area-inset-top, 0px), var(--tg-safe-top, 0px))",
-        paddingBottom: "max(0px, env(safe-area-inset-bottom, 0px), var(--tg-safe-bottom, 0px))",
-      }}
-    >
-      {customCss ? <style dangerouslySetInnerHTML={{ __html: customCss }} /> : null}
-      <div
-        aria-hidden
-        className={`pointer-events-none fixed inset-x-0 top-0 opacity-90 ${
-          layout === "market" ? "h-[36rem]" : layout === "minimal" ? "h-40" : isNoir ? "h-[28rem]" : "h-72"
-        }`}
-        style={{
-          background: isNoir
-            ? `radial-gradient(ellipse 80% 60% at 50% -10%, color-mix(in srgb, ${primaryColor} 40%, transparent), transparent 65%), radial-gradient(ellipse 50% 40% at 100% 0%, rgba(250,250,249,0.08), transparent 50%)`
-            : isHarbor
-              ? `linear-gradient(180deg, color-mix(in srgb, ${primaryColor} 12%, transparent), transparent 70%)`
-              : isAtelier
-                ? `radial-gradient(ellipse 90% 70% at 80% -30%, color-mix(in srgb, ${primaryColor} 22%, transparent), transparent 60%), radial-gradient(ellipse 60% 50% at 0% 0%, rgba(15,23,42,0.06), transparent 55%)`
-                : `radial-gradient(ellipse 90% 70% at 50% -20%, color-mix(in srgb, ${primaryColor} 28%, transparent), transparent 70%)`,
-        }}
-      />
-
-      <header className={layout === "market" ? "sticky top-0 z-40" : "sticky top-0 z-40 px-3 pt-1 sm:px-4"}>
-        <div className={headerInner}>
-          <div className="flex min-w-0 flex-1 items-center gap-3">
-            {layout === "minimal" ? null : logoLight || logoDark ? (
-              <span className="relative h-11 w-11 shrink-0">
-                {/* CSS-driven swap so logo follows `html.dark` instantly (no refresh) */}
-                {logoLight ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={logoLight}
-                    alt=""
-                    className={`absolute inset-0 h-11 w-11 rounded-[1.05rem] object-cover shadow-sm transition-opacity duration-300 ${
-                      logoDark ? "opacity-100 dark:opacity-0" : "opacity-100"
-                    }`}
-                  />
-                ) : null}
-                {logoDark ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={logoDark}
-                    alt=""
-                    className={`absolute inset-0 h-11 w-11 rounded-[1.05rem] object-cover shadow-sm transition-opacity duration-300 ${
-                      logoLight ? "opacity-0 dark:opacity-100" : "opacity-100"
-                    }`}
-                  />
-                ) : null}
-              </span>
-            ) : (
-              <div
-                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[1.05rem] text-base font-black text-white shadow-sm"
-                style={{ background: primaryColor }}
-              >
-                {title.slice(0, 1)}
-              </div>
-            )}
-            <div className="min-w-0">
-              <div
-                className={`truncate font-bold leading-tight tracking-tight ${
-                  layout === "minimal"
-                    ? "text-[1.65rem] [font-family:var(--store-display,inherit)]"
-                    : "text-[16px]"
-                }`}
-              >
-                {title}
-              </div>
-              {topBar && layout !== "minimal" ? (
-                <div className="mt-0.5 truncate text-[12px] text-zinc-500">{topBar}</div>
-              ) : null}
-            </div>
-          </div>
-          <div className="flex shrink-0 items-center gap-1.5">
-            {chrome.forceDark ? null : <StorefrontThemeToggle />}
-            <LanguageSwitcher className="!shadow-none !h-11 !rounded-2xl" />
-          </div>
-        </div>
-      </header>
-
-      <main
-        className={`relative mx-auto w-full px-4 pb-[calc(6.5rem+env(safe-area-inset-bottom))] pt-4 sm:px-6 lg:px-8 lg:pb-16 lg:pt-6 ${
-          layout === "market" ? "max-w-6xl" : layout === "minimal" ? "max-w-3xl" : "max-w-5xl"
-        }`}
-      >
-        {children}
-      </main>
-    </div>
-  );
-}
-
-export function WelcomeHero({
-  store,
-  onBuy,
-  onLogin,
-  onTrack,
-  layout = "classic",
-}: {
-  store?: StorefrontStore;
-  onBuy: () => void;
-  onLogin: () => void;
-  onTrack?: () => void;
-  layout?: StorefrontLayoutId;
-}) {
-  const { t, isFa } = useStorefrontLocale();
-  const logoLight = store?.logoUrl || store?.branding?.logo || null;
-  const logoDark = store?.logoDarkUrl || store?.branding?.logoDark || null;
-  const name = store?.branding?.name || store?.title || "VPN Store";
-  const blurb = store?.branding?.description || store?.description;
-
-  if (layout === "minimal") {
-    return (
-      <motion.section
-        {...fadeUp}
-        transition={fadeUpTransition}
-        className="border-b border-[color:var(--store-panel-border)] py-6"
-      >
-        {blurb ? (
-          <p className="max-w-xl whitespace-pre-line text-[15px] leading-relaxed text-[color:var(--store-muted)]">
-            {blurb}
-          </p>
-        ) : null}
-        <div className="mt-6 flex flex-wrap gap-3">
-          <PrimaryButton onClick={onBuy}>{t("سفارش جدید", "New Order")}</PrimaryButton>
-          <SecondaryButton onClick={onLogin}>{t("ورود", "Login")}</SecondaryButton>
-          {onTrack ? (
-            <button
-              type="button"
-              onClick={onTrack}
-              className="cursor-pointer text-[14px] font-semibold text-[color:var(--store-primary)]"
-            >
-              {isFa ? "پیگیری سفارش" : "Track an order"}
-            </button>
-          ) : null}
-        </div>
-        <div className="mt-6">
-          <SupportFooter supportLinks={store?.branding?.supportLinks} />
-        </div>
-      </motion.section>
-    );
-  }
-
-  if (layout === "market") {
-    return (
-      <motion.section
-        {...fadeUp}
-        transition={fadeUpTransition}
-        className="grid gap-6 border-b border-[color:var(--store-panel-border)] py-6 lg:grid-cols-[1.2fr_0.8fr] lg:items-end"
-      >
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[color:var(--store-muted)]">
-            {t("فروشگاه", "Store")}
-          </p>
-          <h1 className="mt-2 text-[1.85rem] font-black tracking-tight [font-family:var(--store-display,inherit)] sm:text-[2.35rem]">
-            {name}
-          </h1>
-          {blurb ? (
-            <p className="mt-3 max-w-lg whitespace-pre-line text-sm leading-relaxed text-[color:var(--store-muted)]">
-              {blurb}
-            </p>
-          ) : null}
-        </div>
-        <div className="flex flex-col gap-2">
-          <PrimaryButton onClick={onBuy}>{t("سفارش جدید", "New Order")}</PrimaryButton>
-          <SecondaryButton onClick={onLogin}>{t("ورود", "Login")}</SecondaryButton>
-          {onTrack ? (
-            <button
-              type="button"
-              onClick={onTrack}
-              className="cursor-pointer text-start text-[13px] font-semibold text-[color:var(--store-primary)]"
-            >
-              {isFa ? "پیگیری سفارش" : "Track an order"}
-            </button>
-          ) : null}
-        </div>
-      </motion.section>
-    );
-  }
-
-  return (
-    <motion.section
-      {...fadeUp}
-      transition={fadeUpTransition}
-      className="mx-auto flex max-w-2xl flex-col items-center py-6 text-center sm:py-10"
-    >
-      {logoLight || logoDark ? (
-        <span className="relative mb-5 h-[4.5rem] w-[4.5rem] sm:h-24 sm:w-24">
-          {logoLight ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={logoLight}
-              alt={store?.title || store?.branding?.name || "Store logo"}
-              className={`absolute inset-0 mx-auto h-full w-auto max-w-[9rem] object-contain drop-shadow-sm transition-opacity duration-300 sm:max-w-[11rem] ${
-                logoDark ? "opacity-100 dark:opacity-0" : "opacity-100"
-              }`}
-            />
-          ) : null}
-          {logoDark ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={logoDark}
-              alt={store?.title || store?.branding?.name || "Store logo"}
-              className={`absolute inset-0 mx-auto h-full w-auto max-w-[9rem] object-contain drop-shadow-sm transition-opacity duration-300 sm:max-w-[11rem] ${
-                logoLight ? "opacity-0 dark:opacity-100" : "opacity-100"
-              }`}
-            />
-          ) : null}
-        </span>
-      ) : (
-        <div className="mb-5 flex h-[4.5rem] w-[4.5rem] items-center justify-center rounded-[1.5rem] bg-[color:var(--store-primary)] text-white shadow-[0_16px_40px_-18px_var(--store-primary)] sm:h-24 sm:w-24">
-          <ShieldCheck size={36} />
-        </div>
-      )}
-      <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-zinc-400">
-        {t("فروشگاه", "Store")}
-      </p>
-      <h1 className="mt-2 text-[2rem] font-black tracking-tight text-[color:var(--store-fg,#18181b)] sm:text-[2.75rem] [font-family:var(--store-display,inherit)]">
-        {name}
-      </h1>
-      {blurb ? (
-        <p className="mt-3 max-w-md whitespace-pre-line text-[15px] leading-relaxed text-[color:var(--store-muted,#71717a)] sm:text-base">
-          {blurb}
-        </p>
-      ) : null}
-      <div className="mt-8 grid w-full gap-3 sm:grid-cols-2">
-        <PrimaryButton onClick={onBuy}>{t("سفارش جدید", "New Order")}</PrimaryButton>
-        <SecondaryButton onClick={onLogin}>{t("ورود", "Login")}</SecondaryButton>
-      </div>
-      {onTrack ? (
-        <button
-          type="button"
-          onClick={onTrack}
-          className="mt-5 cursor-pointer text-[14px] font-semibold text-[color:var(--store-primary)]"
-        >
-          {isFa ? "پیگیری سفارش" : "Track an order"}
-        </button>
-      ) : null}
-      <SupportFooter supportLinks={store?.branding?.supportLinks} />
-    </motion.section>
-  );
-}
 
 export function CategoryCard({
   category,
@@ -430,15 +52,15 @@ export function CategoryCard({
       onClick={onSelect}
       disabled={locked && !selected}
       layout
-      whileHover={locked ? undefined : { y: -3, scale: 1.01 }}
-      whileTap={locked ? undefined : { scale: 0.98 }}
+      whileHover={locked ? undefined : { y: -2 }}
+      whileTap={locked ? undefined : { scale: 0.99 }}
       animate={
         selected
-          ? { scale: 1.02, boxShadow: "0 16px 40px -18px color-mix(in srgb, var(--store-primary) 55%, transparent)" }
-          : { scale: 1, boxShadow: "0 10px 28px -20px rgba(15,23,42,0.28)" }
+          ? { boxShadow: "0 16px 40px -18px color-mix(in srgb, var(--store-primary) 55%, transparent)" }
+          : { boxShadow: "0 10px 28px -20px rgba(15,23,42,0.28)" }
       }
-      transition={{ type: "spring", stiffness: 380, damping: 26 }}
-      className={`group relative flex h-full min-h-[5.5rem] w-full items-center overflow-hidden rounded-[1.65rem] border p-4 text-start sm:min-h-[6rem] sm:p-5 ${
+      transition={{ duration: 0.2 }}
+      className={`store-focus-ring group relative flex h-full min-h-[5.5rem] w-full items-center overflow-hidden rounded-[var(--store-radius,1.65rem)] border p-4 text-start sm:min-h-[6rem] sm:p-5 ${
         selected
           ? "border-[color:var(--store-primary)] bg-[color:var(--store-primary)]/[0.1] ring-2 ring-[color:var(--store-primary)]/35"
           : "border-black/[0.05] bg-white/90 hover:border-black/[0.1] dark:border-white/[0.07] dark:bg-zinc-900/90"
@@ -533,9 +155,11 @@ export function CategoryGrid({
       className={
         layout === "market"
           ? "flex flex-col gap-2"
-          : layout === "minimal"
-            ? "flex gap-2 overflow-x-auto pb-1"
-            : "grid grid-cols-1 items-stretch gap-3 sm:grid-cols-2"
+          : layout === "split"
+            ? "grid grid-cols-1 gap-3 sm:grid-cols-2"
+            : layout === "funnel"
+              ? "grid grid-cols-1 gap-3 sm:grid-cols-2"
+              : "grid grid-cols-1 items-stretch gap-3 sm:grid-cols-2"
       }
     >
       {categories.map((category, index) => (
@@ -584,13 +208,15 @@ export function ProductCard({
     <motion.button
       type="button"
       onClick={onSelect}
-      whileHover={{ y: layout === "minimal" ? 0 : -2 }}
-      whileTap={{ scale: 0.985 }}
-      transition={{ type: "spring", stiffness: 320, damping: 24 }}
-      className={`relative w-full cursor-pointer border bg-[color:var(--store-panel,#fff)] p-5 text-start transition sm:p-5 ${
-        layout === "minimal"
-          ? "rounded-none border-x-0 border-t-0 first:border-t"
-          : "rounded-[1.75rem] shadow-[0_8px_30px_-18px_rgba(15,23,42,0.28)]"
+      whileHover={{ y: -2 }}
+      whileTap={{ scale: 0.99 }}
+      transition={{ duration: 0.2 }}
+      className={`store-focus-ring relative w-full cursor-pointer border bg-[color:var(--store-panel,#fff)] p-5 text-start ${
+        layout === "split"
+          ? "rounded-[0.9rem] shadow-none"
+          : layout === "funnel"
+            ? "store-glass rounded-[1.35rem]"
+            : "rounded-[1.75rem] shadow-[0_8px_30px_-18px_rgba(15,23,42,0.28)]"
       } ${
         selected
           ? "border-[color:var(--store-primary)] ring-2 ring-[color:var(--store-primary)]/25"
@@ -671,21 +297,20 @@ export function PlanPickRow({
       type="button"
       onClick={onSelect}
       layout
-      whileHover={{ y: -2, scale: 1.012 }}
-      whileTap={{ scale: 0.98 }}
+      whileHover={{ y: -1 }}
+      whileTap={{ scale: 0.99 }}
       animate={
         selected
           ? {
-              scale: 1.025,
               boxShadow: "0 16px 40px -14px color-mix(in srgb, var(--store-primary) 58%, transparent)",
             }
-          : { scale: 1, boxShadow: "0 0 0 transparent" }
+          : { boxShadow: "0 0 0 transparent" }
       }
-      transition={{ type: "spring", stiffness: 420, damping: 24 }}
-      className={`relative flex w-full items-center justify-between gap-3 overflow-hidden rounded-[1.35rem] border px-3.5 py-3.5 text-start ${
+      transition={{ duration: 0.2 }}
+      className={`store-focus-ring relative flex min-h-14 w-full items-center justify-between gap-3 overflow-hidden rounded-[var(--store-radius,1.35rem)] border px-3.5 py-3.5 text-start ${
         selected
           ? "border-[color:var(--store-primary)] bg-[color:var(--store-primary)]/[0.12] ring-2 ring-[color:var(--store-primary)]/40"
-          : "border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950"
+          : "border-[color:var(--store-panel-border)] bg-[color:var(--store-panel)]"
       }`}
     >
       <AnimatePresence>
@@ -766,24 +391,88 @@ export function PlanPickRow({
 export function Stepper({
   labels,
   activeIndex,
+  layout = "classic",
 }: {
   labels: string[];
   activeIndex: number;
+  layout?: StorefrontLayoutId;
 }) {
+  if (layout === "funnel") {
+    return (
+      <div className="store-glass mb-6 overflow-x-auto rounded-[1.4rem] p-3 sm:mb-8 sm:p-4">
+        <div className="flex min-w-[28rem] items-center gap-3 sm:min-w-0 sm:justify-between">
+          {labels.map((label, index) => {
+            const done = index < activeIndex;
+            const now = index === activeIndex;
+            return (
+              <div key={`${index}-${label}`} className="flex min-w-0 flex-1 items-center gap-2.5">
+                <div
+                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[12px] font-bold ${
+                    done
+                      ? "bg-emerald-500 text-white"
+                      : now
+                        ? "bg-[color:var(--store-primary)] text-white"
+                        : "bg-slate-100 text-slate-400"
+                  }`}
+                >
+                  {done ? <Check size={15} strokeWidth={3} /> : index + 1}
+                </div>
+                <div className="min-w-0">
+                  <div className="truncate text-[13px] font-bold">{label}</div>
+                  <span
+                    className={`mt-0.5 inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                      done
+                        ? "bg-emerald-50 text-emerald-700"
+                        : now
+                          ? "bg-blue-50 text-blue-700"
+                          : "bg-slate-100 text-slate-500"
+                    }`}
+                  >
+                    {done ? "Done" : now ? "Now" : "Next"}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  if (layout === "market") {
+    return (
+      <div className="mb-5 flex gap-4 overflow-x-auto border-b border-[color:var(--store-panel-border)] text-[13px] font-semibold">
+        {labels.map((label, index) => (
+          <span
+            key={`${index}-${label}`}
+            className={`relative shrink-0 pb-2 ${
+              index <= activeIndex ? "text-[color:var(--store-fg)]" : "text-[color:var(--store-muted)]"
+            }`}
+          >
+            {label}
+            {index === activeIndex ? (
+              <span className="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-[color:var(--store-primary)] shadow-[0_0_10px_var(--store-primary)]" />
+            ) : null}
+          </span>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div className="mb-6 flex items-center justify-between gap-1 overflow-x-auto pb-1 text-[10px] font-semibold uppercase tracking-wide sm:mb-8 sm:justify-center sm:gap-2 sm:text-xs">
       {labels.map((label, index) => (
         <div key={`${index}-${label}`} className="flex shrink-0 items-center gap-1.5 sm:gap-2">
           <div
-            className={`flex h-7 w-7 items-center justify-center rounded-full border transition-colors sm:h-8 sm:w-8 ${
+            className={`flex h-8 w-8 items-center justify-center rounded-full border transition-colors duration-200 ${
               index <= activeIndex
                 ? "border-[color:var(--store-primary)] bg-[color:var(--store-primary)] text-white"
-                : "border-zinc-200 bg-white text-zinc-400 dark:border-zinc-800 dark:bg-zinc-900"
+                : "border-[color:var(--store-panel-border)] bg-[color:var(--store-panel)] text-[color:var(--store-muted)]"
             }`}
           >
             {index + 1}
           </div>
-          <span className={index <= activeIndex ? "text-zinc-800 dark:text-zinc-200" : "text-zinc-400"}>
+          <span className={index <= activeIndex ? "text-[color:var(--store-fg)]" : "text-[color:var(--store-muted)]"}>
             {label}
           </span>
         </div>
@@ -1376,72 +1065,6 @@ export async function copyTextWithState(
   }
 }
 
-type SupportLinks = {
-  showTelegram?: boolean | string;
-  telegramLink?: string;
-  showWhatsApp?: boolean | string;
-  whatsappLink?: string;
-  showWebsite?: boolean | string;
-  websiteUrl?: string;
-  showEmail?: boolean | string;
-  emailAddress?: string;
-} | null | undefined;
-
-function SupportFooter({ supportLinks }: { supportLinks?: SupportLinks }) {
-  const links = normalizeSupportLinks(supportLinks);
-  if (!links.length) return null;
-
-  return (
-    <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
-      {links.map((link) => (
-        <a
-          key={link.label}
-          href={link.href}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-4 py-2 text-sm text-zinc-600 transition hover:border-zinc-300 hover:text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-100"
-        >
-          <link.icon size={15} />
-          {link.label}
-        </a>
-      ))}
-    </div>
-  );
-}
-
-function normalizeSupportLinks(supportLinks: SupportLinks) {
-  const data = supportLinks || {};
-  const isOn = (value: unknown) => value === true || value === "true" || value === 1;
-
-  const items: Array<{
-    label: string;
-    href: string;
-    icon: typeof MessageCircle;
-  }> = [];
-
-  if (isOn(data.showTelegram) && data.telegramLink) {
-    const tg = normalizeTelegramLink(data.telegramLink);
-    if (tg) items.push({ label: "Telegram", href: tg, icon: MessageCircle });
-  }
-  if (isOn(data.showWhatsApp) && data.whatsappLink) {
-    items.push({ label: "WhatsApp", href: data.whatsappLink, icon: Phone });
-  }
-  if (isOn(data.showWebsite) && data.websiteUrl) {
-    items.push({ label: "Website", href: data.websiteUrl, icon: Globe });
-  }
-  if (isOn(data.showEmail) && data.emailAddress) {
-    items.push({
-      label: "Email",
-      href: data.emailAddress.startsWith("mailto:")
-        ? data.emailAddress
-        : `mailto:${data.emailAddress}`,
-      icon: Mail,
-    });
-  }
-
-  return items;
-}
-
 function CopyFeedbackButton({
   copied,
   onClick,
@@ -1467,36 +1090,6 @@ function CopyFeedbackButton({
           {copied ? <Check size={16} className="text-emerald-500" /> : <Copy size={16} />}
         </motion.span>
       </AnimatePresence>
-    </button>
-  );
-}
-
-export function PrimaryButton({
-  children,
-  className = "",
-  ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement>) {
-  return (
-    <button
-      {...props}
-      className={`inline-flex h-12 min-h-[48px] w-full cursor-pointer items-center justify-center rounded-2xl bg-[color:var(--store-primary)] px-5 text-[15px] font-semibold text-white shadow-[0_12px_28px_-14px_var(--store-primary)] transition duration-200 hover:opacity-95 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
-    >
-      {children}
-    </button>
-  );
-}
-
-export function SecondaryButton({
-  children,
-  className = "",
-  ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement>) {
-  return (
-    <button
-      {...props}
-      className={`inline-flex h-12 min-h-[48px] w-full cursor-pointer items-center justify-center rounded-2xl border border-black/[0.06] bg-white px-5 text-[15px] font-semibold text-zinc-900 transition duration-200 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100 ${className}`}
-    >
-      {children}
     </button>
   );
 }

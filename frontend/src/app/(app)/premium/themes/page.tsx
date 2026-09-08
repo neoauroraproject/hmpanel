@@ -49,7 +49,8 @@ type Assignment = {
 const SAMPLE_JSON = `{
   "skin": "atelier",
   "layout": "classic",
-  "cssVars": { "--store-radius": "0.75rem" }
+  "cssVars": { "--store-radius": "0.75rem" },
+  "copy": { "headline": { "en": "Pick a plan", "fa": "یک پلن انتخاب کنید" } }
 }`;
 
 export default function ThemesPage() {
@@ -91,6 +92,10 @@ export default function ThemesPage() {
   const installedBySlug = useMemo(() => {
     const map = new Map<string, ThemeRow>();
     for (const row of data || []) map.set(row.slug, row);
+    const noir = map.get("starter-noir");
+    if (noir && !map.has("starter-pulse")) map.set("starter-pulse", noir);
+    const harbor = map.get("starter-harbor");
+    if (harbor && !map.has("starter-lumen")) map.set("starter-lumen", harbor);
     return map;
   }, [data]);
 
@@ -187,7 +192,14 @@ export default function ThemesPage() {
       bg: starter.preview?.bg || "#F1F5F9",
     })),
     ...(data || [])
-      .filter((row) => !starters.some((s) => s.slug === row.slug) && row.status === "published")
+      .filter((row) => {
+        const starterSlugs = new Set([
+          ...starters.map((s) => s.slug),
+          "starter-noir",
+          "starter-harbor",
+        ]);
+        return !starterSlugs.has(row.slug) && row.status === "published";
+      })
       .map((row) => ({
         id: row.id,
         name: row.name,
@@ -254,7 +266,7 @@ export default function ThemesPage() {
         ) : error ? (
           <ErrorBox message={t("premium.moduleMissing")} />
         ) : (
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <label className="cursor-pointer rounded-3xl border border-dashed border-zinc-300 p-4 dark:border-zinc-700">
               <input
                 type="radio"
@@ -378,24 +390,44 @@ export default function ThemesPage() {
 
 function LayoutSketch({ layout, accent }: { layout: string; accent: string }) {
   const kind = layout.toLowerCase();
-  if (kind.includes("market")) {
+  if (kind.includes("market") || kind.includes("desk")) {
+    return (
+      <div className="flex h-full flex-col justify-end gap-1.5">
+        <div className="flex gap-1">
+          <div className="h-4 flex-1 rounded-sm" style={{ background: accent }} />
+          <div className="h-4 flex-1 rounded-sm bg-black/20" />
+        </div>
+        <div className="h-2 rounded-sm bg-black/15" />
+        <div className="h-8 rounded-sm border border-white/10 bg-black/20" />
+        <div className="h-3 rounded-sm" style={{ background: accent }} />
+      </div>
+    );
+  }
+  if (kind.includes("split") || kind.includes("minimal")) {
     return (
       <div className="flex h-full gap-2">
-        <div className="w-1/4 rounded-md bg-black/20" />
-        <div className="flex flex-1 flex-col gap-1.5">
-          <div className="h-3 rounded-sm" style={{ background: accent }} />
-          <div className="h-2 rounded-sm bg-black/15" />
-          <div className="h-2 rounded-sm bg-black/10" />
+        <div className="w-1/4 rounded-md bg-black/10" />
+        <div className="grid flex-1 grid-cols-2 gap-1">
+          <div className="rounded-sm border border-black/10 bg-white/70" />
+          <div className="rounded-sm border" style={{ borderColor: accent, background: `${accent}22` }} />
+          <div className="rounded-sm border border-black/10 bg-white/70" />
+          <div className="rounded-sm border border-black/10 bg-white/70" />
         </div>
       </div>
     );
   }
-  if (kind.includes("minimal")) {
+  if (kind.includes("funnel")) {
     return (
-      <div className="flex h-full flex-col justify-end gap-1">
-        <div className="h-2 w-2/3 rounded-sm bg-black/20" />
-        <div className="h-8 rounded-sm border border-black/10 bg-white/40" />
-        <div className="h-3 w-24 rounded-sm" style={{ background: accent }} />
+      <div className="flex h-full flex-col gap-1.5">
+        <div className="flex gap-1">
+          <div className="h-2 flex-1 rounded-full bg-emerald-400" />
+          <div className="h-2 flex-1 rounded-full" style={{ background: accent }} />
+          <div className="h-2 flex-1 rounded-full bg-black/15" />
+        </div>
+        <div className="flex flex-1 gap-1">
+          <div className="w-1/3 rounded-md bg-black/20" />
+          <div className="flex-1 rounded-md bg-white/70" />
+        </div>
       </div>
     );
   }

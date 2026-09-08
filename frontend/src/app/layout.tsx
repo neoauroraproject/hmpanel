@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import "@/modules/storefront/store-skins.css";
 import { Providers } from "@/components/providers";
 import { PANEL_METADATA } from "@/lib/panel-brand";
 

@@ -23,21 +23,22 @@ export default function ThemeDocsPage() {
       <Section title={t("themes.docsSettingsTitle")} body={t("themes.docsSettingsBody")} />
 
       <pre className="overflow-x-auto rounded-2xl border border-zinc-200 bg-zinc-50 p-4 text-xs leading-relaxed text-zinc-800 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-200" dir="ltr">{`{
-  "skin": "atelier" | "noir" | "harbor",
-  "layout": "classic" | "market" | "minimal",
+  "skin": "atelier" | "pulse" | "lumen" | "cascade",
+  "layout": "classic" | "market" | "split" | "funnel",
   "cssVars": { "--store-bg": "#F1F5F9", "--store-primary": "#0D9488" },
   "customCss": ".store-layout-classic main { max-width: 64rem; }",
-  "preview": { "accent": "#0D9488", "bg": "#F1F5F9", "label": "Classic" }
+  "preview": { "accent": "#0D9488", "bg": "#F1F5F9", "label": "Classic" },
+  "copy": { "headline": { "en": "Pick a plan", "fa": "یک پلن انتخاب کنید" } }
 }`}</pre>
 
       <Section title={t("themes.docsFnTitle")} body={t("themes.docsFnBody")} />
-      <pre className="overflow-x-auto rounded-2xl border border-zinc-200 bg-zinc-50 p-4 text-xs leading-relaxed dark:border-zinc-800 dark:bg-zinc-950" dir="ltr">{`resolveStorefrontSkin(settings)  // atelier | noir | harbor | default
-resolveStorefrontLayout(settings) // classic | market | minimal
+      <pre className="overflow-x-auto rounded-2xl border border-zinc-200 bg-zinc-50 p-4 text-xs leading-relaxed dark:border-zinc-800 dark:bg-zinc-950" dir="ltr">{`resolveStorefrontSkin(settings)  // atelier | pulse | lumen | cascade | default
+resolveStorefrontLayout(settings) // classic | market | split | funnel
 skinChrome(skin, layout)          // CSS vars, forceDark, layout
-StoreShell                        // header / chrome / injects customCss
-WelcomeHero({ layout })           // same CTAs, different structure
-ProductCard({ layout })           // card | compact row | full-width
-CategoryGrid / CategoryPicker     // tiles vs rail vs chips
+StoreShell                        // website chrome / injects customCss
+WelcomeHero({ layout })           // same CTAs, different site structure
+ProductCard({ layout })           // card | compact row | split card | glass
+CategoryGrid / CategoryPicker     // tiles vs board vs selectable cards
 formatProductPrice(product)       // toman / usd from product + store currency
 onSelect(product)                 // checkout continues with that plan`}</pre>
 

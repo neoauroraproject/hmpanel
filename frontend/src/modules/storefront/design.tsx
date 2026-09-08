@@ -235,7 +235,7 @@ export function Surface({
   return (
     <div
       className={clsx(
-        "rounded-[1.75rem] border border-black/[0.04] bg-white shadow-[0_8px_30px_-18px_rgba(15,23,42,0.28)] dark:border-white/[0.06] dark:bg-zinc-900 dark:shadow-[0_8px_30px_-18px_rgba(0,0,0,0.65)]",
+        "rounded-[var(--store-radius,1.75rem)] border border-[color:var(--store-panel-border,rgba(0,0,0,0.04))] bg-[color:var(--store-panel,#fff)] text-[color:var(--store-fg)] shadow-[0_8px_30px_-18px_rgba(15,23,42,0.28)]",
         interactive && "transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_16px_40px_-20px_rgba(15,23,42,0.35)]",
         pad,
         className,
@@ -258,7 +258,7 @@ export function SectionHeading({
   return (
     <div className="mb-4 flex items-end justify-between gap-3 sm:mb-5">
       <div className="min-w-0">
-        <h2 className="text-[1.35rem] font-bold tracking-tight text-zinc-900 dark:text-zinc-50 sm:text-[1.5rem]">
+        <h2 className="text-[1.35rem] font-bold tracking-tight text-[color:var(--store-fg,#18181b)] sm:text-[1.5rem]">
           {title}
         </h2>
         {subtitle ? (
@@ -356,7 +356,7 @@ export function BottomTabBar({
       style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
     >
       <div className="mx-auto max-w-lg px-3">
-        <div className="flex items-stretch gap-1 rounded-[1.6rem] border border-black/[0.06] bg-white/92 p-1.5 shadow-[0_-8px_40px_-12px_rgba(15,23,42,0.25)] backdrop-blur-2xl dark:border-white/10 dark:bg-zinc-950/92">
+        <div className="flex items-stretch gap-1 rounded-[1.6rem] border border-[color:var(--store-panel-border)] bg-[color:var(--store-panel)]/92 p-1.5 shadow-[0_-8px_40px_-12px_rgba(15,23,42,0.25)] backdrop-blur-2xl">
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const active = value === tab.id;
@@ -408,11 +408,12 @@ export function StatTile({
           "border-[color:var(--store-primary)]/20 bg-[color:var(--store-primary)]/[0.08]",
         tone === "success" && "border-emerald-500/20 bg-emerald-500/[0.08]",
         tone === "warn" && "border-amber-500/20 bg-amber-500/[0.08]",
-        tone === "default" && "border-black/[0.04] bg-white dark:border-white/[0.06] dark:bg-zinc-900",
+        tone === "default" &&
+          "border-[color:var(--store-panel-border,rgba(0,0,0,0.04))] bg-[color:var(--store-panel,#fff)]",
       )}
     >
       <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-400">{label}</div>
-      <div className="mt-1.5 text-2xl font-black tracking-tight text-zinc-900 dark:text-zinc-50">{value}</div>
+      <div className="mt-1.5 text-2xl font-black tracking-tight text-[color:var(--store-fg,#18181b)]">{value}</div>
     </div>
   );
 }

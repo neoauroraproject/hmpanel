@@ -1,26 +1,37 @@
 /** Client-side skin resolver (mirrors backend storefront-skins). */
-export type StorefrontSkinId = "default" | "atelier" | "noir" | "harbor";
-export type StorefrontLayoutId = "classic" | "market" | "minimal";
+export type StorefrontSkinId = "default" | "atelier" | "pulse" | "lumen" | "cascade";
+export type StorefrontLayoutId = "classic" | "market" | "split" | "funnel";
+
+const SKIN_ALIASES: Record<string, StorefrontSkinId> = {
+  noir: "pulse",
+  harbor: "lumen",
+};
 
 export function resolveStorefrontSkin(settings: unknown): StorefrontSkinId {
   if (!settings || typeof settings !== "object") return "default";
-  const skin = String((settings as { skin?: string }).skin || "")
+  let skin = String((settings as { skin?: string }).skin || "")
     .trim()
     .toLowerCase();
-  if (skin === "atelier" || skin === "noir" || skin === "harbor") return skin;
+  skin = SKIN_ALIASES[skin] || skin;
+  if (skin === "atelier" || skin === "pulse" || skin === "lumen" || skin === "cascade") return skin;
   return "default";
 }
 
 export function resolveStorefrontLayout(settings: unknown): StorefrontLayoutId {
   if (settings && typeof settings === "object") {
-    const layout = String((settings as { layout?: string }).layout || "")
+    let layout = String((settings as { layout?: string }).layout || "")
       .trim()
       .toLowerCase();
-    if (layout === "classic" || layout === "market" || layout === "minimal") return layout;
+    if (layout === "minimal") layout = "split";
+    if (layout === "desk") layout = "market";
+    if (layout === "classic" || layout === "market" || layout === "split" || layout === "funnel") {
+      return layout;
+    }
   }
   const skin = resolveStorefrontSkin(settings);
-  if (skin === "noir") return "market";
-  if (skin === "harbor") return "minimal";
+  if (skin === "pulse") return "market";
+  if (skin === "lumen") return "split";
+  if (skin === "cascade") return "funnel";
   return "classic";
 }
 
@@ -36,14 +47,37 @@ export function sanitizeThemeCss(raw: unknown): string {
     .replace(/url\s*\(\s*['"]?\s*data:[^)]*\)/gi, "none");
 }
 
-export function skinChrome(skin: StorefrontSkinId, layout?: StorefrontLayoutId): {
+export function defaultPrimaryForSkin(skin: StorefrontSkinId): string {
+  if (skin === "atelier") return "#0D9488";
+  if (skin === "pulse") return "#10B981";
+  if (skin === "lumen") return "#2563EB";
+  if (skin === "cascade") return "#3B82F6";
+  return "#3b82f6";
+}
+
+export const SKIN_FONT_HREF: Record<Exclude<StorefrontSkinId, "default">, string> = {
+  atelier:
+    "https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap",
+  pulse:
+    "https://fonts.googleapis.com/css2?family=Exo+2:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap",
+  lumen:
+    "https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap",
+  cascade:
+    "https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap",
+};
+
+export function skinChrome(
+  skin: StorefrontSkinId,
+  layout?: StorefrontLayoutId,
+): {
   rootClass: string;
   style: Record<string, string>;
   forceDark: boolean;
   layout: StorefrontLayoutId;
 } {
   const resolvedLayout =
-    layout || (skin === "noir" ? "market" : skin === "harbor" ? "minimal" : "classic");
+    layout ||
+    (skin === "pulse" ? "market" : skin === "lumen" ? "split" : skin === "cascade" ? "funnel" : "classic");
 
   if (skin === "atelier") {
     return {
@@ -62,37 +96,56 @@ export function skinChrome(skin: StorefrontSkinId, layout?: StorefrontLayoutId):
       },
     };
   }
-  if (skin === "noir") {
+  if (skin === "pulse") {
     return {
-      rootClass: "store-skin-noir store-layout-market dark",
+      rootClass: "store-skin-pulse store-skin-noir store-layout-market dark",
       forceDark: true,
       layout: resolvedLayout,
       style: {
-        "--store-bg": "#0C0A09",
-        "--store-fg": "#FAFAF9",
-        "--store-muted": "#A8A29E",
-        "--store-panel": "rgba(28,25,23,0.82)",
-        "--store-panel-border": "rgba(250,250,249,0.1)",
-        "--store-radius": "0.5rem",
-        "--store-font": '"DM Sans", "Vazirmatn", ui-sans-serif, system-ui, sans-serif',
-        "--store-display": '"DM Sans", "Vazirmatn", ui-sans-serif, system-ui, sans-serif',
+        "--store-bg": "#0B0F0E",
+        "--store-fg": "#F4FBF7",
+        "--store-muted": "#8BA39A",
+        "--store-panel": "rgba(18, 24, 22, 0.92)",
+        "--store-panel-border": "rgba(16, 185, 129, 0.18)",
+        "--store-radius": "0.75rem",
+        "--store-font": '"IBM Plex Sans", "Vazirmatn", ui-sans-serif, system-ui, sans-serif',
+        "--store-display": '"Exo 2", "Vazirmatn", ui-sans-serif, system-ui, sans-serif',
+        "--store-glow": "0 0 28px color-mix(in srgb, var(--store-primary) 42%, transparent)",
       },
     };
   }
-  if (skin === "harbor") {
+  if (skin === "lumen") {
     return {
-      rootClass: "store-skin-harbor store-layout-minimal",
+      rootClass: "store-skin-lumen store-skin-harbor store-layout-split",
       forceDark: false,
       layout: resolvedLayout,
       style: {
-        "--store-bg": "#EDE6D9",
-        "--store-fg": "#1C1917",
-        "--store-muted": "#78716C",
-        "--store-panel": "#F7F3EB",
-        "--store-panel-border": "rgba(28,25,23,0.12)",
-        "--store-radius": "0.25rem",
-        "--store-font": '"Figtree", "Vazirmatn", ui-sans-serif, system-ui, sans-serif',
-        "--store-display": '"Fraunces", "Vazirmatn", Georgia, serif',
+        "--store-bg": "#FFFFFF",
+        "--store-fg": "#0F172A",
+        "--store-muted": "#64748B",
+        "--store-panel": "#FFFFFF",
+        "--store-panel-border": "rgba(15, 23, 42, 0.08)",
+        "--store-radius": "0.85rem",
+        "--store-font": '"Archivo", "Vazirmatn", ui-sans-serif, system-ui, sans-serif',
+        "--store-display": '"Space Grotesk", "Vazirmatn", ui-sans-serif, system-ui, sans-serif',
+      },
+    };
+  }
+  if (skin === "cascade") {
+    return {
+      rootClass: "store-skin-cascade store-layout-funnel",
+      forceDark: false,
+      layout: resolvedLayout,
+      style: {
+        "--store-bg": "transparent",
+        "--store-backdrop": "linear-gradient(165deg, #38BDF8 0%, #4F46E5 52%, #6D28D9 100%)",
+        "--store-fg": "#0F172A",
+        "--store-muted": "#475569",
+        "--store-panel": "rgba(255,255,255,0.88)",
+        "--store-panel-border": "rgba(255,255,255,0.55)",
+        "--store-radius": "1.35rem",
+        "--store-font": '"Plus Jakarta Sans", "Vazirmatn", ui-sans-serif, system-ui, sans-serif',
+        "--store-display": '"Plus Jakarta Sans", "Vazirmatn", ui-sans-serif, system-ui, sans-serif',
       },
     };
   }

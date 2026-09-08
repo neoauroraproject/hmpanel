@@ -200,6 +200,7 @@ export default function TrackOrderPage() {
         title: data.storeTitle || "Order Tracking",
         slug: data.storeSlug || "",
         branding: data.branding,
+        publishedTheme: data.publishedTheme,
       }}
       topBar={
         <span className="truncate text-sm font-semibold tracking-tight">

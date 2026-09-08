@@ -309,7 +309,11 @@ function CustomerDashboardInner() {
       store={{
         title: data.store?.title || "Customer Dashboard",
         slug: data.store?.slug || "",
+        description: data.store?.description,
+        logoUrl: data.store?.logoUrl || data.branding?.logo || null,
+        logoDarkUrl: data.store?.logoDarkUrl || data.branding?.logoDark || null,
         branding: data.branding,
+        publishedTheme: data.publishedTheme || data.store?.publishedTheme,
       }}
       topBar={
         tab === "home" ? (
@@ -334,10 +338,10 @@ function CustomerDashboardInner() {
           <section className="mb-5 sm:mb-7">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-[13px] font-medium text-zinc-500">
+                <p className="text-[13px] font-medium text-[color:var(--store-muted)]">
                   {t("سلام", "Hello")}
                 </p>
-                <h1 className="mt-0.5 truncate text-[1.75rem] font-black tracking-tight text-zinc-900 dark:text-zinc-50 sm:text-[2rem]">
+                <h1 className="mt-0.5 truncate text-[1.75rem] font-black tracking-tight text-[color:var(--store-fg)] sm:text-[2rem]">
                   {data.profile?.name || t("مشتری عزیز", "Customer")}
                 </h1>
               </div>

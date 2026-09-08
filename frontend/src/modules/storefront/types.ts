@@ -41,6 +41,8 @@ export type StorefrontStore = {
     logo?: string | null;
     logoDark?: string | null;
     primaryColor?: string | null;
+    accentColor?: string | null;
+    footerText?: string | null;
     theme?: string | null;
     supportLinks?: Record<string, string> | null;
   };
@@ -157,10 +159,15 @@ export type CustomerDashboard = {
   store?: {
     slug?: string;
     title?: string;
+    description?: string | null;
+    logoUrl?: string | null;
+    logoDarkUrl?: string | null;
     defaultCurrency?: string;
     payment?: StorefrontStore["payment"] | null;
+    publishedTheme?: StorefrontStore["publishedTheme"];
   };
   branding?: StorefrontStore["branding"];
+  publishedTheme?: StorefrontStore["publishedTheme"];
   supportLinks?: Record<string, string> | null;
   services: CustomerService[];
   activeServices: CustomerService[];
