@@ -17,6 +17,17 @@ describe('SchemaMigrationAdapter', () => {
     expect(second.steps).toEqual(first.steps);
   });
 
+  it('plans v1 → v2 payment ledger step', async () => {
+    const adapter = new SchemaMigrationAdapter(BASELINE_MIGRATION_STEPS);
+    const plan = adapter.plan(1, 2);
+    expect(plan.map((s) => s.id)).toEqual(['migrate-from-v1-payment-ledger']);
+    const result = await adapter.migrate(0, 2);
+    expect(result.steps).toEqual([
+      'migrate-from-v0-platform-baseline',
+      'migrate-from-v1-payment-ledger',
+    ]);
+  });
+
   it('refuses silent downgrade', () => {
     const adapter = new SchemaMigrationAdapter(BASELINE_MIGRATION_STEPS);
     expect(() => adapter.plan(1, 0)).toThrow(/Downgrade/);

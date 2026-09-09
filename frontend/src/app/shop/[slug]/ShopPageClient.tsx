@@ -15,6 +15,13 @@ import type {
 import { useStorefrontLocale } from "@/modules/storefront/locale";
 import { compressReceiptImage } from "@/modules/storefront/receipt-image";
 import {
+  isReceiptPayMethod,
+  openTelegramStarsInvoice,
+  pickStorefrontPayMethod,
+  storefrontPayOptions,
+  type CheckoutPayMethod,
+} from "@/modules/storefront/payment-methods";
+import {
   PendingOrderCard,
   PrimaryButton,
   ProductCard,
@@ -103,7 +110,7 @@ export default function ShopPage() {
     receiptText: "",
     receiptImage: "",
     couponCode: "",
-    paymentMethod: "MANUAL_BANK" as "MANUAL_BANK" | "WALLET",
+    paymentMethod: "MANUAL_BANK" as CheckoutPayMethod,
     limitIp: undefined as number | undefined,
     selectedAddonIds: [] as string[],
   });
@@ -132,6 +139,18 @@ export default function ShopPage() {
     if (selectedCategoryId) return pool.filter((p) => p.categoryId === selectedCategoryId);
     return pool;
   }, [isRenewFlow, products, selectedCategoryId, categories]);
+
+  useEffect(() => {
+    if (!store?.payment) return;
+    setForm((c: any) => {
+      const next = pickStorefrontPayMethod(
+        store.payment,
+        { hasWalletSession: hasCustomerSession || (haveToken && !!c.customerToken) },
+        c.paymentMethod,
+      );
+      return next === c.paymentMethod ? c : { ...c, paymentMethod: next };
+    });
+  }, [store?.payment, hasCustomerSession, haveToken]);
 
   useEffect(() => {
     document.title = store?.title || store?.branding?.name || "Store";
@@ -254,8 +273,8 @@ export default function ShopPage() {
           telegram: form.telegram,
           whatsapp: form.whatsapp,
           email: form.email,
-          receiptText: form.paymentMethod === "WALLET" ? undefined : form.receiptText || undefined,
-          receiptImage: form.paymentMethod === "WALLET" ? undefined : form.receiptImage || undefined,
+          receiptText: isReceiptPayMethod(form.paymentMethod) ? form.receiptText || undefined : undefined,
+          receiptImage: isReceiptPayMethod(form.paymentMethod) ? form.receiptImage || undefined : undefined,
           customerToken: haveToken ? form.customerToken : undefined,
           haveToken,
           isRenewal: isRenewFlow,
@@ -268,7 +287,10 @@ export default function ShopPage() {
         })
       ).data;
     },
-    onSuccess: (response) => setResult(response),
+    onSuccess: (response) => {
+      if (response?.invoiceUrl) openTelegramStarsInvoice(response.invoiceUrl);
+      setResult(response);
+    },
   });
 
   const orderError =
@@ -302,6 +324,7 @@ export default function ShopPage() {
             trackingCode={result.trackingCode}
             customerToken={result.customerToken}
             orderStatus={result.status}
+            invoiceUrl={result.invoiceUrl}
             onTrack={() => router.push(`/track/${result.trackingCode}`)}
           />
         </div>
@@ -452,6 +475,9 @@ function ShopBody(props: {
     () => resolvePaymentCards(store?.payment),
     [store?.payment],
   );
+  const payOptions = storefrontPayOptions(store?.payment, {
+    hasWalletSession: hasCustomerSession || (haveToken && !!form.customerToken),
+  });
   const [couponBusy, setCouponBusy] = useState(false);
   const [couponOffers, setCouponOffers] = useState<ApplicableCouponOffer[]>([]);
   const [couponPreview, setCouponPreview] = useState<CouponPreview | null>(null);
@@ -1010,30 +1036,26 @@ function ShopBody(props: {
                   busy={couponBusy}
                   error={couponError}
                 />
-                {hasCustomerSession || (haveToken && form.customerToken) ? (
+                {payOptions.length > 1 ? (
                   <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setForm((c: any) => ({ ...c, paymentMethod: "MANUAL_BANK" }))}
-                      className={`rounded-xl px-3 py-2 text-sm font-medium ${
-                        form.paymentMethod !== "WALLET"
-                          ? "bg-zinc-900 text-white dark:bg-white dark:text-zinc-900"
-                          : "border border-zinc-200 dark:border-zinc-800"
-                      }`}
-                    >
-                      {t("کارت + رسید", "Card + receipt")}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setForm((c: any) => ({ ...c, paymentMethod: "WALLET" }))}
-                      className={`rounded-xl px-3 py-2 text-sm font-medium ${
-                        form.paymentMethod === "WALLET"
-                          ? "bg-zinc-900 text-white dark:bg-white dark:text-zinc-900"
-                          : "border border-zinc-200 dark:border-zinc-800"
-                      }`}
-                    >
-                      {t("کیف پول", "Pay with wallet")}
-                    </button>
+                    {payOptions.map((opt) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setForm((c: any) => ({ ...c, paymentMethod: opt.id }))}
+                        className={`rounded-xl px-3 py-2 text-sm font-medium ${
+                          form.paymentMethod === opt.id
+                            ? "bg-zinc-900 text-white dark:bg-white dark:text-zinc-900"
+                            : "border border-zinc-200 dark:border-zinc-800"
+                        }`}
+                      >
+                        {opt.id === "WALLET"
+                          ? t("کیف پول", "Pay with wallet")
+                          : opt.id === "TELEGRAM_STARS"
+                            ? t("تلگرام استارز", "Telegram Stars")
+                            : t("کارت + رسید", "Card + receipt")}
+                      </button>
+                    ))}
                   </div>
                 ) : null}
                 {form.paymentMethod === "WALLET" ? (
@@ -1044,7 +1066,15 @@ function ShopBody(props: {
                     )}
                   </p>
                 ) : null}
-                {form.paymentMethod !== "WALLET" ? paymentCards.map((card) => (
+                {form.paymentMethod === "TELEGRAM_STARS" ? (
+                  <p className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-3.5 py-3 text-sm text-amber-800 dark:text-amber-200">
+                    {t(
+                      "پرداخت با Telegram Stars. سرویس فقط بعد از تأیید پرداخت در سرور فعال می‌شود.",
+                      "Pay with Telegram Stars. The service is delivered only after backend payment verification.",
+                    )}
+                  </p>
+                ) : null}
+                {isReceiptPayMethod(form.paymentMethod) ? paymentCards.map((card) => (
                   <BankCardVisual
                     key={card.id}
                     bankName={card.bankName}
@@ -1057,7 +1087,7 @@ function ShopBody(props: {
                     copiedLabel={t("کپی شد", "Copied")}
                   />
                 )) : null}
-                {form.paymentMethod !== "WALLET" && !paymentCards.length ? (
+                {isReceiptPayMethod(form.paymentMethod) && !paymentCards.length ? (
                   <p className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-3.5 py-3 text-sm text-amber-800 dark:text-amber-200">
                     {t(
                       "اطلاعات کارت پرداخت هنوز تنظیم نشده.",
@@ -1065,7 +1095,7 @@ function ShopBody(props: {
                     )}
                   </p>
                 ) : null}
-                {form.paymentMethod !== "WALLET" ? (
+                {isReceiptPayMethod(form.paymentMethod) ? (
                 <textarea
                   rows={3}
                   value={form.receiptText}
@@ -1074,7 +1104,7 @@ function ShopBody(props: {
                   className="w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 outline-none dark:border-zinc-800 dark:bg-zinc-950"
                 />
                 ) : null}
-                {form.paymentMethod !== "WALLET" ? (
+                {isReceiptPayMethod(form.paymentMethod) ? (
                 <label className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-zinc-300 px-4 py-6 text-sm text-zinc-600 dark:border-zinc-700 dark:text-zinc-400">
                   <Upload size={16} />
                   {t("آپلود تصویر رسید", "Upload receipt image")}
@@ -1103,7 +1133,7 @@ function ShopBody(props: {
                 ) : null}
                 {receiptError ? <p className="text-sm text-red-500">{receiptError}</p> : null}
                 {orderError ? <p className="text-sm text-red-500">{orderError}</p> : null}
-                {receiptPreview && form.paymentMethod !== "WALLET" ? (
+                {receiptPreview && isReceiptPayMethod(form.paymentMethod) ? (
                   <img
                     src={receiptPreview}
                     alt="Receipt preview"
@@ -1128,7 +1158,13 @@ function ShopBody(props: {
                 />
                 <SummaryRow
                   label={t("تراکنش", "Transaction ID")}
-                  value={form.receiptText || t("فقط تصویر رسید", "Uploaded receipt only")}
+                  value={
+                    form.paymentMethod === "TELEGRAM_STARS"
+                      ? t("تلگرام استارز", "Telegram Stars")
+                      : form.paymentMethod === "WALLET"
+                        ? t("کیف پول", "Wallet")
+                        : form.receiptText || t("فقط تصویر رسید", "Uploaded receipt only")
+                  }
                 />
               </div>
             ) : null}
@@ -1160,7 +1196,7 @@ function ShopBody(props: {
                     (step === "extras" && !canContinueConfig) ||
                     (step === "profile" && !canContinueProfile) ||
                     (step === "payment" &&
-                      form.paymentMethod !== "WALLET" &&
+                      isReceiptPayMethod(form.paymentMethod) &&
                       !form.receiptText.trim() &&
                       !form.receiptImage)
                   }

@@ -1,6 +1,6 @@
 {
   "name": "hmpanel-frontend",
-  "version": "2.2.12",
+  "version": "2.2.13",
   "private": true,
   "scripts": {
     "dev": "next dev",

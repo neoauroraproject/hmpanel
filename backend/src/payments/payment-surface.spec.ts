@@ -24,4 +24,24 @@ describe('payment surface assignment', () => {
     expect(resolved.gateways).toEqual(['wallet']);
     expect(resolved.default).toBe('wallet');
   });
+
+  it('keeps per-surface cardId for card-to-card', () => {
+    const parsed = parsePaymentSurfaceAssignments([
+      {
+        surface: 'store',
+        allowedGatewayIds: ['manual_bank'],
+        defaultId: 'manual_bank',
+        cardId: 'card_1',
+      },
+      {
+        surface: 'add_balance',
+        allowedGatewayIds: ['manual_bank'],
+        defaultId: 'manual_bank',
+        cardId: 'card_3',
+      },
+    ]);
+    expect(parsed.find((r) => r.surface === 'store')?.cardId).toBe('card_1');
+    expect(parsed.find((r) => r.surface === 'add_balance')?.cardId).toBe('card_3');
+    expect(resolveSurfaceGateways(parsed, 'add_balance', ['manual_bank']).cardId).toBe('card_3');
+  });
 });

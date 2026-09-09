@@ -15,6 +15,7 @@ import {
   Layers,
   LayoutTemplate,
   Gem,
+  CreditCard,
 } from "lucide-react";
 import type { Role } from "@/lib/types";
 
@@ -115,6 +116,7 @@ export function filterCoreNavItems(
 
 export const PREMIUM_NAV_ORDER = [
   "store",
+  "payment-management",
   "external-panels",
   "client-templates",
   "admin-recharge",
@@ -131,6 +133,7 @@ export const PREMIUM_MENU_ICONS: Record<string, NavIcon> = {
   "custom-domains": Globe,
   "client-templates": LayoutTemplate,
   store: Store,
+  "payment-management": CreditCard,
   "admin-recharge": Wallet,
   "monitoring-pro": Activity,
   "backup-center": DatabaseBackup,
@@ -145,6 +148,7 @@ const PREMIUM_SECTION: Record<string, string> = {
   "external-panels": "management",
   "client-templates": "management",
   store: "sales",
+  "payment-management": "sales",
   "admin-recharge": "sales",
   branding: "appearance",
   themes: "appearance",
@@ -166,7 +170,7 @@ const SECTION_HREF_ORDER: Record<string, string[]> = {
     "/premium/external-panels",
     "/premium/client-templates",
   ],
-  sales: ["/premium/store", "/traffic", "/premium/admin-recharge"],
+  sales: ["/premium/store", "/premium/payment-management", "/traffic", "/premium/admin-recharge"],
   appearance: [
     "/premium/branding",
     "/premium/themes",
@@ -190,6 +194,7 @@ const HREF_TO_MODULE: Record<string, string> = {
   "/premium/backups": "backup-center",
   "/premium/client-templates": "client-templates",
   "/premium/store": "store",
+  "/premium/payment-management": "payment-management",
   "/premium/admin-recharge": "admin-recharge",
   "/premium/branding": "branding",
   "/premium/themes": "themes",

@@ -485,10 +485,12 @@ export function PendingOrderCard({
   customerToken,
   onTrack,
   orderStatus,
+  invoiceUrl,
 }: {
   trackingCode: string;
   customerToken: string;
   orderStatus: string;
+  invoiceUrl?: string | null;
   onCopy?: () => void;
   onTrack: () => void;
 }) {
@@ -513,11 +515,29 @@ export function PendingOrderCard({
       </div>
       <h2 className="text-2xl font-black">{t("سفارش ثبت شد", "Order Submitted")}</h2>
       <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
-        {t(
-          "در انتظار تأیید. معمولاً ظرف چند دقیقه بررسی می‌شود.",
-          "Waiting for approval. Your order will usually be reviewed within a few minutes.",
-        )}
+        {invoiceUrl
+          ? t(
+              "فاکتور Telegram Stars آماده است. پرداخت را کامل کنید؛ سرویس فقط بعد از تأیید سرور فعال می‌شود.",
+              "Your Telegram Stars invoice is ready. Complete payment — delivery happens only after backend verification.",
+            )
+          : t(
+              "در انتظار تأیید. معمولاً ظرف چند دقیقه بررسی می‌شود.",
+              "Waiting for approval. Your order will usually be reviewed within a few minutes.",
+            )}
       </p>
+      {invoiceUrl ? (
+        <button
+          type="button"
+          onClick={() => {
+            const tg = window.Telegram?.WebApp as { openInvoice?: (u: string) => void } | undefined;
+            if (tg?.openInvoice) tg.openInvoice(invoiceUrl);
+            else window.open(invoiceUrl, "_blank", "noopener,noreferrer");
+          }}
+          className="mt-4 inline-flex min-h-11 items-center justify-center rounded-2xl bg-[color:var(--store-primary,#2563eb)] px-4 text-sm font-semibold text-white"
+        >
+          {t("پرداخت با استارز", "Pay with Stars")}
+        </button>
+      ) : null}
 
       <div className="mt-6 rounded-2xl border border-amber-500/15 bg-amber-500/5 p-4">
         <div className="flex items-start gap-3">

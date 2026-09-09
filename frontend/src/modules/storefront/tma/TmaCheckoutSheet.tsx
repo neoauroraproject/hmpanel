@@ -10,6 +10,13 @@ import { compressReceiptImage } from "../receipt-image";
 import { useStorefrontLocale } from "../locale";
 import type { CustomerService, StorefrontProduct, StorefrontStore } from "../types";
 import { BankCardVisual, resolvePaymentCards } from "../BankCardVisual";
+import {
+  isReceiptPayMethod,
+  openTelegramStarsInvoice,
+  pickStorefrontPayMethod,
+  storefrontPayOptions,
+  type CheckoutPayMethod,
+} from "../payment-methods";
 import { scrollTmaToTop } from "./scroll";
 import { useTelegramWebApp } from "./useTelegramWebApp";
 
@@ -58,6 +65,7 @@ export function TmaCheckoutSheet({
   const [receiptImage, setReceiptImage] = useState("");
   const [preview, setPreview] = useState("");
   const [error, setError] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<CheckoutPayMethod>("MANUAL_BANK");
 
   const catalog =
     mode === "renew" ? products.filter((p) => p.renewable !== false) : products;
@@ -75,6 +83,7 @@ export function TmaCheckoutSheet({
   const selected = catalog.find((p) => p.id === productId) || catalog[0];
   const accent = primaryColor || LIGHT.button;
   const paymentCards = resolvePaymentCards(payment);
+  const payOptions = storefrontPayOptions(payment, { hasWalletSession: true });
 
   useEffect(() => {
     if (!open) return;
@@ -85,6 +94,7 @@ export function TmaCheckoutSheet({
     setReceiptImage("");
     setPreview("");
     setProductId(products[0]?.id || catalog[0]?.id || "");
+    setPaymentMethod(pickStorefrontPayMethod(payment, { hasWalletSession: true }));
     const tgName = [user?.first_name, user?.last_name].filter(Boolean).join(" ").trim();
     setDisplayName(tgName);
     setContactNote(user?.username ? `@${user.username}` : "");
@@ -112,7 +122,7 @@ export function TmaCheckoutSheet({
       return;
     }
     // Renew: step 1 is payment — require receipt before confirm
-    if (mode === "renew" && step === 1 && !receiptText.trim() && !receiptImage) {
+    if (mode === "renew" && step === 1 && isReceiptPayMethod(paymentMethod) && !receiptText.trim() && !receiptImage) {
       setError(t("رسید یا یادداشت پرداخت الزامی است", "Payment receipt or note is required"));
       return;
     }
@@ -137,7 +147,7 @@ export function TmaCheckoutSheet({
       if (mode === "renew" && !renewService?.id) {
         throw new Error(t("سرویس یافت نشد", "Service missing"));
       }
-      if (!receiptText.trim() && !receiptImage) {
+      if (isReceiptPayMethod(paymentMethod) && !receiptText.trim() && !receiptImage) {
         throw new Error(
           t("رسید یا یادداشت پرداخت الزامی است", "Payment receipt or note is required"),
         );
@@ -148,8 +158,9 @@ export function TmaCheckoutSheet({
           await publicApi.post("/store/customer/renew", {
             clientId: renewService!.id,
             productId,
-            receiptText: receiptText || undefined,
-            receiptImage: receiptImage || undefined,
+            receiptText: isReceiptPayMethod(paymentMethod) ? receiptText || undefined : undefined,
+            receiptImage: isReceiptPayMethod(paymentMethod) ? receiptImage || undefined : undefined,
+            paymentMethod,
           })
         ).data;
       }
@@ -160,12 +171,14 @@ export function TmaCheckoutSheet({
           configName: configName.trim(),
           name: displayName.trim() || undefined,
           telegram: contactNote.trim() || undefined,
-          receiptText: receiptText || undefined,
-          receiptImage: receiptImage || undefined,
+          receiptText: isReceiptPayMethod(paymentMethod) ? receiptText || undefined : undefined,
+          receiptImage: isReceiptPayMethod(paymentMethod) ? receiptImage || undefined : undefined,
+          paymentMethod,
         })
       ).data;
     },
     onSuccess: async (data) => {
+      if (data?.invoiceUrl) openTelegramStarsInvoice(data.invoiceUrl);
       await queryClient.invalidateQueries({ queryKey: ["customer-session"] });
       onSuccess(data.trackingCode);
     },
@@ -401,6 +414,49 @@ export function TmaCheckoutSheet({
 
               {(mode === "buy" && step === 3) || (mode === "renew" && step === 1) ? (
                 <>
+                  {payOptions.length > 1 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {payOptions.map((opt) => (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => setPaymentMethod(opt.id)}
+                          className="rounded-xl px-3 py-2 text-[13px] font-medium"
+                          style={{
+                            background: paymentMethod === opt.id ? accent : LIGHT.secondary,
+                            color: paymentMethod === opt.id ? "#fff" : LIGHT.text,
+                          }}
+                        >
+                          {opt.id === "WALLET"
+                            ? t("کیف پول", "Wallet")
+                            : opt.id === "TELEGRAM_STARS"
+                              ? t("تلگرام استارز", "Telegram Stars")
+                              : t("کارت + رسید", "Card + receipt")}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                  {paymentMethod === "TELEGRAM_STARS" ? (
+                    <p
+                      className="rounded-2xl px-3.5 py-3 text-[13px]"
+                      style={{ background: "rgba(245,158,11,0.12)", color: "#92400e" }}
+                    >
+                      {t(
+                        "پرداخت با Telegram Stars. سرویس فقط بعد از تأیید سرور فعال می‌شود.",
+                        "Pay with Telegram Stars. Delivery happens only after backend verification.",
+                      )}
+                    </p>
+                  ) : null}
+                  {paymentMethod === "WALLET" ? (
+                    <p
+                      className="rounded-2xl px-3.5 py-3 text-[13px]"
+                      style={{ background: "rgba(16,185,129,0.12)", color: "#166534" }}
+                    >
+                      {t("مبلغ از کیف پول کسر می‌شود.", "Amount will be deducted from your wallet.")}
+                    </p>
+                  ) : null}
+                  {isReceiptPayMethod(paymentMethod) ? (
+                    <>
                   {paymentCards.length ? (
                     <div className="space-y-3">
                       {paymentCards.map((card) => (
@@ -479,6 +535,8 @@ export function TmaCheckoutSheet({
                       <img src={preview} alt="Receipt" className="mt-1 max-h-36 rounded-xl object-contain" />
                     ) : null}
                   </label>
+                    </>
+                  ) : null}
                 </>
               ) : null}
 

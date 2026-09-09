@@ -1,6 +1,7 @@
 export type PaymentGatewayId =
   | 'manual_bank'
   | 'wallet'
+  | 'telegram_stars'
   | 'zarinpal_stub'
   | 'nowpayments_stub';
 
@@ -15,7 +16,7 @@ export interface CreatePaymentInput {
 export interface PaymentResult {
   gateway: PaymentGatewayId | string;
   ok: boolean;
-  status: 'pending' | 'paid' | 'failed' | 'refunded' | 'stub';
+  status: 'pending' | 'paid' | 'failed' | 'cancelled' | 'refunded' | 'stub';
   reference?: string;
   redirectUrl?: string;
   message?: string;

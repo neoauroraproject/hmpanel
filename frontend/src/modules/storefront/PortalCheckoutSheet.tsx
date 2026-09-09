@@ -7,6 +7,11 @@ import { publicApi } from "@/lib/api";
 import { formatQuotaLabel } from "@/lib/format";
 import { FieldBlock, springSoft } from "@/modules/storefront/design";
 import { BankCardVisual, resolvePaymentCards } from "@/modules/storefront/BankCardVisual";
+import {
+  isReceiptPayMethod,
+  storefrontPayOptions,
+  type CheckoutPayMethod,
+} from "@/modules/storefront/payment-methods";
 import { useStorefrontLocale } from "@/modules/storefront/locale";
 import type {
   CustomerService,
@@ -58,6 +63,8 @@ export function CheckoutSheet({
   primary,
   payment,
   storeSlug,
+  paymentMethod,
+  setPaymentMethod,
 }: {
   mode: FlowMode;
   step: number;
@@ -84,6 +91,8 @@ export function CheckoutSheet({
   primary: string;
   payment: StorefrontStore["payment"] | null;
   storeSlug?: string;
+  paymentMethod: CheckoutPayMethod;
+  setPaymentMethod: (m: CheckoutPayMethod) => void;
 }) {
   const { t, formatToman, isFa } = useStorefrontLocale();
   const lockedCategoryId = mode === "renew" ? String(renewingService?.categoryId || "") : "";
@@ -118,6 +127,7 @@ export function CheckoutSheet({
   const safeStep = Math.min(Math.max(0, step), Math.max(0, steps.length - 1));
   const current = steps[safeStep] || "product";
   const paymentCards = resolvePaymentCards(payment);
+  const payOptions = storefrontPayOptions(payment, { hasWalletSession: true });
   const preview = computeCheckoutPreview(selectedProduct, selectedAddonIds, couponPreview);
   const money = (value: number) =>
     preview.hasToman
@@ -202,7 +212,7 @@ export function CheckoutSheet({
     if (current === "product" && !selectedProduct) return;
     if (current === "extras" && mode === "buy" && !configName.trim()) return;
     if (current === "payment") {
-      if (!receiptText.trim() && !receiptPreview) return;
+      if (isReceiptPayMethod(paymentMethod) && !receiptText.trim() && !receiptPreview) return;
       onSubmit();
       return;
     }
@@ -214,7 +224,7 @@ export function CheckoutSheet({
     (current === "category" && !categoryId) ||
     (current === "product" && !selectedProduct) ||
     (current === "extras" && mode === "buy" && !configName.trim()) ||
-    (current === "payment" && !receiptText.trim() && !receiptPreview);
+    (current === "payment" && isReceiptPayMethod(paymentMethod) && !receiptText.trim() && !receiptPreview);
 
   const stepLabel =
     current === "category"
@@ -419,11 +429,42 @@ export function CheckoutSheet({
                 formatMoney={money}
               />
               <div className="space-y-1">
-                <div className="text-sm font-bold">{t("پرداخت کارت به کارت", "Card-to-card payment")}</div>
+                <div className="text-sm font-bold">{t("روش پرداخت", "Payment method")}</div>
                 <p className="text-xs text-zinc-500">
-                  {t("مبلغ بالا را واریز کنید و رسید را بفرستید.", "Transfer the amount above and send the receipt.")}
+                  {paymentMethod === "TELEGRAM_STARS"
+                    ? t(
+                        "پرداخت با Telegram Stars. سرویس فقط بعد از تأیید سرور فعال می‌شود.",
+                        "Pay with Telegram Stars. Delivery happens only after backend verification.",
+                      )
+                    : paymentMethod === "WALLET"
+                      ? t("مبلغ از کیف پول کسر می‌شود.", "Amount will be deducted from your wallet.")
+                      : t("مبلغ بالا را واریز کنید و رسید را بفرستید.", "Transfer the amount above and send the receipt.")}
                 </p>
               </div>
+              {payOptions.length > 1 ? (
+                <div className="flex flex-wrap gap-2">
+                  {payOptions.map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => setPaymentMethod(opt.id)}
+                      className={`rounded-xl px-3 py-2 text-sm font-medium ${
+                        paymentMethod === opt.id
+                          ? "bg-zinc-900 text-white dark:bg-white dark:text-zinc-900"
+                          : "border border-zinc-200 dark:border-zinc-800"
+                      }`}
+                    >
+                      {opt.id === "WALLET"
+                        ? t("کیف پول", "Wallet")
+                        : opt.id === "TELEGRAM_STARS"
+                          ? t("تلگرام استارز", "Telegram Stars")
+                          : t("کارت + رسید", "Card + receipt")}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              {isReceiptPayMethod(paymentMethod) ? (
+              <>
               {paymentCards.length ? (
                 <div className="space-y-3">
                   {paymentCards.map((card) => (
@@ -475,6 +516,8 @@ export function CheckoutSheet({
                   <img src={receiptPreview} alt="" className="max-h-32 rounded-xl object-contain" />
                 ) : null}
               </label>
+              </>
+              ) : null}
             </>
           ) : null}
 

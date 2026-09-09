@@ -20,6 +20,10 @@ import {
   WalletGateway,
   ZarinpalStubGateway,
 } from '../payments/gateways/core-gateways';
+import { TelegramStarsGateway } from '../payments/gateways/telegram-stars.gateway';
+import { PaymentLedgerService } from '../payments/payment-ledger.service';
+import { PaymentManagementService } from '../payments/payment-management.service';
+import { PaymentManagementController } from '../payments/payment-management.controller';
 import { ThemesService } from '../themes/themes.service';
 import { ThemesController } from '../themes/themes.controller';
 import { BotApiService } from '../bots/bot-api.service';
@@ -52,6 +56,7 @@ import {
     ThemesController,
     BotApiV1Controller,
     JobCenterController,
+    PaymentManagementController,
   ],
   providers: [
     FeatureFlagsService,
@@ -65,6 +70,9 @@ import {
     WalletGateway,
     ZarinpalStubGateway,
     NowpaymentsStubGateway,
+    TelegramStarsGateway,
+    PaymentLedgerService,
+    PaymentManagementService,
     ThemesService,
     BotApiService,
     BotApiKeyGuard,
@@ -90,6 +98,8 @@ import {
     JobCenterService,
     UnifiedMonitoringHub,
     PaymentGatewayRegistry,
+    PaymentLedgerService,
+    PaymentManagementService,
     ThemesService,
     BotApiService,
     TelegramCoreService,
@@ -109,11 +119,13 @@ export class ArchitectureModule implements OnModuleInit {
     private wallet: WalletGateway,
     private zarinpal: ZarinpalStubGateway,
     private nowpayments: NowpaymentsStubGateway,
+    private telegramStars: TelegramStarsGateway,
   ) {}
 
   onModuleInit() {
     this.registry.register(this.manualBank);
     this.registry.register(this.wallet);
+    this.registry.register(this.telegramStars);
     this.registry.register(this.zarinpal);
     this.registry.register(this.nowpayments);
   }

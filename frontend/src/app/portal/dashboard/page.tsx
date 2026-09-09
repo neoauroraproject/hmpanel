@@ -41,6 +41,12 @@ import {
 import { usePortalTelegramGate } from "@/modules/storefront/tma/usePortalTelegramGate";
 import { StorefrontLocaleProvider, useStorefrontLocale } from "@/modules/storefront/locale";
 import { CheckoutSheet } from "@/modules/storefront/PortalCheckoutSheet";
+import {
+  isReceiptPayMethod,
+  openTelegramStarsInvoice,
+  pickStorefrontPayMethod,
+  type CheckoutPayMethod,
+} from "@/modules/storefront/payment-methods";
 import { rememberStoreSlug, portalPathForSlug, shopPathForSlug } from "@/modules/storefront/store-slug";
 
 type FlowMode = "idle" | "buy" | "renew";
@@ -89,6 +95,7 @@ function CustomerDashboardInner() {
   const [receiptText, setReceiptText] = useState("");
   const [receiptImage, setReceiptImage] = useState("");
   const [receiptPreview, setReceiptPreview] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<CheckoutPayMethod>("MANUAL_BANK");
   const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([]);
   const [couponCode, setCouponCode] = useState("");
   const [sheetStep, setSheetStep] = useState(0);
@@ -100,6 +107,13 @@ function CustomerDashboardInner() {
     [data?.notifications],
   );
 
+  useEffect(() => {
+    if (!data?.store?.payment) return;
+    setPaymentMethod((current) =>
+      pickStorefrontPayMethod(data.store.payment, { hasWalletSession: true }, current),
+    );
+  }, [data?.store?.payment]);
+
   const renewMutation = useMutation({
     mutationFn: async () => {
       if (!renewingService || !selectedProduct) return null;
@@ -107,14 +121,16 @@ function CustomerDashboardInner() {
         await publicApi.post("/store/customer/renew", {
           clientId: renewingService.id,
           productId: selectedProduct.id,
-          receiptText: receiptText || undefined,
-          receiptImage: receiptImage || undefined,
+          receiptText: isReceiptPayMethod(paymentMethod) ? receiptText || undefined : undefined,
+          receiptImage: isReceiptPayMethod(paymentMethod) ? receiptImage || undefined : undefined,
           selectedAddonIds,
           couponCode: couponCode || undefined,
+          paymentMethod,
         })
       ).data;
     },
     onSuccess: async (response) => {
+      if (response?.invoiceUrl) openTelegramStarsInvoice(response.invoiceUrl);
       if (response?.trackingCode) {
         router.push(`/track/${encodeURIComponent(response.trackingCode)}`);
       }
@@ -131,14 +147,16 @@ function CustomerDashboardInner() {
         await publicApi.post("/store/customer/order", {
           productId: selectedProduct.id,
           configName: configName.trim(),
-          receiptText: receiptText || undefined,
-          receiptImage: receiptImage || undefined,
+          receiptText: isReceiptPayMethod(paymentMethod) ? receiptText || undefined : undefined,
+          receiptImage: isReceiptPayMethod(paymentMethod) ? receiptImage || undefined : undefined,
           selectedAddonIds,
           couponCode: couponCode || undefined,
+          paymentMethod,
         })
       ).data;
     },
     onSuccess: async (response) => {
+      if (response?.invoiceUrl) openTelegramStarsInvoice(response.invoiceUrl);
       if (response?.trackingCode) {
         router.push(`/track/${encodeURIComponent(response.trackingCode)}`);
       }
@@ -168,6 +186,7 @@ function CustomerDashboardInner() {
     setReceiptText("");
     setReceiptImage("");
     setReceiptPreview("");
+    setPaymentMethod("MANUAL_BANK");
     setSelectedAddonIds([]);
     setCouponCode("");
     setSheetStep(0);
@@ -475,6 +494,8 @@ function CustomerDashboardInner() {
           primary={primary}
           payment={data?.store?.payment || null}
           storeSlug={data?.store?.slug}
+          paymentMethod={paymentMethod}
+          setPaymentMethod={setPaymentMethod}
         />
       ) : null}
 

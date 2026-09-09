@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import { backfillPanelEndpointFields } from './backfill-panel-endpoints';
+import { PAYMENT_LEDGER_MIGRATION_SQL } from '../payments/payment-sql';
 
 /**
  * Idempotent schema patches for production panels that predate prisma migrate history.
@@ -496,6 +497,7 @@ export async function ensureCriticalSchema(prisma: PrismaClient): Promise<void> 
         FOREIGN KEY ("connectionId") REFERENCES "StoreAddonConnection"("id") ON DELETE SET NULL ON UPDATE CASCADE;
     EXCEPTION WHEN duplicate_object THEN NULL; WHEN undefined_table THEN NULL; WHEN undefined_object THEN NULL;
     END $$`,
+    ...PAYMENT_LEDGER_MIGRATION_SQL,
   ];
 
   for (const sql of statements) {

@@ -4,6 +4,8 @@ export type PaymentSurfaceAssignment = {
   surface: PaymentSurface;
   allowedGatewayIds: string[];
   defaultId: string;
+  /** When Card to Card is assigned, which catalog card this surface uses. */
+  cardId?: string | null;
 };
 
 export const PAYMENT_SURFACE_SETTING_KEY = 'payment_surface_assignment';
@@ -44,10 +46,17 @@ export function parsePaymentSurfaceAssignments(
         ? rec.allowedGatewayIds.map(String).filter(Boolean)
         : bySurface.get(surface)!.allowedGatewayIds;
       const defaultId = String(rec.defaultId || allowed[0] || '');
+      const cardId =
+        rec.cardId === null || rec.cardId === undefined || rec.cardId === ''
+          ? rec.cardId === null
+            ? null
+            : bySurface.get(surface)!.cardId
+          : String(rec.cardId);
       bySurface.set(surface, {
         surface,
         allowedGatewayIds: allowed.length ? allowed : [defaultId].filter(Boolean),
         defaultId: allowed.includes(defaultId) ? defaultId : allowed[0] || defaultId,
+        cardId: cardId ?? null,
       });
     }
   }
@@ -58,13 +67,14 @@ export function resolveSurfaceGateways(
   assignments: PaymentSurfaceAssignment[],
   surface: PaymentSurface,
   registeredIds: string[],
-): { gateways: string[]; default: string } {
+): { gateways: string[]; default: string; cardId: string | null } {
   const fallback = registeredIds.length ? registeredIds : ['manual_bank'];
   const row = assignments.find((a) => a.surface === surface);
   if (!row) {
     return {
       gateways: fallback,
       default: fallback.includes('manual_bank') ? 'manual_bank' : fallback[0],
+      cardId: null,
     };
   }
   const allowed = row.allowedGatewayIds.filter(
@@ -72,5 +82,5 @@ export function resolveSurfaceGateways(
   );
   const gateways = allowed.length ? allowed : fallback;
   const defaultId = gateways.includes(row.defaultId) ? row.defaultId : gateways[0];
-  return { gateways, default: defaultId };
+  return { gateways, default: defaultId, cardId: row.cardId || null };
 }

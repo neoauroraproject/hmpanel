@@ -234,6 +234,32 @@ export const MODULE_MANIFESTS: ModuleManifest[] = [
       write: ['create_theme', 'publish_theme'],
     },
   },
+  {
+    id: 'payment-management',
+    name: 'Payment Management',
+    version: '1.0.0',
+    description: 'Central payment methods, cards, assignments, and Telegram Stars.',
+    kind: 'BUSINESS',
+    phase: 2,
+    defaultEnabled: true,
+    licenseRequirement: 'business',
+    features: [],
+    dependencies: [],
+    permissions: [
+      { id: 'payments.view', description: 'View payment methods and transactions' },
+      { id: 'payments.manage', description: 'Manage payment methods, cards, and assignments', write: true },
+    ],
+    routes: {
+      backend: '/premium-modules/payment-management',
+      frontend: '/premium/payment-management',
+    },
+    menus: [{ label: 'Payment Management', path: '/premium/payment-management', icon: 'CreditCard' }],
+    scheduler: [],
+    readOnlyCapabilities: {
+      read: ['view_payments', 'view_transactions'],
+      write: ['manage_payments', 'assign_methods'],
+    },
+  },
 ];
 
 export function getManifest(moduleId: string): ModuleManifest | undefined {

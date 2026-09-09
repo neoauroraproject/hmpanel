@@ -23,7 +23,7 @@ export interface MigrationContext {
   log: (msg: string) => void;
 }
 
-export const CURRENT_SCHEMA_VERSION = 1;
+export const CURRENT_SCHEMA_VERSION = 2;
 
 export class SchemaMigrationAdapter {
   constructor(private readonly steps: MigrationStep[] = []) {}
@@ -83,6 +83,14 @@ export const BASELINE_MIGRATION_STEPS: MigrationStep[] = [
     to: 1,
     id: 'migrate-from-v0-platform-baseline',
     description: 'Record platform architecture baseline (additive, no data rewrite)',
+    run: () => undefined,
+  },
+  {
+    from: 1,
+    to: 2,
+    id: 'migrate-from-v1-payment-ledger',
+    description:
+      'PaymentLedger table and StorePaymentMethod.TELEGRAM_STARS (applied idempotently by ensureCriticalSchema)',
     run: () => undefined,
   },
 ];

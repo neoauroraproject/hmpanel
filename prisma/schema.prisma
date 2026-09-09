@@ -588,6 +588,7 @@ enum StoreOrderStatus {
 enum StorePaymentMethod {
   MANUAL_BANK
   WALLET
+  TELEGRAM_STARS
 }
 
 enum StorePaymentStatus {
@@ -1658,6 +1659,27 @@ model BotApiClient {
   admin Admin @relation(fields: [adminId], references: [id], onDelete: Cascade)
 
   @@index([adminId])
+}
+
+/// Central payment ledger (idempotent Stars / future gateways).
+model PaymentLedger {
+  id               String   @id @default(uuid())
+  adminId          String
+  gateway          String
+  surface          String
+  orderId          String?
+  idempotencyKey   String   @unique
+  providerChargeId String?  @unique
+  amount           Float
+  currency         String
+  status           String
+  metadata         Json?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([adminId, createdAt])
+  @@index([orderId])
+  @@index([status])
 }
 
 /// Policy Reserve/Commit rows (used when policy_reserve_v1 is on).
