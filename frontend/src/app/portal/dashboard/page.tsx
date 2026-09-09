@@ -108,9 +108,10 @@ function CustomerDashboardInner() {
   );
 
   useEffect(() => {
-    if (!data?.store?.payment) return;
+    const payment = data?.store?.payment;
+    if (!payment) return;
     setPaymentMethod((current) =>
-      pickStorefrontPayMethod(data.store.payment, { hasWalletSession: true }, current),
+      pickStorefrontPayMethod(payment, { hasWalletSession: true }, current),
     );
   }, [data?.store?.payment]);
 
