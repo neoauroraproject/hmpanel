@@ -10,6 +10,7 @@ After the license is activated, turn each capability on in Premium Settings.
 | Premium Settings | Enable modules; admin volume on 3x-ui, Eylan, and Pasarguard; Telegram bot |
 | Panel Plus | Pasarguard (Xray / sing-box) and Eylan (OpenVPN, WireGuard, L2TP, Cisco) |
 | Store | Storefront, orders, products, customer portal; fulfillment on 3x-ui and Panel Plus |
+| Payment Management | Payment methods, cards, assignment to Store and Admin Recharge, Telegram Stars and Telegram Wallet |
 | Branding | Name, logos, and themes for the subscription portal and shop |
 | Custom Domains | Separate hostname and certificate for an admin or store |
 | Client Templates | Ready plans and name pools for fast create |
@@ -24,6 +25,7 @@ After the license is activated, turn each capability on in Premium Settings.
 [Panel Plus](/premium/panel-plus)
 [Monitoring Pro](/premium/monitoring-pro)
 [Store](/premium/store)
+[Payment Management](/premium/payment-management)
 [Buy license](https://t.me/hmraysupport)
 
 </div>

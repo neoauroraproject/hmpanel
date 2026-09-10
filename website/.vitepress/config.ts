@@ -27,6 +27,7 @@ function sidebar(prefix: string, fa: boolean): DefaultTheme.SidebarItem[] {
         { text: fa ? "تنظیمات پرمیوم" : "Premium Settings", link: `${prefix}/premium/settings` },
         { text: fa ? "پنل پلاس" : "Panel Plus", link: `${prefix}/premium/panel-plus` },
         { text: fa ? "فروشگاه" : "Store", link: `${prefix}/premium/store` },
+        { text: fa ? "مدیریت پرداخت" : "Payment Management", link: `${prefix}/premium/payment-management` },
         { text: fa ? "برندینگ" : "Branding", link: `${prefix}/premium/branding` },
         { text: fa ? "دامنه اختصاصی" : "Custom Domains", link: `${prefix}/premium/custom-domains` },
         { text: fa ? "قالب کلاینت" : "Client Templates", link: `${prefix}/premium/client-templates` },

@@ -32,6 +32,58 @@ Refund audit and post-migration repair are on this page as well.
 
 Store, Branding, and Eylan / Pasarguard quotas are assigned under **Premium Settings → Admin Management**.
 
+## What the limits mean
+
+These numbers are the reseller’s ceiling. When they create a client, they cannot go above them. Zero means no cap.
+
+### Global pool
+
+All of this reseller’s panels share one pool. Traffic, client count, concurrent-user cap, and days are the same for every assigned panel — 3x-ui, Pasarguard, or Eylan.
+
+### Per panel
+
+Each panel has its own quota. They might have 500 GB on panel A and 100 GB on panel B; the two do not mix. The concurrent-user cap is also per that panel.
+
+### Traffic limit
+
+The volume the reseller may give to clients. When it runs out, they cannot create volume clients until they are topped up.
+
+### Max clients
+
+How many accounts they may create. If you set 20, a 21st client is blocked. This is not the concurrent-user cap (IP / HWID).
+
+### Max client days
+
+The longest expiry the reseller may pick when creating a client. If you set 30, they cannot create a 90-day client.
+
+### Admin account expiry
+
+When the reseller’s own login ends. It is not the duration of the clients they create.
+
+### Max concurrent users (IP / HWID)
+
+How many people may be online on **one client** at once — not how many clients the reseller may create. If you set 1 or 2, the reseller cannot pick a higher number when creating a client.
+
+This cap applies to **every panel type**; only the field name changes:
+
+- on **3x-ui** it is usually the IP limit
+- on **Pasarguard** it is usually the HWID limit
+- on **Eylan** it is that client’s concurrent-user cap
+
+It is not limited to one panel type. It is also not the max-clients cap.
+
+### Unlimited traffic
+
+No volume cap; they may only create unlimited clients. Traffic refunds are off.
+
+### Allocation accounting
+
+Volume is deducted from the quota at the moment the client is created.
+
+### Usage accounting
+
+Only real consumption is charged, not the full amount written on the client.
+
 <div class="hm-actions">
 
 [Traffic](/community/traffic)

@@ -25,5 +25,6 @@
 [ترافیک](/fa/community/traffic)
 [تنظیمات پرمیوم](/fa/premium/settings)
 [پنل پلاس](/fa/premium/panel-plus)
+[مدیریت پرداخت](/fa/premium/payment-management)
 
 </div>

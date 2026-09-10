@@ -25,5 +25,6 @@ Two tabs: buy credit and history. The reseller picks a plan, places an order, an
 [Traffic](/community/traffic)
 [Premium Settings](/premium/settings)
 [Panel Plus](/premium/panel-plus)
+[Payment Management](/premium/payment-management)
 
 </div>

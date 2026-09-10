@@ -11,7 +11,7 @@ Open Settings, then Premium. Five tabs.
 Every Premium capability. Turn each row on or off.
 
 - **Platform:** Monitoring Pro, Backup Center, Job Center
-- **Business:** Store, Branding, Custom Domains, Client Templates, Admin Recharge, Panel Plus
+- **Business:** Store, Payment Management, Branding, Custom Domains, Client Templates, Admin Recharge, Panel Plus
 
 A module stays out of the menu until it is enabled.
 
