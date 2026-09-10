@@ -982,6 +982,8 @@ export function OrderCard({
             <span className="font-medium text-zinc-700 dark:text-zinc-300">{amount}</span>
           </div>
           <div className="mt-2 break-all font-mono text-xs text-zinc-400 [overflow-wrap:anywhere]">
+            {order.trackingCode}
+          </div>
         </div>
         <div className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide ${tone}`}>
           {label}
