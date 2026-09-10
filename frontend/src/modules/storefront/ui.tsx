@@ -211,7 +211,7 @@ export function ProductCard({
       whileHover={{ y: -2 }}
       whileTap={{ scale: 0.99 }}
       transition={{ duration: 0.2 }}
-      className={`store-focus-ring relative w-full cursor-pointer border bg-[color:var(--store-panel,#fff)] p-5 text-start ${
+      className={`store-focus-ring relative min-w-0 w-full cursor-pointer overflow-hidden border bg-[color:var(--store-panel,#fff)] p-5 text-start ${
         layout === "split"
           ? "rounded-[0.9rem] shadow-none"
           : layout === "funnel"
@@ -248,7 +248,7 @@ export function ProductCard({
       <div className="text-lg font-bold">{product.name}</div>
       {product.description ? (
         <p
-          className={`mt-2 whitespace-pre-line text-sm leading-relaxed text-zinc-500 dark:text-zinc-400 ${
+          className={`mt-2 min-w-0 whitespace-pre-line break-words text-sm leading-relaxed text-zinc-500 dark:text-zinc-400 [overflow-wrap:anywhere] ${
             selected ? "" : "line-clamp-3"
           }`}
         >
@@ -684,7 +684,7 @@ export function ServiceCard({
                 Eylan
               </span>
             </div>
-            <div className="mt-1 font-mono text-xs text-zinc-500" dir="ltr">
+            <div className="mt-1 min-w-0 break-all font-mono text-xs text-zinc-500 [overflow-wrap:anywhere]" dir="ltr">
               {service.email}
             </div>
             {(isFa ? planLabelFa : service.planLabel) ? (
@@ -970,7 +970,7 @@ export function OrderCard({
   const amount = isToman ? formatToman(order.amount) : formatUsd(order.amount);
 
   return (
-    <div className="rounded-2xl border border-zinc-200/90 bg-white p-4 transition hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700">
+    <div className="min-w-0 overflow-hidden rounded-2xl border border-zinc-200/90 bg-white p-4 transition hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="font-semibold tracking-tight">{order.productName}</div>
@@ -981,7 +981,7 @@ export function OrderCard({
             <span>·</span>
             <span className="font-medium text-zinc-700 dark:text-zinc-300">{amount}</span>
           </div>
-          <div className="mt-2 font-mono text-xs text-zinc-400">{order.trackingCode}</div>
+          <div className="mt-2 break-all font-mono text-xs text-zinc-400 [overflow-wrap:anywhere]">
         </div>
         <div className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide ${tone}`}>
           {label}

@@ -235,7 +235,7 @@ export function Surface({
   return (
     <div
       className={clsx(
-        "rounded-[var(--store-radius,1.75rem)] border border-[color:var(--store-panel-border,rgba(0,0,0,0.04))] bg-[color:var(--store-panel,#fff)] text-[color:var(--store-fg)] shadow-[0_8px_30px_-18px_rgba(15,23,42,0.28)]",
+        "min-w-0 overflow-hidden rounded-[var(--store-radius,1.75rem)] border border-[color:var(--store-panel-border,rgba(0,0,0,0.04))] bg-[color:var(--store-panel,#fff)] text-[color:var(--store-fg)] shadow-[0_8px_30px_-18px_rgba(15,23,42,0.28)]",
         interactive && "transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_16px_40px_-20px_rgba(15,23,42,0.35)]",
         pad,
         className,

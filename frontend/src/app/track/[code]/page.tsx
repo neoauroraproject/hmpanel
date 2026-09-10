@@ -298,9 +298,11 @@ function TrackBody({ data, isFetching }: { data: any; isFetching: boolean }) {
       : `${data.amount} ${data.currency}`;
 
   const subLink = useMemo(() => {
+    const native = String(data.delivery?.subUrl || "").trim();
+    if (native && /^https?:\/\//i.test(native)) return native;
     if (!(data.delivery?.subId || data.delivery?.email)) return "";
-    return buildSubscriptionLink(data.delivery.subId, data.delivery.email);
-  }, [data.delivery?.subId, data.delivery?.email]);
+    return buildSubscriptionLink(data.delivery.subId, data.delivery.email, data.delivery?.subUrl);
+  }, [data.delivery?.subId, data.delivery?.email, data.delivery?.subUrl]);
 
   const handleCopy = async (text: string, kind: "sub" | "token") => {
     await copyToClipboard(text);

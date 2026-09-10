@@ -856,7 +856,7 @@ function OrdersTab({
                 ) : order.isRenewal ? (
                   <div className="mt-0.5 text-xs text-amber-600">{t("تمدید سرویس", "Service renewal")}</div>
                 ) : null}
-                <div className="mt-1 text-xs text-zinc-500">
+                <div className="mt-1 min-w-0 break-all text-xs text-zinc-500 [overflow-wrap:anywhere]">
                   {order.trackingCode} ·{" "}
                   {order.status === "PENDING_PAYMENT"
                     ? t("در انتظار پرداخت", "Pending payment")

@@ -25,6 +25,16 @@ body {
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
 }
 
+#hmpanel-premium-root a[href^="http"],
+#hmpanel-premium-root a[href^="https"],
+#hmpanel-premium-root a[href^="/s/"],
+#hmpanel-premium-root code,
+#hmpanel-premium-root pre {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  max-width: 100%;
+}
+
 html.locale-fa body,
 html.locale-fa {
   font-family: "Vazirmatn", var(--font-geist-sans), Tahoma, Arial, sans-serif;

@@ -85,3 +85,20 @@ export function rewriteSubscriptionDeliveryHost(
     return src;
   }
 }
+
+/**
+ * Customer-facing subscription URL: native panel snapshot (Eylan / Pasarguard)
+ * first, otherwise the store `/s/{subId}` link used for 3x-ui.
+ */
+export function customerFacingSubscriptionUrl(opts: {
+  providerMeta?: unknown;
+  panelSubUrl?: string | null;
+  storeSubUrl?: string | null;
+}): string | null {
+  const native = subscriptionUrlFromProviderMeta(opts.providerMeta);
+  if (native) {
+    return rewriteSubscriptionDeliveryHost(native, opts.panelSubUrl) || native;
+  }
+  const store = String(opts.storeSubUrl || '').trim();
+  return store || null;
+}

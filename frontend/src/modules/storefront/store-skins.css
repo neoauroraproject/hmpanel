@@ -5,6 +5,17 @@
   background-color: var(--store-bg, transparent);
   background-image: var(--store-backdrop, none);
   background-attachment: fixed;
+  overflow-x: clip;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.store-shell a,
+.store-shell code,
+.store-shell p,
+.store-shell pre {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .store-skin-cascade.store-shell {

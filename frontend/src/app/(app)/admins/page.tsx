@@ -558,11 +558,11 @@ function PanelLimitFields({
       <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">
         <Database size={13} className="text-emerald-500" /> {title || t("admins.panelLimitsTitle")}
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <div className="mb-1.5 flex items-baseline justify-between gap-2">
-            <label className={labelClass}>{t("admins.adjustTraffic")}</label>
-            <span className="shrink-0 text-xs font-medium text-zinc-500">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="min-w-0">
+          <div className="mb-1.5 flex min-w-0 flex-col gap-0.5">
+            <label className={`${labelClass} leading-snug`}>{t("admins.adjustTraffic")}</label>
+            <span className="text-xs font-medium text-zinc-500">
               {t("admins.stockAvailable", { value: stockGb })}
             </span>
           </div>
@@ -577,10 +577,10 @@ function PanelLimitFields({
             className={fieldClass}
           />
         </div>
-        <div>
-          <div className="mb-1.5 flex items-baseline justify-between gap-2">
-            <label className={labelClass}>{t("admins.adjustClients")}</label>
-            <span className="shrink-0 text-xs font-medium text-zinc-500">
+        <div className="min-w-0">
+          <div className="mb-1.5 flex min-w-0 flex-col gap-0.5">
+            <label className={`${labelClass} leading-snug`}>{t("admins.adjustClients")}</label>
+            <span className="text-xs font-medium text-zinc-500">
               {t("admins.stockAvailable", { value: stockCount(stock.maxClients) })}
             </span>
           </div>
@@ -595,10 +595,10 @@ function PanelLimitFields({
             className={fieldClass}
           />
         </div>
-        <div>
-          <div className="mb-1.5 flex items-baseline justify-between gap-2">
-            <label className={labelClass}>{t(deviceKey || panelDeviceLimitI18nKey(panelType))}</label>
-            <span className="shrink-0 text-xs font-medium text-zinc-500">
+        <div className="min-w-0">
+          <div className="mb-1.5 flex min-w-0 flex-col gap-0.5">
+            <label className={`${labelClass} leading-snug`}>{t(deviceKey || panelDeviceLimitI18nKey(panelType))}</label>
+            <span className="text-xs font-medium text-zinc-500">
               {t("admins.stockAvailable", { value: stockCount(stock.maxDeviceLimit) })}
             </span>
           </div>
@@ -613,10 +613,10 @@ function PanelLimitFields({
             className={fieldClass}
           />
         </div>
-        <div>
-          <div className="mb-1.5 flex items-baseline justify-between gap-2">
-            <label className={labelClass}>{t("admins.adjustExpireDays")}</label>
-            <span className="shrink-0 text-xs font-medium text-zinc-500">
+        <div className="min-w-0">
+          <div className="mb-1.5 flex min-w-0 flex-col gap-0.5">
+            <label className={`${labelClass} leading-snug`}>{t("admins.adjustExpireDays")}</label>
+            <span className="text-xs font-medium text-zinc-500">
               {t("admins.stockAvailable", { value: stockCount(stock.maxExpireDays) })}
             </span>
           </div>
@@ -631,7 +631,7 @@ function PanelLimitFields({
             className={fieldClass}
           />
         </div>
-        <div className="col-span-2">
+        <div className="min-w-0 sm:col-span-2">
           <label className={`${labelClass} mb-1.5`}>{t("admins.trafficAccountingMode")}</label>
           <select
             disabled={disabled}
@@ -834,7 +834,7 @@ function PanelInboundPicker({
   }
 
   return (
-    <div className={`space-y-3 max-h-[28rem] overflow-y-auto pe-1 custom-scrollbar ${disabled ? "opacity-50 pointer-events-none" : ""}`}>
+    <div className={`space-y-3 max-h-[28rem] overflow-y-auto overflow-x-hidden pe-1 custom-scrollbar min-w-0 ${disabled ? "opacity-50 pointer-events-none" : ""}`}>
       {visiblePanels.map((p) => {
         const native = isNativePremiumPanel(p);
         const panelInbounds = inboundsByPanel.get(p.id) ?? [];
@@ -951,7 +951,7 @@ function PanelInboundPicker({
                 : "border-zinc-200 dark:border-zinc-800 bg-zinc-50/80 dark:bg-zinc-950/40"
             }`}
           >
-            <div className="flex items-center gap-3 p-3">
+            <div className="flex min-w-0 items-center gap-3 p-3">
               <input
                 type="checkbox"
                 checked={isEnabled}
@@ -965,7 +965,7 @@ function PanelInboundPicker({
                 className="flex flex-1 items-center justify-between gap-2 text-start min-w-0"
               >
                 <span className="flex min-w-0 flex-col">
-                  <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-100 inline-flex items-center gap-2 min-w-0">
+                  <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-100 inline-flex flex-wrap items-center gap-2 min-w-0">
                     <span className={`h-2 w-2 shrink-0 rounded-full ${frozen ? "bg-amber-400" : isEnabled ? "bg-emerald-500" : "bg-zinc-300 dark:bg-zinc-600"}`} />
                     <Server size={14} className="text-blue-400 shrink-0" />
                     <span className="truncate">{p.name}</span>
@@ -1523,7 +1523,7 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
 
   return (
     <motion.div {...MOTION_CONFIG.modalOverlay} className="fixed inset-0 z-[100] flex items-start sm:items-center justify-center bg-black/60 pt-[10dvh] px-4 sm:pt-0 sm:p-4 backdrop-blur-sm">
-      <motion.div {...MOTION_CONFIG.modalContent} className="w-full max-w-3xl max-h-[90vh] flex flex-col rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-2xl overflow-hidden">
+      <motion.div {...MOTION_CONFIG.modalContent} className="w-full max-w-3xl max-h-[90vh] min-w-0 flex flex-col rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-2xl overflow-hidden">
         <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between bg-zinc-50 dark:bg-zinc-950/30">
           <h2 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50 flex items-center gap-2">
             <Shield size={20} className="text-blue-500" /> {t("admins.addAdminTitle")}
@@ -1544,7 +1544,7 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
               <AnimatePresence initial={false}>
                 {openSection === 'basic' && (
                   <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                    <div className="p-4 grid grid-cols-2 gap-4 border-t border-zinc-200 dark:border-zinc-800">
+                    <div className="p-4 grid grid-cols-1 gap-4 border-t border-zinc-200 dark:border-zinc-800 sm:grid-cols-2">
                       <div>
                         <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.username")}</label>
                         <input type="text" required value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
@@ -1556,11 +1556,11 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
                           {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                         </button>
                       </div>
-                      <div className="col-span-2 text-xs text-zinc-500 dark:text-zinc-400">
+                      <div className="sm:col-span-2 text-xs text-zinc-500 dark:text-zinc-400">
                         {t("admins.panelAssignmentMovedHint")}
                       </div>
                       {callerIsOwner && (
-                        <label className="col-span-2 flex items-start gap-3 p-3 rounded-lg border border-blue-500/30 bg-blue-500/5 cursor-pointer">
+                        <label className="sm:col-span-2 flex items-start gap-3 p-3 rounded-lg border border-blue-500/30 bg-blue-500/5 cursor-pointer">
                           <input
                             type="checkbox"
                             checked={form.superAdmin}
@@ -1702,8 +1702,8 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
                         </>
                       ) : null}
                       <div>
-                        <div className="mb-1 flex items-baseline justify-between gap-2">
-                          <label className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+                        <div className="mb-1 flex min-w-0 flex-col gap-0.5">
+                          <label className="text-sm font-medium leading-snug text-zinc-500 dark:text-zinc-400">
                             {t("admins.addExpiryDays")}
                           </label>
                           <span className="text-xs font-medium text-zinc-500">
@@ -2002,7 +2002,7 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
 
   return (
     <motion.div {...MOTION_CONFIG.modalOverlay} className="fixed inset-0 z-[100] flex items-start sm:items-center justify-center bg-black/60 pt-[10dvh] px-4 sm:pt-0 sm:p-4 backdrop-blur-sm">
-      <motion.div {...MOTION_CONFIG.modalContent} className="w-full max-w-5xl rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex flex-col md:flex-row overflow-y-auto md:overflow-hidden max-h-[90vh]">
+      <motion.div {...MOTION_CONFIG.modalContent} className="w-full max-w-5xl min-w-0 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex flex-col md:flex-row overflow-y-auto md:overflow-hidden max-h-[90vh]">
         {/* Edit Actions — first on mobile */}
         <div className="w-full md:w-2/3 p-6 overflow-y-visible md:overflow-y-auto space-y-8 order-1 md:order-2">
           <div className="flex justify-between items-center">
@@ -2097,8 +2097,8 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
                             </>
                           ) : null}
                           <div>
-                            <div className="mb-1 flex items-baseline justify-between gap-2">
-                              <label className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+                            <div className="mb-1 flex min-w-0 flex-col gap-0.5">
+                              <label className="text-sm font-medium leading-snug text-zinc-500 dark:text-zinc-400">
                                 {t("admins.addExpiryDays")}
                               </label>
                               <span className="text-xs font-medium text-zinc-500">
@@ -2140,7 +2140,7 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
                                   ))}
                                 </div>
                               ) : (
-                              <div className="grid grid-cols-3 gap-4">
+                          <div className="grid grid-cols-3 gap-2 sm:gap-4">
                                 <div className="flex flex-col">
                                   <span className="text-[10px] text-zinc-500 mb-0.5">{t("admins.totalAllocated")}</span>
                                   <span className="text-sm font-medium text-emerald-400">{(admin.totalAssigned || 0) / (1024 * 1024 * 1024) > 0 ? ((admin.totalAssigned || 0) / (1024 * 1024 * 1024)).toFixed(2) : "0"} GB</span>
@@ -2202,7 +2202,7 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
                 <AnimatePresence initial={false}>
                   {openSection === 'basic' && (
                     <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                      <div className="p-4 grid grid-cols-2 gap-4 border-t border-zinc-200 dark:border-zinc-800">
+                      <div className="p-4 grid grid-cols-1 gap-4 border-t border-zinc-200 dark:border-zinc-800 sm:grid-cols-2">
                         <div>
                           <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.username")}</label>
                           <input
@@ -2224,7 +2224,7 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
                             {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                           </button>
                         </div>
-                        <div className="col-span-2">
+                        <div className="sm:col-span-2">
                           <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.activePanelNode")}</label>
                           {isMigrated && form.enabledPanels.length === 0 && (
                             <div className="mb-2 text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg p-2">

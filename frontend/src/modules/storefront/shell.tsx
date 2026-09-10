@@ -324,12 +324,12 @@ function LumenContactColumn({
           href={link.href}
           target="_blank"
           rel="noreferrer"
-          className="store-focus-ring group flex cursor-pointer items-start gap-3 rounded-xl p-1 text-start transition duration-200 hover:bg-slate-50"
+          className="store-focus-ring group flex min-w-0 cursor-pointer items-start gap-3 rounded-xl p-1 text-start transition duration-200 hover:bg-slate-50"
         >
           <span className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-500">
             <link.icon size={16} />
           </span>
-          <span>
+          <span className="min-w-0">
             <span className="block text-[13px] font-semibold text-slate-900">
               {link.kind === "telegram" || link.kind === "whatsapp"
                 ? copy.chatLabel
@@ -337,7 +337,7 @@ function LumenContactColumn({
                   ? copy.officeLabel
                   : copy.phoneLabel}
             </span>
-            <span className="mt-0.5 block text-[13px] text-slate-500 underline-offset-2 group-hover:underline">
+            <span className="mt-0.5 block min-w-0 break-all text-[13px] text-slate-500 underline-offset-2 group-hover:underline [overflow-wrap:anywhere]">
               {link.label}
             </span>
           </span>

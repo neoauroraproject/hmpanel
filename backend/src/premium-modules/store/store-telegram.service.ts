@@ -24,6 +24,7 @@ import { StoreRateLimitService } from './store-rate-limit.service';
 import { generateCustomerToken } from './store.types';
 import { StoreService } from './store.service';
 import { formatDateTimeInTz } from '../../common/utils/timezone';
+import { customerFacingSubscriptionUrl } from '../../common/utils/native-sub-url';
 
 type TelegramWebAppUser = {
   id: number;
@@ -208,6 +209,33 @@ export class StoreTelegramService {
     const base = this.publicBaseUrl(store);
     if (!base) return null;
     return `${base}/s/${encodeURIComponent(subId)}`;
+  }
+
+  private clientSubUrl(
+    store: { domain?: { domain: string; status: string } | null } | null | undefined,
+    client?: {
+      subId?: string | null;
+      providerMeta?: unknown;
+      panel?: { subUrl?: string | null } | null;
+      subUrl?: string | null;
+    } | null,
+    fulfillment?: unknown,
+  ) {
+    const rec =
+      fulfillment && typeof fulfillment === 'object'
+        ? (fulfillment as Record<string, unknown>)
+        : null;
+    const ffUrl = String(rec?.subUrl || '').trim();
+    if (/^https?:\/\//i.test(ffUrl)) return ffUrl;
+    if (!client) return null;
+    if (typeof client.subUrl === 'string' && client.subUrl.trim()) return client.subUrl.trim();
+    const storeSubUrl =
+      client.subId && store ? this.buildSubUrl(store, client.subId) : null;
+    return customerFacingSubscriptionUrl({
+      providerMeta: client.providerMeta,
+      panelSubUrl: client.panel?.subUrl,
+      storeSubUrl,
+    });
   }
 
   buildSubPortalUrl(store: { domain?: { domain: string; status: string } | null }, subId: string) {
@@ -745,6 +773,8 @@ export class StoreTelegramService {
               total: true,
               up: true,
               down: true,
+              providerMeta: true,
+              panel: { select: { subUrl: true } },
             },
           },
         },
@@ -945,6 +975,14 @@ export class StoreTelegramService {
       `مبلغ: ${this.formatMoney(order.amount as any, order.currency as any)}`,
       `مشتری: ${customerLabel}`,
     ];
+    const store = await this.prisma.storeProfile.findUnique({
+      where: { adminId },
+      include: { domain: { select: { domain: true, status: true } } },
+    });
+    const subUrl = this.clientSubUrl(store, order.client, (order as { fulfillment?: unknown }).fulfillment);
+    if (subUrl) {
+      lines.push(`🔗 لینک ساب مشتری: <code>${this.escapeHtml(subUrl)}</code>`);
+    }
     if (order.provisionError) {
       lines.push(`خطا: ${this.escapeHtml(String(order.provisionError).slice(0, 200))}`);
     }
@@ -968,6 +1006,54 @@ export class StoreTelegramService {
     ]);
     await this.sendMessage(botToken, chatId, lines.join('\n'), {
       reply_markup: { inline_keyboard: actions },
+    });
+  }
+
+  private async sendAdminOrderApproved(
+    adminId: string,
+    botToken: string,
+    chatId: string | number,
+    order: {
+      id: string;
+      trackingCode?: string | null;
+      status?: string;
+      product?: { name?: string | null } | null;
+      client?: {
+        subId?: string | null;
+        email?: string | null;
+        remark?: string | null;
+        providerMeta?: unknown;
+        panel?: { subUrl?: string | null } | null;
+        subUrl?: string | null;
+      } | null;
+    },
+  ) {
+    const store = await this.prisma.storeProfile.findUnique({
+      where: { adminId },
+      include: { domain: { select: { domain: true, status: true } } },
+    });
+    const subUrl = this.clientSubUrl(store, order.client, (order as { fulfillment?: unknown }).fulfillment);
+    const status = String(order.status || 'ACTIVE').replace(/_/g, ' ');
+    const lines = [
+      `✅ <b>سفارش تأیید شد و سرویس ساخته شد</b>`,
+      `کد: <code>${this.escapeHtml(order.trackingCode || order.id)}</code>`,
+      `وضعیت: <b>${this.escapeHtml(status)}</b>`,
+      `محصول: ${this.escapeHtml(order.product?.name || '—')}`,
+    ];
+    if (order.client?.email || order.client?.remark) {
+      lines.push(
+        `🏷 کانفیگ: <code>${this.escapeHtml(order.client.remark || order.client.email || '')}</code>`,
+      );
+    }
+    if (subUrl) {
+      lines.push(
+        ``,
+        `🔗 <b>لینک ساب مشتری</b> (لمس برای کپی)`,
+        `<code>${this.escapeHtml(subUrl)}</code>`,
+      );
+    }
+    await this.sendMessage(botToken, chatId, lines.join('\n'), {
+      reply_markup: { inline_keyboard: [this.adminBackHomeRow()] },
     });
   }
 
@@ -1293,16 +1379,11 @@ export class StoreTelegramService {
     try {
       if (approveMatch) {
         const orderId = approveMatch[1];
-        await this.store.approveOrder(adminId, 'ADMIN', orderId);
+        const order = await this.store.approveOrder(adminId, 'ADMIN', orderId);
         await this.answerCallback(botToken, callbackId, '✅ سفارش تأیید شد');
         await this.clearInlineKeyboard(botToken, chatId, messageId);
         if (chatId) {
-          await this.sendMessage(
-            botToken,
-            chatId,
-            `✅ سفارش تأیید و در صف ساخت سرویس قرار گرفت.\n<code>${this.escapeHtml(orderId)}</code>`,
-            { reply_markup: { inline_keyboard: [this.adminBackHomeRow()] } },
-          );
+          await this.sendAdminOrderApproved(adminId, botToken, chatId, order);
         }
         return;
       }
@@ -1692,6 +1773,9 @@ export class StoreTelegramService {
       remark?: string | null;
       email?: string | null;
       subId?: string | null;
+      subUrl?: string | null;
+      providerMeta?: unknown;
+      panel?: { subUrl?: string | null } | null;
       expiryTime?: bigint | number | null;
       total?: bigint | number | null;
       up?: bigint | number | null;
@@ -1703,10 +1787,8 @@ export class StoreTelegramService {
     const name = client?.remark || client?.email || 'Service';
     const lines = [`• <b>${name}</b>`];
     if (trackingCode) lines.push(`  🧾 Tracking: <code>${trackingCode}</code>`);
-    if (client?.subId) {
-      const sub = this.buildSubUrl(store, client.subId);
-      if (sub) lines.push(`  🔗 Sub: ${sub}`);
-    }
+    const sub = this.clientSubUrl(store, client);
+    if (sub) lines.push(`  🔗 Sub: <code>${this.escapeHtml(sub)}</code>`);
     const expiryMs = Number(client?.expiryTime || 0);
     if (expiryMs > 0) {
       const tz =
@@ -1761,6 +1843,7 @@ export class StoreTelegramService {
     const trackingCode =
       typeof payload.trackingCode === 'string' ? payload.trackingCode : null;
     const subId = typeof payload.subId === 'string' ? payload.subId : null;
+    const payloadSubUrl = typeof payload.subUrl === 'string' ? payload.subUrl.trim() : '';
     const status = typeof payload.status === 'string' ? payload.status : null;
     const configName =
       typeof payload.configName === 'string' ? payload.configName : null;
@@ -1855,14 +1938,21 @@ export class StoreTelegramService {
           ),
         );
         if (subId) {
-          const subUrl = this.buildSubUrl(store, subId);
+          const subUrl =
+            payloadSubUrl || this.buildSubUrl(store, subId);
           if (subUrl) {
             lines.push(
               ``,
               bilingual('🔗 <b>لینک سابسکریپشن</b> (لمس برای کپی)', '<b>Subscription link</b> (tap to copy)'),
-              `<code>${subUrl}</code>`,
+              `<code>${this.escapeHtml(subUrl)}</code>`,
             );
           }
+        } else if (payloadSubUrl) {
+          lines.push(
+            ``,
+            bilingual('🔗 <b>لینک سابسکریپشن</b> (لمس برای کپی)', '<b>Subscription link</b> (tap to copy)'),
+            `<code>${this.escapeHtml(payloadSubUrl)}</code>`,
+          );
         }
         lines.push(
           ``,
@@ -1927,7 +2017,8 @@ export class StoreTelegramService {
     }
 
     const text = lines.join('\n');
-    const subUrl = subId ? this.buildSubUrl(store, subId) : null;
+    const subUrl =
+      payloadSubUrl || (subId ? this.buildSubUrl(store, subId) : null);
     const isReady = kind === 'service_ready' || kind === 'subscription_updated';
     const replyMarkup = isReady
       ? this.serviceReadyKeyboard(store, {

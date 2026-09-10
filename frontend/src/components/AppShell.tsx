@@ -47,7 +47,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <TimezoneBootstrap />
       <Sidebar />
       <MobileNav />
-      <main id="main-content" className="relative flex-1 overflow-y-auto p-4 pb-8 md:p-8 md:pb-8">
+      <main id="main-content" className="relative min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-4 pb-8 md:p-8 md:pb-8">
         {children}
       </main>
       <Toaster />

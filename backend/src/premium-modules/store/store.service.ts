@@ -29,6 +29,7 @@ import {
   STORE_PAYMENT_METHOD_META,
 } from './payment-config';
 import { StoreOrderStatus, Prisma } from '@prisma/client';
+import { customerFacingSubscriptionUrl } from '../../common/utils/native-sub-url';
 
 @Injectable()
 export class StoreService {
@@ -62,6 +63,59 @@ export class StoreService {
     return {
       ...p,
       traffic: p.traffic?.toString?.() ?? p.traffic,
+    };
+  }
+
+  private static readonly clientDeliverySelect = {
+    id: true,
+    email: true,
+    remark: true,
+    subId: true,
+    subToken: true,
+    providerMeta: true,
+    panel: { select: { panelType: true, subUrl: true } },
+  } as const;
+
+  private fulfillmentHttpsUrl(fulfillment: unknown): string | null {
+    if (!fulfillment || typeof fulfillment !== 'object') return null;
+    const url = String((fulfillment as { subUrl?: unknown }).subUrl || '').trim();
+    return /^https?:\/\//i.test(url) ? url : null;
+  }
+
+  private decorateClientDelivery<T extends {
+    subId?: string | null;
+    providerMeta?: unknown;
+    panel?: { panelType?: string | null; subUrl?: string | null } | null;
+  }>(client: T | null | undefined, storeSubUrl?: string | null, fulfillment?: unknown) {
+    const ffUrl = this.fulfillmentHttpsUrl(fulfillment);
+    if (!client) {
+      return ffUrl
+        ? ({
+            subUrl: ffUrl,
+            providerId: String((fulfillment as { providerId?: string }).providerId || '') || null,
+            deliveryHint:
+              String((fulfillment as { providerId?: string }).providerId || '') === 'eylan'
+                ? 'eylan_download'
+                : null,
+          } as T & { subUrl: string; providerId: string | null; deliveryHint: string | null })
+        : client;
+    }
+    const panelType = String(client.panel?.panelType || '').toLowerCase() || null;
+    const subUrl =
+      ffUrl ||
+      customerFacingSubscriptionUrl({
+        providerMeta: client.providerMeta,
+        panelSubUrl: client.panel?.subUrl,
+        storeSubUrl,
+      });
+    const rest = { ...client } as T & { providerMeta?: unknown; panel?: unknown; subUrl?: string | null };
+    delete rest.providerMeta;
+    delete rest.panel;
+    return {
+      ...rest,
+      subUrl: subUrl || null,
+      providerId: panelType,
+      deliveryHint: panelType === 'eylan' ? 'eylan_download' : null,
     };
   }
 
@@ -740,13 +794,14 @@ export class StoreService {
         product: { include: { category: true } },
         customer: true,
         payment: true,
-        client: { select: { id: true, email: true, subId: true, subToken: true } },
+        client: { select: StoreService.clientDeliverySelect },
       },
       orderBy: { createdAt: 'desc' },
     });
     return orders.map((o) => ({
       ...o,
       product: o.product ? this.serializeProduct(o.product) : o.product,
+      client: this.decorateClientDelivery(o.client, undefined, o.fulfillment),
     }));
   }
 
@@ -759,14 +814,16 @@ export class StoreService {
         customer: true,
         payment: true,
         timeline: { orderBy: { createdAt: 'asc' } },
-        client: true,
-        renewClient: true,
+        client: { include: { panel: { select: { panelType: true, subUrl: true } } } },
+        renewClient: { include: { panel: { select: { panelType: true, subUrl: true } } } },
       },
     });
     if (!order) throw new NotFoundException('Order not found');
     return {
       ...order,
       product: order.product ? this.serializeProduct(order.product) : order.product,
+      client: this.decorateClientDelivery(order.client, undefined, order.fulfillment),
+      renewClient: this.decorateClientDelivery(order.renewClient, undefined, order.fulfillment),
     };
   }
 
@@ -862,10 +919,11 @@ export class StoreService {
       const ready = await this.prisma.storeOrder.findUnique({
         where: { id: orderId },
         include: {
-          client: { select: { subId: true, remark: true, email: true } },
+          client: { select: StoreService.clientDeliverySelect },
           product: { select: { name: true } },
         },
       });
+      const delivery = this.decorateClientDelivery(ready?.client, undefined, ready?.fulfillment);
       const serviceName =
         ready?.client?.remark || ready?.client?.email || ready?.product?.name || order.configName;
       await this.customerNotifications.notifyCustomer(order.customerId, {
@@ -881,6 +939,7 @@ export class StoreService {
           trackingCode: order.trackingCode,
           status: finalStatus,
           subId: ready?.client?.subId || undefined,
+          subUrl: delivery?.subUrl || undefined,
           configName: order.configName,
           serviceName,
           kind: 'service_ready',
@@ -1084,6 +1143,8 @@ export class StoreService {
       total: bigint;
       up: bigint;
       down: bigint;
+      providerMeta?: unknown;
+      panel?: { panelType?: string | null; subUrl?: string | null } | null;
     },
     categoryId: string | null = null,
   ) {
@@ -1098,8 +1159,14 @@ export class StoreService {
     else if (depleted) status = 'depleted';
     else if (disabled) status = 'disabled';
 
+    const delivery = this.decorateClientDelivery(service);
     return {
-      ...service,
+      id: service.id,
+      email: service.email,
+      remark: service.remark,
+      subId: service.subId,
+      subToken: service.subToken,
+      enable: service.enable,
       categoryId,
       status,
       unused: !disabled && !expired && !depleted && used === 0n,
@@ -1107,6 +1174,9 @@ export class StoreService {
       up: service.up.toString(),
       down: service.down.toString(),
       expiryTime: service.expiryTime.toString(),
+      subUrl: delivery?.subUrl || null,
+      providerId: delivery?.providerId || null,
+      deliveryHint: delivery?.deliveryHint || null,
     };
   }
 
@@ -1218,6 +1288,8 @@ export class StoreService {
         total: true,
         up: true,
         down: true,
+        providerMeta: true,
+        panel: { select: { panelType: true, subUrl: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -1856,7 +1928,7 @@ export class StoreService {
         product: true,
         payment: true,
         timeline: { orderBy: { createdAt: 'asc' } },
-        client: { select: { id: true, email: true, subId: true, subToken: true, remark: true } },
+        client: { select: StoreService.clientDeliverySelect },
         customer: { select: { token: true, name: true } },
       },
     });
@@ -1865,14 +1937,18 @@ export class StoreService {
     const allowTokenHandoff =
       !order.isRenewal && Date.now() - order.createdAt.getTime() <= 1000 * 60 * 60 * 24;
 
+    const decoratedClient = this.decorateClientDelivery(order.client, undefined, order.fulfillment);
     const delivery =
       order.status === 'ACTIVE' || order.status === 'RENEWED'
-        ? order.client
+        ? decoratedClient
           ? {
-              subId: order.client.subId,
-              subToken: order.client.subToken,
-              email: order.client.email,
-              remark: order.client.remark,
+              subId: decoratedClient.subId,
+              subToken: decoratedClient.subToken,
+              email: decoratedClient.email,
+              remark: decoratedClient.remark,
+              subUrl: decoratedClient.subUrl,
+              providerId: decoratedClient.providerId,
+              deliveryHint: decoratedClient.deliveryHint,
             }
           : null
         : null;

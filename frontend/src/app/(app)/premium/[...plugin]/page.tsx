@@ -45,7 +45,7 @@ export default function PremiumPluginPage() {
 
   const Component = route.component;
   return (
-    <div id="hmpanel-premium-root" className="min-w-0">
+    <div id="hmpanel-premium-root" className="min-w-0 max-w-full overflow-x-hidden">
       <Component />
     </div>
   );

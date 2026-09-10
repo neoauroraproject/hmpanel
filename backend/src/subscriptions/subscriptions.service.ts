@@ -10,7 +10,8 @@ import axios from 'axios';
 import * as https from 'https';
 import { Response, Request } from 'express';
 import { normalizeTelegramLink } from '../common/utils/telegram-link';
-import { collectNativeSubscriptionUrls } from '../common/utils/native-sub-url';
+import { collectNativeSubscriptionUrls, customerFacingSubscriptionUrl } from '../common/utils/native-sub-url';
+import { isExternalPanelType } from '../panels/native/native-panel-capabilities';
 import {
   getUriRemark,
   matchHostForEndpoint,
@@ -49,6 +50,12 @@ export class SubscriptionsService {
         admin: {
           select: {
             portalSettings: true,
+          },
+        },
+        panel: {
+          select: {
+            panelType: true,
+            subUrl: true,
           },
         },
         inbounds: {
@@ -169,6 +176,10 @@ export class SubscriptionsService {
       portalSettings,
       inbound: allInbounds[0] || null,
       inbounds: allInbounds,
+      providerMeta: primaryClient.providerMeta,
+      panelType: (primaryClient as { panel?: { panelType?: string | null } }).panel?.panelType || null,
+      panelSubUrl:
+        (primaryClient as { panel?: { subUrl?: string | null } }).panel?.subUrl || null,
     };
   }
 
@@ -525,10 +536,20 @@ export class SubscriptionsService {
         );
       }
 
-      const nativeUrls = collectNativeSubscriptionUrls(
-        inbounds,
-        subId || email,
-      );
+      const nativeFromProvider = customerFacingSubscriptionUrl({
+        providerMeta: (details as { providerMeta?: unknown }).providerMeta,
+        panelSubUrl: (details as { panelSubUrl?: string | null }).panelSubUrl,
+      });
+      const panelType = String((details as { panelType?: string | null }).panelType || '').toLowerCase();
+      const isExternal = isExternalPanelType(panelType);
+      const nativeUrls = isExternal
+        ? nativeFromProvider
+          ? [nativeFromProvider]
+          : []
+        : collectNativeSubscriptionUrls(
+            inbounds,
+            subId || email,
+          );
 
       const headers: any = {
         'User-Agent': NATIVE_SUB_UA,

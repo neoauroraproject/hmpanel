@@ -14,7 +14,9 @@ export default function ShopLayout({ children }: { children: React.ReactNode }) 
       <Script id="tg-webapp-ready" strategy="beforeInteractive">
         {`(function(){function r(){try{var w=window.Telegram&&window.Telegram.WebApp;if(w){w.ready();w.expand();}}catch(e){}}r();setTimeout(r,50);setTimeout(r,250);setTimeout(r,800);})();`}
       </Script>
-      {children}
+      <div className="min-h-[100dvh] max-w-[100vw] overflow-x-clip">
+        {children}
+      </div>
     </>
   );
 }

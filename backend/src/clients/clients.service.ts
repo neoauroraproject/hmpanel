@@ -822,6 +822,7 @@ export class ClientsService {
             providerMeta: mapSnapshotMeta(remote),
             lastSyncedAt: new Date(),
             syncStale: false,
+            subId: require('crypto').randomBytes(8).toString('hex'),
             subToken: require('crypto').randomBytes(5).toString('hex'),
             enable: remote.enable,
             total: remote.total || totalBytes,
