@@ -43,8 +43,9 @@ import { StorefrontLocaleProvider, useStorefrontLocale } from "@/modules/storefr
 import { CheckoutSheet } from "@/modules/storefront/PortalCheckoutSheet";
 import {
   isReceiptPayMethod,
-  openTelegramStarsInvoice,
+  openCheckoutPayUrl,
   pickStorefrontPayMethod,
+  detectTelegramUserId,
   type CheckoutPayMethod,
 } from "@/modules/storefront/payment-methods";
 import { rememberStoreSlug, portalPathForSlug, shopPathForSlug } from "@/modules/storefront/store-slug";
@@ -111,9 +112,16 @@ function CustomerDashboardInner() {
     const payment = data?.store?.payment;
     if (!payment) return;
     setPaymentMethod((current) =>
-      pickStorefrontPayMethod(payment, { hasWalletSession: true }, current),
+      pickStorefrontPayMethod(
+        payment,
+        {
+          hasWalletSession: true,
+          hasTelegramUserId: !!(data?.profile?.telegramUserId || detectTelegramUserId()),
+        },
+        current,
+      ),
     );
-  }, [data?.store?.payment]);
+  }, [data?.store?.payment, data?.profile?.telegramUserId]);
 
   const renewMutation = useMutation({
     mutationFn: async () => {
@@ -127,11 +135,13 @@ function CustomerDashboardInner() {
           selectedAddonIds,
           couponCode: couponCode || undefined,
           paymentMethod,
+          telegramUserId: data?.profile?.telegramUserId || detectTelegramUserId() || undefined,
+          telegramChatId: data?.profile?.telegramUserId || detectTelegramUserId() || undefined,
         })
       ).data;
     },
     onSuccess: async (response) => {
-      if (response?.invoiceUrl) openTelegramStarsInvoice(response.invoiceUrl);
+      if (response?.invoiceUrl) openCheckoutPayUrl(response.invoiceUrl, response.paymentMethod);
       if (response?.trackingCode) {
         router.push(`/track/${encodeURIComponent(response.trackingCode)}`);
       }
@@ -153,11 +163,13 @@ function CustomerDashboardInner() {
           selectedAddonIds,
           couponCode: couponCode || undefined,
           paymentMethod,
+          telegramUserId: data?.profile?.telegramUserId || detectTelegramUserId() || undefined,
+          telegramChatId: data?.profile?.telegramUserId || detectTelegramUserId() || undefined,
         })
       ).data;
     },
     onSuccess: async (response) => {
-      if (response?.invoiceUrl) openTelegramStarsInvoice(response.invoiceUrl);
+      if (response?.invoiceUrl) openCheckoutPayUrl(response.invoiceUrl, response.paymentMethod);
       if (response?.trackingCode) {
         router.push(`/track/${encodeURIComponent(response.trackingCode)}`);
       }
@@ -497,6 +509,7 @@ function CustomerDashboardInner() {
           storeSlug={data?.store?.slug}
           paymentMethod={paymentMethod}
           setPaymentMethod={setPaymentMethod}
+          hasTelegramUserId={!!(data?.profile?.telegramUserId || detectTelegramUserId())}
         />
       ) : null}
 

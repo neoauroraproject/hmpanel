@@ -171,6 +171,8 @@ model Admin {
   maxDeviceLimit   Int         @default(0)
   /// 0 = unlimited; caps client expiry days a reseller may set
   maxExpireDays    Int         @default(0)
+  /// 0 = unlimited; caps client traffic in GB a reseller may set on one client
+  maxClientTrafficGb Int       @default(0)
   permissions      Json?
   portalSettings   Json?       @default("{}")
   totalAssigned    Float       @default(0.0) // All-time assigned traffic
@@ -243,6 +245,7 @@ model AdminPanelQuota {
   maxClients     Int     @default(0)
   maxDeviceLimit Int     @default(0)
   maxExpireDays  Int     @default(0)
+  maxClientTrafficGb Int @default(0)
   /// Per-panel traffic accounting: ALLOCATION | USAGE (falls back to Admin.trafficMode when unset)
   trafficMode    TrafficMode @default(ALLOCATION)
   createdAt     DateTime @default(now())
@@ -589,6 +592,7 @@ enum StorePaymentMethod {
   MANUAL_BANK
   WALLET
   TELEGRAM_STARS
+  TELEGRAM_WALLET
 }
 
 enum StorePaymentStatus {

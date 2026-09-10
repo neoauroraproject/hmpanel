@@ -41,6 +41,20 @@ export type TelegramStarsPluginSettings = {
   } | null;
 };
 
+export type WalletPayPluginSettings = {
+  enabled: boolean;
+  apiTokenEnc: string | null;
+  pricingCurrency: 'USD' | 'EUR';
+  autoConversionCurrency: 'USDT' | 'TON' | 'BTC' | 'NOT' | '';
+  tomanPerUsd: number;
+  timeoutSeconds: number;
+  lastProbe?: {
+    ok: boolean;
+    error?: string | null;
+    at?: string | null;
+  } | null;
+};
+
 export type PaymentMethodState = {
   id: PaymentMethodId;
   enabled: boolean;
@@ -56,6 +70,7 @@ export type PaymentManagementState = {
   cards: PaymentBankCard[];
   assignments: PaymentSurfaceAssignment[];
   stars: TelegramStarsPluginSettings;
+  walletPay: WalletPayPluginSettings;
 };
 
 export const DEFAULT_STARS_SETTINGS: TelegramStarsPluginSettings = {
@@ -65,6 +80,16 @@ export const DEFAULT_STARS_SETTINGS: TelegramStarsPluginSettings = {
   starsPerIrt: 0.002,
   invoiceTitle: 'HMPanel',
   invoiceDescription: 'Payment',
+  lastProbe: null,
+};
+
+export const DEFAULT_WALLET_PAY_SETTINGS: WalletPayPluginSettings = {
+  enabled: false,
+  apiTokenEnc: null,
+  pricingCurrency: 'USD',
+  autoConversionCurrency: 'USDT',
+  tomanPerUsd: 100_000,
+  timeoutSeconds: 10_800,
   lastProbe: null,
 };
 
@@ -86,6 +111,41 @@ export function defaultPaymentManagementState(): PaymentManagementState {
     cards: [],
     assignments: DEFAULT_PAYMENT_SURFACE_ASSIGNMENTS.map((row) => ({ ...row })),
     stars: { ...DEFAULT_STARS_SETTINGS },
+    walletPay: { ...DEFAULT_WALLET_PAY_SETTINGS },
+  };
+}
+
+function parseWalletPay(raw: unknown): WalletPayPluginSettings {
+  const rec = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  const pricing = String(rec.pricingCurrency || 'USD').toUpperCase();
+  const conversion = String(rec.autoConversionCurrency || '').toUpperCase();
+  const tomanPerUsd = Number(rec.tomanPerUsd);
+  const timeoutSeconds = Number(rec.timeoutSeconds);
+  const tokenEnc = String(rec.apiTokenEnc || '').trim();
+  return {
+    enabled: rec.enabled === true,
+    apiTokenEnc: tokenEnc || null,
+    pricingCurrency: pricing === 'EUR' ? 'EUR' : 'USD',
+    autoConversionCurrency:
+      conversion === 'USDT' || conversion === 'TON' || conversion === 'BTC' || conversion === 'NOT'
+        ? conversion
+        : '',
+    tomanPerUsd:
+      Number.isFinite(tomanPerUsd) && tomanPerUsd > 0
+        ? tomanPerUsd
+        : DEFAULT_WALLET_PAY_SETTINGS.tomanPerUsd,
+    timeoutSeconds:
+      Number.isFinite(timeoutSeconds) && timeoutSeconds >= 30
+        ? Math.min(86_400, Math.round(timeoutSeconds))
+        : DEFAULT_WALLET_PAY_SETTINGS.timeoutSeconds,
+    lastProbe:
+      rec.lastProbe && typeof rec.lastProbe === 'object'
+        ? {
+            ok: (rec.lastProbe as { ok?: boolean }).ok === true,
+            error: String((rec.lastProbe as { error?: string }).error || '') || null,
+            at: String((rec.lastProbe as { at?: string }).at || '') || null,
+          }
+        : null,
   };
 }
 
@@ -133,6 +193,8 @@ export function parsePaymentManagementState(raw: unknown): PaymentManagementStat
     const starsEnabled = (rec.stars as { enabled?: boolean }).enabled === true;
     if (starsEnabled) methods.telegram_stars = { enabled: true };
   }
+  const walletPay = parseWalletPay(rec.walletPay);
+  if (walletPay.enabled) methods.telegram_wallet = { enabled: true };
   return {
     initialized: rec.initialized === true,
     migratedAt: rec.migratedAt ? String(rec.migratedAt) : null,
@@ -140,6 +202,7 @@ export function parsePaymentManagementState(raw: unknown): PaymentManagementStat
     cards: normalizePaymentBankCards(rec.cards),
     assignments: parsePaymentSurfaceAssignments(rec.assignments),
     stars: parseStars(rec.stars),
+    walletPay,
   };
 }
 
@@ -224,18 +287,20 @@ export type MethodSnapshot = PaymentMethodState & {
 
 export function snapshotMethods(
   state: PaymentManagementState,
-  extras: { starsConfigured: boolean; cardsConfigured: boolean },
+  extras: { starsConfigured: boolean; cardsConfigured: boolean; walletPayConfigured?: boolean },
 ): MethodSnapshot[] {
   return PAYMENT_METHOD_CATALOG.map((entry) => {
     const enabled = state.methods[entry.id]?.enabled === true;
     const configured =
       entry.id === 'telegram_stars'
         ? extras.starsConfigured
-        : entry.id === 'manual_bank'
-          ? extras.cardsConfigured
-          : entry.id === 'wallet'
-            ? true
-            : false;
+        : entry.id === 'telegram_wallet'
+          ? extras.walletPayConfigured === true
+          : entry.id === 'manual_bank'
+            ? extras.cardsConfigured
+            : entry.id === 'wallet'
+              ? true
+              : false;
     const kind = entry.kind;
     const status = deriveMethodUiStatus({ kind, enabled, configured });
     return {

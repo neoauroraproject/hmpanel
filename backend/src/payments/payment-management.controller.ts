@@ -89,6 +89,16 @@ export class PaymentManagementController {
     return this.payments.probeStars(req.user.id);
   }
 
+  @Patch('wallet-pay')
+  updateWalletPay(@Req() req: AuthRequest, @Body() body: Record<string, unknown>) {
+    return this.payments.updateWalletPaySettings(req.user.id, body as any);
+  }
+
+  @Post('wallet-pay/probe')
+  probeWalletPay(@Req() req: AuthRequest) {
+    return this.payments.probeWalletPay(req.user.id);
+  }
+
   @Get('checkout/:surface')
   resolveCheckout(@Req() req: AuthRequest, @Param('surface') surface: PaymentSurface) {
     return this.payments.resolveCheckout(req.user.id, surface);

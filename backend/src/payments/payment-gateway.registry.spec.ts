@@ -6,17 +6,26 @@ import {
   ZarinpalStubGateway,
 } from './gateways/core-gateways';
 import { TelegramStarsGateway } from './gateways/telegram-stars.gateway';
+import { TelegramWalletGateway } from './gateways/telegram-wallet.gateway';
 
 describe('PaymentGatewayRegistry', () => {
-  it('registers core, Stars, and stub gateways', async () => {
+  it('registers core, Stars, Wallet Pay, and stub gateways', async () => {
     const registry = new PaymentGatewayRegistry();
     registry.register(new ManualBankGateway());
     registry.register(new WalletGateway());
     registry.register(new TelegramStarsGateway());
+    registry.register(new TelegramWalletGateway());
     registry.register(new ZarinpalStubGateway());
     registry.register(new NowpaymentsStubGateway());
     expect(registry.list().sort()).toEqual(
-      ['manual_bank', 'nowpayments_stub', 'telegram_stars', 'wallet', 'zarinpal_stub'].sort(),
+      [
+        'manual_bank',
+        'nowpayments_stub',
+        'telegram_stars',
+        'telegram_wallet',
+        'wallet',
+        'zarinpal_stub',
+      ].sort(),
     );
     const created = await registry.createPayment('zarinpal_stub', {
       amount: 1000,
@@ -33,5 +42,12 @@ describe('PaymentGatewayRegistry', () => {
     });
     expect(stars.status).toBe('pending');
     expect(stars.gateway).toBe('telegram_stars');
+    const walletPay = await registry.createPayment('telegram_wallet', {
+      amount: 9.99,
+      currency: 'USD',
+      orderId: 'o3',
+    });
+    expect(walletPay.status).toBe('pending');
+    expect(walletPay.gateway).toBe('telegram_wallet');
   });
 });

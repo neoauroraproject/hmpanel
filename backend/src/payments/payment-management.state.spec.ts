@@ -15,6 +15,7 @@ describe('payment management state', () => {
     expect(state.methods.manual_bank.enabled).toBe(true);
     expect(state.methods.wallet.enabled).toBe(true);
     expect(state.methods.telegram_stars.enabled).toBe(false);
+    expect(state.methods.telegram_wallet.enabled).toBe(false);
     expect(state.methods.crypto_gateway.enabled).toBe(false);
     expect(state.methods.rial_gateway.enabled).toBe(false);
   });
@@ -68,11 +69,20 @@ describe('payment management state', () => {
 
   it('snapshots method statuses', () => {
     const state = parsePaymentManagementState({
-      methods: { telegram_stars: { enabled: true }, manual_bank: { enabled: false } },
+      methods: {
+        telegram_stars: { enabled: true },
+        telegram_wallet: { enabled: true },
+        manual_bank: { enabled: false },
+      },
       cards: [{ id: 'c1', cardNumber: '6037990000000000', enabled: true }],
     });
-    const snap = snapshotMethods(state, { starsConfigured: true, cardsConfigured: true });
+    const snap = snapshotMethods(state, {
+      starsConfigured: true,
+      cardsConfigured: true,
+      walletPayConfigured: true,
+    });
     expect(snap.find((m) => m.id === 'telegram_stars')?.status).toBe('active');
+    expect(snap.find((m) => m.id === 'telegram_wallet')?.status).toBe('active');
     expect(snap.find((m) => m.id === 'manual_bank')?.status).toBe('disabled');
     expect(snap.find((m) => m.id === 'crypto_gateway')?.status).toBe('not_configured');
   });

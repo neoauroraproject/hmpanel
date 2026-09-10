@@ -62,6 +62,8 @@ type TelegramWebApp = {
     offClick: (cb: () => void) => void;
   };
   openInvoice?: (url: string, callback?: (status: string) => void) => void;
+  openTelegramLink?: (url: string) => void;
+  openLink?: (url: string, options?: { try_instant_view?: boolean }) => void;
   setHeaderColor?: (color: string) => void;
   setBackgroundColor?: (color: string) => void;
 };

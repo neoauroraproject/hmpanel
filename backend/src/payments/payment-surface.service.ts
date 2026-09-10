@@ -43,7 +43,13 @@ export class PaymentSurfaceService {
     const registered = this.registry.list();
     const enabled = await this.flags.isEnabled(PLATFORM_FLAGS.PAYMENT_SURFACE_V1);
     if (!enabled) {
-      const ids = registered.filter((id) => id === 'manual_bank' || id === 'wallet' || id === 'telegram_stars');
+      const ids = registered.filter(
+        (id) =>
+          id === 'manual_bank' ||
+          id === 'wallet' ||
+          id === 'telegram_stars' ||
+          id === 'telegram_wallet',
+      );
       const fallback = ids.length ? ids : ['manual_bank', 'wallet'];
       return {
         gateways: fallback,

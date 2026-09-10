@@ -7,5 +7,6 @@ describe('payment ledger SQL migration', () => {
     expect(blob).toContain('"idempotencyKey"');
     expect(blob).toContain('"providerChargeId"');
     expect(blob).toContain("ADD VALUE IF NOT EXISTS 'TELEGRAM_STARS'");
+    expect(blob).toContain("ADD VALUE IF NOT EXISTS 'TELEGRAM_WALLET'");
   });
 });

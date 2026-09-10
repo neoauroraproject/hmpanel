@@ -12,9 +12,11 @@ import type { CustomerService, StorefrontProduct, StorefrontStore } from "../typ
 import { BankCardVisual, resolvePaymentCards } from "../BankCardVisual";
 import {
   isReceiptPayMethod,
-  openTelegramStarsInvoice,
+  isWalletPayMethod,
+  openCheckoutPayUrl,
   pickStorefrontPayMethod,
   storefrontPayOptions,
+  WALLET_PAY_BUTTON_TEXT,
   type CheckoutPayMethod,
 } from "../payment-methods";
 import { scrollTmaToTop } from "./scroll";
@@ -83,7 +85,10 @@ export function TmaCheckoutSheet({
   const selected = catalog.find((p) => p.id === productId) || catalog[0];
   const accent = primaryColor || LIGHT.button;
   const paymentCards = resolvePaymentCards(payment);
-  const payOptions = storefrontPayOptions(payment, { hasWalletSession: true });
+  const payOptions = storefrontPayOptions(payment, {
+    hasWalletSession: true,
+    hasTelegramUserId: !!user?.id,
+  });
 
   useEffect(() => {
     if (!open) return;
@@ -94,7 +99,7 @@ export function TmaCheckoutSheet({
     setReceiptImage("");
     setPreview("");
     setProductId(products[0]?.id || catalog[0]?.id || "");
-    setPaymentMethod(pickStorefrontPayMethod(payment, { hasWalletSession: true }));
+    setPaymentMethod(pickStorefrontPayMethod(payment, { hasWalletSession: true, hasTelegramUserId: !!user?.id }));
     const tgName = [user?.first_name, user?.last_name].filter(Boolean).join(" ").trim();
     setDisplayName(tgName);
     setContactNote(user?.username ? `@${user.username}` : "");
@@ -161,6 +166,8 @@ export function TmaCheckoutSheet({
             receiptText: isReceiptPayMethod(paymentMethod) ? receiptText || undefined : undefined,
             receiptImage: isReceiptPayMethod(paymentMethod) ? receiptImage || undefined : undefined,
             paymentMethod,
+            telegramUserId: user?.id,
+            telegramChatId: user?.id,
           })
         ).data;
       }
@@ -174,11 +181,13 @@ export function TmaCheckoutSheet({
           receiptText: isReceiptPayMethod(paymentMethod) ? receiptText || undefined : undefined,
           receiptImage: isReceiptPayMethod(paymentMethod) ? receiptImage || undefined : undefined,
           paymentMethod,
+          telegramUserId: user?.id,
+          telegramChatId: user?.id,
         })
       ).data;
     },
     onSuccess: async (data) => {
-      if (data?.invoiceUrl) openTelegramStarsInvoice(data.invoiceUrl);
+      if (data?.invoiceUrl) openCheckoutPayUrl(data.invoiceUrl, data.paymentMethod);
       await queryClient.invalidateQueries({ queryKey: ["customer-session"] });
       onSuccess(data.trackingCode);
     },
@@ -431,6 +440,8 @@ export function TmaCheckoutSheet({
                             ? t("کیف پول", "Wallet")
                             : opt.id === "TELEGRAM_STARS"
                               ? t("تلگرام استارز", "Telegram Stars")
+                              : opt.id === "TELEGRAM_WALLET"
+                                ? WALLET_PAY_BUTTON_TEXT
                               : t("کارت + رسید", "Card + receipt")}
                         </button>
                       ))}
@@ -444,6 +455,17 @@ export function TmaCheckoutSheet({
                       {t(
                         "پرداخت با Telegram Stars. سرویس فقط بعد از تأیید سرور فعال می‌شود.",
                         "Pay with Telegram Stars. Delivery happens only after backend verification.",
+                      )}
+                    </p>
+                  ) : null}
+                  {isWalletPayMethod(paymentMethod) ? (
+                    <p
+                      className="rounded-2xl px-3.5 py-3 text-[13px]"
+                      style={{ background: "rgba(14,165,233,0.12)", color: "#075985" }}
+                    >
+                      {t(
+                        "پرداخت با ولت تلگرام. سرویس فقط بعد از تأیید پرداخت فعال می‌شود.",
+                        "Pay with Telegram Wallet. Delivery happens only after payment is verified.",
                       )}
                     </p>
                   ) : null}

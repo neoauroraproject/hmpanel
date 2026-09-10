@@ -486,11 +486,13 @@ export function PendingOrderCard({
   onTrack,
   orderStatus,
   invoiceUrl,
+  paymentMethod,
 }: {
   trackingCode: string;
   customerToken: string;
   orderStatus: string;
   invoiceUrl?: string | null;
+  paymentMethod?: string | null;
   onCopy?: () => void;
   onTrack: () => void;
 }) {
@@ -516,10 +518,16 @@ export function PendingOrderCard({
       <h2 className="text-2xl font-black">{t("سفارش ثبت شد", "Order Submitted")}</h2>
       <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
         {invoiceUrl
-          ? t(
-              "فاکتور Telegram Stars آماده است. پرداخت را کامل کنید؛ سرویس فقط بعد از تأیید سرور فعال می‌شود.",
-              "Your Telegram Stars invoice is ready. Complete payment — delivery happens only after backend verification.",
-            )
+          ? String(paymentMethod || "").toUpperCase() === "TELEGRAM_WALLET" ||
+            /t\.me\/wallet/i.test(invoiceUrl)
+            ? t(
+                "لینک Wallet Pay آماده است. پرداخت را در ولت تلگرام کامل کنید؛ سرویس فقط بعد از تأیید سرور فعال می‌شود.",
+                "Your Wallet Pay link is ready. Complete payment in Telegram Wallet — delivery happens only after backend verification.",
+              )
+            : t(
+                "فاکتور Telegram Stars آماده است. پرداخت را کامل کنید؛ سرویس فقط بعد از تأیید سرور فعال می‌شود.",
+                "Your Telegram Stars invoice is ready. Complete payment — delivery happens only after backend verification.",
+              )
           : t(
               "در انتظار تأیید. معمولاً ظرف چند دقیقه بررسی می‌شود.",
               "Waiting for approval. Your order will usually be reviewed within a few minutes.",
@@ -529,13 +537,26 @@ export function PendingOrderCard({
         <button
           type="button"
           onClick={() => {
-            const tg = window.Telegram?.WebApp as { openInvoice?: (u: string) => void } | undefined;
+            const walletPay =
+              String(paymentMethod || "").toUpperCase() === "TELEGRAM_WALLET" ||
+              /t\.me\/wallet/i.test(invoiceUrl);
+            const tg = window.Telegram?.WebApp as
+              | { openInvoice?: (u: string) => void; openTelegramLink?: (u: string) => void }
+              | undefined;
+            if (walletPay) {
+              if (tg?.openTelegramLink) tg.openTelegramLink(invoiceUrl);
+              else window.open(invoiceUrl, "_blank", "noopener,noreferrer");
+              return;
+            }
             if (tg?.openInvoice) tg.openInvoice(invoiceUrl);
             else window.open(invoiceUrl, "_blank", "noopener,noreferrer");
           }}
           className="mt-4 inline-flex min-h-11 items-center justify-center rounded-2xl bg-[color:var(--store-primary,#2563eb)] px-4 text-sm font-semibold text-white"
         >
-          {t("پرداخت با استارز", "Pay with Stars")}
+          {String(paymentMethod || "").toUpperCase() === "TELEGRAM_WALLET" ||
+          /t\.me\/wallet/i.test(invoiceUrl)
+            ? "👛 Wallet Pay"
+            : t("پرداخت با استارز", "Pay with Stars")}
         </button>
       ) : null}
 

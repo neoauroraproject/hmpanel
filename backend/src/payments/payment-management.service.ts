@@ -3,13 +3,16 @@ import {
   Injectable,
   Logger,
   Optional,
+  UnauthorizedException,
 } from '@nestjs/common';
-import { createDecipheriv, createHash } from 'crypto';
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'crypto';
+import axios from 'axios';
 import { PrismaService } from '../prisma/prisma.service';
 import { SettingsService } from '../settings/settings.service';
 import { PaymentGatewayRegistry } from './payment-gateway.registry';
 import { telegramGetJson, telegramPostJson } from './telegram-bot-api';
 import { PaymentLedgerService } from './payment-ledger.service';
+import { DomainEventBusService } from '../events/domain-event-bus.service';
 import { PAYMENT_SURFACE_SETTING_KEY, type PaymentSurface } from './payment-surface';
 import {
   cardIsUsable,
@@ -29,6 +32,7 @@ import {
   surfaceLabel,
   type PaymentManagementState,
   type TelegramStarsPluginSettings,
+  type WalletPayPluginSettings,
 } from './payment-management.state';
 import {
   amountToStars,
@@ -36,6 +40,20 @@ import {
   encodeStarsPayload,
   ledgerIdempotencyKey,
 } from './telegram-stars.util';
+import {
+  WALLET_PAY_API_BASE,
+  WALLET_PAY_GATEWAY,
+  amountToWalletPay,
+  clampWalletPayDescription,
+  decodeWalletPayCustomData,
+  encodeWalletPayCustomData,
+  parseTelegramUserId,
+  parseWalletPayWebhookEvents,
+  verifyWalletPayWebhook,
+  walletPayExternalId,
+  walletPayWebhookPathCandidates,
+  walletPayWebhookPathForAdmin,
+} from './telegram-wallet.util';
 import { isImplementedGateway } from './payment-catalog';
 
 export type CheckoutPaymentResolution = {
@@ -56,6 +74,7 @@ export class PaymentManagementService {
     private ledger: PaymentLedgerService,
     private registry: PaymentGatewayRegistry,
     @Optional() private settings?: SettingsService,
+    @Optional() private events?: DomainEventBusService,
   ) {}
 
   private encryptionKey() {
@@ -84,6 +103,14 @@ export class PaymentManagementService {
     } catch {
       return null;
     }
+  }
+
+  encryptSecret(plain: string): string {
+    const iv = randomBytes(12);
+    const cipher = createCipheriv('aes-256-gcm', this.encryptionKey(), iv);
+    const enc = Buffer.concat([cipher.update(plain, 'utf8'), cipher.final()]);
+    const tag = cipher.getAuthTag();
+    return `v1:${iv.toString('base64url')}:${tag.toString('base64url')}:${enc.toString('base64url')}`;
   }
 
   decryptBotToken(payload?: string | null): string | null {
@@ -366,6 +393,7 @@ export class PaymentManagementService {
     const methods = snapshotMethods(state, {
       starsConfigured: conn.configured,
       cardsConfigured: state.cards.some(cardIsUsable),
+      walletPayConfigured: !!this.decryptBotToken(state.walletPay.apiTokenEnc),
     });
     const transactions = await this.ledger.list(adminId, 40);
     const assignments = state.assignments.map((row) => {
@@ -396,6 +424,7 @@ export class PaymentManagementService {
             enabled: conn.enabled,
           },
         },
+        walletPay: this.publicWalletPaySettings(adminId, state),
       },
       role,
       surfaces:
@@ -416,6 +445,7 @@ export class PaymentManagementService {
         return `Card to Card${n}`;
       }
       if (id === 'telegram_stars') return 'Telegram Stars';
+      if (id === 'telegram_wallet') return 'Telegram Wallet Pay';
       if (id === 'wallet') return 'Wallet';
       if (id === 'crypto_gateway') return 'Crypto Gateway';
       if (id === 'rial_gateway') return 'Online Gateway';
@@ -444,7 +474,11 @@ export class PaymentManagementService {
       ...state.stars,
       enabled: methods.telegram_stars.enabled,
     };
-    return this.saveState(adminId, { ...state, methods, stars });
+    const walletPay = {
+      ...state.walletPay,
+      enabled: methods.telegram_wallet.enabled,
+    };
+    return this.saveState(adminId, { ...state, methods, stars, walletPay });
   }
 
   async updateStarsSettings(adminId: string, patch: Partial<TelegramStarsPluginSettings>) {
@@ -460,6 +494,109 @@ export class PaymentManagementService {
       telegram_stars: { enabled: stars.enabled },
     };
     return this.saveState(adminId, { ...state, stars, methods });
+  }
+
+  private publicWalletPaySettings(adminId: string, state: PaymentManagementState) {
+    const token = this.decryptBotToken(state.walletPay.apiTokenEnc);
+    return {
+      enabled: state.walletPay.enabled,
+      pricingCurrency: state.walletPay.pricingCurrency,
+      autoConversionCurrency: state.walletPay.autoConversionCurrency,
+      tomanPerUsd: state.walletPay.tomanPerUsd,
+      timeoutSeconds: state.walletPay.timeoutSeconds,
+      tokenSet: !!token,
+      tokenMasked: this.maskToken(token),
+      webhookPath: walletPayWebhookPathForAdmin(adminId),
+      lastProbe: state.walletPay.lastProbe || null,
+      connection: {
+        ok: state.walletPay.lastProbe?.ok === true,
+        configured: !!token,
+      },
+    };
+  }
+
+  async updateWalletPaySettings(
+    adminId: string,
+    patch: Partial<WalletPayPluginSettings> & { apiToken?: string | null },
+  ) {
+    const state = await this.ensureMigrated(adminId);
+    let apiTokenEnc = state.walletPay.apiTokenEnc;
+    if (Object.prototype.hasOwnProperty.call(patch, 'apiToken')) {
+      const next = String(patch.apiToken || '').trim();
+      apiTokenEnc = next ? this.encryptSecret(next) : null;
+    }
+    const pricing = String(patch.pricingCurrency || state.walletPay.pricingCurrency).toUpperCase();
+    const conversion = String(
+      patch.autoConversionCurrency === undefined
+        ? state.walletPay.autoConversionCurrency
+        : patch.autoConversionCurrency || '',
+    ).toUpperCase();
+    const walletPay: WalletPayPluginSettings = {
+      ...state.walletPay,
+      enabled: patch.enabled ?? state.walletPay.enabled,
+      apiTokenEnc,
+      pricingCurrency: pricing === 'EUR' ? 'EUR' : 'USD',
+      autoConversionCurrency:
+        conversion === 'USDT' || conversion === 'TON' || conversion === 'BTC' || conversion === 'NOT'
+          ? conversion
+          : '',
+      tomanPerUsd:
+        patch.tomanPerUsd != null && Number(patch.tomanPerUsd) > 0
+          ? Number(patch.tomanPerUsd)
+          : state.walletPay.tomanPerUsd,
+      timeoutSeconds:
+        patch.timeoutSeconds != null && Number(patch.timeoutSeconds) >= 30
+          ? Math.min(86_400, Math.round(Number(patch.timeoutSeconds)))
+          : state.walletPay.timeoutSeconds,
+      lastProbe: state.walletPay.lastProbe,
+    };
+    const methods = {
+      ...state.methods,
+      telegram_wallet: { enabled: walletPay.enabled },
+    };
+    const saved = await this.saveState(adminId, { ...state, walletPay, methods });
+    return this.publicWalletPaySettings(adminId, saved);
+  }
+
+  async probeWalletPay(adminId: string) {
+    const state = await this.ensureMigrated(adminId);
+    const token = this.decryptBotToken(state.walletPay.apiTokenEnc);
+    if (!token) {
+      const lastProbe = {
+        ok: false,
+        error: 'Wallet Pay API token is not configured',
+        at: new Date().toISOString(),
+      };
+      await this.saveState(adminId, { ...state, walletPay: { ...state.walletPay, lastProbe } });
+      return { ...lastProbe, tokenMasked: null };
+    }
+    try {
+      const { data, status } = await axios.get(
+        `${WALLET_PAY_API_BASE}/wpay/store-api/v1/reconciliation/order-list`,
+        {
+          params: { offset: 0, count: 1 },
+          headers: { 'Wpay-Store-Api-Key': token, Accept: 'application/json' },
+          timeout: 15_000,
+          validateStatus: () => true,
+        },
+      );
+      const ok = status >= 200 && status < 300 && String(data?.status || 'SUCCESS').toUpperCase() !== 'FAIL';
+      const lastProbe = {
+        ok,
+        error: ok ? null : String(data?.message || data?.status || `HTTP ${status}`),
+        at: new Date().toISOString(),
+      };
+      await this.saveState(adminId, { ...state, walletPay: { ...state.walletPay, lastProbe } });
+      return { ...lastProbe, tokenMasked: this.maskToken(token) };
+    } catch (err: any) {
+      const lastProbe = {
+        ok: false,
+        error: String(err?.message || err),
+        at: new Date().toISOString(),
+      };
+      await this.saveState(adminId, { ...state, walletPay: { ...state.walletPay, lastProbe } });
+      return { ...lastProbe, tokenMasked: this.maskToken(token) };
+    }
   }
 
   async saveCards(adminId: string, cards: unknown) {
@@ -543,6 +680,13 @@ export class PaymentManagementService {
   methodEnabled(state: PaymentManagementState, id: string): boolean {
     const methods = state.methods as Record<string, { enabled: boolean }>;
     if (id === 'telegram_stars') return methods.telegram_stars?.enabled === true && state.stars.enabled;
+    if (id === 'telegram_wallet') {
+      return (
+        methods.telegram_wallet?.enabled === true &&
+        state.walletPay.enabled &&
+        !!this.decryptBotToken(state.walletPay.apiTokenEnc)
+      );
+    }
     if (id === 'manual_bank') return methods.manual_bank?.enabled !== false;
     if (id === 'wallet') return methods.wallet?.enabled !== false;
     return false;
@@ -556,6 +700,9 @@ export class PaymentManagementService {
       if (!this.methodEnabled(state, id)) return false;
       if (!isImplementedGateway(id)) return false;
       if (registered.length && id === 'telegram_stars' && !registered.includes('telegram_stars')) {
+        return false;
+      }
+      if (registered.length && id === 'telegram_wallet' && !registered.includes('telegram_wallet')) {
         return false;
       }
       return true;
@@ -577,6 +724,7 @@ export class PaymentManagementService {
       methods: snapshotMethods(state, {
         starsConfigured: conn.configured,
         cardsConfigured: state.cards.some(cardIsUsable),
+        walletPayConfigured: !!this.decryptBotToken(state.walletPay.apiTokenEnc),
       }),
     };
   }
@@ -771,6 +919,275 @@ export class PaymentManagementService {
       alreadyPaid: duplicate || row.status === 'paid',
       orderId: decoded.orderId,
       surface: decoded.surface,
+      adminId: row.adminId,
+    };
+  }
+
+  async createWalletPayCharge(input: {
+    adminId: string;
+    surface: PaymentSurface;
+    orderId: string;
+    amount: number;
+    currency: string;
+    description?: string;
+    telegramUserId: string | number;
+    returnUrl?: string | null;
+  }): Promise<{
+    ledgerId: string;
+    walletOrderId: string | null;
+    payUrl: string | null;
+    amount: string;
+    currencyCode: string;
+    duplicate: boolean;
+  }> {
+    const telegramUserId = parseTelegramUserId(input.telegramUserId);
+    if (!telegramUserId) {
+      throw new BadRequestException(
+        'Telegram Wallet Pay requires a numeric Telegram user id / پرداخت ولت تلگرام به شناسه تلگرام نیاز دارد',
+      );
+    }
+    const state = await this.ensureMigrated(input.adminId);
+    if (!state.walletPay.enabled || !state.methods.telegram_wallet.enabled) {
+      throw new BadRequestException('Telegram Wallet Pay is disabled');
+    }
+    const checkout = await this.resolveCheckout(input.adminId, input.surface);
+    if (!checkout.gateways.includes('telegram_wallet')) {
+      throw new BadRequestException('Telegram Wallet Pay is not assigned to this surface');
+    }
+    const apiKey = this.decryptBotToken(state.walletPay.apiTokenEnc);
+    if (!apiKey) {
+      throw new BadRequestException('Wallet Pay API token is not configured');
+    }
+    const priced = amountToWalletPay(input.amount, input.currency, {
+      tomanPerUsd: state.walletPay.tomanPerUsd,
+      pricingCurrency: state.walletPay.pricingCurrency,
+    });
+    const externalId = walletPayExternalId(input.surface, input.orderId);
+    const customData = encodeWalletPayCustomData(input.surface, input.orderId);
+    const idempotencyKey = ledgerIdempotencyKey(WALLET_PAY_GATEWAY, input.surface, input.orderId);
+    const { row } = await this.ledger.createPending({
+      adminId: input.adminId,
+      gateway: WALLET_PAY_GATEWAY,
+      surface: input.surface,
+      orderId: input.orderId,
+      idempotencyKey,
+      amount: priced.amountNumber,
+      currency: priced.currencyCode,
+      metadata: {
+        customData,
+        externalId,
+        orderAmount: input.amount,
+        orderCurrency: input.currency,
+        telegramUserId: String(telegramUserId),
+      },
+    });
+    const existingPayUrl = row.metadata && typeof row.metadata.payUrl === 'string' ? String(row.metadata.payUrl) : null;
+    const existingWalletOrderId =
+      row.metadata && typeof row.metadata.walletOrderId === 'string' ? String(row.metadata.walletOrderId) : null;
+    if (row.status === 'paid') {
+      return {
+        ledgerId: row.id,
+        walletOrderId: existingWalletOrderId,
+        payUrl: existingPayUrl,
+        amount: priced.amount,
+        currencyCode: priced.currencyCode,
+        duplicate: true,
+      };
+    }
+    if (existingPayUrl) {
+      return {
+        ledgerId: row.id,
+        walletOrderId: existingWalletOrderId,
+        payUrl: existingPayUrl,
+        amount: priced.amount,
+        currencyCode: priced.currencyCode,
+        duplicate: false,
+      };
+    }
+    const body: Record<string, unknown> = {
+      amount: { currencyCode: priced.currencyCode, amount: priced.amount },
+      description: clampWalletPayDescription(input.description),
+      externalId,
+      timeoutSeconds: state.walletPay.timeoutSeconds,
+      customerTelegramUserId: telegramUserId,
+      customData,
+    };
+    if (state.walletPay.autoConversionCurrency) {
+      body.autoConversionCurrency = state.walletPay.autoConversionCurrency;
+    }
+    if (input.returnUrl) body.returnUrl = String(input.returnUrl);
+    try {
+      const { data, status } = await axios.post(`${WALLET_PAY_API_BASE}/wpay/store-api/v1/order`, body, {
+        headers: {
+          'Wpay-Store-Api-Key': apiKey,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        timeout: 20_000,
+        validateStatus: () => true,
+      });
+      const payload = data?.data && typeof data.data === 'object' ? data.data : data;
+      const payUrl = payload?.directPayLink ? String(payload.directPayLink) : null;
+      const walletOrderId = payload?.id ? String(payload.id) : null;
+      if (status >= 300 || !payUrl) {
+        throw new BadRequestException(
+          String(data?.message || data?.status || payload?.message || 'Failed to create Wallet Pay order'),
+        );
+      }
+      await this.ledger.markStatus(idempotencyKey, 'pending', {
+        payUrl,
+        walletOrderId,
+        customData,
+        externalId,
+      });
+      return {
+        ledgerId: row.id,
+        walletOrderId,
+        payUrl,
+        amount: priced.amount,
+        currencyCode: priced.currencyCode,
+        duplicate: false,
+      };
+    } catch (err: any) {
+      if (err instanceof BadRequestException) throw err;
+      this.logger.warn(`Wallet Pay createOrder failed: ${err?.message || err}`);
+      throw new BadRequestException(err?.message || 'Failed to create Wallet Pay order');
+    }
+  }
+
+  async handleWalletPayWebhook(input: {
+    adminId: string;
+    httpMethod: string;
+    uriPath: string;
+    timestamp: string;
+    signature: string;
+    rawBody: Buffer | string;
+    parsedBody?: unknown;
+  }): Promise<{
+    ok: boolean;
+    processed: number;
+    paid: Array<{
+      orderId: string;
+      surface: string;
+      adminId: string;
+      duplicate: boolean;
+    }>;
+  }> {
+    const state = await this.ensureMigrated(input.adminId);
+    const apiKey = this.decryptBotToken(state.walletPay.apiTokenEnc);
+    if (!apiKey) {
+      throw new BadRequestException('Wallet Pay is not configured');
+    }
+    const uriPaths = [
+      ...walletPayWebhookPathCandidates(input.uriPath),
+      walletPayWebhookPathForAdmin(input.adminId),
+      walletPayWebhookPathForAdmin(input.adminId).replace(/^\/api/, ''),
+    ];
+    const valid = verifyWalletPayWebhook({
+      apiKey,
+      httpMethod: input.httpMethod,
+      timestamp: input.timestamp,
+      signature: input.signature,
+      rawBody: input.rawBody,
+      uriPaths,
+    });
+    if (!valid) {
+      throw new UnauthorizedException('Invalid Wallet Pay signature');
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(
+        Buffer.isBuffer(input.rawBody) ? input.rawBody.toString('utf8') : String(input.rawBody || ''),
+      );
+    } catch {
+      parsed = input.parsedBody ?? [];
+    }
+    const events = parseWalletPayWebhookEvents(parsed);
+    const paid: Array<{ orderId: string; surface: string; adminId: string; duplicate: boolean }> = [];
+    for (const event of events) {
+      const type = String(event.type || '').toUpperCase();
+      const payload = event.payload || {};
+      const externalId = String(payload.externalId || '');
+      const custom = decodeWalletPayCustomData(payload.customData);
+      const fromExternal = externalId.startsWith(`${WALLET_PAY_GATEWAY}:`)
+        ? (() => {
+            const parts = externalId.split(':');
+            return parts.length >= 3 ? { surface: parts[1], orderId: parts.slice(2).join(':') } : null;
+          })()
+        : null;
+      const decoded = custom || fromExternal;
+      if (!decoded) continue;
+      const idempotencyKey = ledgerIdempotencyKey(WALLET_PAY_GATEWAY, decoded.surface, decoded.orderId);
+      if (type === 'ORDER_FAILED') {
+        await this.ledger.markStatus(idempotencyKey, 'failed', {
+          eventId: event.eventId || null,
+          walletOrderId: payload.id || null,
+        });
+        continue;
+      }
+      if (type !== 'ORDER_PAID') continue;
+      const walletOrderId = String(payload.id || '').trim();
+      if (!walletOrderId) continue;
+      try {
+        const completed = await this.completeWalletPayPayment({
+          surface: decoded.surface,
+          orderId: decoded.orderId,
+          walletOrderId,
+          eventId: event.eventId,
+          selectedPaymentOption: payload.selectedPaymentOption,
+        });
+        paid.push({
+          orderId: completed.orderId,
+          surface: completed.surface,
+          adminId: completed.adminId,
+          duplicate: completed.duplicate,
+        });
+        if (!completed.duplicate) {
+          await this.events?.emit('payment.verified', {
+            orderId: completed.orderId,
+            gateway: WALLET_PAY_GATEWAY,
+            surface: completed.surface,
+            adminId: completed.adminId,
+          });
+        }
+      } catch (err: any) {
+        this.logger.warn(`Wallet Pay ORDER_PAID failed: ${err?.message || err}`);
+      }
+    }
+    return { ok: true, processed: events.length, paid };
+  }
+
+  async completeWalletPayPayment(input: {
+    surface: string;
+    orderId: string;
+    walletOrderId: string;
+    eventId?: string;
+    selectedPaymentOption?: unknown;
+  }): Promise<{
+    duplicate: boolean;
+    orderId: string;
+    surface: string;
+    adminId: string;
+    alreadyPaid: boolean;
+  }> {
+    const chargeId = String(input.walletOrderId || '').trim();
+    if (!chargeId) throw new BadRequestException('Missing Wallet Pay order id');
+    const idempotencyKey = ledgerIdempotencyKey(WALLET_PAY_GATEWAY, input.surface, input.orderId);
+    const existing = await this.ledger.findByIdempotency(idempotencyKey);
+    if (!existing) throw new BadRequestException('Payment is not registered');
+    const { row, duplicate } = await this.ledger.markPaid({
+      idempotencyKey,
+      providerChargeId: chargeId,
+      metadata: {
+        eventId: input.eventId || null,
+        selectedPaymentOption: input.selectedPaymentOption || null,
+      },
+    });
+    return {
+      duplicate,
+      alreadyPaid: duplicate || row.status === 'paid',
+      orderId: input.orderId,
+      surface: input.surface,
       adminId: row.adminId,
     };
   }

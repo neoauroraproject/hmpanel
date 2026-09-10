@@ -9,7 +9,9 @@ import { FieldBlock, springSoft } from "@/modules/storefront/design";
 import { BankCardVisual, resolvePaymentCards } from "@/modules/storefront/BankCardVisual";
 import {
   isReceiptPayMethod,
+  isWalletPayMethod,
   storefrontPayOptions,
+  WALLET_PAY_BUTTON_TEXT,
   type CheckoutPayMethod,
 } from "@/modules/storefront/payment-methods";
 import { useStorefrontLocale } from "@/modules/storefront/locale";
@@ -65,6 +67,7 @@ export function CheckoutSheet({
   storeSlug,
   paymentMethod,
   setPaymentMethod,
+  hasTelegramUserId = false,
 }: {
   mode: FlowMode;
   step: number;
@@ -93,6 +96,7 @@ export function CheckoutSheet({
   storeSlug?: string;
   paymentMethod: CheckoutPayMethod;
   setPaymentMethod: (m: CheckoutPayMethod) => void;
+  hasTelegramUserId?: boolean;
 }) {
   const { t, formatToman, isFa } = useStorefrontLocale();
   const lockedCategoryId = mode === "renew" ? String(renewingService?.categoryId || "") : "";
@@ -127,7 +131,10 @@ export function CheckoutSheet({
   const safeStep = Math.min(Math.max(0, step), Math.max(0, steps.length - 1));
   const current = steps[safeStep] || "product";
   const paymentCards = resolvePaymentCards(payment);
-  const payOptions = storefrontPayOptions(payment, { hasWalletSession: true });
+  const payOptions = storefrontPayOptions(payment, {
+    hasWalletSession: true,
+    hasTelegramUserId,
+  });
   const preview = computeCheckoutPreview(selectedProduct, selectedAddonIds, couponPreview);
   const money = (value: number) =>
     preview.hasToman
@@ -436,6 +443,11 @@ export function CheckoutSheet({
                         "پرداخت با Telegram Stars. سرویس فقط بعد از تأیید سرور فعال می‌شود.",
                         "Pay with Telegram Stars. Delivery happens only after backend verification.",
                       )
+                    : isWalletPayMethod(paymentMethod)
+                      ? t(
+                          "پرداخت با ولت تلگرام. سرویس فقط بعد از تأیید پرداخت فعال می‌شود.",
+                          "Pay with Telegram Wallet. Delivery happens only after payment is verified.",
+                        )
                     : paymentMethod === "WALLET"
                       ? t("مبلغ از کیف پول کسر می‌شود.", "Amount will be deducted from your wallet.")
                       : t("مبلغ بالا را واریز کنید و رسید را بفرستید.", "Transfer the amount above and send the receipt.")}
@@ -458,6 +470,8 @@ export function CheckoutSheet({
                         ? t("کیف پول", "Wallet")
                         : opt.id === "TELEGRAM_STARS"
                           ? t("تلگرام استارز", "Telegram Stars")
+                          : opt.id === "TELEGRAM_WALLET"
+                            ? WALLET_PAY_BUTTON_TEXT
                           : t("کارت + رسید", "Card + receipt")}
                     </button>
                   ))}

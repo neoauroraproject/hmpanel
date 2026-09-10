@@ -2,6 +2,7 @@ export type PaymentGatewayId =
   | 'manual_bank'
   | 'wallet'
   | 'telegram_stars'
+  | 'telegram_wallet'
   | 'zarinpal_stub'
   | 'nowpayments_stub';
 

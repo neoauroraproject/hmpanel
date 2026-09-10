@@ -44,7 +44,17 @@ async function bootstrap() {
     app = await NestFactory.create(AppModule.forRoot([]), nestOptions);
   }
 
-  app.use(json({ limit: BODY_LIMIT }));
+  app.use(
+    json({
+      limit: BODY_LIMIT,
+      verify: (req: any, _res, buf) => {
+        const url = String(req.originalUrl || req.url || '');
+        if (url.includes('wallet-pay/webhook')) {
+          req.rawBody = Buffer.from(buf);
+        }
+      },
+    }),
+  );
   app.use(urlencoded({ extended: true, limit: BODY_LIMIT }));
   app.enableCors({ exposedHeaders: ['Content-Disposition'] });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));

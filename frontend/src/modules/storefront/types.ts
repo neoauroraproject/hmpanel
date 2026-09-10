@@ -86,6 +86,7 @@ export type CustomerProfile = {
   telegram?: string | null;
   whatsapp?: string | null;
   email?: string | null;
+  telegramUserId?: string | null;
 };
 
 export type CustomerNotification = {
