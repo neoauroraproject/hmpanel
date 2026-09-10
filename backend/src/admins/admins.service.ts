@@ -138,6 +138,7 @@ export class AdminsService implements OnModuleInit {
       maxClients?: number;
       maxDeviceLimit?: number;
       maxExpireDays?: number;
+      maxClientTrafficGb?: number;
       permissions?: string[];
       refundOnDelete?: boolean;
       refundOnEdit?: boolean;
@@ -190,6 +191,7 @@ export class AdminsService implements OnModuleInit {
         maxClients: isSuper ? 0 : data.maxClients || 0,
         maxDeviceLimit: isSuper ? 0 : data.maxDeviceLimit || 0,
         maxExpireDays: isSuper ? 0 : data.maxExpireDays || 0,
+        maxClientTrafficGb: isSuper ? 0 : data.maxClientTrafficGb || 0,
         permissions: data.permissions || [],
         storeEnabled: isSuper ? false : data.storeEnabled === true,
         refundOnDelete: unlimited ? false : (data.refundOnDelete ?? true),
@@ -210,6 +212,7 @@ export class AdminsService implements OnModuleInit {
         maxClients: true,
         maxDeviceLimit: true,
         maxExpireDays: true,
+        maxClientTrafficGb: true,
         permissions: true,
         refundOnDelete: true,
         refundOnEdit: true,
@@ -316,6 +319,7 @@ export class AdminsService implements OnModuleInit {
           maxClients: true,
           maxDeviceLimit: true,
           maxExpireDays: true,
+          maxClientTrafficGb: true,
           permissions: true,
           portalSettings: true,
           refundOnDelete: true,
@@ -378,6 +382,7 @@ export class AdminsService implements OnModuleInit {
         maxClients: true,
         maxDeviceLimit: true,
         maxExpireDays: true,
+        maxClientTrafficGb: true,
         permissions: true,
         portalSettings: true,
         refundOnDelete: true,
@@ -439,6 +444,7 @@ export class AdminsService implements OnModuleInit {
       maxClients?: number;
       maxDeviceLimit?: number;
       maxExpireDays?: number;
+      maxClientTrafficGb?: number;
       permissions?: string[];
       inboundIds?: string[];
       portalSettings?: any;
@@ -527,6 +533,7 @@ export class AdminsService implements OnModuleInit {
       updateData.maxClients = 0;
       updateData.maxDeviceLimit = 0;
       updateData.maxExpireDays = 0;
+      updateData.maxClientTrafficGb = 0;
       updateData.refundOnDelete = false;
       updateData.refundOnEdit = false;
       updateData.gracePeriodStart = null;
@@ -681,6 +688,8 @@ export class AdminsService implements OnModuleInit {
         updateData.maxDeviceLimit = data.maxDeviceLimit;
       if (data.maxExpireDays !== undefined)
         updateData.maxExpireDays = data.maxExpireDays;
+      if (data.maxClientTrafficGb !== undefined)
+        updateData.maxClientTrafficGb = data.maxClientTrafficGb;
       if (data.permissions !== undefined)
         updateData.permissions = data.permissions;
       if (data.refundOnDelete !== undefined)
@@ -799,6 +808,7 @@ export class AdminsService implements OnModuleInit {
         maxClients: true,
         maxDeviceLimit: true,
         maxExpireDays: true,
+        maxClientTrafficGb: true,
         permissions: true,
         refundOnDelete: true,
         refundOnEdit: true,
@@ -847,6 +857,7 @@ export class AdminsService implements OnModuleInit {
             maxClients: q.maxClients,
             maxDeviceLimit: q.maxDeviceLimit,
             maxExpireDays: q.maxExpireDays,
+            maxClientTrafficGb: q.maxClientTrafficGb,
           })),
         previousMode: 'PER_PANEL',
       });

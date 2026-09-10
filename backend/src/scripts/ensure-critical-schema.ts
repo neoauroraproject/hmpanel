@@ -207,9 +207,11 @@ export async function ensureCriticalSchema(prisma: PrismaClient): Promise<void> 
     // Reseller client caps (global on Admin, overridable per panel)
     `ALTER TABLE "Admin" ADD COLUMN IF NOT EXISTS "maxDeviceLimit" INTEGER NOT NULL DEFAULT 0`,
     `ALTER TABLE "Admin" ADD COLUMN IF NOT EXISTS "maxExpireDays" INTEGER NOT NULL DEFAULT 0`,
+    `ALTER TABLE "Admin" ADD COLUMN IF NOT EXISTS "maxClientTrafficGb" INTEGER NOT NULL DEFAULT 0`,
     `ALTER TABLE "AdminPanelQuota" ADD COLUMN IF NOT EXISTS "maxClients" INTEGER NOT NULL DEFAULT 0`,
     `ALTER TABLE "AdminPanelQuota" ADD COLUMN IF NOT EXISTS "maxDeviceLimit" INTEGER NOT NULL DEFAULT 0`,
     `ALTER TABLE "AdminPanelQuota" ADD COLUMN IF NOT EXISTS "maxExpireDays" INTEGER NOT NULL DEFAULT 0`,
+    `ALTER TABLE "AdminPanelQuota" ADD COLUMN IF NOT EXISTS "maxClientTrafficGb" INTEGER NOT NULL DEFAULT 0`,
     `ALTER TABLE "AdminPanelQuota" ADD COLUMN IF NOT EXISTS "trafficMode" "TrafficMode" NOT NULL DEFAULT 'ALLOCATION'`,
 
     // Legacy: suspended → disabled (admin status is only active | disabled)

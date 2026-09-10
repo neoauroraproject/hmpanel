@@ -19,6 +19,7 @@ import {
   ClientLimitCaps,
   assertDeviceLimitAllowed,
   assertExpireDaysAllowed,
+  assertClientTrafficAllowed,
   resolveClientLimitCaps,
 } from '../admins/admin-client-limits.util';
 
@@ -194,7 +195,7 @@ export class ClientsService {
   }
 
   /**
-   * Enforces the reseller-facing client caps (count / device limit / expiry)
+   * Enforces the reseller-facing client caps (count / device / expiry / GB per client)
    * that a Super Admin configured on the owning admin, globally or per panel.
    * Super Admins are never capped. Must run before any remote panel call.
    */
@@ -204,6 +205,7 @@ export class ClientsService {
     requested: {
       limitIp?: number | null;
       expiryTime?: number | null;
+      total?: number | bigint | null;
       /** Extra clients this request would create; 0 skips the count check. */
       additionalClients?: number;
     },
@@ -216,6 +218,7 @@ export class ClientsService {
         maxClients: true,
         maxDeviceLimit: true,
         maxExpireDays: true,
+        maxClientTrafficGb: true,
       },
     });
     if (!admin || admin.role === 'SUPER_ADMIN') return null;
@@ -228,6 +231,7 @@ export class ClientsService {
               maxClients: true,
               maxDeviceLimit: true,
               maxExpireDays: true,
+              maxClientTrafficGb: true,
             },
           })
         : null;
@@ -251,6 +255,9 @@ export class ClientsService {
     }
     if (requested.expiryTime !== undefined) {
       assertExpireDaysAllowed(caps.maxExpireDays, requested.expiryTime);
+    }
+    if (requested.total !== undefined) {
+      assertClientTrafficAllowed(caps.maxClientTrafficGb, requested.total);
     }
 
     return caps;
@@ -753,6 +760,7 @@ export class ClientsService {
     await this.assertClientLimitsAllowed(targetAdminId, panel.id, {
       limitIp: data.limitIp ?? 0,
       expiryTime: data.expiryTime ?? 0,
+      total: data.total ?? 0,
       additionalClients: 1,
     });
 
@@ -906,7 +914,9 @@ export class ClientsService {
     }
     if (
       existing.adminId &&
-      (data.limitIp !== undefined || data.expiryTime !== undefined)
+      (data.limitIp !== undefined ||
+        data.expiryTime !== undefined ||
+        data.total !== undefined)
     ) {
       await this.assertClientLimitsAllowed(
         existing.adminId,
@@ -916,6 +926,7 @@ export class ClientsService {
           ...(data.expiryTime !== undefined
             ? { expiryTime: data.expiryTime }
             : {}),
+          ...(data.total !== undefined ? { total: data.total } : {}),
         },
       );
     }
@@ -1216,6 +1227,7 @@ export class ClientsService {
       await this.assertClientLimitsAllowed(targetAdminId, targetPanelId, {
         limitIp: data.limitIp ?? 0,
         expiryTime: data.expiryTime ?? 0,
+        total: data.total ?? 0,
         additionalClients: 1,
       });
 
@@ -2029,13 +2041,16 @@ export class ClientsService {
 
     if (
       existing.adminId &&
-      (data.limitIp !== undefined || data.expiryTime !== undefined)
+      (data.limitIp !== undefined ||
+        data.expiryTime !== undefined ||
+        data.total !== undefined)
     ) {
       await this.assertClientLimitsAllowed(existing.adminId, existing.panelId, {
         ...(data.limitIp !== undefined ? { limitIp: data.limitIp } : {}),
         ...(data.expiryTime !== undefined
           ? { expiryTime: data.expiryTime }
           : {}),
+        ...(data.total !== undefined ? { total: data.total } : {}),
       });
     }
 
@@ -2736,6 +2751,7 @@ export class ClientsService {
     await this.assertClientLimitsAllowed(targetAdminId, bulkTargetPanelId, {
       limitIp: dto.limitIp ?? 0,
       expiryTime: dto.expiryTime ?? 0,
+      total: dto.total ?? 0,
       additionalClients: count,
     });
 

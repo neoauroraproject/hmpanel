@@ -27,6 +27,7 @@ export type PanelQuotaSpec = {
   maxClients?: number;
   maxDeviceLimit?: number;
   maxExpireDays?: number;
+  maxClientTrafficGb?: number;
   trafficMode?: 'ALLOCATION' | 'USAGE' | string;
 };
 
@@ -708,6 +709,7 @@ export class AdminQuotaService {
           maxClients: spec?.maxClients,
           maxDeviceLimit: spec?.maxDeviceLimit,
           maxExpireDays: spec?.maxExpireDays,
+          maxClientTrafficGb: spec?.maxClientTrafficGb,
           trafficMode: spec?.trafficMode,
         });
       }
@@ -760,6 +762,11 @@ export class AdminQuotaService {
         : existing
           ? {}
           : { maxExpireDays: 0 }),
+      ...(spec.maxClientTrafficGb !== undefined
+        ? { maxClientTrafficGb: capValue(spec.maxClientTrafficGb) }
+        : existing
+          ? {}
+          : { maxClientTrafficGb: 0 }),
       trafficMode,
     };
 
@@ -825,6 +832,7 @@ export class AdminQuotaService {
         maxClients: r.maxClients,
         maxDeviceLimit: r.maxDeviceLimit,
         maxExpireDays: r.maxExpireDays,
+        maxClientTrafficGb: r.maxClientTrafficGb,
         trafficMode: r.trafficMode === 'USAGE' ? 'USAGE' : 'ALLOCATION',
         availableTraffic: summary.availableTraffic,
         usedTraffic: summary.usedTraffic,

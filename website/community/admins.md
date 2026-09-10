@@ -38,11 +38,11 @@ These numbers are the reseller’s ceiling. When they create a client, they cann
 
 ### Global pool
 
-All of this reseller’s panels share one pool. Traffic, client count, concurrent-user cap, and days are the same for every assigned panel — 3x-ui, Pasarguard, or Eylan.
+All of this reseller’s panels share one pool. Traffic and client count are the same for every assigned panel — 3x-ui, Pasarguard, or Eylan. Per-client caps (max GB, concurrent users, and days) also apply everywhere.
 
 ### Per panel
 
-Each panel has its own quota. They might have 500 GB on panel A and 100 GB on panel B; the two do not mix. The concurrent-user cap is also per that panel.
+Each panel has its own quota. They might have 500 GB on panel A and 100 GB on panel B; the two do not mix. Per-client caps on that panel are also separate.
 
 ### Traffic limit
 
@@ -51,6 +51,10 @@ The volume the reseller may give to clients. When it runs out, they cannot creat
 ### Max clients
 
 How many accounts they may create. If you set 20, a 21st client is blocked. This is not the concurrent-user cap (IP / HWID).
+
+### Max GB per client
+
+The largest traffic volume the reseller may put on **one client**. If the pool is 500 GB and this cap is 100 GB, they can create several clients that add up to 500 GB, but none larger than 100 GB — and they cannot create an unlimited client. Zero means no per-client cap.
 
 ### Max client days
 

@@ -32,6 +32,7 @@ interface AdminPanelQuotaRow {
   maxClients?: number;
   maxDeviceLimit?: number;
   maxExpireDays?: number;
+  maxClientTrafficGb?: number;
   trafficMode?: string;
 }
 
@@ -41,6 +42,7 @@ interface PanelQuotaForm {
   maxClients: string;
   maxDeviceLimit: string;
   maxExpireDays: string;
+  maxClientTrafficGb: string;
   trafficMode: string;
 }
 
@@ -49,6 +51,7 @@ type QuotaBaseline = {
   maxClients: number;
   maxDeviceLimit: number;
   maxExpireDays: number;
+  maxClientTrafficGb: number;
 };
 
 const EMPTY_PANEL_QUOTA: PanelQuotaForm = {
@@ -56,6 +59,7 @@ const EMPTY_PANEL_QUOTA: PanelQuotaForm = {
   maxClients: "",
   maxDeviceLimit: "",
   maxExpireDays: "",
+  maxClientTrafficGb: "",
   trafficMode: "ALLOCATION",
 };
 
@@ -64,6 +68,7 @@ const EMPTY_QUOTA_BASELINE: QuotaBaseline = {
   maxClients: 0,
   maxDeviceLimit: 0,
   maxExpireDays: 0,
+  maxClientTrafficGb: 0,
 };
 
 interface Admin {
@@ -79,6 +84,7 @@ interface Admin {
   maxClients: number; // 0 = Unlimited
   maxDeviceLimit?: number; // 0 = Unlimited
   maxExpireDays?: number; // 0 = Unlimited
+  maxClientTrafficGb?: number; // 0 = Unlimited
   permissions: string[];
   totalAssigned?: number;
   usedTraffic: number;
@@ -518,7 +524,7 @@ export default function AdminsPage() {
   );
 }
 
-/** Traffic and client caps a reseller gets on one specific panel. */
+/** Traffic pool + client count stay visible; fixed per-client caps live in a closed accordion. */
 function PanelLimitFields({
   panelType,
   value,
@@ -539,6 +545,7 @@ function PanelLimitFields({
   trafficModeHint?: string;
 }) {
   const t = useT();
+  const [capsOpen, setCapsOpen] = useState(false);
   const fieldClass =
     "w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500";
   const labelClass = "block text-sm font-medium text-zinc-600 dark:text-zinc-400";
@@ -548,6 +555,37 @@ function PanelLimitFields({
     stock.balance > 0
       ? `${(Math.round((stock.balance / 1024 ** 3) * 100) / 100).toString()} GB`
       : "0 GB";
+  const capsSummary = t("admins.clientCapsSummary", {
+    traffic: stockCount(stock.maxClientTrafficGb),
+    days: stockCount(stock.maxExpireDays),
+    devices: stockCount(stock.maxDeviceLimit),
+  });
+
+  const capField = (
+    label: string,
+    stockValue: number,
+    fieldValue: string,
+    key: keyof Pick<PanelQuotaForm, "maxClientTrafficGb" | "maxExpireDays" | "maxDeviceLimit">,
+  ) => (
+    <div className="min-w-0">
+      <div className="mb-1.5 flex min-w-0 flex-col gap-0.5">
+        <label className={`${labelClass} leading-snug`}>{label}</label>
+        <span className="text-xs font-medium text-zinc-500">
+          {t("admins.stockAvailable", { value: stockCount(stockValue) })}
+        </span>
+      </div>
+      <input
+        type="text"
+        inputMode="decimal"
+        autoComplete="off"
+        placeholder={t("admins.adjustTrafficPlaceholder")}
+        disabled={disabled}
+        value={fieldValue}
+        onChange={(e) => onChange({ [key]: e.target.value })}
+        className={fieldClass}
+      />
+    </div>
+  );
 
   return (
     <div
@@ -595,42 +633,6 @@ function PanelLimitFields({
             className={fieldClass}
           />
         </div>
-        <div className="min-w-0">
-          <div className="mb-1.5 flex min-w-0 flex-col gap-0.5">
-            <label className={`${labelClass} leading-snug`}>{t(deviceKey || panelDeviceLimitI18nKey(panelType))}</label>
-            <span className="text-xs font-medium text-zinc-500">
-              {t("admins.stockAvailable", { value: stockCount(stock.maxDeviceLimit) })}
-            </span>
-          </div>
-          <input
-            type="text"
-            inputMode="decimal"
-            autoComplete="off"
-            placeholder={t("admins.adjustTrafficPlaceholder")}
-            disabled={disabled}
-            value={value.maxDeviceLimit}
-            onChange={(e) => onChange({ maxDeviceLimit: e.target.value })}
-            className={fieldClass}
-          />
-        </div>
-        <div className="min-w-0">
-          <div className="mb-1.5 flex min-w-0 flex-col gap-0.5">
-            <label className={`${labelClass} leading-snug`}>{t("admins.adjustExpireDays")}</label>
-            <span className="text-xs font-medium text-zinc-500">
-              {t("admins.stockAvailable", { value: stockCount(stock.maxExpireDays) })}
-            </span>
-          </div>
-          <input
-            type="text"
-            inputMode="decimal"
-            autoComplete="off"
-            placeholder={t("admins.adjustTrafficPlaceholder")}
-            disabled={disabled}
-            value={value.maxExpireDays}
-            onChange={(e) => onChange({ maxExpireDays: e.target.value })}
-            className={fieldClass}
-          />
-        </div>
         <div className="min-w-0 sm:col-span-2">
           <label className={`${labelClass} mb-1.5`}>{t("admins.trafficAccountingMode")}</label>
           <select
@@ -646,6 +648,48 @@ function PanelLimitFields({
         </div>
       </div>
       <p className="text-xs leading-relaxed text-zinc-500">{t("admins.adjustDeltaHint")}</p>
+      <div className="overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/50">
+        <button
+          type="button"
+          onClick={() => setCapsOpen((open) => !open)}
+          className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-start hover:bg-zinc-50 dark:hover:bg-zinc-800/40"
+        >
+          <span className="min-w-0">
+            <span className="block text-sm font-medium text-zinc-800 dark:text-zinc-100">
+              {t("admins.clientCapsTitle")}
+            </span>
+            {!capsOpen ? (
+              <span className="mt-0.5 block truncate text-xs text-zinc-500">{capsSummary}</span>
+            ) : null}
+          </span>
+          <ChevronDown size={16} className={`shrink-0 text-zinc-500 transition-transform ${capsOpen ? "rotate-180" : ""}`} />
+        </button>
+        {capsOpen ? (
+          <div className="space-y-3 border-t border-zinc-200 px-3 py-3 dark:border-zinc-800">
+            <p className="text-xs leading-relaxed text-zinc-500">{t("admins.clientCapsHint")}</p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {capField(
+                t("admins.adjustClientTraffic"),
+                stock.maxClientTrafficGb,
+                value.maxClientTrafficGb,
+                "maxClientTrafficGb",
+              )}
+              {capField(
+                t("admins.adjustExpireDays"),
+                stock.maxExpireDays,
+                value.maxExpireDays,
+                "maxExpireDays",
+              )}
+              {capField(
+                t(deviceKey || panelDeviceLimitI18nKey(panelType)),
+                stock.maxDeviceLimit,
+                value.maxDeviceLimit,
+                "maxDeviceLimit",
+              )}
+            </div>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -1168,6 +1212,7 @@ function buildPanelQuotasPayload(
       maxClients: applyCountDelta(base.maxClients, quota.maxClients),
       maxDeviceLimit: applyCountDelta(base.maxDeviceLimit, quota.maxDeviceLimit),
       maxExpireDays: applyCountDelta(base.maxExpireDays, quota.maxExpireDays),
+      maxClientTrafficGb: applyCountDelta(base.maxClientTrafficGb, quota.maxClientTrafficGb),
       trafficMode: quota.trafficMode === "USAGE" ? "USAGE" : "ALLOCATION",
     };
   });
@@ -1200,6 +1245,7 @@ function mergeQuotaBaselines(
     maxClients: unlimited("maxClients") ? 0 : rows.reduce((sum, r) => sum + r.maxClients, 0),
     maxDeviceLimit: unlimited("maxDeviceLimit") ? 0 : Math.max(0, ...rows.map((r) => r.maxDeviceLimit)),
     maxExpireDays: unlimited("maxExpireDays") ? 0 : Math.max(0, ...rows.map((r) => r.maxExpireDays)),
+    maxClientTrafficGb: unlimited("maxClientTrafficGb") ? 0 : Math.max(0, ...rows.map((r) => r.maxClientTrafficGb)),
   };
 }
 
@@ -1210,6 +1256,7 @@ function applyQuotaModeChange<
     maxClients?: string;
     maxDeviceLimit?: string;
     maxExpireDays?: string;
+    maxClientTrafficGb?: string;
     quotaBaselines?: Record<string, QuotaBaseline>;
   },
 >(form: T, mode: QuotaMode): T {
@@ -1223,6 +1270,7 @@ function applyQuotaModeChange<
       maxClients: "",
       maxDeviceLimit: "",
       maxExpireDays: "",
+      maxClientTrafficGb: "",
     };
   }
   const quotaBaselines = { ...(form.quotaBaselines ?? {}) };
@@ -1274,13 +1322,14 @@ function adminQuotaStamp(admin: Admin) {
     admin.maxClients,
     admin.maxDeviceLimit ?? 0,
     admin.maxExpireDays ?? 0,
+    admin.maxClientTrafficGb ?? 0,
     admin.status,
     admin.username,
     admin.role,
     admin.quotaMode ?? "",
     ...quotas.map(
       (q) =>
-        `${q.panelId}:${q.balance}:${q.maxClients ?? 0}:${q.maxDeviceLimit ?? 0}:${q.maxExpireDays ?? 0}:${q.trafficMode ?? ""}`,
+        `${q.panelId}:${q.balance}:${q.maxClients ?? 0}:${q.maxDeviceLimit ?? 0}:${q.maxExpireDays ?? 0}:${q.maxClientTrafficGb ?? 0}:${q.trafficMode ?? ""}`,
     ),
   ].join("|");
 }
@@ -1297,6 +1346,7 @@ function keepQuotaDrafts(
       maxClients: draft.maxClients,
       maxDeviceLimit: draft.maxDeviceLimit,
       maxExpireDays: draft.maxExpireDays,
+      maxClientTrafficGb: draft.maxClientTrafficGb,
     };
   }
   return out;
@@ -1324,6 +1374,7 @@ function buildEditAdminForm(
         maxClients: q.maxClients || 0,
         maxDeviceLimit: q.maxDeviceLimit || 0,
         maxExpireDays: q.maxExpireDays || 0,
+        maxClientTrafficGb: q.maxClientTrafficGb || 0,
       };
       return [
         q.panelId,
@@ -1332,6 +1383,7 @@ function buildEditAdminForm(
           maxClients: "",
           maxDeviceLimit: "",
           maxExpireDays: "",
+          maxClientTrafficGb: "",
           trafficMode: q.trafficMode === "USAGE" ? "USAGE" : "ALLOCATION",
         },
       ];
@@ -1352,6 +1404,7 @@ function buildEditAdminForm(
             maxClients: admin.maxClients || 0,
             maxDeviceLimit: admin.maxDeviceLimit || 0,
             maxExpireDays: admin.maxExpireDays || 0,
+            maxClientTrafficGb: admin.maxClientTrafficGb || 0,
           }
         : { ...EMPTY_QUOTA_BASELINE };
   });
@@ -1364,6 +1417,7 @@ function buildEditAdminForm(
           maxClients: admin.maxClients || 0,
           maxDeviceLimit: admin.maxDeviceLimit || 0,
           maxExpireDays: admin.maxExpireDays || 0,
+          maxClientTrafficGb: admin.maxClientTrafficGb || 0,
         };
   return {
     username: admin.username || "",
@@ -1373,6 +1427,7 @@ function buildEditAdminForm(
     maxClients: "",
     maxDeviceLimit: "",
     maxExpireDays: "",
+    maxClientTrafficGb: "",
     expiryDays: "",
     selectedInbounds: assigned.map((ai: { inbound: { id: string } }) => ai.inbound.id),
     enabledPanels,
@@ -1416,6 +1471,7 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
     maxClients: "",
     maxDeviceLimit: "",
     maxExpireDays: "",
+    maxClientTrafficGb: "",
     gb: "",
     enabledPanels: [] as string[],
     selectedInbounds: [] as string[],
@@ -1469,6 +1525,7 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
         maxClients: form.superAdmin || perPanelQuotas ? 0 : applyCountDelta(0, form.maxClients),
         maxDeviceLimit: form.superAdmin || perPanelQuotas ? 0 : applyCountDelta(0, form.maxDeviceLimit),
         maxExpireDays: form.superAdmin || perPanelQuotas ? 0 : applyCountDelta(0, form.maxExpireDays),
+        maxClientTrafficGb: form.superAdmin || perPanelQuotas ? 0 : applyCountDelta(0, form.maxClientTrafficGb),
         inboundIds: form.superAdmin ? [] : form.selectedInbounds,
         permissions: [],
         storeEnabled: form.superAdmin ? false : form.storeEnabled,
@@ -1684,6 +1741,7 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
                                 maxClients: form.maxClients,
                                 maxDeviceLimit: form.maxDeviceLimit,
                                 maxExpireDays: form.maxExpireDays,
+                                maxClientTrafficGb: form.maxClientTrafficGb,
                                 trafficMode: form.trafficMode,
                               }}
                               current={form.globalBaseline}
@@ -1694,6 +1752,7 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
                                   maxClients: patch.maxClients ?? f.maxClients,
                                   maxDeviceLimit: patch.maxDeviceLimit ?? f.maxDeviceLimit,
                                   maxExpireDays: patch.maxExpireDays ?? f.maxExpireDays,
+                                  maxClientTrafficGb: patch.maxClientTrafficGb ?? f.maxClientTrafficGb,
                                   trafficMode: patch.trafficMode ?? f.trafficMode,
                                 }))
                               }
@@ -1807,6 +1866,7 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
     maxClients: "",
     maxDeviceLimit: "",
     maxExpireDays: "",
+    maxClientTrafficGb: "",
     gb: "",
     password: "",
     expiryDays: "",
@@ -1905,12 +1965,14 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
           payload.maxClients = 0;
           payload.maxDeviceLimit = 0;
           payload.maxExpireDays = 0;
+          payload.maxClientTrafficGb = 0;
         } else {
           const stock = form.globalBaseline ?? EMPTY_QUOTA_BASELINE;
           payload.balance = applyTrafficDeltaBytes(stock.balance, form.gb);
           payload.maxClients = applyCountDelta(stock.maxClients, form.maxClients);
           payload.maxDeviceLimit = applyCountDelta(stock.maxDeviceLimit, form.maxDeviceLimit);
           payload.maxExpireDays = applyCountDelta(stock.maxExpireDays, form.maxExpireDays);
+          payload.maxClientTrafficGb = applyCountDelta(stock.maxClientTrafficGb, form.maxClientTrafficGb);
         }
       }
       if (form.password.trim()) payload.password = form.password;
@@ -2067,6 +2129,7 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
                                     maxClients: form.maxClients,
                                     maxDeviceLimit: form.maxDeviceLimit,
                                     maxExpireDays: form.maxExpireDays,
+                                    maxClientTrafficGb: form.maxClientTrafficGb,
                                     trafficMode: form.trafficMode,
                                   }}
                                   current={form.globalBaseline}
@@ -2077,6 +2140,7 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
                                       maxClients: patch.maxClients ?? f.maxClients,
                                       maxDeviceLimit: patch.maxDeviceLimit ?? f.maxDeviceLimit,
                                       maxExpireDays: patch.maxExpireDays ?? f.maxExpireDays,
+                                      maxClientTrafficGb: patch.maxClientTrafficGb ?? f.maxClientTrafficGb,
                                       trafficMode: patch.trafficMode ?? f.trafficMode,
                                     }))
                                   }
@@ -2134,6 +2198,7 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
                                           clients: q.maxClients ? q.maxClients : "∞",
                                           devices: q.maxDeviceLimit ? q.maxDeviceLimit : "∞",
                                           days: q.maxExpireDays ? q.maxExpireDays : "∞",
+                                          traffic: q.maxClientTrafficGb ? q.maxClientTrafficGb : "∞",
                                         })}
                                       </div>
                                     </div>

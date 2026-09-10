@@ -19,6 +19,8 @@ export class AdminPanelQuotaDto {
   @ApiPropertyOptional() @IsOptional() @IsNumber() maxDeviceLimit?: number;
   /** 0 = unlimited for this panel */
   @ApiPropertyOptional() @IsOptional() @IsNumber() maxExpireDays?: number;
+  /** 0 = unlimited; highest GB this reseller may assign to one client on this panel */
+  @ApiPropertyOptional() @IsOptional() @IsNumber() maxClientTrafficGb?: number;
   @ApiPropertyOptional({ enum: ['ALLOCATION', 'USAGE'] })
   @IsOptional()
   @IsIn(['ALLOCATION', 'USAGE'])
@@ -45,6 +47,7 @@ export class CreateAdminDto {
   @ApiPropertyOptional() @IsOptional() @IsNumber() maxClients?: number;
   @ApiPropertyOptional() @IsOptional() @IsNumber() maxDeviceLimit?: number;
   @ApiPropertyOptional() @IsOptional() @IsNumber() maxExpireDays?: number;
+  @ApiPropertyOptional() @IsOptional() @IsNumber() maxClientTrafficGb?: number;
   @ApiPropertyOptional({ type: [String] })
   @IsOptional()
   @IsArray()
@@ -81,6 +84,7 @@ export class UpdateAdminDto {
   @ApiPropertyOptional() @IsOptional() @IsNumber() maxClients?: number;
   @ApiPropertyOptional() @IsOptional() @IsNumber() maxDeviceLimit?: number;
   @ApiPropertyOptional() @IsOptional() @IsNumber() maxExpireDays?: number;
+  @ApiPropertyOptional() @IsOptional() @IsNumber() maxClientTrafficGb?: number;
   @ApiPropertyOptional({ type: [String] })
   @IsOptional()
   @IsArray()
