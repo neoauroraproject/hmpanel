@@ -8,6 +8,11 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [2.2.15] - 2026-09-12
+
+### Added
+- **Reseller sidebar branding:** Super Admin (Premium) can set a custom logo and name for reseller admin menus, and optionally show the official GitHub link there. Super Admin keeps the original HM Panel mark.
+
 ## [2.2.14] - 2026-09-12
 
 ### Fixed
