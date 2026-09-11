@@ -7,28 +7,24 @@ import { useAuth } from "@/store/auth";
 import { ThemeToggle } from "./ThemeToggle";
 import { LocaleSwitcher } from "./LocaleSwitcher";
 import { useT } from "@/i18n";
-import { PanelLogo } from "@/components/PanelLogo";
-import { PANEL_BRAND } from "@/lib/panel-brand";
-import { useLocale } from "@/i18n";
+import { PanelBrandMark } from "@/components/PanelBrandMark";
+import { useResellerShell } from "@/hooks/useResellerShell";
 import { useAppNav } from "@/hooks/useAppNav";
 import { NavSectionBlock } from "@/components/app-nav";
 
 export function Sidebar() {
   const t = useT();
-  const { locale } = useLocale();
   const pathname = usePathname();
   const router = useRouter();
   const admin = useAuth((s) => s.admin);
   const logout = useAuth((s) => s.logout);
+  const { showGithub } = useResellerShell();
   const { sections, storeHasNewOrders, rechargePendingCount } = useAppNav();
 
   return (
     <aside className="hidden w-64 shrink-0 flex-col border-e border-slate-200 bg-white dark:border-zinc-800 dark:bg-zinc-950 md:flex">
       <div className="flex h-14 shrink-0 items-center gap-2.5 border-b border-slate-200 px-4 dark:border-zinc-800">
-        <PanelLogo size={26} />
-        <span className="truncate text-sm font-semibold tracking-tight text-slate-800 dark:text-zinc-100">
-          {locale === "fa" ? PANEL_BRAND.nameFa : PANEL_BRAND.name}
-        </span>
+        <PanelBrandMark size={26} />
       </div>
 
       <nav className="flex-1 space-y-5 overflow-y-auto overflow-x-hidden px-2.5 py-4" aria-label={t("nav.menu")}>
@@ -52,7 +48,7 @@ export function Sidebar() {
           <div className="mt-0.5 text-[11px] text-slate-500 dark:text-zinc-500">
             {admin?.role === "SUPER_ADMIN" ? t("nav.superAdmin") : t("nav.reseller")}
           </div>
-          {admin?.role === "SUPER_ADMIN" ? (
+          {showGithub ? (
             <Link
               href="https://github.com/neoauroraproject/hmpanel"
               target="_blank"

@@ -2,21 +2,21 @@
 
 import { useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { LogOut, Menu, X } from "lucide-react";
+import { ExternalLink, LogOut, Menu, X } from "lucide-react";
+import Link from "next/link";
 import { useAuth } from "@/store/auth";
 import { ThemeToggle } from "./ThemeToggle";
 import { LocaleSwitcher } from "./LocaleSwitcher";
 import { useT } from "@/i18n";
-import { PanelLogo } from "@/components/PanelLogo";
-import { PANEL_BRAND } from "@/lib/panel-brand";
-import { useLocale } from "@/i18n";
+import { PanelBrandMark } from "@/components/PanelBrandMark";
+import { useResellerShell } from "@/hooks/useResellerShell";
 import { useAppNav } from "@/hooks/useAppNav";
 import { NavSectionBlock } from "@/components/app-nav";
 
 export function MobileNav() {
   const t = useT();
-  const { locale } = useLocale();
   const [isOpen, setIsOpen] = useState(false);
+  const { showGithub } = useResellerShell();
   const pathname = usePathname();
   const router = useRouter();
   const admin = useAuth((s) => s.admin);
@@ -27,10 +27,7 @@ export function MobileNav() {
     <>
       <header className="flex h-14 items-center justify-between border-b border-slate-200 bg-white px-4 dark:border-zinc-800 dark:bg-zinc-950 md:hidden">
         <div className="flex min-w-0 items-center gap-2.5">
-          <PanelLogo size={26} />
-          <span className="truncate text-sm font-semibold tracking-tight text-slate-800 dark:text-zinc-100">
-            {locale === "fa" ? PANEL_BRAND.nameFa : PANEL_BRAND.name}
-          </span>
+          <PanelBrandMark size={26} />
         </div>
         <button
           type="button"
@@ -81,6 +78,16 @@ export function MobileNav() {
                 <div className="text-xs text-slate-500 dark:text-zinc-500">
                   {admin?.role === "SUPER_ADMIN" ? t("nav.superAdmin") : t("nav.reseller")}
                 </div>
+                {showGithub ? (
+                  <Link
+                    href="https://github.com/neoauroraproject/hmpanel"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-1.5 inline-flex items-center gap-1 text-[11px] text-slate-500 hover:text-slate-800 dark:text-zinc-500 dark:hover:text-zinc-200"
+                  >
+                    <ExternalLink size={11} /> {t("nav.officialGithub")}
+                  </Link>
+                ) : null}
               </div>
               <div className="flex items-center gap-2">
                 <LocaleSwitcher className="min-w-0 flex-1 justify-stretch [&>button]:min-h-11 [&>button]:flex-1" />
