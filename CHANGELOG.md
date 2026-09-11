@@ -8,6 +8,11 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [2.2.16] - 2026-09-12
+
+### Fixed
+- **Premium settings / stuck loading:** wait for the Premium overlay instead of dropping Super Admin onto the Community card list, do not unregister plugins while the license is still loading, surface runtime load errors, and stop the reseller-sidebar hook from throwing or hanging the shell.
+
 ## [2.2.15] - 2026-09-12
 
 ### Added

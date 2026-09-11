@@ -24,6 +24,7 @@ declare global {
     HMPANEL_PREMIUM_SYNC?: (modules: unknown[]) => void;
     __HMPANEL_FETCH_PATCHED?: boolean;
     __HMPANEL_SHARED?: Record<string, unknown>;
+    __HMPANEL_PREMIUM_LOAD_ERROR?: string;
     React?: unknown;
     ReactDOM?: unknown;
   }
@@ -136,16 +137,29 @@ export function PremiumBootstrap() {
     state?.bundle?.installed;
 
   const { data: premiumModules } = usePremiumModules({ enabled: isPremium });
+  const licenseUnknown =
+    !!token && !onPublicPage && !licenseQuery.isFetched && !licenseQuery.data;
 
   useEffect(() => {
     if (!isPremium || loaded) return;
 
     exposeSharedModules();
     patchPremiumModulesFetch();
+    delete window.__HMPANEL_PREMIUM_LOAD_ERROR;
+
+    const existing = document.querySelector<HTMLScriptElement>(
+      "script[data-hmpanel-premium-runtime]",
+    );
+    if (existing && window.HMPANEL_PREMIUM_REGISTER) {
+      window.HMPANEL_PREMIUM_REGISTER(usePluginRegistry);
+      void syncModulesFromCatalog().finally(() => setLoaded(true));
+      return;
+    }
 
     const script = document.createElement("script");
-    script.src = `/api/platform/premium-assets/frontend/premium-runtime.js`;
+    script.src = `/api/platform/premium-assets/frontend/premium-runtime.js?v=${encodeURIComponent(state?.bundle?.version || "0")}`;
     script.async = true;
+    script.dataset.hmpanelPremiumRuntime = "1";
     script.onload = async () => {
       // Re-expose after runtime load so late require() of hmpanel/i18n always hits host module.
       exposeSharedModules();
@@ -163,19 +177,23 @@ export function PremiumBootstrap() {
       }
       if (window.HMPANEL_PREMIUM_REGISTER) {
         window.HMPANEL_PREMIUM_REGISTER(usePluginRegistry);
+      } else {
+        window.__HMPANEL_PREMIUM_LOAD_ERROR =
+          "premium-runtime.js loaded but did not register (init threw before HMPANEL_PREMIUM_REGISTER)";
       }
       await syncModulesFromCatalog();
       setLoaded(true);
     };
     script.onerror = () => {
-      /* Bundle backend may be loaded without frontend runtime yet */
+      window.__HMPANEL_PREMIUM_LOAD_ERROR = "Failed to load premium-runtime.js";
+      setLoaded(true);
     };
     document.body.appendChild(script);
 
     return () => {
       script.remove();
     };
-  }, [isPremium, loaded]);
+  }, [isPremium, loaded, state?.bundle?.version]);
 
   useEffect(() => {
     if (!isPremium) {
@@ -197,12 +215,13 @@ export function PremiumBootstrap() {
   }, [isPremium, premiumModules]);
 
   useEffect(() => {
+    if (licenseUnknown) return;
     if (!isPremium) {
       usePluginRegistry.getState().unregisterAll();
       setLoaded(false);
       removePremiumStyles();
     }
-  }, [isPremium]);
+  }, [isPremium, licenseUnknown]);
 
   return null;
 }

@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { usePluginRegistry } from "@/store/pluginRegistry";
 import { PageHeader, Card, ErrorBox, Spinner } from "@/components/ui";
+import { PremiumOverlayBoundary } from "@/components/PremiumOverlayBoundary";
 import { useT } from "@/i18n";
 
 export default function PremiumPluginPage() {
@@ -45,8 +46,17 @@ export default function PremiumPluginPage() {
 
   const Component = route.component;
   return (
-    <div id="hmpanel-premium-root" className="min-w-0 max-w-full overflow-x-hidden">
-      <Component />
-    </div>
+    <PremiumOverlayBoundary
+      fallback={
+        <div className="space-y-6">
+          <PageHeader title={t("app.premium")} subtitle={t("premium.moduleMissing")} />
+          <ErrorBox message={t("premium.overlayCrashed")} />
+        </div>
+      }
+    >
+      <div id="hmpanel-premium-root" className="min-w-0 max-w-full overflow-x-hidden">
+        <Component />
+      </div>
+    </PremiumOverlayBoundary>
   );
 }

@@ -5,7 +5,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/store/auth";
 import { useLicenseActivation } from "@/hooks/useLicenseActivation";
 import { PANEL_BRAND } from "@/lib/panel-brand";
-import { useLocale } from "@/i18n";
+import { useLocaleOptional } from "@/i18n";
 
 export type ResellerShellSettings = {
   name?: string;
@@ -16,7 +16,7 @@ export type ResellerShellSettings = {
 
 export function useResellerShell() {
   const admin = useAuth((s) => s.admin);
-  const { locale } = useLocale();
+  const locale = useLocaleOptional()?.locale ?? "fa";
   const { licenseQuery } = useLicenseActivation();
   const isPremium =
     licenseQuery.data?.edition === "PREMIUM" &&
@@ -26,8 +26,17 @@ export function useResellerShell() {
 
   const { data } = useQuery({
     queryKey: ["reseller-shell"],
-    queryFn: async () =>
-      (await api.get<ResellerShellSettings>("/premium-modules/reseller-shell")).data,
+    queryFn: async () => {
+      try {
+        return (
+          await api.get<ResellerShellSettings>("/premium-modules/reseller-shell", {
+            timeout: 8000,
+          })
+        ).data;
+      } catch {
+        return {} as ResellerShellSettings;
+      }
+    },
     enabled: isPremium && !!admin,
     retry: false,
     staleTime: 60_000,

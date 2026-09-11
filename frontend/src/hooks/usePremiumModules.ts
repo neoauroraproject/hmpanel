@@ -28,13 +28,15 @@ export function usePremiumModules(options?: { enabled?: boolean }) {
     queryKey: ["premium-modules", token],
     queryFn: async () => {
       try {
-        const res = await api.get<PremiumModule[]>("/premium-modules");
+        const res = await api.get<PremiumModule[]>("/premium-modules", { timeout: 15_000 });
         if (Array.isArray(res.data) && res.data.length > 0) return res.data;
       } catch {
         /* bundle API not loaded — fall through */
       }
       try {
-        const fallback = await api.get<PremiumModule[]>("/platform/premium-module-catalog");
+        const fallback = await api.get<PremiumModule[]>("/platform/premium-module-catalog", {
+          timeout: 15_000,
+        });
         return fallback.data ?? [];
       } catch {
         return [];
