@@ -3708,6 +3708,39 @@ export class PanelsService implements OnModuleInit {
     }
   }
 
+  /**
+   * Enable/disable a client on each distinct panel via email (not UUID).
+   * updateClient() is deprecated and 404s on /api/inbounds/updateClient/{uuid}.
+   */
+  private async setClientEnableOnPanels(
+    client: {
+      id: string;
+      email?: string | null;
+      inbounds?: Array<{ inbound?: { panelId?: string } | null } | null>;
+    },
+    enable: boolean,
+  ) {
+    const email = String(client.email || '').trim();
+    const panelIds = new Set<string>();
+    for (const ci of client.inbounds || []) {
+      const panelId = ci?.inbound?.panelId;
+      if (panelId) panelIds.add(panelId);
+    }
+    if (!panelIds.size) return;
+    if (!email) {
+      throw new Error(`Client ${client.id} has no email; cannot update panel`);
+    }
+    for (const panelId of panelIds) {
+      const result = await this.updateClientOnPanel(panelId, email, { enable });
+      if (!result.success) {
+        throw new Error(
+          result.error?.message ||
+            `updateClientOnPanel failed for client ${client.id} on panel ${panelId}`,
+        );
+      }
+    }
+  }
+
   async processSuspensions() {
     const now = new Date();
 
@@ -3791,18 +3824,7 @@ export class PanelsService implements OnModuleInit {
       if (clientsToReactivate.length > 0) {
         for (const client of clientsToReactivate) {
           try {
-            if (client.inbounds) {
-              for (const ci of client.inbounds) {
-                if (ci.inbound) {
-                  await this.updateClient(
-                    ci.inbound.panelId,
-                    ci.inbound.port,
-                    client.uuid,
-                    { enable: true },
-                  );
-                }
-              }
-            }
+            await this.setClientEnableOnPanels(client, true);
             await this.prisma.client.update({
               where: { id: client.id },
               data: { enable: true, disableReason: null },
@@ -3857,18 +3879,7 @@ export class PanelsService implements OnModuleInit {
       if (clientsToSuspend.length > 0) {
         for (const client of clientsToSuspend) {
           try {
-            if (client.inbounds) {
-              for (const ci of client.inbounds) {
-                if (ci.inbound) {
-                  await this.updateClient(
-                    ci.inbound.panelId,
-                    ci.inbound.port,
-                    client.uuid,
-                    { enable: false },
-                  );
-                }
-              }
-            }
+            await this.setClientEnableOnPanels(client, false);
             await this.prisma.client.update({
               where: { id: client.id },
               data: { enable: false, disableReason: 'BALANCE_EXHAUSTED' },
