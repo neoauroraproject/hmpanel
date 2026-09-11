@@ -8,6 +8,11 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [2.2.17] - 2026-09-12
+
+### Fixed
+- **Premium overlay 101 / missing tabs:** serve `premium-runtime` on an extension-less API path and inject it via authenticated fetch. Nest 11 + nginx were failing the `.js` script request (~200 bytes), so settings lost its tabs and pages like Payment Management never mounted.
+
 ## [2.2.16] - 2026-09-12
 
 ### Fixed

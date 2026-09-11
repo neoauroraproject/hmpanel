@@ -71,7 +71,7 @@ function injectPremiumStyles() {
   const link = document.createElement("link");
   link.id = PREMIUM_STYLE_ID;
   link.rel = "stylesheet";
-  link.href = "/api/platform/premium-assets/frontend/premium-runtime.css";
+  link.href = "/api/platform/premium-assets/frontend/styles";
   document.head.appendChild(link);
 }
 
@@ -118,6 +118,65 @@ async function syncModulesFromCatalog() {
   }
 }
 
+function applyPendingPremiumI18n() {
+  const pending = (window as Window & {
+    HMPANEL_PREMIUM_I18N?: { en?: Record<string, unknown>; fa?: Record<string, unknown> };
+  }).HMPANEL_PREMIUM_I18N;
+  const merge = (window as Window & {
+    __HMPANEL_MERGE_I18N?: (loc: "en" | "fa", partial: Record<string, unknown>) => void;
+  }).__HMPANEL_MERGE_I18N;
+  if (typeof merge === "function" && pending) {
+    if (pending.en) merge("en", pending.en);
+    if (pending.fa) merge("fa", pending.fa);
+  }
+}
+
+async function fetchPremiumRuntimeCode() {
+  const urls = [
+    "/platform/premium-assets/frontend/runtime",
+    "/platform/premium-assets/frontend/premium-runtime.js",
+  ];
+  let last = "premium-runtime.js not available";
+  for (const url of urls) {
+    try {
+      const res = await api.get(url, {
+        responseType: "text",
+        timeout: 60_000,
+        transformResponse: [(data) => data],
+        headers: { Accept: "application/javascript,text/javascript,text/plain,*/*" },
+      });
+      const code = typeof res.data === "string" ? res.data : String(res.data ?? "");
+      if (code.length < 500 || /Premium runtime not installed|<!DOCTYPE html>/i.test(code)) {
+        last = `invalid runtime from ${url} (${code.length} bytes)`;
+        continue;
+      }
+      return code;
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { message?: string } }; message?: string };
+      last = e?.response?.data?.message || e?.message || String(err);
+    }
+  }
+  throw new Error(last);
+}
+
+async function executePremiumRuntime(code: string) {
+  exposeSharedModules();
+  const blob = new Blob([code], { type: "application/javascript" });
+  const url = URL.createObjectURL(blob);
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const script = document.createElement("script");
+      script.dataset.hmpanelPremiumRuntime = "1";
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error("premium runtime failed to execute"));
+      script.src = url;
+      document.body.appendChild(script);
+    });
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 /** Loads premium frontend runtime from installed bundle when license is active. */
 export function PremiumBootstrap() {
   const pathname = usePathname();
@@ -143,57 +202,42 @@ export function PremiumBootstrap() {
   useEffect(() => {
     if (!isPremium || loaded) return;
 
+    let cancelled = false;
     exposeSharedModules();
     patchPremiumModulesFetch();
     delete window.__HMPANEL_PREMIUM_LOAD_ERROR;
 
-    const existing = document.querySelector<HTMLScriptElement>(
-      "script[data-hmpanel-premium-runtime]",
-    );
-    if (existing && window.HMPANEL_PREMIUM_REGISTER) {
-      window.HMPANEL_PREMIUM_REGISTER(usePluginRegistry);
-      void syncModulesFromCatalog().finally(() => setLoaded(true));
-      return;
-    }
-
-    const script = document.createElement("script");
-    script.src = `/api/platform/premium-assets/frontend/premium-runtime.js?v=${encodeURIComponent(state?.bundle?.version || "0")}`;
-    script.async = true;
-    script.dataset.hmpanelPremiumRuntime = "1";
-    script.onload = async () => {
-      // Re-expose after runtime load so late require() of hmpanel/i18n always hits host module.
-      exposeSharedModules();
-      // Premium catalogs may have been stashed before LocaleProvider merge hook existed — flush again.
-      const pending = (window as Window & {
-        HMPANEL_PREMIUM_I18N?: { en?: Record<string, unknown>; fa?: Record<string, unknown> };
-        __HMPANEL_MERGE_I18N?: (loc: "en" | "fa", partial: Record<string, unknown>) => void;
-      }).HMPANEL_PREMIUM_I18N;
-      const merge = (window as Window & {
-        __HMPANEL_MERGE_I18N?: (loc: "en" | "fa", partial: Record<string, unknown>) => void;
-      }).__HMPANEL_MERGE_I18N;
-      if (typeof merge === "function" && pending) {
-        if (pending.en) merge("en", pending.en);
-        if (pending.fa) merge("fa", pending.fa);
+    void (async () => {
+      try {
+        if (window.HMPANEL_PREMIUM_REGISTER) {
+          window.HMPANEL_PREMIUM_REGISTER(usePluginRegistry);
+        } else {
+          const code = await fetchPremiumRuntimeCode();
+          if (cancelled) return;
+          await executePremiumRuntime(code);
+          exposeSharedModules();
+          applyPendingPremiumI18n();
+          if (window.HMPANEL_PREMIUM_REGISTER) {
+            window.HMPANEL_PREMIUM_REGISTER(usePluginRegistry);
+          } else {
+            throw new Error(
+              "premium-runtime.js loaded but did not register (init threw before HMPANEL_PREMIUM_REGISTER)",
+            );
+          }
+        }
+        await syncModulesFromCatalog();
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "Failed to load premium-runtime.js";
+        window.__HMPANEL_PREMIUM_LOAD_ERROR = message;
+      } finally {
+        if (!cancelled) setLoaded(true);
       }
-      if (window.HMPANEL_PREMIUM_REGISTER) {
-        window.HMPANEL_PREMIUM_REGISTER(usePluginRegistry);
-      } else {
-        window.__HMPANEL_PREMIUM_LOAD_ERROR =
-          "premium-runtime.js loaded but did not register (init threw before HMPANEL_PREMIUM_REGISTER)";
-      }
-      await syncModulesFromCatalog();
-      setLoaded(true);
-    };
-    script.onerror = () => {
-      window.__HMPANEL_PREMIUM_LOAD_ERROR = "Failed to load premium-runtime.js";
-      setLoaded(true);
-    };
-    document.body.appendChild(script);
+    })();
 
     return () => {
-      script.remove();
+      cancelled = true;
     };
-  }, [isPremium, loaded, state?.bundle?.version]);
+  }, [isPremium, loaded]);
 
   useEffect(() => {
     if (!isPremium) {

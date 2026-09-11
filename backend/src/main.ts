@@ -4,6 +4,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { json, urlencoded } from 'express';
 import { AppModule } from './app.module';
 import { PrismaService } from './prisma/prisma.service';
+import { PremiumBundleService } from './platform/premium-bundle.service';
 import { loadPremiumModulesForBootstrap, markPremiumBootstrapFailed } from './plugins/premium-bootstrap';
 import axios from 'axios';
 import * as https from 'https';
@@ -73,7 +74,20 @@ async function bootstrap() {
   // so we register directly on the Express instance.
   const logger = new Logger('SubAssetProxy');
   const prisma = app.get(PrismaService);
+  const bundleService = app.get(PremiumBundleService);
   const expressApp = app.getHttpAdapter().getInstance();
+
+  // Nest 11 path-to-regexp often drops `@Get('…/file.js')`. Serve overlay assets here.
+  expressApp.use('/platform/premium-assets/frontend', (req: any, res: any, next: any) => {
+    if (req.method !== 'GET') return next();
+    const name = String(req.path || '').replace(/^\//, '');
+    if (!name || name.includes('..')) return next();
+    const asset = bundleService.readFrontendAsset(name);
+    if (!asset) return next();
+    res.setHeader('Content-Type', asset.type);
+    res.setHeader('Cache-Control', 'no-store');
+    return res.send(asset.body);
+  });
 
   // Create shared agents to reuse connections and avoid TCP/SSL handshake bottlenecks
   // when the browser requests dozens of assets concurrently.

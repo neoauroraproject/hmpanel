@@ -184,46 +184,20 @@ export class PlatformController {
 export class PremiumAssetsController {
   constructor(private bundleService: PremiumBundleService) {}
 
-  @Get('frontend/premium-runtime.js')
-  serveRuntime(@Res() res: Response) {
-    const file = path.join(
-      this.bundleService.getPremiumRoot(),
-      'frontend',
-      'premium-runtime.js',
-    );
-    if (!fs.existsSync(file)) {
-      throw new NotFoundException('Premium runtime not installed');
+  /**
+   * Extension-less aliases exist because Nest 11 / some proxies mishandle `.js` / `.css`
+   * routes (Chrome then shows a ~200-byte 101/404 and the overlay never registers).
+   */
+  @Get('frontend/:file')
+  serveFrontendAsset(@Param('file') file: string, @Res() res: Response) {
+    const asset = this.bundleService.readFrontendAsset(file);
+    if (!asset) {
+      res.status(404).json({ message: 'Premium runtime not installed' });
+      return;
     }
-    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
-    res.sendFile(file);
-  }
-
-  @Get('frontend/premium-monitoring.js')
-  serveMonitoring(@Res() res: Response) {
-    const file = path.join(
-      this.bundleService.getPremiumRoot(),
-      'frontend',
-      'premium-monitoring.js',
-    );
-    if (!fs.existsSync(file)) {
-      throw new NotFoundException('Premium monitoring chunk not installed');
-    }
-    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
-    res.sendFile(file);
-  }
-
-  @Get('frontend/premium-runtime.css')
-  serveRuntimeCss(@Res() res: Response) {
-    const file = path.join(
-      this.bundleService.getPremiumRoot(),
-      'frontend',
-      'premium-runtime.css',
-    );
-    if (!fs.existsSync(file)) {
-      throw new NotFoundException('Premium runtime styles not installed');
-    }
-    res.setHeader('Content-Type', 'text/css; charset=utf-8');
-    res.sendFile(file);
+    res.setHeader('Content-Type', asset.type);
+    res.setHeader('Cache-Control', 'no-store');
+    res.send(asset.body);
   }
 
   /**
