@@ -20,6 +20,7 @@ The resource bars on this page are not Monitoring Pro. That Premium page is sepa
 
 [Panels](/community/panels)
 [Clients](/community/clients)
+[Admins](/community/admins)
 [Monitoring Pro](/premium/monitoring-pro)
 
 </div>

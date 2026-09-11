@@ -8,15 +8,25 @@ function sidebar(prefix: string, fa: boolean): DefaultTheme.SidebarItem[] {
   return [
     {
       text: fa ? "شروع" : "Start",
-      items: [{ text: fa ? "نصب" : "Installation", link: `${prefix}/guide/install` }],
+      items: [
+        { text: fa ? "نصب" : "Installation", link: `${prefix}/guide/install` },
+        { text: fa ? "ورود" : "Login", link: `${prefix}/guide/login` },
+        { text: fa ? "خط فرمان" : "CLI", link: `${prefix}/guide/cli` },
+      ],
     },
     {
       text: fa ? "رایگان" : "Community",
       items: [
         { text: fa ? "داشبورد" : "Dashboard", link: `${prefix}/community/dashboard` },
+        { text: fa ? "ادمین‌ها" : "Admins", link: `${prefix}/community/admins` },
         { text: fa ? "کلاینت‌ها" : "Clients", link: `${prefix}/community/clients` },
         { text: fa ? "پنل‌ها" : "Panels", link: `${prefix}/community/panels` },
+        { text: fa ? "ترافیک" : "Traffic", link: `${prefix}/community/traffic` },
         { text: fa ? "تنظیمات" : "Settings", link: `${prefix}/community/settings` },
+        { text: fa ? "پورتال اشتراک" : "Subscription portal", link: `${prefix}/community/portal` },
+        { text: fa ? "مهاجرت" : "Migration", link: `${prefix}/community/migration` },
+        { text: fa ? "پاکسازی" : "Cleanup", link: `${prefix}/community/cleanup` },
+        { text: fa ? "عیب‌یابی" : "Diagnostics", link: `${prefix}/community/diagnostics` },
       ],
     },
     {
@@ -82,7 +92,7 @@ export default defineConfig({
         ],
         sidebar: sidebar("", false),
         socialLinks: [{ icon: "github", link: REPO }],
-        outline: { level: 2 },
+        outline: { level: [2, 3] },
         footer: footerEn,
       },
     },
@@ -100,7 +110,7 @@ export default defineConfig({
         ],
         sidebar: sidebar("/fa", true),
         socialLinks: [{ icon: "github", link: REPO }],
-        outline: { level: 2, label: "در این صفحه" },
+        outline: { level: [2, 3], label: "در این صفحه" },
         footer: footerFa,
         docFooter: { prev: "قبلی", next: "بعدی" },
         darkModeSwitchLabel: "ظاهر",

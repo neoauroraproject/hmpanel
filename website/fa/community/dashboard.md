@@ -20,6 +20,7 @@ Super Admin شاخص کل سامانه را می‌بیند: پنل‌ها، ا�
 
 [پنل‌ها](/fa/community/panels)
 [کلاینت‌ها](/fa/community/clients)
+[ادمین‌ها](/fa/community/admins)
 [مانیتورینگ حرفه‌ای](/fa/premium/monitoring-pro)
 
 </div>
