@@ -8,6 +8,11 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [2.2.18] - 2026-09-12
+
+### Fixed
+- **Docker image build:** TypeScript no longer treats `HMPANEL_PREMIUM_REGISTER` as `never` after the overlay fetch, so `next build` succeeds.
+
 ## [2.2.17] - 2026-09-12
 
 ### Fixed

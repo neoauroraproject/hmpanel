@@ -159,6 +159,13 @@ async function fetchPremiumRuntimeCode() {
   throw new Error(last);
 }
 
+function registerPremiumOverlay() {
+  const register = window.HMPANEL_PREMIUM_REGISTER;
+  if (!register) return false;
+  register(usePluginRegistry);
+  return true;
+}
+
 async function executePremiumRuntime(code: string) {
   exposeSharedModules();
   const blob = new Blob([code], { type: "application/javascript" });
@@ -209,17 +216,13 @@ export function PremiumBootstrap() {
 
     void (async () => {
       try {
-        if (window.HMPANEL_PREMIUM_REGISTER) {
-          window.HMPANEL_PREMIUM_REGISTER(usePluginRegistry);
-        } else {
+        if (!registerPremiumOverlay()) {
           const code = await fetchPremiumRuntimeCode();
           if (cancelled) return;
           await executePremiumRuntime(code);
           exposeSharedModules();
           applyPendingPremiumI18n();
-          if (window.HMPANEL_PREMIUM_REGISTER) {
-            window.HMPANEL_PREMIUM_REGISTER(usePluginRegistry);
-          } else {
+          if (!registerPremiumOverlay()) {
             throw new Error(
               "premium-runtime.js loaded but did not register (init threw before HMPANEL_PREMIUM_REGISTER)",
             );
