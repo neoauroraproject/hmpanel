@@ -8,6 +8,7 @@ interface AuthState {
   admin: SessionAdmin | null;
   setAuth: (token: string, refreshToken: string, admin: SessionAdmin) => void;
   setTokens: (token: string, refreshToken: string) => void;
+  setAdmin: (admin: SessionAdmin) => void;
   logout: () => void;
 }
 
@@ -19,6 +20,7 @@ export const useAuth = create<AuthState>()(
       admin: null,
       setAuth: (token, refreshToken, admin) => set({ token, refreshToken, admin }),
       setTokens: (token, refreshToken) => set({ token, refreshToken }),
+      setAdmin: (admin) => set({ admin }),
       logout: () => set({ token: null, refreshToken: null, admin: null }),
     }),
     { name: "panel-auth" },

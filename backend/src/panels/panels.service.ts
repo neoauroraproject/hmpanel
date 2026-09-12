@@ -3743,165 +3743,162 @@ export class PanelsService implements OnModuleInit {
 
   async processSuspensions() {
     const now = new Date();
+    const graceExpiredAt = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
-    // 1. Process Admins Entering Grace Period
-    const newlyExhausted = await this.prisma.admin.findMany({
+    // PER_PANEL keeps Admin.balance at 0; remaining stock lives on AdminPanelQuota.
+    // Never start/end grace from Admin.balance alone.
+    const candidates = await this.prisma.admin.findMany({
       where: {
-        trafficMode: 'USAGE',
+        role: 'RESELLER',
         unlimitedTraffic: false,
-        balance: { lte: 0 },
-        gracePeriodStart: null,
         status: 'active',
+        OR: [{ trafficMode: 'USAGE' }, { gracePeriodStart: { not: null } }],
+      },
+      select: {
+        id: true,
+        trafficMode: true,
+        gracePeriodStart: true,
       },
     });
 
-    for (const admin of newlyExhausted) {
-      await this.prisma.admin.update({
-        where: { id: admin.id },
-        data: { gracePeriodStart: now },
-      });
-      await this.prisma.auditLog.create({
-        data: {
-          adminId: admin.id,
-          action: 'GRACE_STARTED',
-          entity: 'Admin',
-          entityId: admin.id,
-          details: {
-            message: 'Admin balance exhausted. 24h grace period started.',
-          },
-        },
-      });
-    }
+    for (const admin of candidates) {
+      const remaining = await this.adminQuota.remainingTrafficBytes(admin.id);
+      const exhausted = Number.isFinite(remaining) && remaining <= 0;
 
-    // 2. Process Admins Restored (Balance > 0)
-    const restoredAdmins = await this.prisma.admin.findMany({
-      where: {
-        trafficMode: 'USAGE',
-        unlimitedTraffic: false,
-        balance: { gt: 0 },
-        gracePeriodStart: { not: null },
-      },
-    });
-
-    for (const admin of restoredAdmins) {
-      await this.prisma.admin.update({
-        where: { id: admin.id },
-        data: { gracePeriodStart: null },
-      });
-      await this.prisma.auditLog.create({
-        data: {
-          adminId: admin.id,
-          action: 'BALANCE_RESTORED',
-          entity: 'Admin',
-          entityId: admin.id,
-          details: {
-            message: 'Admin balance restored above zero. Grace period ended.',
-          },
-        },
-      });
-
-      // Batch reactivate clients disabled due to BALANCE_EXHAUSTED
-      const clientsToReactivate = await this.prisma.client.findMany({
-        where: {
-          adminId: admin.id,
-          disableReason: 'BALANCE_EXHAUSTED',
-          enable: false,
-        },
-        take: 100,
-        include: {
-          inbounds: {
-            include: {
-              inbound: {
-                include: {
-                  panel: true,
-                },
-              },
-            },
-          },
-        },
-      });
-
-      if (clientsToReactivate.length > 0) {
-        for (const client of clientsToReactivate) {
-          try {
-            await this.setClientEnableOnPanels(client, true);
-            await this.prisma.client.update({
-              where: { id: client.id },
-              data: { enable: true, disableReason: null },
-            });
-          } catch (error) {
-            console.error(`Failed to reactivate client ${client.id}:`, error);
-          }
+      if (!exhausted) {
+        if (admin.gracePeriodStart) {
+          await this.clearGracePeriod(admin.id);
         }
-        await this.prisma.auditLog.create({
-          data: {
-            adminId: admin.id,
-            action: 'CLIENTS_REACTIVATED',
-            entity: 'Client',
-            entityId: admin.id,
-            details: {
-              message: `Reactivated ${clientsToReactivate.length} clients after balance restoration.`,
-            },
-          },
-        });
+        continue;
       }
-    }
 
-    // 3. Process Admins Past Grace Period (Need Suspension)
-    const gracePeriodEndMs = now.getTime() - 24 * 60 * 60 * 1000;
-    const suspendedAdmins = await this.prisma.admin.findMany({
-      where: {
-        trafficMode: 'USAGE',
-        unlimitedTraffic: false,
-        balance: { lte: 0 },
-        gracePeriodStart: { lte: new Date(gracePeriodEndMs) },
-        status: 'active',
-      },
-    });
-
-    for (const admin of suspendedAdmins) {
-      const clientsToSuspend = await this.prisma.client.findMany({
-        where: { adminId: admin.id, enable: true },
-        take: 100,
-        include: {
-          inbounds: {
-            include: {
-              inbound: {
-                include: {
-                  panel: true,
-                },
-              },
-            },
-          },
-        },
-      });
-
-      if (clientsToSuspend.length > 0) {
-        for (const client of clientsToSuspend) {
-          try {
-            await this.setClientEnableOnPanels(client, false);
-            await this.prisma.client.update({
-              where: { id: client.id },
-              data: { enable: false, disableReason: 'BALANCE_EXHAUSTED' },
-            });
-          } catch (error) {
-            console.error(`Failed to suspend client ${client.id}:`, error);
-          }
-        }
+      if (admin.trafficMode === 'USAGE' && !admin.gracePeriodStart) {
+        await this.prisma.admin.update({
+          where: { id: admin.id },
+          data: { gracePeriodStart: now },
+        });
         await this.prisma.auditLog.create({
           data: {
             adminId: admin.id,
-            action: 'CLIENTS_SUSPENDED',
-            entity: 'Client',
+            action: 'GRACE_STARTED',
+            entity: 'Admin',
             entityId: admin.id,
             details: {
-              message: `Suspended ${clientsToSuspend.length} clients due to balance exhaustion.`,
+              message: 'Admin traffic exhausted. 24h grace period started.',
             },
           },
         });
+        continue;
+      }
+
+      if (
+        admin.gracePeriodStart &&
+        admin.gracePeriodStart <= graceExpiredAt
+      ) {
+        await this.suspendBalanceExhaustedClients(admin.id);
       }
     }
   }
+
+  private async clearGracePeriod(adminId: string) {
+    await this.prisma.admin.update({
+      where: { id: adminId },
+      data: { gracePeriodStart: null },
+    });
+    await this.prisma.auditLog.create({
+      data: {
+        adminId,
+        action: 'BALANCE_RESTORED',
+        entity: 'Admin',
+        entityId: adminId,
+        details: {
+          message: 'Admin traffic restored above zero. Grace period ended.',
+        },
+      },
+    });
+    await this.reactivateBalanceExhaustedClients(adminId);
+  }
+
+  private async reactivateBalanceExhaustedClients(adminId: string) {
+    const clientsToReactivate = await this.prisma.client.findMany({
+      where: {
+        adminId,
+        disableReason: 'BALANCE_EXHAUSTED',
+        enable: false,
+      },
+      take: 100,
+      include: {
+        inbounds: {
+          include: {
+            inbound: { include: { panel: true } },
+          },
+        },
+      },
+    });
+    if (!clientsToReactivate.length) return;
+
+    for (const client of clientsToReactivate) {
+      try {
+        await this.setClientEnableOnPanels(client, true);
+        await this.prisma.client.update({
+          where: { id: client.id },
+          data: { enable: true, disableReason: null },
+        });
+      } catch (error) {
+        console.error(`Failed to reactivate client ${client.id}:`, error);
+      }
+    }
+    await this.prisma.auditLog.create({
+      data: {
+        adminId,
+        action: 'CLIENTS_REACTIVATED',
+        entity: 'Client',
+        entityId: adminId,
+        details: {
+          message: `Reactivated ${clientsToReactivate.length} clients after balance restoration.`,
+        },
+      },
+    });
+  }
+
+  private async suspendBalanceExhaustedClients(adminId: string) {
+    const clientsToSuspend = await this.prisma.client.findMany({
+      where: { adminId, enable: true },
+      take: 100,
+      include: {
+        inbounds: {
+          include: {
+            inbound: { include: { panel: true } },
+          },
+        },
+      },
+    });
+    if (!clientsToSuspend.length) return;
+
+    for (const client of clientsToSuspend) {
+      try {
+        await this.setClientEnableOnPanels(client, false);
+        await this.prisma.client.update({
+          where: { id: client.id },
+          data: { enable: false, disableReason: 'BALANCE_EXHAUSTED' },
+        });
+      } catch (error) {
+        console.error(`Failed to suspend client ${client.id}:`, error);
+      }
+    }
+    await this.prisma.auditLog.create({
+      data: {
+        adminId,
+        action: 'CLIENTS_SUSPENDED',
+        entity: 'Client',
+        entityId: adminId,
+        details: {
+          message: `Suspended ${clientsToSuspend.length} clients due to balance exhaustion.`,
+        },
+      },
+    });
+  }
+
   async getLiveOnlineEmails(panelIds?: string[]): Promise<string[]> {
     const whereClause: any = { status: 'online' };
     if (panelIds && panelIds.length > 0) {

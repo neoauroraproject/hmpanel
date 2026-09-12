@@ -607,7 +607,9 @@ export class AdminQuotaService {
       ...(input.panelQuotas ?? []).map((q) => q.panelId),
     ]);
 
-    if (input.unlimited) {
+    // Unlimited volume must not wipe PER_PANEL client caps (clients / days / devices).
+    // Only the traffic pool and per-client GB cap go to zero.
+    if (input.unlimited && input.quotaMode !== 'PER_PANEL') {
       await this.prisma.adminPanelQuota.deleteMany({ where: { adminId } });
       await this.prisma.admin.update({
         where: { id: adminId },
@@ -705,11 +707,11 @@ export class AdminQuotaService {
         const spec = quotas.find((q) => q.panelId === pid);
         await this.upsertPanelQuotaWithLedger(tx, adminId, {
           panelId: pid,
-          balanceBytes: spec?.balanceBytes ?? 0,
+          balanceBytes: input.unlimited ? 0 : spec?.balanceBytes ?? 0,
           maxClients: spec?.maxClients,
           maxDeviceLimit: spec?.maxDeviceLimit,
           maxExpireDays: spec?.maxExpireDays,
-          maxClientTrafficGb: spec?.maxClientTrafficGb,
+          maxClientTrafficGb: input.unlimited ? 0 : spec?.maxClientTrafficGb,
           trafficMode: spec?.trafficMode,
         });
       }
@@ -894,6 +896,16 @@ export class AdminQuotaService {
       usedTraffic: sumUsed,
       panels,
     };
+  }
+
+  /**
+   * Remaining assignable/usable bytes for grace-period and recharge checks.
+   * Uses per-panel stock when quotaMode is PER_PANEL — never Admin.balance alone.
+   */
+  async remainingTrafficBytes(adminId: string): Promise<number> {
+    const overview = await this.buildResellerOverview(adminId);
+    if (overview.unlimitedTraffic) return Number.POSITIVE_INFINITY;
+    return Math.max(0, Number(overview.availableTraffic) || 0);
   }
 
   /** Append panel (and inbound) names so history rows stay destination-specific. */

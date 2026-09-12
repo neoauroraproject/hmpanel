@@ -47,7 +47,7 @@ export class AdminProvisioningService {
     const hash = await bcrypt.hash(data.password, 10);
     const unlimited = data.unlimitedTraffic === true;
     const quotaMode = (data.quotaMode as QuotaMode) || 'GLOBAL';
-    const usePerPanel = quotaMode === 'PER_PANEL' && !unlimited;
+    const usePerPanel = quotaMode === 'PER_PANEL';
 
     const admin = await this.prisma.$transaction(async (tx) => {
       const row = await tx.admin.create({
@@ -107,9 +107,11 @@ export class AdminProvisioningService {
     if (usePerPanel && (data.inboundIds?.length || data.panelQuotas?.length)) {
       await this.adminQuota.syncPanelQuotas(admin.id, {
         quotaMode: 'PER_PANEL',
-        unlimited: false,
+        unlimited,
         inboundIds: data.inboundIds ?? [],
-        panelQuotas: data.panelQuotas,
+        panelQuotas: unlimited
+          ? (data.panelQuotas ?? []).map((q) => ({ ...q, balanceBytes: 0 }))
+          : data.panelQuotas,
       });
     } else if (data.balance && data.balance > 0 && !unlimited && !usePerPanel) {
       await this.prisma.trafficTransaction.create({

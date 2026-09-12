@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
+import { api } from "@/lib/api";
 import { useAuth } from "@/store/auth";
+import type { SessionAdmin } from "@/lib/types";
 import { Sidebar } from "@/components/sidebar";
 import { MobileNav } from "@/components/mobile-nav";
 import { Toaster } from "@/components/toast";
@@ -13,6 +15,7 @@ import { useT } from "@/i18n";
 export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const token = useAuth((s) => s.token);
+  const setAdmin = useAuth((s) => s.setAdmin);
   const [ready, setReady] = useState(false);
   const pathname = usePathname();
   const [isHydrated, setIsHydrated] = useState(false);
@@ -33,6 +36,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
     setReady(true);
   }, [token, router, pathname, isHydrated]);
+
+  useEffect(() => {
+    if (!isHydrated || !token) return;
+    let cancelled = false;
+    api
+      .get<SessionAdmin>("/auth/me")
+      .then(({ data }) => {
+        if (!cancelled && data?.id) setAdmin(data);
+      })
+      .catch(() => {
+        /* keep persisted session; next 401 refresh handles expiry */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, isHydrated, setAdmin]);
 
   if (!isHydrated || !ready) return <PanelBootSplash />;
 

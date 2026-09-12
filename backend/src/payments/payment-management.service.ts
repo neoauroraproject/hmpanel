@@ -665,10 +665,17 @@ export class PaymentManagementService {
     let adminId = actingAdminId;
     if (surface === 'add_balance') {
       try {
-        const superAdmin = await this.prisma.admin.findFirst({
-          where: { role: 'SUPER_ADMIN' },
+        const owner = await this.prisma.admin.findFirst({
+          where: { role: 'SUPER_ADMIN', isOwner: true, status: 'active' },
           select: { id: true },
         });
+        const superAdmin =
+          owner ||
+          (await this.prisma.admin.findFirst({
+            where: { role: 'SUPER_ADMIN', status: 'active' },
+            orderBy: { createdAt: 'asc' },
+            select: { id: true },
+          }));
         if (superAdmin?.id) adminId = superAdmin.id;
       } catch {
         /* keep acting admin */

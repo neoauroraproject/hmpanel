@@ -1,5 +1,6 @@
 import axios from "axios";
 import { isPublicAppPath } from "@/lib/public-paths";
+import { useAuth } from "@/store/auth";
 
 export const API_BASE = "/api";
 export const CUSTOMER_SESSION_STORAGE_KEY = "hm-storefront-session";
@@ -111,12 +112,18 @@ api.interceptors.response.use(
       try {
         const { data } = await axios.post(`${API_BASE}/auth/refresh`, { refreshToken });
 
+        if (data.admin) {
+          useAuth.getState().setAuth(data.accessToken, data.refreshToken, data.admin);
+        } else {
+          useAuth.getState().setTokens(data.accessToken, data.refreshToken);
+        }
         if (typeof window !== "undefined") {
           const raw = localStorage.getItem("panel-auth");
           if (raw) {
             const parsed = JSON.parse(raw);
             parsed.state.token = data.accessToken;
             parsed.state.refreshToken = data.refreshToken;
+            if (data.admin) parsed.state.admin = data.admin;
             localStorage.setItem("panel-auth", JSON.stringify(parsed));
           }
         }

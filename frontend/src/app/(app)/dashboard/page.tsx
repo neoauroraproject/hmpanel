@@ -530,7 +530,7 @@ function ResellerDashboard() {
         <p className="mt-1 text-sm leading-relaxed text-zinc-500 dark:text-zinc-400">{t("dashboard.resellerSubtitle")}</p>
       </div>
 
-      {a?.gracePeriodStart && !a?.unlimitedTraffic && (
+      {a?.gracePeriodStart && !a?.unlimitedTraffic && !(Number(a.availableTraffic) > 0) && (
         <div className="flex items-start gap-3 rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-red-600 dark:text-red-400">
           <AlertTriangle className="mt-0.5 shrink-0" size={18} />
           <div>

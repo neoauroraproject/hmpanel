@@ -310,7 +310,7 @@ export default function AdminsPage() {
           </thead>
           <tbody className="block md:table-row-group space-y-3 md:space-y-0 md:divide-y md:divide-zinc-800/50">
             {admins.map((a, i) => {
-              const canEdit = a.isOwner ? isOwner : a.role !== "SUPER_ADMIN" || isOwner || sessionAdmin?.id === a.id;
+              const canEdit = a.isOwner ? isOwner : true;
               return (
               <React.Fragment key={a.id}>
               <motion.tr 
@@ -433,7 +433,7 @@ export default function AdminsPage() {
                         <Power size={16} />
                       </motion.button>
                     )}
-                    {a.role === "SUPER_ADMIN" && !a.isOwner && isOwner && (
+                    {a.role === "SUPER_ADMIN" && !a.isOwner && (
                       <motion.button 
                         whileHover={{ scale: 1.05 }} 
                         whileTap={{ scale: 0.95 }} 
@@ -460,11 +460,7 @@ export default function AdminsPage() {
                     {(() => {
                       const isOwnerRow = a.isOwner === true;
                       const isExtraSuper = a.role === "SUPER_ADMIN" && !isOwnerRow;
-                      const canDelete = isOwnerRow
-                        ? false
-                        : isExtraSuper
-                          ? isOwner
-                          : true;
+                      const canDelete = !isOwnerRow;
                       const blockedByClients = (a._count?.clients ?? 0) > 0;
                       if (!canDelete) return null;
                       return (
@@ -500,7 +496,7 @@ export default function AdminsPage() {
       <AnimatePresence>
         {addOpen && (
           <AddAdminModal
-            callerIsOwner={isOwner}
+            callerIsOwner={sessionAdmin?.role === "SUPER_ADMIN"}
             onClose={() => setAddOpen(false)}
             onSaved={() => {
               setAddOpen(false);
@@ -512,7 +508,7 @@ export default function AdminsPage() {
         {editAdmin && (
           <EditAdminModal
             adminId={editAdmin.id}
-            callerIsOwner={isOwner}
+            callerIsOwner={sessionAdmin?.role === "SUPER_ADMIN"}
             onClose={() => setEditAdmin(null)}
             onSaved={() => {
               qc.invalidateQueries({ queryKey: ["admins"] });
@@ -525,6 +521,33 @@ export default function AdminsPage() {
 }
 
 /** Traffic pool + client count stay visible; fixed per-client caps live in a closed accordion. */
+function UnlimitedTrafficToggle({
+  checked,
+  disabled,
+  onChange,
+}: {
+  checked: boolean;
+  disabled?: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  const t = useT();
+  return (
+    <label className={`flex items-start gap-3 p-3 rounded-lg border border-emerald-500/30 bg-emerald-500/5 cursor-pointer ${disabled ? "opacity-50 pointer-events-none" : ""}`}>
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.checked)}
+        className="mt-0.5 w-4 h-4 rounded text-emerald-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-emerald-500"
+      />
+      <div className="flex flex-col">
+        <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{t("admins.unlimitedTraffic")}</span>
+        <span className="text-xs text-zinc-500">{t("admins.unlimitedTrafficHint")}</span>
+      </div>
+    </label>
+  );
+}
+
 function PanelLimitFields({
   panelType,
   value,
@@ -534,6 +557,7 @@ function PanelLimitFields({
   title,
   deviceKey,
   trafficModeHint,
+  hideTraffic,
 }: {
   panelType?: string | null;
   value: PanelQuotaForm;
@@ -543,6 +567,7 @@ function PanelLimitFields({
   title?: string;
   deviceKey?: string;
   trafficModeHint?: string;
+  hideTraffic?: boolean;
 }) {
   const t = useT();
   const [capsOpen, setCapsOpen] = useState(false);
@@ -555,11 +580,16 @@ function PanelLimitFields({
     stock.balance > 0
       ? `${(Math.round((stock.balance / 1024 ** 3) * 100) / 100).toString()} GB`
       : "0 GB";
-  const capsSummary = t("admins.clientCapsSummary", {
-    traffic: stockCount(stock.maxClientTrafficGb),
-    days: stockCount(stock.maxExpireDays),
-    devices: stockCount(stock.maxDeviceLimit),
-  });
+  const capsSummary = hideTraffic
+    ? t("admins.clientCapsSummaryNoTraffic", {
+        days: stockCount(stock.maxExpireDays),
+        devices: stockCount(stock.maxDeviceLimit),
+      })
+    : t("admins.clientCapsSummary", {
+        traffic: stockCount(stock.maxClientTrafficGb),
+        days: stockCount(stock.maxExpireDays),
+        devices: stockCount(stock.maxDeviceLimit),
+      });
 
   const capField = (
     label: string,
@@ -597,6 +627,7 @@ function PanelLimitFields({
         <Database size={13} className="text-emerald-500" /> {title || t("admins.panelLimitsTitle")}
       </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {!hideTraffic ? (
         <div className="min-w-0">
           <div className="mb-1.5 flex min-w-0 flex-col gap-0.5">
             <label className={`${labelClass} leading-snug`}>{t("admins.adjustTraffic")}</label>
@@ -615,6 +646,11 @@ function PanelLimitFields({
             className={fieldClass}
           />
         </div>
+        ) : (
+        <div className="min-w-0 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-sm text-emerald-600 dark:text-emerald-400">
+          {t("admins.unlimitedTrafficLabel")}
+        </div>
+        )}
         <div className="min-w-0">
           <div className="mb-1.5 flex min-w-0 flex-col gap-0.5">
             <label className={`${labelClass} leading-snug`}>{t("admins.adjustClients")}</label>
@@ -633,6 +669,7 @@ function PanelLimitFields({
             className={fieldClass}
           />
         </div>
+        {!hideTraffic ? (
         <div className="min-w-0 sm:col-span-2">
           <label className={`${labelClass} mb-1.5`}>{t("admins.trafficAccountingMode")}</label>
           <select
@@ -646,6 +683,7 @@ function PanelLimitFields({
           </select>
           <p className="mt-1 text-xs leading-relaxed text-zinc-500">{trafficModeHint || t("admins.panelTrafficModeHint")}</p>
         </div>
+        ) : null}
       </div>
       <p className="text-xs leading-relaxed text-zinc-500">{t("admins.adjustDeltaHint")}</p>
       <div className="overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/50">
@@ -668,12 +706,12 @@ function PanelLimitFields({
           <div className="space-y-3 border-t border-zinc-200 px-3 py-3 dark:border-zinc-800">
             <p className="text-xs leading-relaxed text-zinc-500">{t("admins.clientCapsHint")}</p>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {capField(
+              {!hideTraffic ? capField(
                 t("admins.adjustClientTraffic"),
                 stock.maxClientTrafficGb,
                 value.maxClientTrafficGb,
                 "maxClientTrafficGb",
-              )}
+              ) : null}
               {capField(
                 t("admins.adjustExpireDays"),
                 stock.maxExpireDays,
@@ -778,6 +816,7 @@ function PanelInboundPicker({
   onQuotaChange,
   showQuotaFields,
   quotaBaselines,
+  unlimitedTraffic,
 }: {
   panels: PanelRow[];
   inbounds: InboundRow[];
@@ -794,6 +833,7 @@ function PanelInboundPicker({
   onQuotaChange: (panelId: string, patch: Partial<PanelQuotaForm>) => void;
   showQuotaFields?: boolean;
   quotaBaselines?: Record<string, QuotaBaseline>;
+  unlimitedTraffic?: boolean;
 }) {
   const t = useT();
   const [expanded, setExpanded] = useState<string[]>([]);
@@ -1039,10 +1079,11 @@ function PanelInboundPicker({
                     value={panelQuotas[p.id] ?? EMPTY_PANEL_QUOTA}
                     current={quotaBaselines?.[p.id]}
                     onChange={(patch) => onQuotaChange(p.id, patch)}
+                    hideTraffic={unlimitedTraffic}
                   />
                 ) : (
                   <div className="rounded-xl border border-dashed border-emerald-500/30 bg-emerald-500/5 p-3 text-sm leading-relaxed text-emerald-600 dark:text-emerald-400">
-                    {t("admins.panelLimitsUnlimited")}
+                    {unlimitedTraffic ? t("admins.unlimitedTrafficHint") : t("admins.nativePanelUsesSharedPool")}
                   </div>
                 )}
                 {native ? (
@@ -1113,6 +1154,7 @@ function overlayQuotaOnProviderDraft(
   resolved: { balanceBytes: number; maxClients: number } | undefined,
   panel: PanelRow,
   quotaMode: QuotaMode,
+  unlimitedTraffic = false,
 ) {
   const provider = nativeProviderKey(panel.panelType);
   const bytes = Math.max(0, Number(resolved?.balanceBytes) || 0);
@@ -1122,8 +1164,8 @@ function overlayQuotaOnProviderDraft(
     provider,
     enabled: true,
     panelId: panel.id,
-    trafficBytes: String(bytes),
-    unlimitedTraffic: false,
+    trafficBytes: unlimitedTraffic ? "0" : String(bytes),
+    unlimitedTraffic,
     maxClients,
     unlimitedClients: maxClients <= 0,
     quotaMode,
@@ -1139,6 +1181,7 @@ function collectProviderAccessDrafts(
   enabledPanels: string[],
   resolvedQuotas: Array<{ panelId: string; balanceBytes: number; maxClients: number }>,
   quotaMode: QuotaMode = "PER_PANEL",
+  unlimitedTraffic = false,
 ) {
   const resolvedByPanel = Object.fromEntries(resolvedQuotas.map((q) => [q.panelId, q]));
   const shared =
@@ -1171,6 +1214,7 @@ function collectProviderAccessDrafts(
       shared || resolvedByPanel[panel.id],
       panel,
       quotaMode,
+      unlimitedTraffic,
     );
   }
   return out;
@@ -1229,7 +1273,7 @@ type PanelQuotaFormState = {
 function resolveQuotaMode(
   form: Pick<PanelQuotaFormState, "superAdmin" | "unlimitedTraffic" | "quotaMode">,
 ): QuotaMode {
-  if (form.superAdmin || form.unlimitedTraffic) return "GLOBAL";
+  if (form.superAdmin) return "GLOBAL";
   return form.quotaMode === "GLOBAL" ? "GLOBAL" : "PER_PANEL";
 }
 
@@ -1327,6 +1371,7 @@ function adminQuotaStamp(admin: Admin) {
     admin.username,
     admin.role,
     admin.quotaMode ?? "",
+    admin.unlimitedTraffic === true ? "1" : "0",
     ...quotas.map(
       (q) =>
         `${q.panelId}:${q.balance}:${q.maxClients ?? 0}:${q.maxDeviceLimit ?? 0}:${q.maxExpireDays ?? 0}:${q.maxClientTrafficGb ?? 0}:${q.trafficMode ?? ""}`,
@@ -1435,7 +1480,7 @@ function buildEditAdminForm(
     storeEnabled: admin.storeEnabled || false,
     refundOnDelete: admin.refundOnDelete ?? true,
     refundOnEdit: admin.refundOnEdit ?? true,
-    unlimitedTraffic: false,
+    unlimitedTraffic: admin.unlimitedTraffic === true,
     superAdmin: admin.role === "SUPER_ADMIN",
     quotaMode,
     panelQuotas,
@@ -1517,22 +1562,24 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
               : "ALLOCATION"
             : form.trafficMode,
         quotaMode,
-        balance: form.superAdmin || perPanelQuotas ? 0 : applyTrafficDeltaBytes(0, form.gb),
+        balance: form.superAdmin || form.unlimitedTraffic || perPanelQuotas ? 0 : applyTrafficDeltaBytes(0, form.gb),
         panelQuotas: perPanelQuotas
-          ? buildPanelQuotasPayload(form.enabledPanels, form.panelQuotas)
+          ? buildPanelQuotasPayload(form.enabledPanels, form.panelQuotas).map((q) =>
+              form.unlimitedTraffic ? { ...q, balanceBytes: 0, maxClientTrafficGb: 0 } : q,
+            )
           : undefined,
         expiryTime: form.superAdmin ? 0 : applyExpiryDeltaMs(0, form.expiryDays),
         maxClients: form.superAdmin || perPanelQuotas ? 0 : applyCountDelta(0, form.maxClients),
         maxDeviceLimit: form.superAdmin || perPanelQuotas ? 0 : applyCountDelta(0, form.maxDeviceLimit),
         maxExpireDays: form.superAdmin || perPanelQuotas ? 0 : applyCountDelta(0, form.maxExpireDays),
-        maxClientTrafficGb: form.superAdmin || perPanelQuotas ? 0 : applyCountDelta(0, form.maxClientTrafficGb),
+        maxClientTrafficGb: form.superAdmin || form.unlimitedTraffic || perPanelQuotas ? 0 : applyCountDelta(0, form.maxClientTrafficGb),
         inboundIds: form.superAdmin ? [] : form.selectedInbounds,
         permissions: [],
         storeEnabled: form.superAdmin ? false : form.storeEnabled,
         storePanelId: form.storePanelId,
-        refundOnDelete: form.superAdmin ? false : form.refundOnDelete,
-        refundOnEdit: form.superAdmin ? false : form.refundOnEdit,
-        unlimitedTraffic: form.superAdmin ? true : false,
+        refundOnDelete: form.superAdmin || form.unlimitedTraffic ? false : form.refundOnDelete,
+        refundOnEdit: form.superAdmin || form.unlimitedTraffic ? false : form.refundOnEdit,
+        unlimitedTraffic: form.superAdmin || form.unlimitedTraffic,
       };
       const created = (await api.post("/admins", payload)).data;
       if (!form.superAdmin && created?.id) {
@@ -1550,6 +1597,7 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
                   maxClients: payload.maxClients || 0,
                 })),
             quotaMode,
+            form.unlimitedTraffic,
           ),
         );
       }
@@ -1654,6 +1702,14 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
                         <p className="text-xs text-zinc-500">{t("admins.superAdminLimitsDisabled")}</p>
                       )}
                       <div>
+                        {!limitsLocked ? (
+                          <div className="mb-3">
+                            <UnlimitedTrafficToggle
+                              checked={form.unlimitedTraffic}
+                              onChange={(next) => setForm((f) => ({ ...f, unlimitedTraffic: next }))}
+                            />
+                          </div>
+                        ) : null}
                         <label className="mb-2 block text-sm font-medium text-zinc-800 dark:text-zinc-100">
                           {t("admins.allowedPanelsInbounds")}
                           <span className="block text-xs font-normal text-zinc-500 mt-0.5">{t(perPanelQuotas ? "admins.allowedPanelsAndLimitsHint" : "admins.allowedPanelsSharedPoolHint")}</span>
@@ -1672,6 +1728,7 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
                           panelQuotas={form.panelQuotas}
                           onQuotaChange={(panelId, patch) => setForm((f) => patchPanelQuota(f, panelId, patch))}
                           showQuotaFields={perPanelQuotas}
+                          unlimitedTraffic={form.unlimitedTraffic}
                         />
                         {!limitsLocked && !hasResellerPanelAccess(form, panels) && (
                           <div className="mt-3 p-3 rounded-lg border border-amber-500/20 bg-amber-500/10 text-sm text-amber-600 dark:text-amber-400 flex items-start gap-2">
@@ -1722,6 +1779,10 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
                       )}
                       {!limitsLocked ? (
                         <>
+                          <UnlimitedTrafficToggle
+                            checked={form.unlimitedTraffic}
+                            onChange={(next) => setForm((f) => ({ ...f, unlimitedTraffic: next }))}
+                          />
                           <QuotaModeToggle
                             value={quotaMode === "GLOBAL" ? "GLOBAL" : "PER_PANEL"}
                             onChange={(mode) => setForm((f) => applyQuotaModeChange(f, mode))}
@@ -1736,6 +1797,7 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
                               title={t("admins.globalLimitsTitle")}
                               deviceKey="admins.maxDeviceLimit"
                               trafficModeHint={t("admins.globalTrafficModeHint")}
+                              hideTraffic={form.unlimitedTraffic}
                               value={{
                                 gb: form.gb,
                                 maxClients: form.maxClients,
@@ -1947,9 +2009,9 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
             : form.trafficMode,
         inboundIds: form.superAdmin ? undefined : form.selectedInbounds,
         permissions: [],
-        refundOnDelete: form.superAdmin ? false : form.refundOnDelete,
-        refundOnEdit: form.superAdmin ? false : form.refundOnEdit,
-        unlimitedTraffic: form.superAdmin ? true : false,
+        refundOnDelete: form.superAdmin || form.unlimitedTraffic ? false : form.refundOnDelete,
+        refundOnEdit: form.superAdmin || form.unlimitedTraffic ? false : form.refundOnEdit,
+        unlimitedTraffic: form.superAdmin || form.unlimitedTraffic,
       };
       if (callerIsOwner && !admin.isOwner) {
         payload.role = form.superAdmin ? "SUPER_ADMIN" : "RESELLER";
@@ -1961,6 +2023,8 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
             form.enabledPanels,
             form.panelQuotas,
             form.quotaBaselines,
+          ).map((q) =>
+            form.unlimitedTraffic ? { ...q, balanceBytes: 0, maxClientTrafficGb: 0 } : q,
           );
           payload.maxClients = 0;
           payload.maxDeviceLimit = 0;
@@ -1968,11 +2032,13 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
           payload.maxClientTrafficGb = 0;
         } else {
           const stock = form.globalBaseline ?? EMPTY_QUOTA_BASELINE;
-          payload.balance = applyTrafficDeltaBytes(stock.balance, form.gb);
+          payload.balance = form.unlimitedTraffic ? 0 : applyTrafficDeltaBytes(stock.balance, form.gb);
           payload.maxClients = applyCountDelta(stock.maxClients, form.maxClients);
           payload.maxDeviceLimit = applyCountDelta(stock.maxDeviceLimit, form.maxDeviceLimit);
           payload.maxExpireDays = applyCountDelta(stock.maxExpireDays, form.maxExpireDays);
-          payload.maxClientTrafficGb = applyCountDelta(stock.maxClientTrafficGb, form.maxClientTrafficGb);
+          payload.maxClientTrafficGb = form.unlimitedTraffic
+            ? 0
+            : applyCountDelta(stock.maxClientTrafficGb, form.maxClientTrafficGb);
         }
       }
       if (form.password.trim()) payload.password = form.password;
@@ -2001,6 +2067,7 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
                   maxClients: payload.maxClients || 0,
                 })),
             quotaMode,
+            form.unlimitedTraffic,
           ),
         );
       }
@@ -2046,11 +2113,19 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
 
   if (!admin) return null;
 
+  const perPanelStock = Object.values(form.quotaBaselines || {}).reduce(
+    (sum, row) => sum + (Number(row.balance) || 0),
+    0,
+  );
   const remaining = admin.unlimitedTraffic || form.superAdmin
     ? t("common.unlimited")
-    : admin.balance > 0
-      ? formatBytes(admin.balance)
-      : admin.trafficMode === 'USAGE' ? formatBytes(0) : t("admins.exhausted");
+    : perPanelQuotas
+      ? perPanelStock > 0
+        ? formatBytes(perPanelStock)
+        : t("admins.exhausted")
+      : admin.balance > 0
+        ? formatBytes(admin.balance)
+        : admin.trafficMode === 'USAGE' ? formatBytes(0) : t("admins.exhausted");
   const expiryDaysLabel = admin.expiryTime === 0
     ? t("common.unlimited")
     : admin.expiryTime > Date.now()
@@ -2110,6 +2185,10 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
                           <div className={`space-y-4 ${limitsLocked ? "opacity-50 pointer-events-none" : ""}`}>
                           {!limitsLocked ? (
                             <>
+                              <UnlimitedTrafficToggle
+                                checked={form.unlimitedTraffic}
+                                onChange={(next) => setForm((f) => ({ ...f, unlimitedTraffic: next }))}
+                              />
                               <QuotaModeToggle
                                 value={quotaMode === "GLOBAL" ? "GLOBAL" : "PER_PANEL"}
                                 onChange={(mode) => setForm((f) => applyQuotaModeChange(f, mode))}
@@ -2124,6 +2203,7 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
                                   title={t("admins.globalLimitsTitle")}
                                   deviceKey="admins.maxDeviceLimit"
                                   trafficModeHint={t("admins.globalTrafficModeHint")}
+                                  hideTraffic={form.unlimitedTraffic}
                                   value={{
                                     gb: form.gb,
                                     maxClients: form.maxClients,
@@ -2331,6 +2411,14 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
                           <p className="text-xs text-zinc-500">{t("admins.superAdminLimitsDisabled")}</p>
                         )}
                         <div>
+                          {!limitsLocked ? (
+                            <div className="mb-3">
+                              <UnlimitedTrafficToggle
+                                checked={form.unlimitedTraffic}
+                                onChange={(next) => setForm((f) => ({ ...f, unlimitedTraffic: next }))}
+                              />
+                            </div>
+                          ) : null}
                           <label className="mb-2 block text-sm font-medium text-zinc-800 dark:text-zinc-100">
                             {t("admins.allowedPanelsInbounds")}
                             <span className="block text-xs font-normal text-zinc-500 mt-0.5">{t(perPanelQuotas ? "admins.allowedPanelsAndLimitsHint" : "admins.allowedPanelsSharedPoolHint")}</span>
@@ -2350,6 +2438,7 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
                             quotaBaselines={form.quotaBaselines}
                             onQuotaChange={(panelId, patch) => setForm((f) => patchPanelQuota(f, panelId, patch))}
                             showQuotaFields={perPanelQuotas}
+                            unlimitedTraffic={form.unlimitedTraffic}
                           />
                           {!limitsLocked && !hasResellerPanelAccess(form, panels) && (
                             <div className="mt-3 p-3 rounded-lg border border-amber-500/20 bg-amber-500/10 text-sm text-amber-600 dark:text-amber-400 flex items-start gap-2">
@@ -2424,7 +2513,7 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
                     ))}
                   </div>
                 ) : (
-                  <SummaryStat icon={<Database size={16} />} label={t("admins.availableTraffic")} value={remaining} highlight={!admin.unlimitedTraffic && admin.balance === 0} />
+                  <SummaryStat icon={<Database size={16} />} label={t("admins.availableTraffic")} value={remaining} highlight={!admin.unlimitedTraffic && !form.superAdmin && (perPanelQuotas ? perPanelStock <= 0 : admin.balance === 0)} />
                 )}
               </>
             )}

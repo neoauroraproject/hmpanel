@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff } from "lucide-react";
 import { api } from "@/lib/api";
@@ -21,6 +21,13 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [hydrated, setHydrated] = useState(() => useAuth.persist.hasHydrated());
+
+  useEffect(() => {
+    const unsub = useAuth.persist.onFinishHydration(() => setHydrated(true));
+    setHydrated(useAuth.persist.hasHydrated());
+    return unsub;
+  }, []);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -112,7 +119,7 @@ export default function LoginPage() {
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || !hydrated}
             className="w-full rounded-lg bg-blue-600 py-2 font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50"
           >
             {loading ? t("login.signingIn") : t("login.submit")}

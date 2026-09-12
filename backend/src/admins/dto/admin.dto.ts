@@ -5,6 +5,7 @@ import {
   IsNumber,
   IsIn,
   IsArray,
+  IsBoolean,
   ValidateNested,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -55,7 +56,7 @@ export class CreateAdminDto {
   permissions?: string[];
   @ApiPropertyOptional() @IsOptional() refundOnDelete?: boolean;
   @ApiPropertyOptional() @IsOptional() refundOnEdit?: boolean;
-  @ApiPropertyOptional() @IsOptional() unlimitedTraffic?: boolean;
+  @ApiPropertyOptional() @IsOptional() @IsBoolean() unlimitedTraffic?: boolean;
   @ApiPropertyOptional() @IsOptional() storeEnabled?: boolean;
   @ApiPropertyOptional({ enum: ['GLOBAL', 'PER_PANEL'] })
   @IsOptional()
@@ -99,7 +100,7 @@ export class UpdateAdminDto {
   @ApiPropertyOptional() @IsOptional() portalSettings?: Record<string, any>;
   @ApiPropertyOptional() @IsOptional() refundOnDelete?: boolean;
   @ApiPropertyOptional() @IsOptional() refundOnEdit?: boolean;
-  @ApiPropertyOptional() @IsOptional() unlimitedTraffic?: boolean;
+  @ApiPropertyOptional() @IsOptional() @IsBoolean() unlimitedTraffic?: boolean;
   @ApiPropertyOptional() @IsOptional() storeEnabled?: boolean;
   @ApiPropertyOptional({ enum: ['GLOBAL', 'PER_PANEL'] })
   @IsOptional()

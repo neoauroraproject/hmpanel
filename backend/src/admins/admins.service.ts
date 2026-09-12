@@ -151,10 +151,8 @@ export class AdminsService implements OnModuleInit {
   ) {
     const actor = await this.getActor(actorId);
     const role = this.parseRole(data.role);
-    if (role === 'SUPER_ADMIN' && !actor.isOwner) {
-      throw new ForbiddenException(
-        'Only the installation Super Admin can create Super Admins',
-      );
+    if (role === 'SUPER_ADMIN' && actor.role !== 'SUPER_ADMIN') {
+      throw new ForbiddenException('Only Super Admins can create Super Admins');
     }
 
     const exists = await this.prisma.admin.findFirst({
@@ -169,7 +167,7 @@ export class AdminsService implements OnModuleInit {
     const quotaMode = isSuper
       ? 'GLOBAL'
       : (data.quotaMode as QuotaMode) || 'GLOBAL';
-    const usePerPanel = !isSuper && quotaMode === 'PER_PANEL' && !unlimited;
+    const usePerPanel = !isSuper && quotaMode === 'PER_PANEL';
     const admin = await this.prisma.admin.create({
       data: {
         username: data.username,
@@ -191,7 +189,7 @@ export class AdminsService implements OnModuleInit {
         maxClients: isSuper ? 0 : data.maxClients || 0,
         maxDeviceLimit: isSuper ? 0 : data.maxDeviceLimit || 0,
         maxExpireDays: isSuper ? 0 : data.maxExpireDays || 0,
-        maxClientTrafficGb: isSuper ? 0 : data.maxClientTrafficGb || 0,
+        maxClientTrafficGb: isSuper || unlimited ? 0 : data.maxClientTrafficGb || 0,
         permissions: data.permissions || [],
         storeEnabled: isSuper ? false : data.storeEnabled === true,
         refundOnDelete: unlimited ? false : (data.refundOnDelete ?? true),
@@ -254,9 +252,15 @@ export class AdminsService implements OnModuleInit {
     if (usePerPanel && (data.inboundIds?.length || data.panelQuotas?.length)) {
       await this.adminQuota.syncPanelQuotas(admin.id, {
         quotaMode: 'PER_PANEL',
-        unlimited: false,
+        unlimited,
         inboundIds: data.inboundIds ?? [],
-        panelQuotas: data.panelQuotas,
+        panelQuotas: unlimited
+          ? (data.panelQuotas ?? []).map((q) => ({
+              ...q,
+              balanceBytes: 0,
+              maxClientTrafficGb: 0,
+            }))
+          : data.panelQuotas,
       });
     } else if (data.balance && data.balance > 0 && !unlimited && !usePerPanel) {
       await this.prisma.trafficTransaction.create({
@@ -468,16 +472,14 @@ export class AdminsService implements OnModuleInit {
         'The installation Super Admin cannot be modified by another admin',
       );
     }
-    if (targetIsSuper && !actor.isOwner && !isSelf) {
+    if (targetIsSuper && actor.role !== 'SUPER_ADMIN' && !isSelf) {
       throw new ForbiddenException('You cannot modify another Super Admin');
     }
 
     if (data.role !== undefined) {
       this.parseRole(data.role);
-      if (!actor.isOwner) {
-        throw new ForbiddenException(
-          'Only the installation Super Admin can change roles',
-        );
+      if (actor.role !== 'SUPER_ADMIN') {
+        throw new ForbiddenException('Only Super Admins can change roles');
       }
       if (targetIsOwner && data.role !== 'SUPER_ADMIN') {
         throw new BadRequestException(
@@ -517,15 +519,12 @@ export class AdminsService implements OnModuleInit {
         'The installation Super Admin cannot be disabled',
       );
     }
-    if (
-      nextRole === 'SUPER_ADMIN' &&
-      !actor.isOwner &&
-      data.status === 'disabled'
-    ) {
-      throw new ForbiddenException('You cannot disable a Super Admin');
-    }
 
     const updateData: any = {};
+    if (promoting || demoting) {
+      updateData.tokenVersion = { increment: 1 };
+    }
+
     if (promoting || nextRole === 'SUPER_ADMIN') {
       updateData.role = 'SUPER_ADMIN';
       updateData.unlimitedTraffic = true;
@@ -703,6 +702,7 @@ export class AdminsService implements OnModuleInit {
         if (data.unlimitedTraffic) {
           updateData.balance = 0;
           updateData.totalAssigned = 0;
+          updateData.maxClientTrafficGb = 0;
           updateData.refundOnDelete = false;
           updateData.refundOnEdit = false;
           updateData.gracePeriodStart = null;
@@ -834,20 +834,21 @@ export class AdminsService implements OnModuleInit {
         previousMode: existing.quotaMode as QuotaMode,
         balanceBytes: switchingToGlobal ? data.balance : undefined,
       });
-    } else if (
-      nextQuotaMode === 'PER_PANEL' &&
-      data.panelQuotas?.length &&
-      !unlimitedNow
-    ) {
-      await this.adminQuota.updatePanelQuotaBalances(id, data.panelQuotas);
-    } else if (
-      nextQuotaMode === 'PER_PANEL' &&
-      data.inboundIds !== undefined &&
-      !unlimitedNow
-    ) {
+    } else if (nextQuotaMode === 'PER_PANEL' && data.panelQuotas?.length) {
+      await this.adminQuota.updatePanelQuotaBalances(
+        id,
+        unlimitedNow
+          ? data.panelQuotas.map((q) => ({
+              ...q,
+              balanceBytes: 0,
+              maxClientTrafficGb: 0,
+            }))
+          : data.panelQuotas,
+      );
+    } else if (nextQuotaMode === 'PER_PANEL' && data.inboundIds !== undefined) {
       await this.adminQuota.syncPanelQuotas(id, {
         quotaMode: 'PER_PANEL',
-        unlimited: false,
+        unlimited: unlimitedNow === true,
         inboundIds: nextInboundIds,
         panelQuotas:
           data.panelQuotas ??
@@ -865,6 +866,16 @@ export class AdminsService implements OnModuleInit {
 
     if (nextRole !== 'SUPER_ADMIN' && data.storeEnabled !== undefined) {
       await this.syncStoreModuleAssignment(id, data.storeEnabled === true);
+    }
+
+    if (nextRole !== 'SUPER_ADMIN' && !unlimitedNow) {
+      const remaining = await this.adminQuota.remainingTrafficBytes(id);
+      if (remaining > 0) {
+        await this.prisma.admin.update({
+          where: { id },
+          data: { gracePeriodStart: null },
+        });
+      }
     }
 
     await this.prisma.auditLog.create({
@@ -911,10 +922,8 @@ export class AdminsService implements OnModuleInit {
         'The installation Super Admin cannot be deleted',
       );
     }
-    if (admin.role === 'SUPER_ADMIN' && !actor.isOwner) {
-      throw new ForbiddenException(
-        'Only the installation Super Admin can delete Super Admins',
-      );
+    if (admin.role === 'SUPER_ADMIN' && actor.role !== 'SUPER_ADMIN') {
+      throw new ForbiddenException('Only Super Admins can delete Super Admins');
     }
 
     const clientCount = await this.prisma.client.count({

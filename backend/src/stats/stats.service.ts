@@ -327,7 +327,10 @@ export class StatsService {
         expiryTime: Number(admin.expiryTime),
         trafficMode: admin.trafficMode,
         usedTraffic: unlimitedTraffic ? 0 : quotaOverview.usedTraffic,
-        gracePeriodStart: unlimitedTraffic ? null : admin.gracePeriodStart,
+        gracePeriodStart:
+          unlimitedTraffic || quotaOverview.availableTraffic > 0
+            ? null
+            : admin.gracePeriodStart,
         panelQuotas: unlimitedTraffic ? [] : quotaOverview.panels,
       },
       usage: {

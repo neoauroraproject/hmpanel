@@ -241,11 +241,16 @@ export class ClientsService {
     const additional = requested.additionalClients ?? 0;
     if (caps.maxClients > 0 && additional > 0) {
       const count = await this.prisma.client.count({
-        where: { adminId: targetAdminId, panelId },
+        where:
+          admin.quotaMode === 'PER_PANEL'
+            ? { adminId: targetAdminId, panelId }
+            : { adminId: targetAdminId },
       });
       if (count + additional > caps.maxClients) {
         throw new BadRequestException(
-          `Client limit reached for this panel. Maximum allowed: ${caps.maxClients}. Current: ${count}`,
+          admin.quotaMode === 'PER_PANEL'
+            ? `Client limit reached for this panel. Maximum allowed: ${caps.maxClients}. Current: ${count}`
+            : `Client limit reached. Maximum allowed: ${caps.maxClients}. Current: ${count}`,
         );
       }
     }
@@ -2773,10 +2778,6 @@ export class ClientsService {
           totalBytesRequired,
           bulkTargetPanelId,
           { usageMode: caller.trafficMode === 'USAGE' },
-        );
-      } else if (totalBytesPerClient > 0n) {
-        throw new BadRequestException(
-          'Your account has unlimited traffic. You can only create unlimited-traffic clients.',
         );
       }
     }

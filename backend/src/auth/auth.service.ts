@@ -74,7 +74,10 @@ export class AuthService {
         where: { id: decoded.sub },
         select: {
           id: true,
+          username: true,
+          email: true,
           role: true,
+          isOwner: true,
           status: true,
           expiryTime: true,
           tokenVersion: true,
@@ -84,10 +87,44 @@ export class AuthService {
 
       const { accessToken, refreshToken } = this.signTokens(admin!);
 
-      return { accessToken, refreshToken };
+      return {
+        accessToken,
+        refreshToken,
+        admin: {
+          id: admin!.id,
+          username: admin!.username,
+          email: admin!.email,
+          role: admin!.role,
+          isOwner: admin!.isOwner === true,
+        },
+      };
     } catch (e) {
       if (e instanceof UnauthorizedException) throw e;
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
+  }
+
+  async me(id: string) {
+    const admin = await this.prisma.admin.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        role: true,
+        isOwner: true,
+        status: true,
+        expiryTime: true,
+        tokenVersion: true,
+      },
+    });
+    assertAdminSessionActive(admin);
+    return {
+      id: admin!.id,
+      username: admin!.username,
+      email: admin!.email,
+      role: admin!.role,
+      isOwner: admin!.isOwner === true,
+    };
   }
 }
