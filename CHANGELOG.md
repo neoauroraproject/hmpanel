@@ -8,31 +8,6 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
-## [2.2.19] - 2026-09-12
-
-### Fixed
-- **Premium overlay load:** stop injecting the 2.8MB runtime through a `blob:` URL. Load `/frontend/runtime` as a normal same-origin script, and only fall back to inline fetch if that fails.
-
-## [2.2.18] - 2026-09-12
-
-### Fixed
-- **Docker image build:** TypeScript no longer treats `HMPANEL_PREMIUM_REGISTER` as `never` after the overlay fetch, so `next build` succeeds.
-
-## [2.2.17] - 2026-09-12
-
-### Fixed
-- **Premium overlay 101 / missing tabs:** serve `premium-runtime` on an extension-less API path and inject it via authenticated fetch. Nest 11 + nginx were failing the `.js` script request (~200 bytes), so settings lost its tabs and pages like Payment Management never mounted.
-
-## [2.2.16] - 2026-09-12
-
-### Fixed
-- **Premium settings / stuck loading:** wait for the Premium overlay instead of dropping Super Admin onto the Community card list, do not unregister plugins while the license is still loading, surface runtime load errors, and stop the reseller-sidebar hook from throwing or hanging the shell.
-
-## [2.2.15] - 2026-09-12
-
-### Added
-- **Reseller sidebar branding:** Super Admin (Premium) can set a custom logo and name for reseller admin menus, and optionally show the official GitHub link there. Super Admin keeps the original HM Panel mark.
-
 ## [2.2.14] - 2026-09-12
 
 ### Fixed

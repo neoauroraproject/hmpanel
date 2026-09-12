@@ -47,23 +47,6 @@ export class PremiumBundleService {
     }
   }
 
-  static readonly FRONTEND_ASSETS: Record<string, { file: string; type: string }> = {
-    runtime: { file: 'premium-runtime.js', type: 'application/javascript; charset=utf-8' },
-    'premium-runtime.js': { file: 'premium-runtime.js', type: 'application/javascript; charset=utf-8' },
-    styles: { file: 'premium-runtime.css', type: 'text/css; charset=utf-8' },
-    'premium-runtime.css': { file: 'premium-runtime.css', type: 'text/css; charset=utf-8' },
-    'premium-monitoring.js': { file: 'premium-monitoring.js', type: 'application/javascript; charset=utf-8' },
-    monitoring: { file: 'premium-monitoring.js', type: 'application/javascript; charset=utf-8' },
-  };
-
-  readFrontendAsset(name: string): { type: string; body: Buffer; file: string } | null {
-    const spec = PremiumBundleService.FRONTEND_ASSETS[name];
-    if (!spec) return null;
-    const filePath = path.join(this.getPremiumRoot(), 'frontend', spec.file);
-    if (!fs.existsSync(filePath)) return null;
-    return { type: spec.type, body: fs.readFileSync(filePath), file: spec.file };
-  }
-
   getInstalledSha256(): string | null {
     try {
       const manifest = JSON.parse(fs.readFileSync(this.getManifestPath(), 'utf8')) as BundleManifest;
@@ -272,14 +255,6 @@ export class PremiumBundleService {
     const backendSrc = fs.readFileSync(backendPath, 'utf8');
     if (/PremiumBundleModule:\s*null/.test(backendSrc)) {
       throw new Error('Invalid premium bundle: compiled backend stub detected');
-    }
-    const runtimePath = path.join(staging, 'frontend', 'premium-runtime.js');
-    if (!fs.existsSync(runtimePath)) {
-      throw new Error('Invalid premium bundle: frontend/premium-runtime.js missing');
-    }
-    const runtimeSrc = fs.readFileSync(runtimePath, 'utf8');
-    if (!runtimeSrc.includes('HMPANEL_PREMIUM_REGISTER')) {
-      throw new Error('Invalid premium bundle: frontend runtime does not register overlay');
     }
   }
 

@@ -48,8 +48,7 @@ export function useLicenseActivation() {
 
   const licenseQuery = useQuery({
     queryKey: ["platform-license"],
-    queryFn: async () =>
-      (await api.get<LicenseState>("/platform/license", { timeout: 20_000 })).data,
+    queryFn: async () => (await api.get<LicenseState>("/platform/license")).data,
     retry: false,
     staleTime: 60_000,
     // Guests on /p /shop /portal /track must not hit JWT-only endpoints.

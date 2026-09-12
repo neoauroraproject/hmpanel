@@ -167,11 +167,6 @@ export function useLocale() {
   return ctx;
 }
 
-/** Safe for chrome that may render before LocaleProvider (or after a plugin crash). */
-export function useLocaleOptional() {
-  return useContext(LocaleContext);
-}
-
 export function useT() {
   return useLocale().t;
 }

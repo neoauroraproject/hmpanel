@@ -1074,12 +1074,6 @@
     "moduleLoading": "Loading premium UI…",
     "moduleMissing": "Activate premium or refresh the page.",
     "moduleNotLoaded": "Premium module not loaded for {path}. Open Settings → Premium License, wait for modules to load, then refresh.",
-    "overlayLoading": "Loading the Premium settings interface…",
-    "overlayFailed": "Premium settings UI did not load. Refresh the page or reload plugins under Premium License.",
-    "overlayCrashed": "Premium settings UI crashed while rendering. Refresh the page.",
-    "licenseUnreachable": "Could not reach the license service. Refresh the page or restart the panel.",
-    "bundleNotInstalled": "Premium license is active but the bundle is not installed. Update the premium bundle, then refresh.",
-    "reloadPage": "Reload page",
     "tabs": {
       "modules": "Modules",
       "jobs": "Job Center",
