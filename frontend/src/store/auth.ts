@@ -26,3 +26,24 @@ export const useAuth = create<AuthState>()(
     { name: "panel-auth" },
   ),
 );
+
+/** Safe on SSR/prerender — `persist` is missing until the client store hydrates. */
+export function subscribeAuthHydration(onHydrated: () => void): () => void {
+  const persistApi = (
+    useAuth as {
+      persist?: {
+        hasHydrated?: () => boolean;
+        onFinishHydration?: (cb: () => void) => () => void;
+      };
+    }
+  ).persist;
+  if (!persistApi?.hasHydrated) {
+    onHydrated();
+    return () => undefined;
+  }
+  if (persistApi.hasHydrated()) {
+    onHydrated();
+    return () => undefined;
+  }
+  return persistApi.onFinishHydration?.(onHydrated) || (() => undefined);
+}

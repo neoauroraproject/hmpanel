@@ -8,6 +8,15 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [2.2.20] - 2026-09-13
+
+### Fixed
+- **Docker / login prerender:** auth persist hydration no longer crashes Next.js `next build` (`hasHydrated` on undefined).
+- **Per-panel limits:** unlimited traffic no longer deletes `AdminPanelQuota` rows; client/day/device caps stay per panel.
+- **Grace period:** reseller remaining stock is read from panel quotas, not the unused account-wide `balance`.
+- **Extra Super Admin:** session admin is synced after login so they get the Super Admin shell; install owner cannot be deleted.
+- **Payment owner:** add-balance cards/wallets resolve to the install owner, not an extra Super Admin with empty payment settings.
+
 ## [2.2.14] - 2026-09-12
 
 ### Fixed

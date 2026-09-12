@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff } from "lucide-react";
 import { api } from "@/lib/api";
-import { useAuth } from "@/store/auth";
+import { subscribeAuthHydration, useAuth } from "@/store/auth";
 import type { LoginResponse } from "@/lib/types";
 import { useT, useLocale } from "@/i18n";
 import { LocaleSwitcher } from "@/components/LocaleSwitcher";
@@ -21,13 +21,9 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [hydrated, setHydrated] = useState(() => useAuth.persist.hasHydrated());
+  const [hydrated, setHydrated] = useState(false);
 
-  useEffect(() => {
-    const unsub = useAuth.persist.onFinishHydration(() => setHydrated(true));
-    setHydrated(useAuth.persist.hasHydrated());
-    return unsub;
-  }, []);
+  useEffect(() => subscribeAuthHydration(() => setHydrated(true)), []);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();

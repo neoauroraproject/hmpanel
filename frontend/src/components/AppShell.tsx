@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { api } from "@/lib/api";
-import { useAuth } from "@/store/auth";
+import { subscribeAuthHydration, useAuth } from "@/store/auth";
 import type { SessionAdmin } from "@/lib/types";
 import { Sidebar } from "@/components/sidebar";
 import { MobileNav } from "@/components/mobile-nav";
@@ -21,10 +21,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [isHydrated, setIsHydrated] = useState(false);
   const t = useT();
 
-  useEffect(() => {
-    useAuth.persist.onFinishHydration(() => setIsHydrated(true));
-    setIsHydrated(useAuth.persist.hasHydrated());
-  }, []);
+  useEffect(() => subscribeAuthHydration(() => setIsHydrated(true)), []);
 
   useEffect(() => {
     if (!isHydrated) return;
