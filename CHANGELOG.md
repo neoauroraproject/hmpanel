@@ -8,6 +8,11 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [2.2.19] - 2026-09-12
+
+### Fixed
+- **Premium overlay load:** stop injecting the 2.8MB runtime through a `blob:` URL. Load `/frontend/runtime` as a normal same-origin script, and only fall back to inline fetch if that fails.
+
 ## [2.2.18] - 2026-09-12
 
 ### Fixed

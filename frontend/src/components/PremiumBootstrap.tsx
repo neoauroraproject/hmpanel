@@ -166,22 +166,24 @@ function registerPremiumOverlay() {
   return true;
 }
 
-async function executePremiumRuntime(code: string) {
+function loadRuntimeScript(src: string) {
+  return new Promise<void>((resolve, reject) => {
+    const script = document.createElement("script");
+    script.dataset.hmpanelPremiumRuntime = "1";
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error(`Failed to load ${src}`));
+    script.src = src;
+    document.body.appendChild(script);
+  });
+}
+
+function executeInlineRuntime(code: string) {
   exposeSharedModules();
-  const blob = new Blob([code], { type: "application/javascript" });
-  const url = URL.createObjectURL(blob);
-  try {
-    await new Promise<void>((resolve, reject) => {
-      const script = document.createElement("script");
-      script.dataset.hmpanelPremiumRuntime = "1";
-      script.onload = () => resolve();
-      script.onerror = () => reject(new Error("premium runtime failed to execute"));
-      script.src = url;
-      document.body.appendChild(script);
-    });
-  } finally {
-    URL.revokeObjectURL(url);
-  }
+  const script = document.createElement("script");
+  script.dataset.hmpanelPremiumRuntime = "1";
+  script.text = code;
+  document.body.appendChild(script);
 }
 
 /** Loads premium frontend runtime from installed bundle when license is active. */
@@ -217,9 +219,13 @@ export function PremiumBootstrap() {
     void (async () => {
       try {
         if (!registerPremiumOverlay()) {
-          const code = await fetchPremiumRuntimeCode();
+          try {
+            await loadRuntimeScript("/api/platform/premium-assets/frontend/runtime");
+          } catch {
+            if (cancelled) return;
+            executeInlineRuntime(await fetchPremiumRuntimeCode());
+          }
           if (cancelled) return;
-          await executePremiumRuntime(code);
           exposeSharedModules();
           applyPendingPremiumI18n();
           if (!registerPremiumOverlay()) {

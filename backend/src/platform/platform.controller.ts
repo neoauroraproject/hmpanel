@@ -184,6 +184,12 @@ export class PlatformController {
 export class PremiumAssetsController {
   constructor(private bundleService: PremiumBundleService) {}
 
+  @Get('status')
+  status() {
+    const asset = this.bundleService.readFrontendAsset('runtime');
+    return { installed: Boolean(asset), bytes: asset?.body.length ?? 0 };
+  }
+
   /**
    * Extension-less aliases exist because Nest 11 / some proxies mishandle `.js` / `.css`
    * routes (Chrome then shows a ~200-byte 101/404 and the overlay never registers).

@@ -37,7 +37,11 @@ export default function PremiumPluginPage() {
         <PageHeader title={t("app.premium")} subtitle={t("premium.moduleMissing")} />
         <Card className="p-8 text-center text-zinc-500">
           <ErrorBox
-            message={t("premium.moduleNotLoaded", { path: fullPath })}
+            message={
+              typeof window !== "undefined" && window.__HMPANEL_PREMIUM_LOAD_ERROR
+                ? `${t("premium.moduleNotLoaded", { path: fullPath })} ${window.__HMPANEL_PREMIUM_LOAD_ERROR}`
+                : t("premium.moduleNotLoaded", { path: fullPath })
+            }
           />
         </Card>
       </div>
