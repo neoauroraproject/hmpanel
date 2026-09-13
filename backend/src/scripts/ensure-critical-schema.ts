@@ -213,6 +213,7 @@ export async function ensureCriticalSchema(prisma: PrismaClient): Promise<void> 
     `ALTER TABLE "AdminPanelQuota" ADD COLUMN IF NOT EXISTS "maxExpireDays" INTEGER NOT NULL DEFAULT 0`,
     `ALTER TABLE "AdminPanelQuota" ADD COLUMN IF NOT EXISTS "maxClientTrafficGb" INTEGER NOT NULL DEFAULT 0`,
     `ALTER TABLE "AdminPanelQuota" ADD COLUMN IF NOT EXISTS "trafficMode" "TrafficMode" NOT NULL DEFAULT 'ALLOCATION'`,
+    `ALTER TABLE "AdminPanelQuota" ADD COLUMN IF NOT EXISTS "unlimitedTraffic" BOOLEAN NOT NULL DEFAULT false`,
 
     // Legacy: suspended → disabled (admin status is only active | disabled)
     `UPDATE "Admin" SET status = 'disabled' WHERE status = 'suspended'`,

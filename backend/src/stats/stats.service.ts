@@ -310,7 +310,12 @@ export class StatsService {
     );
 
     const unlimitedTraffic =
-      admin.unlimitedTraffic === true || admin.role === 'SUPER_ADMIN';
+      admin.unlimitedTraffic === true ||
+      admin.role === 'SUPER_ADMIN' ||
+      quotaOverview.unlimitedTraffic;
+    const anyPanelUnlimited = (quotaOverview.panels ?? []).some(
+      (panel) => panel.unlimitedTraffic === true,
+    );
 
     let panelClientCap = 0;
     for (const panel of quotaOverview.panels ?? []) {
@@ -328,10 +333,17 @@ export class StatsService {
         trafficMode: admin.trafficMode,
         usedTraffic: unlimitedTraffic ? 0 : quotaOverview.usedTraffic,
         gracePeriodStart:
-          unlimitedTraffic || quotaOverview.availableTraffic > 0
+          unlimitedTraffic ||
+          anyPanelUnlimited ||
+          quotaOverview.availableTraffic > 0
             ? null
             : admin.gracePeriodStart,
-        panelQuotas: unlimitedTraffic ? [] : quotaOverview.panels,
+        panelQuotas:
+          quotaOverview.quotaMode === 'PER_PANEL'
+            ? quotaOverview.panels
+            : unlimitedTraffic
+              ? []
+              : quotaOverview.panels,
       },
       usage: {
         today: todayUsage.toString(),

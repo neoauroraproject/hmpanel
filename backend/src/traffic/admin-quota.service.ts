@@ -29,6 +29,7 @@ export type PanelQuotaSpec = {
   maxExpireDays?: number;
   maxClientTrafficGb?: number;
   trafficMode?: 'ALLOCATION' | 'USAGE' | string;
+  unlimitedTraffic?: boolean;
 };
 
 function unique(values: string[]): string[] {
@@ -71,6 +72,26 @@ export class AdminQuotaService {
     unlimitedTraffic?: boolean | null;
   }): boolean {
     return admin.role === 'SUPER_ADMIN' || admin.unlimitedTraffic === true;
+  }
+
+  async isPanelUnlimited(
+    admin: {
+      id: string;
+      role?: string | null;
+      unlimitedTraffic?: boolean | null;
+      quotaMode?: QuotaMode | string | null;
+    },
+    panelId?: string | null,
+    tx?: Tx,
+  ): Promise<boolean> {
+    if (this.skipTrafficAccounting(admin)) return true;
+    if (!this.isPerPanel(admin) || !panelId) return false;
+    const db = tx ?? this.prisma;
+    const row = await db.adminPanelQuota.findUnique({
+      where: { adminId_panelId: { adminId: admin.id, panelId } },
+      select: { unlimitedTraffic: true },
+    });
+    return row?.unlimitedTraffic === true;
   }
 
   providerFromPanelType(panelType?: string | null): '3xui' | 'eylan' | 'pasarguard' {
@@ -162,7 +183,9 @@ export class AdminQuotaService {
     panelId: string | null,
     opts?: { usageMode?: boolean },
   ): Promise<void> {
-    if (this.skipTrafficAccounting(admin)) return;
+    if (this.skipTrafficAccounting(admin) || (await this.isPanelUnlimited(admin, panelId))) {
+      return;
+    }
     if (this.isPerPanel(admin) && !panelId) {
       throw new BadRequestException('panelId is required for per-panel quota checks.');
     }
@@ -207,7 +230,11 @@ export class AdminQuotaService {
     },
   ): Promise<{ balanceBefore: number; balanceAfter: number }> {
     const amount = Number(bytes);
-    if (this.skipTrafficAccounting(admin) || amount <= 0) {
+    if (
+      this.skipTrafficAccounting(admin) ||
+      amount <= 0 ||
+      (await this.isPanelUnlimited(admin, panelId, tx))
+    ) {
       return { balanceBefore: admin.balance, balanceAfter: admin.balance };
     }
 
@@ -351,7 +378,11 @@ export class AdminQuotaService {
     },
   ): Promise<{ balanceBefore: number; balanceAfter: number }> {
     const amount = Number(bytes);
-    if (this.skipTrafficAccounting(admin) || amount <= 0) {
+    if (
+      this.skipTrafficAccounting(admin) ||
+      amount <= 0 ||
+      (await this.isPanelUnlimited(admin, panelId, tx))
+    ) {
       return { balanceBefore: admin.balance, balanceAfter: admin.balance };
     }
 
@@ -431,7 +462,9 @@ export class AdminQuotaService {
   ): Promise<void> {
     if (delta <= 0n) return;
     const admin = await this.loadAdmin(adminId);
-    if (this.skipTrafficAccounting(admin)) return;
+    if (this.skipTrafficAccounting(admin) || (await this.isPanelUnlimited(admin, panelId))) {
+      return;
+    }
     const panel = await this.prisma.panel.findUnique({
       where: { id: panelId },
       select: { panelType: true },
@@ -705,14 +738,17 @@ export class AdminQuotaService {
       });
       for (const pid of panelIds) {
         const spec = quotas.find((q) => q.panelId === pid);
+        const panelUnlimited =
+          spec?.unlimitedTraffic === true || input.unlimited === true;
         await this.upsertPanelQuotaWithLedger(tx, adminId, {
           panelId: pid,
-          balanceBytes: input.unlimited ? 0 : spec?.balanceBytes ?? 0,
+          balanceBytes: panelUnlimited ? 0 : spec?.balanceBytes ?? 0,
           maxClients: spec?.maxClients,
           maxDeviceLimit: spec?.maxDeviceLimit,
           maxExpireDays: spec?.maxExpireDays,
-          maxClientTrafficGb: input.unlimited ? 0 : spec?.maxClientTrafficGb,
+          maxClientTrafficGb: panelUnlimited ? 0 : spec?.maxClientTrafficGb,
           trafficMode: spec?.trafficMode,
+          unlimitedTraffic: panelUnlimited,
         });
       }
     });
@@ -770,6 +806,10 @@ export class AdminQuotaService {
           ? {}
           : { maxClientTrafficGb: 0 }),
       trafficMode,
+      unlimitedTraffic:
+        spec.unlimitedTraffic !== undefined
+          ? spec.unlimitedTraffic === true
+          : existing?.unlimitedTraffic === true,
     };
 
     if (!existing) {
@@ -836,28 +876,29 @@ export class AdminQuotaService {
         maxExpireDays: r.maxExpireDays,
         maxClientTrafficGb: r.maxClientTrafficGb,
         trafficMode: r.trafficMode === 'USAGE' ? 'USAGE' : 'ALLOCATION',
-        availableTraffic: summary.availableTraffic,
-        usedTraffic: summary.usedTraffic,
+        unlimitedTraffic: r.unlimitedTraffic === true,
+        availableTraffic: r.unlimitedTraffic ? 0 : summary.availableTraffic,
+        usedTraffic: r.unlimitedTraffic ? 0 : summary.usedTraffic,
       };
     });
   }
 
   async buildResellerOverview(adminId: string, filterPanelId?: string) {
     const admin = await this.loadAdmin(adminId);
-    const unlimited =
+    const accountUnlimited =
       admin.unlimitedTraffic === true || admin.role === 'SUPER_ADMIN';
 
-    if (!this.isPerPanel(admin) || unlimited) {
+    if (!this.isPerPanel(admin)) {
       const summary = calculateAdminTrafficSummary(
         admin.totalAssigned,
         admin.balance,
       );
       return {
         quotaMode: 'GLOBAL' as const,
-        unlimitedTraffic: unlimited,
-        availableTraffic: unlimited ? 0 : summary.availableTraffic,
-        allTimeTraffic: unlimited ? 0 : summary.totalAllocated,
-        usedTraffic: unlimited ? 0 : summary.usedTraffic,
+        unlimitedTraffic: accountUnlimited,
+        availableTraffic: accountUnlimited ? 0 : summary.availableTraffic,
+        allTimeTraffic: accountUnlimited ? 0 : summary.totalAllocated,
+        usedTraffic: accountUnlimited ? 0 : summary.usedTraffic,
         panels: [] as Array<{
           panelId: string;
           name: string;
@@ -866,6 +907,7 @@ export class AdminQuotaService {
           allTimeTraffic: number;
           usedTraffic: number;
           maxClients: number;
+          unlimitedTraffic?: boolean;
         }>,
       };
     }
@@ -875,10 +917,11 @@ export class AdminQuotaService {
       panelId: q.panelId,
       name: q.panelName,
       panelType: q.panelType,
-      availableTraffic: q.availableTraffic,
+      availableTraffic: q.unlimitedTraffic ? 0 : q.availableTraffic,
       allTimeTraffic: q.totalAssigned,
-      usedTraffic: q.usedTraffic,
+      usedTraffic: q.unlimitedTraffic ? 0 : q.usedTraffic,
       maxClients: q.maxClients,
+      unlimitedTraffic: q.unlimitedTraffic === true,
     }));
 
     const matching = filterPanelId
@@ -887,13 +930,16 @@ export class AdminQuotaService {
     const sumAvailable = matching.reduce((s, p) => s + p.availableTraffic, 0);
     const sumAssigned = matching.reduce((s, p) => s + p.allTimeTraffic, 0);
     const sumUsed = matching.reduce((s, p) => s + p.usedTraffic, 0);
+    const allUnlimited =
+      accountUnlimited ||
+      (matching.length > 0 && matching.every((p) => p.unlimitedTraffic));
 
     return {
       quotaMode: 'PER_PANEL' as const,
-      unlimitedTraffic: false,
-      availableTraffic: sumAvailable,
+      unlimitedTraffic: allUnlimited,
+      availableTraffic: allUnlimited ? 0 : sumAvailable,
       allTimeTraffic: sumAssigned,
-      usedTraffic: sumUsed,
+      usedTraffic: allUnlimited ? 0 : sumUsed,
       panels,
     };
   }
@@ -905,6 +951,7 @@ export class AdminQuotaService {
   async remainingTrafficBytes(adminId: string): Promise<number> {
     const overview = await this.buildResellerOverview(adminId);
     if (overview.unlimitedTraffic) return Number.POSITIVE_INFINITY;
+    if (overview.panels.some((p) => p.unlimitedTraffic)) return Number.POSITIVE_INFINITY;
     return Math.max(0, Number(overview.availableTraffic) || 0);
   }
 

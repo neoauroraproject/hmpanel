@@ -562,10 +562,12 @@ function ResellerDashboard() {
           ) : null}
           {!a.unlimitedTraffic && a.quotaMode === "PER_PANEL" && a.panelQuotas?.length > 1 && (
             <div className="mt-3 space-y-1 border-t border-zinc-200 pt-3 dark:border-zinc-800">
-              {a.panelQuotas.map((p: { panelId: string; name: string; availableTraffic: number }) => (
+              {a.panelQuotas.map((p: { panelId: string; name: string; availableTraffic: number; unlimitedTraffic?: boolean }) => (
                 <div key={p.panelId} className="flex justify-between gap-2 text-xs">
                   <span className="truncate text-zinc-500">{p.name}</span>
-                  <span className="shrink-0 font-medium text-zinc-800 dark:text-zinc-200">{formatBytes(p.availableTraffic)}</span>
+                  <span className="shrink-0 font-medium text-zinc-800 dark:text-zinc-200">
+                    {p.unlimitedTraffic ? "∞" : formatBytes(p.availableTraffic)}
+                  </span>
                 </div>
               ))}
             </div>
@@ -596,9 +598,10 @@ function ResellerDashboard() {
           <h2 className="mb-2 text-sm font-semibold text-zinc-800 dark:text-zinc-200">{t("dashboard.destinations")}</h2>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {xuiDestinations.map((p) => {
-              const q = (a.panelQuotas || []).find((row: { panelId: string }) => row.panelId === p.id);
+              const q = (a.panelQuotas || []).find((row: { panelId: string; unlimitedTraffic?: boolean }) => row.panelId === p.id);
+              const panelUnlimited = a.unlimitedTraffic || q?.unlimitedTraffic === true;
               const sharedPool = a.quotaMode === "GLOBAL" && !a.unlimitedTraffic;
-              const remaining = a.unlimitedTraffic
+              const remaining = panelUnlimited
                 ? null
                 : Number(sharedPool ? a.availableTraffic : (q?.availableTraffic ?? a.availableTraffic ?? 0));
               const cap = sharedPool ? Number(a.clientCapacity || 0) : Number(q?.maxClients ?? 0);
@@ -623,7 +626,7 @@ function ResellerDashboard() {
                     <div>
                       <div className="uppercase tracking-wide">{t("dashboard.remainingTraffic")}</div>
                       <div className="mt-0.5 font-semibold text-zinc-800 dark:text-zinc-200">
-                        {a.unlimitedTraffic ? "∞" : formatBytes(remaining || 0)}
+                        {panelUnlimited ? "∞" : formatBytes(remaining || 0)}
                       </div>
                       {sharedPool ? (
                         <div className="mt-0.5 text-[10px] font-medium text-blue-600 dark:text-blue-400">

@@ -26,6 +26,7 @@ export class AdminPanelQuotaDto {
   @IsOptional()
   @IsIn(['ALLOCATION', 'USAGE'])
   trafficMode?: string;
+  @ApiPropertyOptional() @IsOptional() @IsBoolean() unlimitedTraffic?: boolean;
 }
 
 export class CreateAdminDto {

@@ -252,15 +252,9 @@ export class AdminsService implements OnModuleInit {
     if (usePerPanel && (data.inboundIds?.length || data.panelQuotas?.length)) {
       await this.adminQuota.syncPanelQuotas(admin.id, {
         quotaMode: 'PER_PANEL',
-        unlimited,
+        unlimited: false,
         inboundIds: data.inboundIds ?? [],
-        panelQuotas: unlimited
-          ? (data.panelQuotas ?? []).map((q) => ({
-              ...q,
-              balanceBytes: 0,
-              maxClientTrafficGb: 0,
-            }))
-          : data.panelQuotas,
+        panelQuotas: data.panelQuotas,
       });
     } else if (data.balance && data.balance > 0 && !unlimited && !usePerPanel) {
       await this.prisma.trafficTransaction.create({
@@ -348,13 +342,22 @@ export class AdminsService implements OnModuleInit {
         let panelQuotaSummary: string | null = null;
         let usedTraffic = summary.usedTraffic;
         let totalAssigned = summary.totalAllocated;
-        if (admin.quotaMode === 'PER_PANEL' && !admin.unlimitedTraffic) {
+        if (admin.quotaMode === 'PER_PANEL') {
           const quotas = await this.adminQuota.listPanelQuotas(admin.id);
-          const totalAvail = quotas.reduce((s, q) => s + q.availableTraffic, 0);
-          panelQuotaSummary = `${quotas.length} panels · ${(totalAvail / (1024 ** 3)).toFixed(2)} GB`;
-          const pooled = sumPanelQuotaTraffic(quotas);
-          usedTraffic = pooled.usedTraffic;
-          totalAssigned = pooled.totalAllocated;
+          const unlimitedCount = quotas.filter((q) => q.unlimitedTraffic).length;
+          const totalAvail = quotas
+            .filter((q) => !q.unlimitedTraffic)
+            .reduce((s, q) => s + q.availableTraffic, 0);
+          if (unlimitedCount === quotas.length && quotas.length > 0) {
+            panelQuotaSummary = `${quotas.length} panels · unlimited`;
+          } else if (unlimitedCount > 0) {
+            panelQuotaSummary = `${quotas.length} panels · ${(totalAvail / (1024 ** 3)).toFixed(2)} GB + ${unlimitedCount} unlimited`;
+          } else {
+            panelQuotaSummary = `${quotas.length} panels · ${(totalAvail / (1024 ** 3)).toFixed(2)} GB`;
+          }
+          const pooled = sumPanelQuotaTraffic(quotas.filter((q) => !q.unlimitedTraffic));
+          usedTraffic = admin.unlimitedTraffic ? 0 : pooled.usedTraffic;
+          totalAssigned = admin.unlimitedTraffic ? 0 : pooled.totalAllocated;
         }
         return {
           ...admin,
@@ -828,27 +831,18 @@ export class AdminsService implements OnModuleInit {
     if (switchingToPerPanel || switchingToGlobal || data.quotaMode !== undefined) {
       await this.adminQuota.syncPanelQuotas(id, {
         quotaMode: nextQuotaMode,
-        unlimited: unlimitedNow === true,
+        unlimited: nextQuotaMode === 'PER_PANEL' ? false : unlimitedNow === true,
         inboundIds: nextInboundIds,
         panelQuotas: data.panelQuotas,
         previousMode: existing.quotaMode as QuotaMode,
         balanceBytes: switchingToGlobal ? data.balance : undefined,
       });
     } else if (nextQuotaMode === 'PER_PANEL' && data.panelQuotas?.length) {
-      await this.adminQuota.updatePanelQuotaBalances(
-        id,
-        unlimitedNow
-          ? data.panelQuotas.map((q) => ({
-              ...q,
-              balanceBytes: 0,
-              maxClientTrafficGb: 0,
-            }))
-          : data.panelQuotas,
-      );
+      await this.adminQuota.updatePanelQuotaBalances(id, data.panelQuotas);
     } else if (nextQuotaMode === 'PER_PANEL' && data.inboundIds !== undefined) {
       await this.adminQuota.syncPanelQuotas(id, {
         quotaMode: 'PER_PANEL',
-        unlimited: unlimitedNow === true,
+        unlimited: false,
         inboundIds: nextInboundIds,
         panelQuotas:
           data.panelQuotas ??
@@ -859,6 +853,7 @@ export class AdminsService implements OnModuleInit {
             maxDeviceLimit: q.maxDeviceLimit,
             maxExpireDays: q.maxExpireDays,
             maxClientTrafficGb: q.maxClientTrafficGb,
+            unlimitedTraffic: q.unlimitedTraffic === true,
           })),
         previousMode: 'PER_PANEL',
       });

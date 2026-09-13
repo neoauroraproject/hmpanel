@@ -179,19 +179,27 @@ export class ClientsService {
   }
 
   /** Only admins with unlimitedTraffic (or Super Admin) may own/create unlimited clients. */
-  private assertUnlimitedClientAllowed(
-    targetAdmin: { unlimitedTraffic?: boolean | null; role?: string | null },
+  private async assertUnlimitedClientAllowed(
+    targetAdmin: {
+      id?: string;
+      unlimitedTraffic?: boolean | null;
+      role?: string | null;
+    },
     totalBytes: bigint,
-  ): void {
-    if (
-      totalBytes === 0n &&
-      !targetAdmin.unlimitedTraffic &&
-      targetAdmin.role !== 'SUPER_ADMIN'
-    ) {
-      throw new BadRequestException(
-        'Only admins with unlimited traffic enabled can create unlimited-traffic clients.',
-      );
+    panelId?: string | null,
+  ): Promise<void> {
+    if (totalBytes !== 0n) return;
+    if (targetAdmin.role === 'SUPER_ADMIN' || targetAdmin.unlimitedTraffic) return;
+    if (panelId && targetAdmin.id) {
+      const row = await this.prisma.adminPanelQuota.findUnique({
+        where: { adminId_panelId: { adminId: targetAdmin.id, panelId } },
+        select: { unlimitedTraffic: true },
+      });
+      if (row?.unlimitedTraffic) return;
     }
+    throw new BadRequestException(
+      'Only admins with unlimited traffic enabled can create unlimited-traffic clients.',
+    );
   }
 
   /**
@@ -756,7 +764,7 @@ export class ClientsService {
     }
 
     const totalBytes = BigInt(data.total || 0);
-    this.assertUnlimitedClientAllowed(targetAdmin, totalBytes);
+    await this.assertUnlimitedClientAllowed(targetAdmin, totalBytes, panel.id);
     if (targetAdmin.maxClients > 0 && targetAdmin._count.clients >= targetAdmin.maxClients) {
       throw new BadRequestException(
         `Client limit reached. Maximum allowed: ${targetAdmin.maxClients}`,
@@ -1180,10 +1188,18 @@ export class ClientsService {
         targetAdmin = explicitTarget;
       }
 
-      this.assertUnlimitedClientAllowed(targetAdmin, totalBytes);
+      await this.assertUnlimitedClientAllowed(
+        targetAdmin,
+        totalBytes,
+        inbounds[0]?.panelId,
+      );
 
       if (caller.role === 'SUPER_ADMIN' && totalBytes === 0n) {
-        this.assertUnlimitedClientAllowed(targetAdmin, totalBytes);
+        await this.assertUnlimitedClientAllowed(
+          targetAdmin,
+          totalBytes,
+          inbounds[0]?.panelId,
+        );
       }
 
       if (await this.featureFlags.isEnabled(PLATFORM_FLAGS.POLICY_RESERVE_V1)) {
@@ -2041,7 +2057,7 @@ export class ClientsService {
       const owner = await this.prisma.admin.findUnique({
         where: { id: existing.adminId },
       });
-      this.assertUnlimitedClientAllowed(owner || {}, newTotal);
+      await this.assertUnlimitedClientAllowed(owner || {}, newTotal, existing.panelId);
     }
 
     if (
@@ -2719,12 +2735,12 @@ export class ClientsService {
     const totalBytesPerClient = BigInt(dto.total || 0);
     const totalBytesRequired = totalBytesPerClient * BigInt(count);
 
-    this.assertUnlimitedClientAllowed(targetAdmin, totalBytesPerClient);
+    await this.assertUnlimitedClientAllowed(targetAdmin, totalBytesPerClient);
 
     if (caller.role !== 'SUPER_ADMIN') {
       // Per-panel balance check runs after inbounds resolve to a target panel.
     } else if (totalBytesPerClient === 0n) {
-      this.assertUnlimitedClientAllowed(targetAdmin, totalBytesPerClient);
+      await this.assertUnlimitedClientAllowed(targetAdmin, totalBytesPerClient);
     }
 
     // Flow is dynamically assigned per inbound later.
