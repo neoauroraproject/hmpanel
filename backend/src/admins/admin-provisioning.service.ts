@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   Logger,
@@ -7,6 +8,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AdminQuotaService } from '../traffic/admin-quota.service';
 import { QuotaMode } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
+import { resolveLiveInboundIds } from './resolve-live-inbound-ids';
 
 export type AdminProvisionInput = {
   username: string;
@@ -38,6 +40,16 @@ export class AdminProvisioningService {
   ) {}
 
   async createReseller(data: AdminProvisionInput, actorId?: string) {
+    const inboundResolution = await resolveLiveInboundIds(
+      this.prisma,
+      data.inboundIds,
+    );
+    if ((data.inboundIds?.length || 0) > 0 && inboundResolution.liveIds.length === 0) {
+      throw new BadRequestException(
+        'Inbound IDs on this agency plan no longer exist. Edit the plan and re-select inbounds.',
+      );
+    }
+    const liveInboundIds = inboundResolution.liveIds;
     const exists = await this.prisma.admin.findFirst({
       where: { OR: [{ username: data.username }, { email: data.email }] },
       select: { id: true },
@@ -72,9 +84,9 @@ export class AdminProvisioningService {
         select: { id: true, username: true, email: true, role: true },
       });
 
-      if (data.inboundIds?.length) {
+      if (liveInboundIds.length) {
         await tx.adminInbound.createMany({
-          data: data.inboundIds.map((inboundId) => ({
+          data: liveInboundIds.map((inboundId) => ({
             adminId: row.id,
             inboundId,
           })),
@@ -104,11 +116,11 @@ export class AdminProvisioningService {
       return row;
     });
 
-    if (usePerPanel && (data.inboundIds?.length || data.panelQuotas?.length)) {
+    if (usePerPanel && (liveInboundIds.length || data.panelQuotas?.length)) {
       await this.adminQuota.syncPanelQuotas(admin.id, {
         quotaMode: 'PER_PANEL',
         unlimited,
-        inboundIds: data.inboundIds ?? [],
+        inboundIds: liveInboundIds,
         panelQuotas: unlimited
           ? (data.panelQuotas ?? []).map((q) => ({ ...q, balanceBytes: 0 }))
           : data.panelQuotas,

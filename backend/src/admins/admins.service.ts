@@ -22,6 +22,10 @@ import { GLOBAL_POOL_TX_DESCRIPTION } from '../traffic/quota-balance-patch';
 import { DomainEventBusService } from '../events/domain-event-bus.service';
 import { AdminRole, QuotaMode } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
+import {
+  resolveLiveInboundIds,
+  type PanelInboundAccess,
+} from './resolve-live-inbound-ids';
 
 @Injectable()
 export class AdminsService implements OnModuleInit {
@@ -32,6 +36,13 @@ export class AdminsService implements OnModuleInit {
     private adminQuota: AdminQuotaService,
     @Optional() private events?: DomainEventBusService,
   ) {}
+
+  async resolveLiveInboundIds(
+    inboundIds: string[] | undefined | null,
+    panelAccess?: PanelInboundAccess[] | null,
+  ) {
+    return resolveLiveInboundIds(this.prisma, inboundIds, panelAccess);
+  }
 
   async onModuleInit() {
     try {
@@ -146,6 +157,7 @@ export class AdminsService implements OnModuleInit {
       storeEnabled?: boolean;
       quotaMode?: string;
       panelQuotas?: PanelQuotaSpec[];
+      panelAccess?: PanelInboundAccess[];
     },
     actorId: string,
   ) {
@@ -168,6 +180,15 @@ export class AdminsService implements OnModuleInit {
       ? 'GLOBAL'
       : (data.quotaMode as QuotaMode) || 'GLOBAL';
     const usePerPanel = !isSuper && quotaMode === 'PER_PANEL';
+    const inboundResolution = !isSuper
+      ? await resolveLiveInboundIds(this.prisma, data.inboundIds, data.panelAccess)
+      : { liveIds: [] as string[], requested: 0 };
+    if (!isSuper && (data.inboundIds?.length || 0) > 0 && inboundResolution.liveIds.length === 0) {
+      throw new BadRequestException(
+        'Inbound IDs on this agency plan no longer exist. Edit the plan and re-select inbounds.',
+      );
+    }
+
     const admin = await this.prisma.admin.create({
       data: {
         username: data.username,
@@ -221,9 +242,9 @@ export class AdminsService implements OnModuleInit {
       },
     });
 
-    if (!isSuper && data.inboundIds?.length) {
+    if (!isSuper && inboundResolution.liveIds.length) {
       await this.prisma.adminInbound.createMany({
-        data: data.inboundIds.map((inboundId) => ({
+        data: inboundResolution.liveIds.map((inboundId) => ({
           adminId: admin.id,
           inboundId,
         })),
@@ -249,11 +270,11 @@ export class AdminsService implements OnModuleInit {
       role: admin.role,
     });
 
-    if (usePerPanel && (data.inboundIds?.length || data.panelQuotas?.length)) {
+    if (usePerPanel && (inboundResolution.liveIds.length || data.panelQuotas?.length)) {
       await this.adminQuota.syncPanelQuotas(admin.id, {
         quotaMode: 'PER_PANEL',
         unlimited: false,
-        inboundIds: data.inboundIds ?? [],
+        inboundIds: inboundResolution.liveIds,
         panelQuotas: data.panelQuotas,
       });
     } else if (data.balance && data.balance > 0 && !unlimited && !usePerPanel) {
@@ -747,11 +768,25 @@ export class AdminsService implements OnModuleInit {
     if (data.portalSettings !== undefined)
       updateData.portalSettings = data.portalSettings;
 
+    const inboundResolution =
+      nextRole !== 'SUPER_ADMIN' && data.inboundIds !== undefined
+        ? await resolveLiveInboundIds(this.prisma, data.inboundIds)
+        : null;
+    if (
+      inboundResolution &&
+      (data.inboundIds?.length || 0) > 0 &&
+      inboundResolution.liveIds.length === 0
+    ) {
+      throw new BadRequestException(
+        'Inbound IDs on this agency plan no longer exist. Edit the plan and re-select inbounds.',
+      );
+    }
+
     const nextInboundIds =
       nextRole === 'SUPER_ADMIN'
         ? []
-        : data.inboundIds !== undefined
-          ? data.inboundIds
+        : inboundResolution
+          ? inboundResolution.liveIds
           : existing.adminInbounds?.map((ai: any) => ai.inbound.id) ?? [];
     const nextQuotaMode =
       nextRole === 'SUPER_ADMIN'
@@ -773,9 +808,9 @@ export class AdminsService implements OnModuleInit {
           },
         },
       });
-      if (data.inboundIds.length > 0) {
+      if (inboundResolution && inboundResolution.liveIds.length > 0) {
         await this.prisma.adminInbound.createMany({
-          data: data.inboundIds.map((inboundId) => ({
+          data: inboundResolution.liveIds.map((inboundId) => ({
             adminId: id,
             inboundId,
           })),

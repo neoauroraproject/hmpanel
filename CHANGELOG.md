@@ -8,6 +8,12 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [2.2.21] - 2026-09-14
+
+### Fixed
+- **Agency buy/renew:** creating or topping up a reseller no longer fails with `AdminInbound_inboundId_fkey` when the plan still points at inbound UUIDs that panel sync deleted. Live inbounds are resolved (current id, `panelInboundId`, or the panel’s current inbound set) before insert.
+- **Unlimited traffic placement:** GLOBAL toggle is on the shared volume card; PER_PANEL is per panel in Permissions.
+
 ## [2.2.20] - 2026-09-13
 
 ### Fixed
