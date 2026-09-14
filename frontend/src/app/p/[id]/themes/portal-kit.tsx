@@ -60,6 +60,8 @@ export type SubData = {
   inbound?: any;
   inbounds?: any[];
   portalSettings?: PortalSettings;
+  limitIp?: number;
+  showDeviceLimit?: boolean;
 };
 
 export const PORTAL_THEMES = [
@@ -125,6 +127,7 @@ const STRINGS = {
   subLink: { fa: "لینک اشتراک", en: "Subscription Link" },
   client: { fa: "مشتری", en: "Client" },
   remaining: { fa: "باقی‌مانده", en: "Remaining" },
+  deviceLimit: { fa: "کاربر مجاز (HWID)", en: "Allowed devices (HWID)" },
   download: { fa: "دانلود", en: "Download" },
   upload: { fa: "آپلود", en: "Upload" },
   timeLeft: { fa: "زمان باقی‌مانده", en: "Time remaining" },
@@ -509,6 +512,8 @@ export function usePortalModel(id: string, data: SubData, theme: string) {
     formatBytes,
     formatDate,
     statusLabel,
+    showDeviceLimit: !!data.showDeviceLimit,
+    deviceLimit: Number(data.limitIp || 0),
     ...locale,
   };
 }
@@ -695,6 +700,27 @@ export function TrafficBar({
   return (
     <div className={trackClassName}>
       <div className={`h-full rounded-full transition-all ${barClassName}`} style={{ width: `${pct}%` }} />
+    </div>
+  );
+}
+
+export function PortalDeviceLimit({
+  show,
+  limit,
+  t,
+  className = "mt-3 text-sm",
+}: {
+  show?: boolean;
+  limit?: number | null;
+  t: (k: PortalStringKey) => string;
+  className?: string;
+}) {
+  if (!show) return null;
+  const n = Number(limit || 0);
+  return (
+    <div className={className}>
+      <span className="opacity-70">{t("deviceLimit")}: </span>
+      <strong className="tabular-nums">{n > 0 ? n : t("unlimited")}</strong>
     </div>
   );
 }

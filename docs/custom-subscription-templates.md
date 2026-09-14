@@ -45,6 +45,22 @@ When rendering the template, the following variables are injected into the templ
 * `{{ .announce }}`: The announcement text configured in the panel (Settings → Subscription → Announce). May be empty.
 * `{{ .datepicker }}`: Current calendar format used by the panel (e.g. "gregorian" or "jalali").
 
+## 3.8.0 HWID slot status
+
+On 3x-ui **3.8.0+**, the public subscription also answers:
+
+`GET /{subPath}{subId}/hwid-status`
+
+with a `HwidSlotStatus` object (not the usual `{success,msg,obj}` envelope):
+
+```json
+{ "active": true, "full": false, "limit": 2, "registered": 1, "remaining": 1 }
+```
+
+`limit` is the allowed device count (`0` / `active: false` means unlimited). Asking this URL never registers a device.
+
+HMPanel portal themes show the same allowed-device count when the connected panel is 3.8.0+.
+
 ## Live Status JSON (`?format=info`)
 
 Every subscription URL also answers `GET <sub URL>?format=info` with the same view-model as JSON —

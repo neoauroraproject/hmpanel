@@ -9,6 +9,7 @@ import {
   BrandMark,
   ConfigList,
   TrafficBar,
+  PortalDeviceLimit,
   LangToggle,
   useExpiryLabel,
   useThemeFont,
@@ -126,6 +127,12 @@ export default function SunsetTheme({ id, data }: { id: string; data: SubData })
             pct={pct}
             barClassName="bg-gradient-to-r from-amber-500 to-orange-300"
             trackClassName="h-2 overflow-hidden rounded-full bg-white/10"
+          />
+          <PortalDeviceLimit
+            show={model.showDeviceLimit}
+            limit={model.deviceLimit}
+            t={t}
+            className="mt-4 text-sm text-amber-50/70"
           />
         </section>
 

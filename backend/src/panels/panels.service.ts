@@ -31,6 +31,11 @@ import {
 } from './native/native-panel-capabilities';
 import { flatCapabilitiesFor } from './native/panel-capability.catalog';
 import { generatePanelKey } from './native/panel-identity.util';
+import { allowedUsersFromXuiClient } from '../clients/limit-mapper.util';
+import {
+  extractOnlineEmails,
+  extractOnlineIpCounts,
+} from './xui-online-response.util';
 
 // ─── Provisioning Error Classification ───────────────────────────────────────
 export type ProvisioningErrorCode =
@@ -749,6 +754,8 @@ export class PanelsService implements OnModuleInit {
         url: true,
         subUrl: true,
         version: true,
+        apiVersion: true,
+        capabilities: true,
         authMode: true,
         status: true,
         createdAt: true,
@@ -1186,6 +1193,7 @@ export class PanelsService implements OnModuleInit {
             down: c.traffic?.down || 0,
             total: c.totalGB || 0,
             expiryTime: c.expiryTime || 0,
+            limitIp: allowedUsersFromXuiClient(c),
             inboundIds: c.inboundIds || [],
             // Protocol extras for connectionExtras envelope (WireGuard etc.)
             _raw: c,
@@ -1251,6 +1259,7 @@ export class PanelsService implements OnModuleInit {
               down: stats.down || 0,
               total: stats.total || 0,
               expiryTime: stats.expiryTime || 0,
+              limitIp: allowedUsersFromXuiClient(c),
               inboundIds: [apiInbound.id],
               _raw: c,
               _protocol: apiInbound.protocol || null,
@@ -1604,6 +1613,7 @@ export class PanelsService implements OnModuleInit {
                 down,
                 total,
                 expiryTime,
+                limitIp: Number(unifiedClient.limitIp || 0) || 0,
                 flow: unifiedClient.flow || null,
                 connectionExtras,
                 inbounds: {
@@ -1715,6 +1725,10 @@ export class PanelsService implements OnModuleInit {
             }
             if (dbClient.expiryTime !== expiryTime)
               changedData.expiryTime = expiryTime;
+            const syncedLimitIp = Number(unifiedClient.limitIp || 0) || 0;
+            if (dbClient.limitIp !== syncedLimitIp) {
+              changedData.limitIp = syncedLimitIp;
+            }
             if (dbClient.flow !== unifiedClient.flow)
               changedData.flow = unifiedClient.flow;
             // Always refresh protocol extras on sync (keys/endpoint may change)
@@ -2404,6 +2418,8 @@ export class PanelsService implements OnModuleInit {
       addDays?: number;
       addBytes?: number;
       flow?: string;
+      /** 3.8.0+: max registered devices; 0 = unlimited. */
+      limitHwid?: number;
     },
     adminId?: string,
   ): Promise<PanelApiResult> {
@@ -3937,74 +3953,65 @@ export class PanelsService implements OnModuleInit {
         let panelEmails: string[] = [];
         let success = false;
         const apiBaseUrl = resolvePanelApiBaseUrl(p);
+        const headers = {
+          Authorization: p.apiToken ? `Bearer ${p.apiToken}` : undefined,
+        };
 
-        try {
-          this.logger.debug(`Fetching live onlines for panel ${p.id}`);
-          const res = await axios.post(
-            `${apiBaseUrl}/panel/api/inbounds/onlines`,
-            {},
-            {
-              headers: {
-                Authorization: p.apiToken ? `Bearer ${p.apiToken}` : undefined,
-              },
+        const tryOnlinesPost = async (path: string): Promise<string[] | null> => {
+          try {
+            const res = await axios.post(`${apiBaseUrl}${path}`, {}, {
+              headers,
               timeout: 5000,
-            },
-          );
-
-          if (res.data && res.data.success && Array.isArray(res.data.obj)) {
-            panelEmails = res.data.obj
-              .map((e: string) => e?.trim().toLowerCase())
-              .filter(Boolean);
-            success = true;
-          } else {
+            });
+            if (res.data?.success) {
+              return extractOnlineEmails(res.data.obj ?? res.data);
+            }
+          } catch (err: any) {
             this.logger.debug(
-              `Panel ${p.id} onlines API response was not successful:`,
-              res.data,
+              `Onlines ${path} failed for panel ${p.id}: ${err?.message}`,
             );
           }
-        } catch (err: any) {
-          if (err.response?.status === 404) {
-            try {
-              const listRes = await axios.get(
-                `${apiBaseUrl}/panel/api/inbounds/list`,
-                {
-                  headers: {
-                    Authorization: p.apiToken
-                      ? `Bearer ${p.apiToken}`
-                      : undefined,
-                  },
-                  timeout: 8000,
-                },
-              );
-              if (
-                listRes.data &&
-                listRes.data.success &&
-                Array.isArray(listRes.data.obj)
-              ) {
-                const now = Date.now();
-                listRes.data.obj.forEach((inb: any) => {
-                  if (Array.isArray(inb.clientStats)) {
-                    inb.clientStats.forEach((cs: any) => {
-                      if (
-                        cs.email &&
-                        cs.lastOnline &&
-                        now - cs.lastOnline < 120000
-                      ) {
-                        panelEmails.push(cs.email.trim().toLowerCase());
-                      }
-                    });
-                  }
-                });
-                success = true;
-              }
-            } catch (fallbackErr: any) {
-              this.logger.warn(
-                `Fallback inbounds/list failed for panel ${p.id}: ${fallbackErr.message}`,
-              );
+          return null;
+        };
+
+        this.logger.debug(`Fetching live onlines for panel ${p.id}`);
+        let emails = await tryOnlinesPost('/panel/api/clients/onlines');
+        if (emails == null) {
+          emails = await tryOnlinesPost('/panel/api/inbounds/onlines');
+        }
+        if (emails != null) {
+          panelEmails = emails;
+          success = true;
+        } else {
+          try {
+            const listRes = await axios.get(
+              `${apiBaseUrl}/panel/api/inbounds/list`,
+              { headers, timeout: 8000 },
+            );
+            if (
+              listRes.data &&
+              listRes.data.success &&
+              Array.isArray(listRes.data.obj)
+            ) {
+              const now = Date.now();
+              listRes.data.obj.forEach((inb: any) => {
+                if (Array.isArray(inb.clientStats)) {
+                  inb.clientStats.forEach((cs: any) => {
+                    if (
+                      cs.email &&
+                      cs.lastOnline &&
+                      now - cs.lastOnline < 120000
+                    ) {
+                      panelEmails.push(cs.email.trim().toLowerCase());
+                    }
+                  });
+                }
+              });
+              success = true;
             }
-          } else {
+          } catch (fallbackErr: any) {
             this.logger.warn(
-              `Failed to fetch live onlines for panel ${p.id}: ${err.message}`,
+              `Fallback inbounds/list failed for panel ${p.id}: ${fallbackErr.message}`,
             );
           }
         }
@@ -4036,39 +4043,52 @@ export class PanelsService implements OnModuleInit {
 
     const panels = await this.prisma.panel.findMany({
       where: { status: 'online' },
-      select: { id: true, apiToken: true, apiBaseUrl: true, url: true },
+      select: {
+        id: true,
+        apiToken: true,
+        apiBaseUrl: true,
+        url: true,
+        panelType: true,
+      },
     });
 
     const result: Record<string, number> = {};
 
     await Promise.all(
       panels.map(async (p) => {
+        if (isExternalPanelType(p.panelType)) return;
         try {
           const apiBaseUrl = resolvePanelApiBaseUrl(p);
-          const res = await axios.post(
-            `${apiBaseUrl}/panel/api/inbounds/clientIps`,
-            {},
-            {
-              headers: {
-                Authorization: p.apiToken ? `Bearer ${p.apiToken}` : undefined,
-              },
-              timeout: 5000,
-            },
-          );
-          if (
-            res.data &&
-            res.data.success &&
-            typeof res.data.obj === 'object'
-          ) {
-            for (const [email, ips] of Object.entries(res.data.obj)) {
-              if (Array.isArray(ips)) {
-                const normalizedEmail = email.trim().toLowerCase();
-                result[normalizedEmail] =
-                  (result[normalizedEmail] || 0) + ips.length;
-              }
+          const headers = {
+            Authorization: p.apiToken ? `Bearer ${p.apiToken}` : undefined,
+          };
+          let counts: Record<string, number> | null = null;
+          try {
+            const res = await axios.get(
+              `${apiBaseUrl}/panel/api/server/clientIps`,
+              { headers, timeout: 5000 },
+            );
+            if (res.data?.success && res.data.obj != null) {
+              counts = extractOnlineIpCounts(res.data.obj);
+            }
+          } catch {
+            counts = null;
+          }
+          if (counts == null) {
+            const res = await axios.post(
+              `${apiBaseUrl}/panel/api/inbounds/clientIps`,
+              {},
+              { headers, timeout: 5000 },
+            );
+            if (res.data?.success && res.data.obj != null) {
+              counts = extractOnlineIpCounts(res.data.obj);
             }
           }
-        } catch (err) {
+          if (!counts) return;
+          for (const [email, n] of Object.entries(counts)) {
+            result[email] = (result[email] || 0) + n;
+          }
+        } catch {
           // Soft fail
         }
       }),

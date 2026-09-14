@@ -48,7 +48,7 @@ COPY VERSION ./
 # Copy backend source
 COPY backend ./backend
 
-# OpenAPI specs for panel capability resolver (api331…api370)
+# OpenAPI specs for panel capability resolver (api350…api380)
 COPY docs ./docs
 
 # Build backend

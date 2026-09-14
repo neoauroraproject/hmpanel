@@ -31,6 +31,12 @@ export interface PanelCapabilities {
   subBalancersApi?: boolean;
   /** Xray geodata management API (3.7.0+) */
   xrayGeodataApi?: boolean;
+  /** Happ crypt5 link generation (3.8.0+) */
+  happLinkApi?: boolean;
+  /** Discord bot test endpoint (3.8.0+) */
+  discordTestApi?: boolean;
+  /** Public subscription HWID slot status (3.8.0+) */
+  hwidStatusApi?: boolean;
   [key: string]: boolean | undefined;
 }
 
@@ -93,9 +99,21 @@ export class ApiCapabilityResolver {
         if (exactMinor) {
           specFile = exactMinor.file;
         } else {
-          // 2. Compatibility Mode: Use highest available spec overall
-          specFile = specs[0].file;
-          compatibilityMode = true;
+          // Compatibility: highest spec at or below the panel version.
+          // Never pick a newer spec for an older panel (e.g. 3.3 must not
+          // inherit api380 flags).
+          const panelVal = major * 10000 + minor * 100 + patch;
+          const leq = specs.find((s) => s.val <= panelVal);
+          if (leq) {
+            specFile = leq.file;
+            compatibilityMode = true;
+          } else {
+            this.logger.warn(
+              `[CAP_RESOLVER] No spec at or below ${apiVersion}; using version defaults`,
+            );
+            const fallbackCaps = this.getDefaultCapabilities(apiVersion);
+            return { capabilities: fallbackCaps, hash: 'fallback-no-leq-spec' };
+          }
         }
       }
 
@@ -179,6 +197,11 @@ export class ApiCapabilityResolver {
         hwidsApi: paths.some((p) => p.includes('/panel/api/clients/hwids/')),
         subBalancersApi: paths.includes('/panel/api/sub-balancers'),
         xrayGeodataApi: paths.some((p) => p.includes('/panel/api/xray/geodata/')),
+        happLinkApi: paths.some((p) =>
+          p.includes('/panel/api/clients/happLink/'),
+        ),
+        discordTestApi: paths.includes('/panel/api/setting/testDiscord'),
+        hwidStatusApi: paths.some((p) => p.includes('hwid-status')),
       };
 
       this.logger.log(
@@ -201,6 +224,8 @@ export class ApiCapabilityResolver {
   private getDefaultCapabilities(apiVersion: string): PanelCapabilities {
     const is342Plus = isPanelApiAtLeast(apiVersion, 3, 4, 2);
     const is350Plus = isPanelApiAtLeast(apiVersion, 3, 5, 0);
+    const is370Plus = isPanelApiAtLeast(apiVersion, 3, 7, 0);
+    const is380Plus = isPanelApiAtLeast(apiVersion, 3, 8, 0);
     return {
       clientsApi: true,
       pagination: is342Plus,
@@ -218,6 +243,12 @@ export class ApiCapabilityResolver {
       wireguardInboundFields: is342Plus,
       hostsGroupedApi: is350Plus,
       panelUpdateStatus: is350Plus,
+      hwidsApi: is370Plus,
+      subBalancersApi: is370Plus,
+      xrayGeodataApi: is370Plus,
+      happLinkApi: is380Plus,
+      discordTestApi: is380Plus,
+      hwidStatusApi: is380Plus,
     };
   }
 }

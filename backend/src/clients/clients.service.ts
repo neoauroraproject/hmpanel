@@ -74,10 +74,12 @@ import { RedisLockService } from '../common/utils/redis-lock.service';
 import {
   supportsBulkClientApi,
   supportsBulkDelete,
+  supports3xUiBulkHwid,
 } from '../common/utils/panel-version.util';
 import { AdminQuotaService } from '../traffic/admin-quota.service';
 import {
   resolve3xUiLimit,
+  normalizeAllowedUsers,
 } from './limit-mapper.util';
 import { PanelDriverRegistry } from '../panels/native/panel-driver.registry';
 import { PanelOperationGate } from '../panels/native/panel-operation-gate';
@@ -1700,7 +1702,17 @@ export class ClientsService {
           expiryTime: true,
           createdAt: true,
           admin: { select: { id: true, username: true } },
-          panel: { select: { id: true, name: true, url: true, subUrl: true, panelType: true } },
+          panel: {
+            select: {
+              id: true,
+              name: true,
+              url: true,
+              subUrl: true,
+              panelType: true,
+              apiVersion: true,
+              capabilities: true,
+            },
+          },
           inbounds: {
             select: {
               inbound: {
@@ -1717,6 +1729,8 @@ export class ClientsService {
                     url: true,
                     subUrl: true,
                     panelType: true,
+                    apiVersion: true,
+                    capabilities: true,
                     nativeCapabilities: true,
                     connectionHealth: true,
                     lastSync: true,
@@ -3072,11 +3086,13 @@ export class ClientsService {
     }>,
     dto: BulkClientDto,
   ): Promise<{ success: number; failed: number; errors: string[] } | null> {
-    if (dto.action !== 'addTraffic' && dto.action !== 'addDays') return null;
+    if (dto.action !== 'addTraffic' && dto.action !== 'addDays' && dto.action !== 'setAllowedUsers')
+      return null;
 
     const clientsWithPanels = await this.prisma.client.findMany({
       where: { id: { in: targets.map((t) => t.id) } },
       include: {
+        panel: true,
         inbounds: {
           include: { inbound: { include: { panel: true } } },
         },
@@ -3091,13 +3107,14 @@ export class ClientsService {
           name: string;
           apiVersion?: string | null;
           capabilities: unknown;
+          panelType?: string | null;
         };
         clients: typeof clientsWithPanels;
       }
     >();
 
     for (const c of clientsWithPanels) {
-      const panel = c.inbounds?.[0]?.inbound?.panel;
+      const panel = c.inbounds?.[0]?.inbound?.panel || c.panel;
       if (!panel) continue;
       if (!byPanel.has(panel.id)) {
         byPanel.set(panel.id, { panel, clients: [] });
@@ -3105,7 +3122,84 @@ export class ClientsService {
       byPanel.get(panel.id)!.clients.push(c);
     }
 
-    if (!byPanel.size) return null;
+    if (!byPanel.size) {
+      if (dto.action === 'setAllowedUsers') {
+        return {
+          success: 0,
+          failed: targets.length,
+          errors: ['No panel assignment found for the selected clients'],
+        };
+      }
+      return null;
+    }
+
+    if (dto.action === 'setAllowedUsers') {
+      const limit = normalizeAllowedUsers(dto.value);
+      const results = { success: 0, failed: 0, errors: [] as string[] };
+
+      for (const { panel, clients } of byPanel.values()) {
+        if (
+          isExternalPanelType(panel.panelType) ||
+          !supports3xUiBulkHwid({
+            apiVersion: panel.apiVersion,
+            capabilities: panel.capabilities,
+          })
+        ) {
+          results.failed += clients.length;
+          results.errors.push(
+            `${panel.name}: bulk device limit requires 3x-ui 3.8+`,
+          );
+          continue;
+        }
+
+        const emails = clients.map((c) => c.email);
+        const res = await this.panelsService.bulkAdjustClientsOnPanel(
+          panel.id,
+          { emails, limitHwid: limit },
+          adminId,
+        );
+
+        if (!res.success) {
+          results.failed += clients.length;
+          results.errors.push(`${panel.name}: ${res.error?.message}`);
+          continue;
+        }
+
+        const skippedList: Array<{ email: string; reason: string }> =
+          res.data?.skipped ?? [];
+        const skippedEmails = new Set(skippedList.map((s) => s.email));
+
+        for (const c of clients) {
+          if (skippedEmails.has(c.email)) {
+            results.failed++;
+            const reason =
+              skippedList.find((s) => s.email === c.email)?.reason || 'skipped';
+            results.errors.push(`${c.email}: ${reason}`);
+            continue;
+          }
+          try {
+            await this.applyBulkAdjustLocalDb(adminId, role, c, dto);
+            results.success++;
+          } catch (err: any) {
+            const previous = resolve3xUiLimit(panel, c.limitIp);
+            const compensate = await this.panelsService.bulkAdjustClientsOnPanel(
+              panel.id,
+              { emails: [c.email], limitHwid: previous.limitHwid },
+              adminId,
+            );
+            if (!compensate.success) {
+              this.logger.error(
+                `[BULK_ADJUST] HWID compensation failed for ${c.email}: ${compensate.error?.message}`,
+              );
+            }
+            results.failed++;
+            results.errors.push(`${c.email}: ${err.message}`);
+          }
+        }
+      }
+
+      return results;
+    }
 
     const panelsWithBulkAdjust = [...byPanel.values()].filter((g) =>
       supportsBulkClientApi({
@@ -3243,6 +3337,7 @@ export class ClientsService {
       panelId: string;
       up: bigint;
       down: bigint;
+      limitIp?: number;
     },
     dto: BulkClientDto,
   ) {
@@ -3312,6 +3407,11 @@ export class ClientsService {
           enable: true,
           disableReason: null,
         },
+      });
+    } else if (dto.action === 'setAllowedUsers') {
+      await this.prisma.client.update({
+        where: { id: client.id },
+        data: { limitIp: normalizeAllowedUsers(dto.value) },
       });
     }
   }
@@ -3576,7 +3676,19 @@ export class ClientsService {
       }
     }
 
-    if (dto.action === 'addTraffic' || dto.action === 'addDays') {
+    if (dto.action === 'addTraffic' || dto.action === 'addDays' || dto.action === 'setAllowedUsers') {
+      if (dto.action === 'setAllowedUsers') {
+        if (dto.value == null || !Number.isFinite(Number(dto.value)) || Number(dto.value) < 0) {
+          throw new BadRequestException('A non-negative device limit is required');
+        }
+        const limit = normalizeAllowedUsers(dto.value);
+        for (const t of targets) {
+          if (!t.adminId) continue;
+          await this.assertClientLimitsAllowed(t.adminId, t.panelId, {
+            limitIp: limit,
+          });
+        }
+      }
       const optimized = await this.bulkAdjustOps(
         adminId,
         role,

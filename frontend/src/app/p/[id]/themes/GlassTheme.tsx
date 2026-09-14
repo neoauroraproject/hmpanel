@@ -10,6 +10,7 @@ import {
   NeoImportSheet,
   NeoQrOverlay,
   NeoSupportBtn,
+  NeoDeviceLimit,
   useNeoMetrics,
 } from "./neo-shared";
 
@@ -106,6 +107,13 @@ export default function GlassTheme({ id, data }: { id: string; data: SubData }) 
               <div className="mt-1 font-bold tabular-nums">{daysLabel}</div>
             </div>
           </div>
+          <NeoDeviceLimit
+            show={m.showDeviceLimit}
+            limit={m.deviceLimit}
+            label={m.t("deviceLimit")}
+            unlimitedLabel={m.t("unlimited")}
+            className="mt-4 text-sm text-zinc-700"
+          />
         </section>
 
         <NeoAdvanced

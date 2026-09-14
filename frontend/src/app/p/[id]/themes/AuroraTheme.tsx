@@ -10,6 +10,7 @@ import {
   ConfigList,
   StatusPill,
   TrafficBar,
+  PortalDeviceLimit,
   useExpiryLabel,
   useThemeFont,
   PortalConnectionPanel,
@@ -97,6 +98,12 @@ export default function AuroraTheme({ id, data }: { id: string; data: SubData })
             pct={pct}
             barClassName="bg-gradient-to-r from-teal-400 to-cyan-300"
             trackClassName="h-2 overflow-hidden rounded-full bg-white/10"
+          />
+          <PortalDeviceLimit
+            show={model.showDeviceLimit}
+            limit={model.deviceLimit}
+            t={t}
+            className="mt-3 text-sm text-slate-300"
           />
         </section>
 

@@ -1,6 +1,6 @@
 /**
  * Granular capability matrix locked to:
- * - Panel/docs/api370.json (3x-ui)
+ * - Panel/docs/api370.json + api380.json (3x-ui)
  * - Panel/docs/eylanapi.json (normalized_capabilities_for_multi_panel)
  * - Panel/docs/pasarguard521.json (PasarGuardAPI 5.2.1)
  *

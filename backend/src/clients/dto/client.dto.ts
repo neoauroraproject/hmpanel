@@ -60,6 +60,7 @@ export class BulkClientDto {
       'resetTraffic',
       'assignGroup',
       'assignInbounds',
+      'setAllowedUsers',
     ],
   })
   @IsIn([
@@ -73,6 +74,7 @@ export class BulkClientDto {
     'resetTraffic',
     'assignGroup',
     'assignInbounds',
+    'setAllowedUsers',
   ])
   action:
     | 'enable'
@@ -84,7 +86,8 @@ export class BulkClientDto {
     | 'resetUsage'
     | 'resetTraffic'
     | 'assignGroup'
-    | 'assignInbounds';
+    | 'assignInbounds'
+    | 'setAllowedUsers';
   @ApiPropertyOptional() @IsOptional() @IsNumber() value?: number;
   @ApiPropertyOptional() @IsOptional() @IsString() groupName?: string;
   @ApiPropertyOptional({ type: [String] })

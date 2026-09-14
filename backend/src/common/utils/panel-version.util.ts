@@ -25,6 +25,25 @@ export function isPanelApiAtLeast(
   return v[2] >= patch;
 }
 
+/** 3x-ui 3.8.0+ documented bulkAdjust.limitHwid (one call for many emails). */
+export function supports3xUiBulkHwid(panel: {
+  apiVersion?: string | null;
+  capabilities?: unknown;
+}): boolean {
+  if (!isPanelApiAtLeast(panel.apiVersion, 3, 8, 0)) return false;
+  return supportsBulkClientApi(panel);
+}
+
+/** 3x-ui 3.8.0+ subscription HWID slot status + Happ/Discord extras. */
+export function supports3xUi380Api(panel: {
+  apiVersion?: string | null;
+  capabilities?: unknown;
+}): boolean {
+  if (isPanelApiAtLeast(panel.apiVersion, 3, 8, 0)) return true;
+  const caps = panel.capabilities as Record<string, boolean> | undefined;
+  return !!(caps?.happLinkApi || caps?.hwidStatusApi);
+}
+
 /** 3x-ui 3.4.2+ bulk client APIs (bulkCreate, bulkAdjust, bulkEnable, …). */
 export function supportsBulkClientApi(panel: {
   apiVersion?: string | null;

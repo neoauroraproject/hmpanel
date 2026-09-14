@@ -70,7 +70,7 @@ export class ClientsController {
   @Post('bulk')
   @ApiOperation({
     summary:
-      'Bulk action on clients (enable/disable/delete/addTraffic/addDays/assignGroup)',
+      'Bulk action on clients (enable/disable/delete/addTraffic/addDays/setAllowedUsers/assignGroup)',
   })
   bulk(@Req() req: AuthRequest, @Body() dto: BulkClientDto) {
     return this.clientsService.bulk(req.user.id, req.user.role, dto);

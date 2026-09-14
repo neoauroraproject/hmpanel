@@ -10,6 +10,7 @@ import {
   NeoImportSheet,
   NeoQrOverlay,
   NeoSupportBtn,
+  NeoDeviceLimit,
   useNeoMetrics,
 } from "./neo-shared";
 
@@ -100,6 +101,13 @@ export default function VibrantTheme({ id, data }: { id: string; data: SubData }
               <div className="mt-1 text-white/75">{m.t("totalLimit")}</div>
             </div>
           </div>
+          <NeoDeviceLimit
+            show={m.showDeviceLimit}
+            limit={m.deviceLimit}
+            label={m.t("deviceLimit")}
+            unlimitedLabel={m.t("unlimited")}
+            className="mt-4 text-center text-white"
+          />
         </section>
 
         <section>

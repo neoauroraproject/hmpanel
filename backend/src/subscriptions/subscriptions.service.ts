@@ -12,6 +12,7 @@ import { Response, Request } from 'express';
 import { normalizeTelegramLink } from '../common/utils/telegram-link';
 import { collectNativeSubscriptionUrls, customerFacingSubscriptionUrl } from '../common/utils/native-sub-url';
 import { isExternalPanelType } from '../panels/native/native-panel-capabilities';
+import { supports3xUi380Api } from '../common/utils/panel-version.util';
 import {
   getUriRemark,
   matchHostForEndpoint,
@@ -56,6 +57,8 @@ export class SubscriptionsService {
           select: {
             panelType: true,
             subUrl: true,
+            apiVersion: true,
+            capabilities: true,
           },
         },
         inbounds: {
@@ -160,6 +163,20 @@ export class SubscriptionsService {
       }
     }
 
+    const panelMeta = primaryClient.panel as {
+      panelType?: string | null;
+      subUrl?: string | null;
+      apiVersion?: string | null;
+      capabilities?: unknown;
+    } | null;
+    const showDeviceLimit =
+      !!panelMeta &&
+      !isExternalPanelType(panelMeta.panelType) &&
+      supports3xUi380Api({
+        apiVersion: panelMeta.apiVersion,
+        capabilities: panelMeta.capabilities,
+      });
+
     return {
       id: primaryClient.id,
       uuid: primaryClient.uuid,
@@ -173,13 +190,14 @@ export class SubscriptionsService {
       total: Number(maxTotal),
       expiryTime: Number(primaryClient.expiryTime),
       createdAt: primaryClient.createdAt,
+      limitIp: primaryClient.limitIp ?? 0,
+      showDeviceLimit,
       portalSettings,
       inbound: allInbounds[0] || null,
       inbounds: allInbounds,
       providerMeta: primaryClient.providerMeta,
-      panelType: (primaryClient as { panel?: { panelType?: string | null } }).panel?.panelType || null,
-      panelSubUrl:
-        (primaryClient as { panel?: { subUrl?: string | null } }).panel?.subUrl || null,
+      panelType: panelMeta?.panelType || null,
+      panelSubUrl: panelMeta?.subUrl || null,
     };
   }
 

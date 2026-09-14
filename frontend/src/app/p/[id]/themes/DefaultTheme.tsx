@@ -30,6 +30,7 @@ import {
   LangToggle,
   normalizeTelegramHref,
   PortalConnectionPanel,
+  PortalDeviceLimit,
   useClientOutput,
   usePortalLocale,
   type SubData,
@@ -242,6 +243,12 @@ export default function DefaultTheme({ id, data }: { id: string; data: SubData }
                 <div className={ts.accent}>↓ {formatBytes(downBytes)}</div>
                 <div className="text-blue-400">↑ {formatBytes(upBytes)}</div>
               </div>
+              <PortalDeviceLimit
+                show={!!data.showDeviceLimit}
+                limit={data.limitIp}
+                t={t}
+                className={`mt-3 text-sm ${ts.muted}`}
+              />
             </div>
 
             <div className={isFa ? "md:text-left" : "md:text-right"}>

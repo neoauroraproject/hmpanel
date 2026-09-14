@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-/** Locate bundled OpenAPI specs (api331.json, api370.json, …) in dev and Docker. */
+/** Locate bundled OpenAPI specs (api350.json … api380.json) in dev and Docker. */
 export function resolveOpenApiDocsDir(): string | null {
   const candidates = [
     path.join(process.cwd(), 'docs'),

@@ -11,6 +11,7 @@ import {
   NeoImportSheet,
   NeoQrOverlay,
   NeoSupportBtn,
+  NeoDeviceLimit,
   useNeoMetrics,
 } from "./neo-shared";
 
@@ -100,6 +101,13 @@ export default function EclipseTheme({ id, data }: { id: string; data: SubData }
               </div>
             </div>
           </div>
+          <NeoDeviceLimit
+            show={m.showDeviceLimit}
+            limit={m.deviceLimit}
+            label={m.t("deviceLimit")}
+            unlimitedLabel={m.t("unlimited")}
+            className="mt-4 text-white"
+          />
         </section>
 
         <NeoAdvanced

@@ -53,14 +53,29 @@ export interface Client {
   updatedAt: string;
 
   admin?: { id: string; username: string };
-  panel?: { id: string; name: string; url?: string; subUrl?: string | null; panelType?: string };
+  panel?: {
+    id: string;
+    name: string;
+    url?: string;
+    subUrl?: string | null;
+    panelType?: string;
+    apiVersion?: string | null;
+    capabilities?: Record<string, boolean> | null;
+  };
   inbound?: {
     id: string;
     tag: string;
     port: number;
     protocol: string;
     streamSettings?: any;
-    panel?: { id: string; name: string; url: string; subUrl?: string | null };
+    panel?: {
+      id: string;
+      name: string;
+      url: string;
+      subUrl?: string | null;
+      panelType?: string;
+      apiVersion?: string | null;
+    };
   };
   inbounds?: any[];
 }
@@ -74,6 +89,9 @@ export interface Panel {
   status: string;
   createdAt: string;
   panelType?: string;
+  apiVersion?: string | null;
+  version?: string | null;
+  capabilities?: Record<string, boolean> | null;
   panelKey?: string;
   connectionHealth?: string;
   operable?: boolean;

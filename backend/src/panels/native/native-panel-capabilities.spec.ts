@@ -31,7 +31,7 @@ describe('native capability matrix (canonical API docs)', () => {
     expect(PASARGUARD_NATIVE_CAPABILITIES.clients.bulkEnable).toBe(true);
   });
 
-  it('keeps 3x-ui getDb + CPU from api370.json', () => {
+  it('keeps 3x-ui getDb + CPU from api370/api380.json', () => {
     expect(XUI_NATIVE_CAPABILITIES.backup.database).toBe(true);
     expect(XUI_NATIVE_CAPABILITIES.system.cpu).toBe(true);
     expect(XUI_NATIVE_CAPABILITIES.clients.bulkDelete).toBe(true);

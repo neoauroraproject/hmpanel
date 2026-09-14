@@ -22,6 +22,7 @@ import { ConnectionDetailsModal } from "@/components/ConnectionDetailsModal";
 import { BulkCreateModal } from "./BulkCreateModal";
 import { PluginSlot } from "@/components/PluginSlot";
 import { NodeInboundBadge } from "@/components/NodeInboundBadge";
+import { isXui380Plus } from "@/lib/panel-version";
 
 const GB = 1024 ** 3;
 const CLIENTS_PANEL_TAB_KEY = "hmpanel.clients.panelId";
@@ -76,6 +77,7 @@ function bulkActionLabel(
     assignGroup: "clients.assignGroup",
     assignInbounds: "clients.assignInbounds",
     exportSubs: "clients.exportSubs",
+    setAllowedUsers: "clients.setAllowedUsers",
   };
   const key = keys[action];
   return key ? t(key) : action;
@@ -91,7 +93,14 @@ interface InboundRow {
   nodeName?: string | null;
   originNodeGuid?: string | null;
   streamSettings?: any;
-  panel: { id: string; name: string; url: string; subUrl?: string | null; panelType?: string };
+  panel: {
+    id: string;
+    name: string;
+    url: string;
+    subUrl?: string | null;
+    panelType?: string;
+    apiVersion?: string | null;
+  };
   remoteResourceId?: string | null;
   panelInboundId?: number | null;
 }
@@ -102,6 +111,8 @@ interface PanelRow {
   url: string;
   subUrl?: string | null;
   panelType?: string;
+  apiVersion?: string | null;
+  version?: string | null;
 }
 
 function CopyBtn({ text }: { text: string }) {
@@ -193,6 +204,14 @@ export default function ClientsPage() {
   const [selectedClients, setSelectedClients] = useState<Record<string, Client>>({});
   const selectedIds = Object.keys(selectedClients);
   const selectedCount = selectedIds.length;
+  const selectedSupportsBulkHwid = useMemo(
+    () =>
+      selectedCount > 0 &&
+      Object.values(selectedClients).every(
+        (c) => isXui380Plus(c.panel) || isXui380Plus(c.inbound?.panel),
+      ),
+    [selectedClients, selectedCount],
+  );
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
   
@@ -222,7 +241,7 @@ export default function ClientsPage() {
   const [assignInboundIds, setAssignInboundIds] = useState<string[]>([]);
 
   const [bulkValueModal, setBulkValueModal] = useState<{
-    action: "addTraffic" | "addDays";
+    action: "addTraffic" | "addDays" | "setAllowedUsers";
     title: string;
     label: string;
     placeholder: string;
@@ -359,7 +378,7 @@ export default function ClientsPage() {
   const bulkMutation = useMutation({
     mutationFn: async (dto: {
       ids: string[];
-      action: "enable" | "disable" | "delete" | "cleanup" | "addTraffic" | "addDays" | "resetUsage" | "resetTraffic" | "assignGroup" | "assignInbounds";
+      action: "enable" | "disable" | "delete" | "cleanup" | "addTraffic" | "addDays" | "resetUsage" | "resetTraffic" | "assignGroup" | "assignInbounds" | "setAllowedUsers";
       value?: number;
       groupName?: string;
       inboundIds?: string[];
@@ -601,6 +620,13 @@ export default function ClientsPage() {
         label: t("clients.bulkAddDaysLabel"),
         placeholder: t("clients.bulkAddDaysPlaceholder"),
       });
+    } else if (action === "setAllowedUsers") {
+      setBulkValueModal({
+        action,
+        title: t("clients.bulkSetAllowedUsersTitle"),
+        label: t("clients.bulkSetAllowedUsersLabel"),
+        placeholder: t("clients.bulkSetAllowedUsersPlaceholder"),
+      });
     } else if (action === "assignGroup") {
       setGroupAssignModalOpen(true);
     } else if (action === "exportSubs") {
@@ -611,6 +637,18 @@ export default function ClientsPage() {
   const submitBulkValue = () => {
     if (!bulkValueModal) return;
     const numVal = Number(bulkInputValue);
+    if (bulkValueModal.action === "setAllowedUsers") {
+      if (bulkInputValue === "" || isNaN(numVal) || numVal < 0) {
+        toast(t("clients.invalidNonNegativeNumber"), "error");
+        return;
+      }
+      bulkMutation.mutate({
+        ids: selectedIds,
+        action: "setAllowedUsers",
+        value: Math.floor(numVal),
+      });
+      return;
+    }
     if (isNaN(numVal) || numVal <= 0) {
       toast(t("clients.invalidPositiveNumber"), "error");
       return;
@@ -1430,6 +1468,14 @@ export default function ClientsPage() {
                 >
                   {t("clients.addDays")}
                 </button>
+                {selectedSupportsBulkHwid && (
+                  <button
+                    onClick={() => handleBulkAction("setAllowedUsers")}
+                    className="rounded-full border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 whitespace-nowrap"
+                  >
+                    {t("clients.setAllowedUsers")}
+                  </button>
+                )}
                 <button
                   onClick={() => handleBulkAction("enable")}
                   className="rounded-full border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 whitespace-nowrap"
@@ -1498,6 +1544,15 @@ export default function ClientsPage() {
                 >
                   <CalendarDays size={18} />
                 </button>
+                {selectedSupportsBulkHwid && (
+                  <button
+                    onClick={() => handleBulkAction("setAllowedUsers")}
+                    className="rounded-full p-2 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                    title={t("clients.setAllowedUsers")}
+                  >
+                    <Users size={18} />
+                  </button>
+                )}
                 <button
                   onClick={() => handleBulkAction("enable")}
                   className="rounded-full p-2 text-emerald-500 hover:bg-emerald-500/10 transition-colors"
@@ -1561,6 +1616,7 @@ export default function ClientsPage() {
             onClose={() => setMobileActionsOpen(false)}
             selectedCount={selectedCount}
             onAction={handleBulkAction}
+            showSetAllowedUsers={selectedSupportsBulkHwid}
           />
         )}
       </AnimatePresence>
@@ -1902,6 +1958,19 @@ export default function ClientsPage() {
                     ))}
                   </div>
                 )}
+                {bulkValueModal.action === "setAllowedUsers" && (
+                  <div className="mt-2 flex gap-2">
+                    {[0, 1, 2, 3, 5].map((n) => (
+                      <button
+                        key={n}
+                        onClick={() => setBulkInputValue(String(n))}
+                        className="flex-1 rounded-md bg-zinc-100 dark:bg-zinc-800 py-1 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors"
+                      >
+                        {n === 0 ? t("common.unlimited") : n}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {bulkValueModal.action === "addTraffic" && bulkInputValue && (
@@ -1990,12 +2059,21 @@ function AddClientModal({
   // Only panels that actually expose inbounds to this user are selectable —
   // a client is always created on exactly one panel.
   const derivedPanels = useMemo(() => {
-    const names = new Map((panels ?? []).map((p) => [p.id, p.name]));
-    const byId = new Map<string, { id: string; name: string }>();
+    const extra = new Map((panels ?? []).map((p) => [p.id, p]));
+    const byId = new Map<
+      string,
+      { id: string; name: string; apiVersion?: string | null; panelType?: string }
+    >();
     inbounds.forEach((i) => {
-      const id = i.panel?.id || (i as any).panelId;
+      const id = i.panel?.id || (i as { panelId?: string }).panelId;
       if (!id) return;
-      byId.set(id, { id, name: names.get(id) || i.panel?.name || id });
+      const fromList = extra.get(id);
+      byId.set(id, {
+        id,
+        name: fromList?.name || i.panel?.name || id,
+        apiVersion: fromList?.apiVersion || i.panel?.apiVersion,
+        panelType: fromList?.panelType || i.panel?.panelType,
+      });
     });
     return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name));
   }, [panels, inbounds]);
@@ -2076,6 +2154,8 @@ function AddClientModal({
     panelTypeOf(availableInbounds[0]) ||
     panelTypeOf(selectedInbounds[0]);
   const isPasarguard = selectedPanelType === "pasarguard";
+  const selectedPanelMeta = derivedPanels.find((p) => p.id === selectedPanelId);
+  const useHwidLabel = isPasarguard || isXui380Plus(selectedPanelMeta);
   const isReality = selectedInbounds.some((i) => i.protocol === "vless" && i.streamSettings?.security === "reality");
   const [showAdvanced, setShowAdvanced] = useState(false);
 
@@ -2355,11 +2435,11 @@ function AddClientModal({
                 )}
               </div>
               <div className="mt-4">
-                <label className="mb-1 block text-xs text-zinc-500">{t(isPasarguard ? "clients.hwidLimit" : "clients.ipLimit")}</label>
+                <label className="mb-1 block text-xs text-zinc-500">{t(useHwidLabel ? "clients.hwidLimit" : "clients.ipLimit")}</label>
                 <input
                   type="number"
                   min={0}
-                  placeholder={t(isPasarguard ? "clients.hwidLimitPlaceholder" : "clients.ipLimitPlaceholder")}
+                  placeholder={t(useHwidLabel ? "clients.hwidLimitPlaceholder" : "clients.ipLimitPlaceholder")}
                   value={form.limitIp}
                   onChange={(e) =>
                     setForm({
@@ -2473,6 +2553,10 @@ export function EditClientModal({
     inbound?.protocol ||
     "";
   const isPasarguard = clientPanelType === "pasarguard";
+  const useHwidLabel =
+    isPasarguard ||
+    isXui380Plus(client.panel) ||
+    isXui380Plus(inbound?.panel);
   const isReality = inbound?.protocol === "vless" && inbound?.streamSettings?.security === "reality";
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showInbounds, setShowInbounds] = useState(clientPanelType === "pasarguard");
@@ -2704,11 +2788,11 @@ export function EditClientModal({
               )}
 
               <div className="mt-4">
-                <label className="mb-1 block text-xs text-zinc-500">{t(isPasarguard ? "clients.hwidLimit" : "clients.ipLimit")}</label>
+                <label className="mb-1 block text-xs text-zinc-500">{t(useHwidLabel ? "clients.hwidLimit" : "clients.ipLimit")}</label>
                 <input
                   type="number"
                   min={0}
-                  placeholder={t(isPasarguard ? "clients.hwidLimitPlaceholder" : "clients.ipLimitPlaceholder")}
+                  placeholder={t(useHwidLabel ? "clients.hwidLimitPlaceholder" : "clients.ipLimitPlaceholder")}
                   value={form.limitIp}
                   onChange={(e) =>
                     setForm({
@@ -3002,16 +3086,21 @@ function MobileActionsSheet({
   onClose,
   selectedCount,
   onAction,
+  showSetAllowedUsers,
 }: {
   onClose: () => void;
   selectedCount: number;
   onAction: (action: string) => void;
+  showSetAllowedUsers?: boolean;
 }) {
   const t = useT();
   const mobileActions = useMemo(
     () => [
       { id: "addTraffic", label: t("clients.addTraffic"), icon: HardDrive },
       { id: "addDays", label: t("clients.addDays"), icon: CalendarDays },
+      ...(showSetAllowedUsers
+        ? [{ id: "setAllowedUsers", label: t("clients.setAllowedUsers"), icon: Users }]
+        : []),
       { id: "enable", label: t("clients.enable"), icon: Play },
       { id: "disable", label: t("clients.disable"), icon: Square },
       { id: "exportSubs", label: t("clients.exportSubscriptionLinks"), icon: Download },
@@ -3019,7 +3108,7 @@ function MobileActionsSheet({
       { id: "resetTraffic", label: t("clients.resetTrafficTitle"), icon: RotateCcw },
       { id: "delete", label: t("clients.deleteClients"), icon: Trash2, danger: true },
     ],
-    [t],
+    [t, showSetAllowedUsers],
   );
 
   return (

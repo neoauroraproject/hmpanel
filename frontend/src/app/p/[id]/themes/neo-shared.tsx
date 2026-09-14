@@ -22,6 +22,31 @@ export function useNeoMetrics(id: string, data: SubData, theme: string) {
   return { ...model, remainingBytes, remainingPct, initial };
 }
 
+export function NeoDeviceLimit({
+  show,
+  limit,
+  label,
+  unlimitedLabel,
+  className,
+}: {
+  show?: boolean;
+  limit?: number;
+  label: string;
+  unlimitedLabel: string;
+  className?: string;
+}) {
+  if (!show) return null;
+  const n = Number(limit || 0);
+  return (
+    <div className={className}>
+      <div className="text-[10px] font-semibold tracking-[0.14em] uppercase opacity-70">
+        {label}
+      </div>
+      <div className="mt-1 font-bold tabular-nums">{n > 0 ? n : unlimitedLabel}</div>
+    </div>
+  );
+}
+
 export function NeoImportSheet({
   open,
   onClose,

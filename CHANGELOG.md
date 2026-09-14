@@ -8,6 +8,18 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [2.2.22] - 2026-09-14
+
+### Added
+- **3x-ui 3.8.0:** bundled `docs/api380.json` is used when the connected panel reports 3.8.x. Happ-link / Discord-test / HWID-status flags are detected from that spec.
+- **Bulk allowed users:** on 3.8+ panels, selected clients can set HWID/device limit in one `bulkAdjust` call (not per-client). Hidden on older panels.
+- **Portal themes:** existing subscription templates show allowed HWID count when the panel is 3.8+.
+
+### Changed
+- Live onlines/IPs prefer documented 3.7+ paths (`/clients/onlines`, `GET /server/clientIps`) with the old inbound routes as fallback.
+- Panel sync stores 3x-ui `limitHwid` into local `limitIp` so allowed-user counts stay aligned.
+- Capability resolver no longer assigns a newer OpenAPI spec to an older unmatched panel version.
+
 ## [2.2.21] - 2026-09-14
 
 ### Fixed

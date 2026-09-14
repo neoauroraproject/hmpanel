@@ -31,6 +31,23 @@ export function resolve3xUiLimit(
   return { limitIp: n, limitHwid: 0 };
 }
 
+/** Preferred "allowed users" value from a 3x-ui Client payload (HWID wins). */
+export function allowedUsersFromXuiClient(raw: unknown): number {
+  if (!raw || typeof raw !== 'object') return 0;
+  const rec = raw as Record<string, unknown>;
+  const hwid = normalizeAllowedUsers(
+    typeof rec.limitHwid === 'number' || typeof rec.limitHwid === 'string'
+      ? Number(rec.limitHwid)
+      : 0,
+  );
+  const ip = normalizeAllowedUsers(
+    typeof rec.limitIp === 'number' || typeof rec.limitIp === 'string'
+      ? Number(rec.limitIp)
+      : 0,
+  );
+  return hwid > 0 ? hwid : ip;
+}
+
 /** Negative expiryTime (ms) = start after first use (3x-ui). */
 export function buildOnHoldExpiry3xUi(durationDays: number): number {
   const days = Math.max(0, Math.floor(Number(durationDays) || 0));
