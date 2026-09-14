@@ -118,7 +118,7 @@ export async function resolveLiveInboundIds(
     const xui = await prisma.inbound.findMany({
       where: {
         panel: {
-          OR: [{ panelType: '3x-ui' }, { panelType: '3xui' }, { panelType: null }, { panelType: '' }],
+          NOT: { panelType: { in: ['eylan', 'pasarguard'] } },
         },
       },
       select: { id: true, panelId: true },
