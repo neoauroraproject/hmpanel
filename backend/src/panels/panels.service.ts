@@ -2239,6 +2239,8 @@ export class PanelsService implements OnModuleInit {
       resetMax?: number;
       trafficReset?: string;
       trafficResetDay?: number;
+      /** Client uuid (Xray "id"); omitting it makes 3x-ui mint one and breaks uuid verification. */
+      id?: string;
     },
     adminId?: string,
   ): Promise<PanelApiResult> {
