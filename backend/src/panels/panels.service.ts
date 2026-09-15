@@ -2201,6 +2201,14 @@ export class PanelsService implements OnModuleInit {
       }
     }
 
+    // ClientRecord (GET response) carries a numeric row id and the uuid in a
+    // separate field, but the update endpoint binds Client.id as the uuid
+    // string — sending the numeric id back makes 3.4.2+ panels reject with
+    // "cannot unmarshal number into Go struct field .id of type string".
+    if (typeof normalized.id === 'number' || typeof normalized.id === 'bigint') {
+      normalized.id = String(normalized.uuid ?? '');
+    }
+
     // ClientRecord-only fields (api342) — not part of Client update schema
     delete normalized.uuid;
     delete normalized.createdAt;
@@ -2239,6 +2247,16 @@ export class PanelsService implements OnModuleInit {
     const endpoint = `${base}/panel/api/clients/add`;
     const body = { client: clientPayload, inboundIds: numericInboundIds };
     const startMs = Date.now();
+
+    if (!clientPayload.id) {
+      // Without id (uuid) the panel mints its own and post-create uuid
+      // verification will fail — surface the caller bug here, not as a
+      // cryptic rollback later.
+      this.logger.warn(
+        `[CREATE_CLIENT] email=${clientPayload.email} payload has no id (uuid); ` +
+          `panel will generate one and strict verification will mismatch`,
+      );
+    }
 
     this.logger.log(
       `[CREATE_CLIENT] PANEL_BASE=${base} METHOD=POST URL=${endpoint} ` +

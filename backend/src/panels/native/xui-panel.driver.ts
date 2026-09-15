@@ -90,7 +90,10 @@ export class XuiPanelDriver implements PanelDriver {
       extras.payload && typeof extras.payload === 'object'
         ? (extras.payload as Record<string, any>)
         : {};
+    // 3x-ui binds Client.id as the uuid string; without it the panel mints a
+    // fresh uuid (fillProtocolDefaults) and post-create verification fails.
     const payload = {
+      id: String(extraPayload.id ?? extras.uuid ?? ''),
       email: String(extraPayload.email || input.username),
       totalGB: extraPayload.totalGB ?? (input.totalBytes ? Number(input.totalBytes) / 1024 ** 3 : 0),
       expiryTime: extraPayload.expiryTime ?? input.expiryTimeMs ?? 0,
