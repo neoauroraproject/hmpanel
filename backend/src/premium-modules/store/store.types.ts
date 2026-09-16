@@ -39,6 +39,16 @@ export interface CheckoutPayload {
   isRenewal?: boolean;
   renewClientId?: string;
   currency?: string;
+  paymentMethod?: 'MANUAL_BANK' | 'WALLET' | 'TELEGRAM_STARS' | 'TELEGRAM_WALLET' | string;
+  couponCode?: string;
+  selectedAddonIds?: string[];
+  /** Selected concurrent IP limit from product.ipLimitOptions */
+  limitIp?: number;
+  /** Session token when checkout originates from customer portal (test-product gating). */
+  customerSessionToken?: string;
+  /** Telegram chat to send a Stars invoice into. */
+  telegramChatId?: string | number;
+  telegramUserId?: string | number;
 }
 
 export interface RenewCheckoutPayload {
@@ -50,6 +60,12 @@ export interface RenewCheckoutPayload {
   receiptImage?: string;
   notes?: string;
   currency?: string;
+  paymentMethod?: 'MANUAL_BANK' | 'WALLET' | 'TELEGRAM_STARS' | 'TELEGRAM_WALLET' | string;
+  couponCode?: string;
+  selectedAddonIds?: string[];
+  limitIp?: number;
+  telegramChatId?: string | number;
+  telegramUserId?: string | number;
 }
 
 export interface ClaimServicePayload {
@@ -65,9 +81,39 @@ export function generateCustomerToken(): string {
   return `HM-${segment(4)}-${segment(4)}-${segment(4)}`;
 }
 
+export function generateReferralCode(): string {
+  const chars = '0123456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const bytes = randomBytes(8);
+  return Array.from(bytes, (byte) => chars[byte % chars.length]).join('').slice(0, 8);
+}
+
 export function generateTrackingCode(): string {
   const chars = '0123456789ABCDEFGHJKLMNPQRSTUVWXYZ';
   return Array.from(randomBytes(10), (byte) => chars[byte % chars.length]).join('').slice(0, 10);
+}
+
+/** Short random segment for opaque tracking URLs (e.g. X7K2-1020). */
+export function generateTrackingPrefix(length = 4): string {
+  const chars = '0123456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const len = Math.max(4, Math.min(8, length));
+  return Array.from(randomBytes(len), (byte) => chars[byte % chars.length])
+    .join('')
+    .slice(0, len);
+}
+
+/** Build non-guessable tracking code: PREFIX-SEQUENCE (uppercase). */
+export function buildPrefixedTrackingCode(sequence: number | string): string {
+  const seq = String(sequence).replace(/\D/g, '') || '0';
+  return `${generateTrackingPrefix(4)}-${seq}`.toUpperCase();
+}
+
+/** Extract trailing order sequence from "1020" or "X7K2-1020". */
+export function parseTrackingSequence(code: string): number | null {
+  const raw = String(code || '').trim().toUpperCase();
+  const m = /^[0-9A-Z]+-(\d+)$/.exec(raw) || /^(\d+)$/.exec(raw);
+  if (!m) return null;
+  const n = Number(m[1]);
+  return Number.isInteger(n) ? n : null;
 }
 
 export function generateSessionToken(): string {

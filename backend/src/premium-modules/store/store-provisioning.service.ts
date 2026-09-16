@@ -1,34 +1,87 @@
-import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import { Inject, Injectable, BadRequestException, Logger, forwardRef } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ClientsService } from '../../clients/clients.service';
 import { PanelsService } from '../../panels/panels.service';
-import { buildOnHoldExpiry3xUi } from '../../clients/limit-mapper.util';
+import { FeatureManagerService } from '../../platform/feature-manager.service';
+import { EylanFulfillmentProvider } from './providers/eylan/eylan.provider';
+import { PasarguardFulfillmentProvider } from './providers/pasarguard/pasarguard.provider';
+import {
+  isEylanProvider,
+  isPasarguardProvider,
+  parsePanel3xuiSettings,
+  profileLooksLikeEylan,
+  profileLooksLikePasarguard,
+} from './providers/store-fulfillment.types';
+import { buildOnHoldExpiry3xUi } from './providers/activation-policy.util';
 
 @Injectable()
 export class StoreProvisioningService {
   private readonly logger = new Logger(StoreProvisioningService.name);
 
+  private checkoutMeta(order: { fulfillment?: Prisma.JsonValue | null }): {
+    finalDurationDays?: number;
+    finalLimitIp?: number;
+  } {
+    const ff =
+      order.fulfillment && typeof order.fulfillment === 'object'
+        ? (order.fulfillment as Record<string, unknown>)
+        : {};
+    const checkout =
+      ff.checkout && typeof ff.checkout === 'object'
+        ? (ff.checkout as Record<string, unknown>)
+        : {};
+    return {
+      finalDurationDays: Number(checkout.finalDurationDays || 0) || undefined,
+      finalLimitIp: Number(checkout.finalLimitIp || 0) || undefined,
+    };
+  }
+
   constructor(
     private prisma: PrismaService,
     private clientsService: ClientsService,
     private panelsService: PanelsService,
+    @Inject(forwardRef(() => EylanFulfillmentProvider))
+    private eylan: EylanFulfillmentProvider,
+    @Inject(forwardRef(() => PasarguardFulfillmentProvider))
+    private pasarguard: PasarguardFulfillmentProvider,
+    private features: FeatureManagerService,
   ) {}
 
-  private random4(): string {
-    return String(Math.floor(1000 + Math.random() * 9000));
+  private async assertExternalFulfillment() {
+    if (!(await this.features.canWrite('external-panels'))) {
+      throw new BadRequestException(
+        'Premium unavailable — external panel fulfillment is frozen. Existing orders are preserved.',
+      );
+    }
   }
 
-  private normalizeBaseName(baseName: string): string {
-    let name = (baseName || 'user').trim().replace(/\s+/g, '-').replace(/-+/g, '-');
-    // strip any trailing numeric suffixes so we always regenerate fresh unique endings
-    name = name.replace(/(-\d{4})+$/g, '');
-    name = name.slice(0, 28);
-    if (!name) name = 'user';
+  /** Stem for readable names: "Jack_01" / "jack1" → "jack", "@Ali" → "ali". */
+  private friendlyStem(baseName: string): string {
+    let name = String(baseName || 'user')
+      .trim()
+      .replace(/^@+/, '')
+      .replace(/\s+/g, '')
+      .replace(/[^A-Za-z0-9_]/g, '');
+    name = name.replace(/\d+$/g, '');
+    name = name.slice(0, 20).toLowerCase();
+    if (!name || !/^[a-z]/.test(name)) name = 'user';
     return name;
   }
 
+  private normalizeBaseName(baseName: string): string {
+    // Keep for remark / legacy callers — prefer friendlyStem for uniqueness.
+    return this.friendlyStem(baseName);
+  }
+
+  /** Already looks like an allocated friendly or legacy unique name. */
+  private hasAllocatedSuffix(name: string): boolean {
+    const n = name.trim();
+    return /-\d{4}$/.test(n) || /^[A-Za-z][A-Za-z0-9_]{0,20}\d{1,4}$/.test(n);
+  }
+
   private hasFourDigitSuffix(name: string): boolean {
-    return /-\d{4}$/.test(name.trim());
+    return this.hasAllocatedSuffix(name);
   }
 
   private isNameCollision(message: string): boolean {
@@ -40,24 +93,84 @@ export class StoreProvisioningService {
     );
   }
 
-  async generateUniqueConfigName(baseName: string, adminId: string): Promise<string> {
-    const name = this.normalizeBaseName(baseName);
+  private isStrictVerificationFailure(message: string): boolean {
+    const lower = String(message || '').toLowerCase();
+    return (
+      lower.includes('strict provisioning verification failed') ||
+      lower.includes('panel did not confirm existence') ||
+      lower.includes('missing inboundids')
+    );
+  }
 
-    for (let attempts = 0; attempts < 40; attempts++) {
-      const candidate = `${name}-${this.random4()}`;
-      const exists = await this.prisma.client.findFirst({
+  private async recoverClientAfterStrictFailure(input: {
+    panelId: string;
+    email: string;
+    adminId: string;
+    inboundIds: string[];
+  }) {
+    const targetInboundIds = [...input.inboundIds].sort();
+    for (let i = 0; i < 3; i++) {
+      await this.panelsService.sync(input.panelId).catch(() => {});
+      const found = await this.prisma.client.findFirst({
         where: {
-          OR: [
-            { adminId, email: candidate },
-            { email: candidate },
-          ],
+          panelId: input.panelId,
+          email: input.email,
+          OR: [{ adminId: input.adminId }, { adminId: null }],
+        },
+        include: {
+          inbounds: {
+            select: { inboundId: true },
+          },
+        },
+      });
+      if (!found) {
+        continue;
+      }
+      const foundInboundIds = found.inbounds.map((x) => x.inboundId).sort();
+      const inboundsMatch =
+        foundInboundIds.length === targetInboundIds.length &&
+        foundInboundIds.every((id, idx) => id === targetInboundIds[idx]);
+      if (!inboundsMatch) {
+        continue;
+      }
+      if (!found.adminId || found.adminId !== input.adminId) {
+        await this.prisma.client.update({
+          where: { id: found.id },
+          data: { adminId: input.adminId },
+        });
+      }
+      return found.id;
+    }
+    return null;
+  }
+
+  private async isConfigNameTaken(candidate: string, adminId: string): Promise<boolean> {
+    const [client, order] = await Promise.all([
+      this.prisma.client.findFirst({
+        where: {
+          OR: [{ adminId, email: candidate }, { email: candidate }],
         },
         select: { id: true },
-      });
-      if (!exists) return candidate;
-    }
+      }),
+      this.prisma.storeOrder.findFirst({
+        where: { store: { adminId }, configName: candidate },
+        select: { id: true },
+      }),
+    ]);
+    return !!(client || order);
+  }
 
-    return `${name}-${Date.now().toString().slice(-4)}`;
+  /**
+   * Readable unique names: jack1, jack2, … (not tg-mstrznv5).
+   * Used for Telegram bot and store checkout.
+   */
+  async generateUniqueConfigName(baseName: string, adminId: string): Promise<string> {
+    const stem = this.friendlyStem(baseName);
+    for (let n = 1; n <= 9999; n++) {
+      const candidate = `${stem}${n}`;
+      if (!(await this.isConfigNameTaken(candidate, adminId))) return candidate;
+    }
+    return `${stem}${Date.now().toString().slice(-4)}`;
   }
 
   async resolveRenewClient(adminId: string, renewClientId: string) {
@@ -101,25 +214,28 @@ export class StoreProvisioningService {
     }
 
     if (!candidates.length) {
-      throw new BadRequestException('Invalid subscription link or token');
+      throw new BadRequestException(
+        'Subscription not found in this panel / این لینک ساب در لیست کلاینت‌های فروشگاه پیدا نشد',
+      );
     }
 
     const owned = await this.pickClientOwnedByAdmin(adminId, candidates);
     if (!owned) {
       throw new BadRequestException(
-        'This subscription was not found under your store account',
+        'This subscription was not found under your store account / این ساب متعلق به این فروشگاه نیست',
       );
     }
     return owned;
   }
 
-  /** Pull subId/token from /s/, /sub/, or trailing URL path. */
+  /** Pull subId/token from /s/, /sub/, or trailing URL path (incl. native 3x-ui / Sanaei). */
   private extractSubscriptionToken(tokenOrUrl: string): string {
     let token = String(tokenOrUrl || '').trim();
     const pathPatterns = [
       /\/s\/([^/?#]+)/i,
       /\/sub\/([^/?#]+)/i,
       /\/subscribe\/([^/?#]+)/i,
+      /\/api\/v1\/client\/subscribe\/([^/?#]+)/i,
     ];
     for (const re of pathPatterns) {
       const match = token.match(re);
@@ -131,9 +247,19 @@ export class StoreProvisioningService {
     if (/^https?:\/\//i.test(token)) {
       try {
         const u = new URL(token);
-        const segments = u.pathname.split('/').filter(Boolean);
-        const last = segments[segments.length - 1];
-        if (last) token = decodeURIComponent(last).trim();
+        // Query helpers used by some panel links
+        const q =
+          u.searchParams.get('token') ||
+          u.searchParams.get('subId') ||
+          u.searchParams.get('sub') ||
+          '';
+        if (q.trim()) {
+          token = decodeURIComponent(q.trim());
+        } else {
+          const segments = u.pathname.split('/').filter(Boolean);
+          const last = segments[segments.length - 1];
+          if (last) token = decodeURIComponent(last).trim();
+        }
       } catch {
         /* keep */
       }
@@ -220,7 +346,7 @@ export class StoreProvisioningService {
     orderId: string,
     adminId: string,
     role: string,
-  ): Promise<{ clientId: string }> {
+  ): Promise<{ clientId: string | null }> {
     const order = await this.prisma.storeOrder.findUnique({
       where: { id: orderId },
       include: {
@@ -230,19 +356,61 @@ export class StoreProvisioningService {
     if (!order) throw new BadRequestException('Order not found');
     if (order.isRenewal) throw new BadRequestException('Use renew provisioning for renewal orders');
 
+    if (!order.product) throw new BadRequestException('Order product is missing');
+
     const profile = order.product.profile;
+    if (profileLooksLikeEylan(profile)) {
+      await this.assertExternalFulfillment();
+      const result = await this.eylan.provision({ orderId, adminId, role });
+      await this.prisma.storeOrder.update({
+        where: { id: orderId },
+        data: {
+          clientId: null,
+          configName: result.configName,
+          provisionError: null,
+          fulfillment: (result.fulfillment || null) as Prisma.InputJsonValue,
+        },
+      });
+      return { clientId: null };
+    }
+
+    if (profileLooksLikePasarguard(profile)) {
+      await this.assertExternalFulfillment();
+      const result = await this.pasarguard.provision({ orderId, adminId, role });
+      await this.prisma.storeOrder.update({
+        where: { id: orderId },
+        data: {
+          clientId: null,
+          configName: result.configName,
+          provisionError: null,
+          fulfillment: (result.fulfillment || null) as Prisma.InputJsonValue,
+        },
+      });
+      return { clientId: null };
+    }
+
+    if (!profile) {
+      throw new BadRequestException(
+        'Product has no provisioning profile / برای این محصول پروفایل ساخت سرویس تنظیم نشده',
+      );
+    }
     const inboundIds = Array.isArray(profile.inboundIds)
       ? (profile.inboundIds as string[])
       : [];
     if (!inboundIds.length) throw new BadRequestException('Provisioning profile has no inbounds');
+    if (!profile.panelId) throw new BadRequestException('Provisioning profile has no panel');
+
+    // 3x-ui fulfill uses ClientsService.create, which calls ProvisioningEngine when adapter_xui_v1 is on.
 
     await this.ensurePanelSynced(profile.panelId, inboundIds);
 
+    const checkout = this.checkoutMeta(order);
     const totalBytes = Number(order.product.traffic);
-    const days = Math.max(0, Number(order.product.durationDays || 0));
-    const expiryTime = buildOnHoldExpiry3xUi(days);
+    const effectiveDays = Math.max(0, Number(checkout.finalDurationDays || order.product.durationDays || 0));
+    // On-hold: timer starts after first connection
+    const expiryTime = buildOnHoldExpiry3xUi(effectiveDays);
     const remarkBase = this.normalizeBaseName(order.configName || 'user');
-    const limitIp = Number((order as { limitIp?: number | null }).limitIp || 0) || 0;
+    const panel3xSettings = parsePanel3xuiSettings(profile.settings);
 
     let lastError: Error | null = null;
     const candidatesTried = new Set<string>();
@@ -265,12 +433,36 @@ export class StoreProvisioningService {
           total: totalBytes,
           expiryTime,
           adminId,
-          limitIp,
+          limitIp: Number(checkout.finalLimitIp || order.limitIp || 0) || 0,
+          trafficReset: panel3xSettings.trafficReset,
+          trafficResetDay: panel3xSettings.trafficResetDay,
+          reset: panel3xSettings.reset,
+          resetMax: panel3xSettings.resetMax,
         });
 
+        const existingFf =
+          order.fulfillment && typeof order.fulfillment === 'object'
+            ? (order.fulfillment as Record<string, unknown>)
+            : {};
+        const subToken = String(
+          (client as { subId?: string | null; subToken?: string | null }).subId ||
+            (client as { subToken?: string | null }).subToken ||
+            '',
+        ).trim();
         await this.prisma.storeOrder.update({
           where: { id: orderId },
-          data: { clientId: client.id, configName: email, provisionError: null },
+          data: {
+            clientId: client.id,
+            configName: email,
+            provisionError: null,
+            fulfillment: {
+              ...existingFf,
+              providerId: existingFf.providerId || 'panel_3xui',
+              ...(subToken
+                ? { subToken, subUrl: `/s/${encodeURIComponent(subToken)}` }
+                : {}),
+            } as Prisma.InputJsonValue,
+          },
         });
 
         this.logger.log(`Provisioned order ${order.trackingCode} → client ${client.id} (${email})`);
@@ -284,6 +476,44 @@ export class StoreProvisioningService {
           );
           continue;
         }
+        if (this.isStrictVerificationFailure(message) && profile?.panelId) {
+          const recoveredClientId = await this.recoverClientAfterStrictFailure({
+            panelId: profile.panelId,
+            email,
+            adminId,
+            inboundIds,
+          });
+          if (recoveredClientId) {
+            const recovered = await this.prisma.client.findUnique({
+              where: { id: recoveredClientId },
+              select: { subId: true, subToken: true },
+            });
+            const existingFf =
+              order.fulfillment && typeof order.fulfillment === 'object'
+                ? (order.fulfillment as Record<string, unknown>)
+                : {};
+            const subToken = String(recovered?.subId || recovered?.subToken || '').trim();
+            await this.prisma.storeOrder.update({
+              where: { id: orderId },
+              data: {
+                clientId: recoveredClientId,
+                configName: email,
+                provisionError: null,
+                fulfillment: {
+                  ...existingFf,
+                  providerId: existingFf.providerId || 'panel_3xui',
+                  ...(subToken
+                    ? { subToken, subUrl: `/s/${encodeURIComponent(subToken)}` }
+                    : {}),
+                } as Prisma.InputJsonValue,
+              },
+            });
+            this.logger.warn(
+              `Recovered store order ${order.trackingCode} after strict verify failure → client ${recoveredClientId} (${email})`,
+            );
+            return { clientId: recoveredClientId };
+          }
+        }
         throw err;
       }
     }
@@ -295,19 +525,62 @@ export class StoreProvisioningService {
     orderId: string,
     adminId: string,
     role: string,
-  ): Promise<{ clientId: string }> {
+  ): Promise<{ clientId: string | null }> {
     const order = await this.prisma.storeOrder.findUnique({
       where: { id: orderId },
-      include: { product: true },
+      include: { product: { include: { profile: true } } },
     });
     if (!order) throw new BadRequestException('Order not found');
-    if (!order.isRenewal || !order.renewClientId) {
+    if (!order.isRenewal) {
+      throw new BadRequestException('Not a renewal order');
+    }
+    if (!order.product) throw new BadRequestException('Order product is missing');
+
+    const fulfillmentProvider =
+      order.fulfillment && typeof order.fulfillment === 'object'
+        ? (order.fulfillment as { providerId?: string }).providerId
+        : null;
+    if (profileLooksLikeEylan(order.product.profile) || isEylanProvider(fulfillmentProvider)) {
+      await this.assertExternalFulfillment();
+      const result = await this.eylan.renew({ orderId, adminId, role });
+      await this.prisma.storeOrder.update({
+        where: { id: orderId },
+        data: {
+          clientId: null,
+          configName: result.configName,
+          provisionError: null,
+          fulfillment: (result.fulfillment || null) as Prisma.InputJsonValue,
+        },
+      });
+      return { clientId: null };
+    }
+
+    if (
+      profileLooksLikePasarguard(order.product.profile) ||
+      isPasarguardProvider(fulfillmentProvider)
+    ) {
+      await this.assertExternalFulfillment();
+      const result = await this.pasarguard.renew({ orderId, adminId, role });
+      await this.prisma.storeOrder.update({
+        where: { id: orderId },
+        data: {
+          clientId: null,
+          configName: result.configName,
+          provisionError: null,
+          fulfillment: (result.fulfillment || null) as Prisma.InputJsonValue,
+        },
+      });
+      return { clientId: null };
+    }
+
+    if (!order.renewClientId) {
       throw new BadRequestException('Not a renewal order');
     }
 
     const existing = await this.resolveRenewClient(adminId, order.renewClientId);
+    const checkout = this.checkoutMeta(order);
     const addTraffic = Number(order.product.traffic);
-    const addDays = order.product.durationDays;
+    const addDays = Number(checkout.finalDurationDays || order.product.durationDays || 0);
 
     // Additive renew: keep used traffic (up/down) untouched; only ADD volume + extend expiry.
     const newTotal =

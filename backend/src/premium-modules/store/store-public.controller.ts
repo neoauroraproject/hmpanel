@@ -13,12 +13,16 @@ import {
 import type { Request } from 'express';
 import { StoreService } from './store.service';
 import { StoreTelegramService } from './store-telegram.service';
+import { StoreWalletService } from './store-wallet.service';
+import { StoreCustomerAuthService } from './store-customer-auth.service';
 
 @Controller('store')
 export class StorePublicController {
   constructor(
     private readonly store: StoreService,
     private readonly telegram: StoreTelegramService,
+    private readonly wallet: StoreWalletService,
+    private readonly customerAuth: StoreCustomerAuthService,
   ) {}
 
   private getRequestKey(req: Request) {
@@ -58,6 +62,84 @@ export class StorePublicController {
     @Req() req: Request,
   ) {
     return this.store.createCheckout(slug, body as any, this.getRequestKey(req));
+  }
+
+  @Post('public/:slug/coupon/validate')
+  validateCouponPublic(
+    @Param('slug') slug: string,
+    @Body() body: Record<string, unknown>,
+    @Req() req: Request,
+  ) {
+    this.getRequestKey(req);
+    return this.store.previewCoupon({
+      slug,
+      productId: String(body.productId || ''),
+      customerToken: body.customerToken ? String(body.customerToken) : undefined,
+      couponCode: body.couponCode ? String(body.couponCode) : undefined,
+      limitIp: body.limitIp != null ? Number(body.limitIp) : undefined,
+      selectedAddonIds: Array.isArray(body.selectedAddonIds)
+        ? body.selectedAddonIds.map((v) => String(v))
+        : undefined,
+      isRenewal: body.isRenewal === true,
+    });
+  }
+
+  @Post('public/:slug/coupons/applicable')
+  listApplicableCouponsPublic(
+    @Param('slug') slug: string,
+    @Body() body: Record<string, unknown>,
+    @Req() req: Request,
+  ) {
+    this.getRequestKey(req);
+    return this.store.listApplicableCoupons({
+      slug,
+      productId: String(body.productId || ''),
+      customerToken: body.customerToken ? String(body.customerToken) : undefined,
+      limitIp: body.limitIp != null ? Number(body.limitIp) : undefined,
+      selectedAddonIds: Array.isArray(body.selectedAddonIds)
+        ? body.selectedAddonIds.map((v) => String(v))
+        : undefined,
+      isRenewal: body.isRenewal === true,
+    });
+  }
+
+  @Post('customer/coupons/applicable')
+  async listApplicableCouponsSession(
+    @Body() body: Record<string, unknown>,
+    @Headers('x-customer-session') sessionToken?: string,
+  ) {
+    const session = this.getSessionToken(sessionToken);
+    const customer = await this.customerAuth.validateSession(session);
+    return this.store.listApplicableCoupons({
+      adminId: customer.adminId,
+      productId: String(body.productId || ''),
+      limitIp: body.limitIp != null ? Number(body.limitIp) : undefined,
+      selectedAddonIds: Array.isArray(body.selectedAddonIds)
+        ? body.selectedAddonIds.map((v) => String(v))
+        : undefined,
+      isRenewal: body.isRenewal === true,
+      sessionToken: session,
+    });
+  }
+
+  @Post('customer/coupon/validate')
+  async validateCouponSession(
+    @Body() body: Record<string, unknown>,
+    @Headers('x-customer-session') sessionToken?: string,
+  ) {
+    const session = this.getSessionToken(sessionToken);
+    const customer = await this.customerAuth.validateSession(session);
+    return this.store.previewCoupon({
+      adminId: customer.adminId,
+      productId: String(body.productId || ''),
+      couponCode: body.couponCode ? String(body.couponCode) : undefined,
+      limitIp: body.limitIp != null ? Number(body.limitIp) : undefined,
+      selectedAddonIds: Array.isArray(body.selectedAddonIds)
+        ? body.selectedAddonIds.map((v) => String(v))
+        : undefined,
+      isRenewal: body.isRenewal === true,
+      sessionToken: session,
+    });
   }
 
   @Get('track/:code')
@@ -150,12 +232,52 @@ export class StorePublicController {
 
   @Post('customer/services/claim')
   claimServiceByLink(
-    @Body('subscriptionLink') subscriptionLink: string,
+    @Body() body: { subscriptionLink?: string; categoryId?: string },
     @Headers('x-customer-session') sessionToken?: string,
   ) {
     return this.store.claimServiceBySubscriptionLink(
       this.getSessionToken(sessionToken),
-      subscriptionLink,
+      String(body?.subscriptionLink || ''),
+      body?.categoryId,
+    );
+  }
+
+  @Post('customer/services/:clientId/category')
+  assignServiceCategory(
+    @Param('clientId') clientId: string,
+    @Body('categoryId') categoryId: string,
+    @Headers('x-customer-session') sessionToken?: string,
+  ) {
+    return this.store.assignServiceCategory(
+      this.getSessionToken(sessionToken),
+      clientId,
+      String(categoryId || ''),
+    );
+  }
+
+  @Get('customer/services/:clientId/renew-products')
+  async renewProductsForClient(
+    @Param('clientId') clientId: string,
+    @Headers('x-customer-session') sessionToken?: string,
+  ) {
+    const customer = await this.customerAuth.validateSession(
+      this.getSessionToken(sessionToken),
+    );
+    return this.store.listRenewProductsForClient(
+      customer.adminId,
+      customer.id,
+      clientId,
+    );
+  }
+
+  @Post('customer/services/:clientId/hide')
+  hideServiceFromList(
+    @Param('clientId') clientId: string,
+    @Headers('x-customer-session') sessionToken?: string,
+  ) {
+    return this.store.hideServiceFromCustomerList(
+      this.getSessionToken(sessionToken),
+      clientId,
     );
   }
 
@@ -188,5 +310,32 @@ export class StorePublicController {
     @Body() body: Record<string, unknown>,
   ) {
     return this.telegram.handleWebhook(slug, secret, body);
+  }
+
+  @Get('customer/wallet')
+  async getWallet(@Headers('x-customer-session') sessionToken?: string) {
+    const customer = await this.customerAuth.validateSession(this.getSessionToken(sessionToken));
+    return this.wallet.getBalance(customer.id);
+  }
+
+  @Post('customer/wallet/deposit')
+  async createWalletDeposit(
+    @Headers('x-customer-session') sessionToken?: string,
+    @Body()
+    body?: {
+      amount?: number;
+      currency?: string;
+      receiptText?: string;
+      receiptImage?: string;
+    },
+  ) {
+    const customer = await this.customerAuth.validateSession(this.getSessionToken(sessionToken));
+    return this.wallet.createDeposit(
+      customer.id,
+      customer.adminId,
+      Number(body?.amount || 0),
+      body?.currency || 'USD',
+      { receiptText: body?.receiptText, receiptImage: body?.receiptImage },
+    );
   }
 }
