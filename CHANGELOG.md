@@ -8,6 +8,18 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [2.2.23] - 2026-09-16
+
+### Added
+- **Store bot forced channel:** stores can require Telegram channel membership before the bot responds. Non-members get a localized join prompt with an inline button (invite link auto-created for private channels); membership verdicts are cached for 60s and the store admin bypasses the gate.
+- **Customer block / restrict:** new customer status with `PATCH /premium-modules/store/customers/:id/status`. Blocked customers are ignored by the bot and locked out of storefront/Mini-App login. Restricted customers keep browsing but receipts never auto-approve — orders stay tagged for manual review.
+- Status badges in the store customers tab and detail drawer, plus block/restrict actions; admin Telegram customer view shows a blocked/restricted tag.
+
+### Fixed
+- Provisioning: the 3x-ui driver now sends the client `id` (uuid) on create — panels used to mint their own uuid, which failed strict post-create verification and rolled back client creation ("Client field validation failed").
+- Client updates no longer send the numeric `ClientRecord.id` to panels that bind `id` as the uuid string, fixing `json: cannot unmarshal number into Go struct field .id of type string` on suspend/reactivate.
+- Registered the missing `test.created` store bot i18n key (test-account notifications rendered an empty message).
+
 ## [2.2.22] - 2026-09-14
 
 ### Added
