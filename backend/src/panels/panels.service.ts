@@ -10,7 +10,6 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PanelCapabilitiesService } from './panel-capabilities.service';
-import { buildConnectionExtrasEnvelope } from '../clients/output/connection-extras';
 import { ClientsService } from '../clients/clients.service';
 import { AdminQuotaService } from '../traffic/admin-quota.service';
 import {
@@ -36,6 +35,11 @@ import {
   extractOnlineEmails,
   extractOnlineIpCounts,
 } from './xui-online-response.util';
+import { buildConnectionExtrasEnvelope, connectionExtrasContentEqual } from '../clients/output/connection-extras';
+import {
+  chunkArray,
+  inboundSyncFieldsChanged,
+} from './panel-sync.util';
 
 // ─── Provisioning Error Classification ───────────────────────────────────────
 export type ProvisioningErrorCode =
@@ -95,6 +99,13 @@ const PANEL_CONNECT_TIMEOUT_MS = 10_000;
 const PANEL_REQUEST_TIMEOUT_MS = 30_000;
 const PANEL_RETRY_COUNT = 3;
 const PANEL_RETRY_DELAYS_MS = [500, 1500, 4500] as const; // exponential backoff
+/** Full structural sync cadence (inbounds prune, orphans, extras). */
+const FULL_SYNC_INTERVAL_MS = 5 * 60 * 1000;
+/** Skip repeated failed panel enable/disable for this long. */
+const PANEL_UPDATE_FAIL_COOLDOWN_MS = 5 * 60 * 1000;
+const SYNC_DB_BATCH_SIZE = 50;
+
+export type PanelSyncMode = 'full' | 'traffic';
 
 @Injectable()
 export class PanelsService implements OnModuleInit {
@@ -105,6 +116,15 @@ export class PanelsService implements OnModuleInit {
   > = {};
   private onlineIpsCache: { data: Record<string, number>; timestamp: number } =
     { data: {}, timestamp: 0 };
+
+  /** Global cron/boot lock — never overlap full fleet sync cycles. */
+  private globalSyncRunning = false;
+  /** Per-panel in-flight sync promises (manual + scheduled share this). */
+  private readonly panelSyncInFlight = new Map<string, Promise<any>>();
+  /** Last successful full structural sync per panel. */
+  private readonly lastFullSyncAt = new Map<string, number>();
+  /** Cooldown after failed updateClientOnPanel (panelId:email → untilMs). */
+  private readonly panelUpdateFailUntil = new Map<string, number>();
 
   constructor(
     private prisma: PrismaService,
@@ -386,25 +406,79 @@ export class PanelsService implements OnModuleInit {
 
   async onModuleInit() {
     this.logger.log('Starting auto-sync for all panels on boot...');
-    this.syncAllPanelsInBackground();
+    // Fire-and-forget through the same non-overlapping global cycle.
+    void this.runGlobalSyncCycle({ forceFull: true });
   }
 
-  private async syncAllPanelsInBackground() {
-    try {
-      const panels = await this.prisma.panel.findMany();
-      for (const p of panels) {
-        if (isExternalPanelType(p.panelType)) continue;
-        this.sync(p.id).catch((e) =>
-          this.logger.error(`Boot sync failed for panel ${p.name}:`, e.message),
-        );
-      }
-      this.logger.log(`Triggered background sync for ${panels.length} panels.`);
-    } catch (error: any) {
-      this.logger.error(
-        'Failed to trigger background sync on boot',
-        error.message,
-      );
+  /**
+   * Cron + boot entry point. Skips if a previous cycle is still running.
+   * Traffic sync by default; full structural sync when due (or forceFull).
+   */
+  async runGlobalSyncCycle(opts?: {
+    forceFull?: boolean;
+  }): Promise<{ skipped: boolean }> {
+    if (this.globalSyncRunning) {
+      return { skipped: true };
     }
+    this.globalSyncRunning = true;
+    this.logger.log('Starting global panel sync...');
+    try {
+      const panels = await this.prisma.panel.findMany({
+        select: { id: true, name: true, panelType: true },
+      });
+      const now = Date.now();
+      for (const panel of panels) {
+        if (isExternalPanelType(panel.panelType)) continue;
+        const lastFull = this.lastFullSyncAt.get(panel.id) || 0;
+        const mode: PanelSyncMode =
+          opts?.forceFull || now - lastFull >= FULL_SYNC_INTERVAL_MS
+            ? 'full'
+            : 'traffic';
+        try {
+          await this.sync(panel.id, { mode });
+          this.logger.debug(
+            `Synced panel ${panel.name} (${mode}) successfully.`,
+          );
+        } catch (error: any) {
+          this.logger.error(
+            `Failed to sync panel ${panel.name}: ${error.message}`,
+          );
+          await this.prisma.syncState.upsert({
+            where: { panelId: panel.id },
+            update: {
+              status: 'offline',
+              errorLogs: error.message,
+              updatedAt: new Date(),
+            },
+            create: {
+              panelId: panel.id,
+              lastSync: new Date(0),
+              status: 'offline',
+              errorLogs: error.message,
+            },
+          });
+          await this.prisma.panel.update({
+            where: { id: panel.id },
+            data: { status: 'offline', lastOnline: null },
+          });
+        }
+      }
+      await this.processSuspensions();
+      this.logger.log('Global panel sync completed.');
+      return { skipped: false };
+    } catch (error: any) {
+      this.logger.error(`Global sync failed: ${error.message}`);
+      return { skipped: false };
+    } finally {
+      this.globalSyncRunning = false;
+    }
+  }
+
+  private resolveSyncMode(_panelId: string, requested?: PanelSyncMode): PanelSyncMode {
+    // Explicit scheduled modes win; any other caller (UI button, store, migration)
+    // always runs a full structural sync.
+    if (requested === 'full' || requested === 'traffic') return requested;
+    return 'full';
   }
 
   // discoverCapabilities removed in favor of PanelCapabilitiesService
@@ -1015,16 +1089,33 @@ export class PanelsService implements OnModuleInit {
     );
   }
 
-  async sync(id: string) {
+  async sync(id: string, options?: { mode?: PanelSyncMode }) {
+    const existing = this.panelSyncInFlight.get(id);
+    if (existing) {
+      this.logger.debug(
+        `[SYNC] Panel ${id} sync already in flight — joining existing run`,
+      );
+      return existing;
+    }
+    const mode = this.resolveSyncMode(id, options?.mode);
+    const run = this.executeSync(id, mode).finally(() => {
+      this.panelSyncInFlight.delete(id);
+    });
+    this.panelSyncInFlight.set(id, run);
+    return run;
+  }
+
+  private async executeSync(id: string, mode: PanelSyncMode) {
     const panel = await this.findOne(id);
     if (isExternalPanelType(panel.panelType)) {
       return this.nativeOrchestrator.sync(id);
     }
     const startTime = Date.now();
     const apiBaseUrl = resolvePanelApiBaseUrl(panel);
+    const isFull = mode === 'full';
 
     this.logger.debug(
-      `[DIAGNOSTIC] Start Sync for panel ${id} (${panel.name}) at ${apiBaseUrl}`,
+      `[DIAGNOSTIC] Start Sync (${mode}) for panel ${id} (${panel.name}) at ${apiBaseUrl}`,
     );
 
     try {
@@ -1082,57 +1173,50 @@ export class PanelsService implements OnModuleInit {
           `[SYNC] Version/Hash change detected or caps missing. Triggering capability rescan.`,
         );
         caps = await this.panelCapabilitiesService.scanAndPersist(id, version);
-      } else {
-        // Update version info without full rescan
+      } else if (panel.version !== version || panel.apiVersion !== version) {
+        // Update version info without full rescan — only when it actually changed
         await this.prisma.panel.update({
           where: { id: panel.id },
           data: { version, apiVersion: version },
         });
       }
 
-      // --- Group Sync & Conflict Detection ---
-      try {
-        const apiGroups = await this.listGroups(id);
-        const apiGroupNames = new Set(
-          apiGroups.map((g: any) => String(g.name)),
-        );
+      // --- Group Sync (full only; never write repeating audit noise) ---
+      if (isFull) {
+        try {
+          const apiGroups = await this.listGroups(id);
+          const apiGroupNames = new Set(
+            apiGroups.map((g: any) => String(g.name)),
+          );
 
-        const resellers = await this.prisma.admin.findMany({
-          where: { role: 'RESELLER' },
-          select: { id: true, username: true },
-        });
+          const resellers = await this.prisma.admin.findMany({
+            where: { role: 'RESELLER' },
+            select: { id: true, username: true },
+          });
 
-        const resellerNames = new Set(resellers.map((a) => a.username));
+          const resellerNames = new Set(resellers.map((a) => a.username));
 
-        for (const admin of resellers) {
-          if (!apiGroupNames.has(admin.username)) {
-            // Reseller has no matching group in panel — will be auto-created on next client add
-            this.logger.debug(
-              `Group for reseller ${admin.username} does not exist in panel ${id} yet.`,
-            );
+          for (const admin of resellers) {
+            if (!apiGroupNames.has(admin.username)) {
+              this.logger.debug(
+                `Group for reseller ${admin.username} does not exist in panel ${id} yet.`,
+              );
+            }
           }
-        }
 
-        for (const g of apiGroups) {
-          const groupName = String(g.name);
-          if (!resellerNames.has(groupName)) {
-            // Group exists in panel but no matching reseller locally
-            await this.prisma.auditLog.create({
-              data: {
-                action: 'GROUP_SYNC_INFO',
-                entity: 'Panel',
-                entityId: id,
-                details: {
-                  message: `Group "${groupName}" exists in panel but has no matching reseller locally.`,
-                },
-              },
-            });
+          for (const g of apiGroups) {
+            const groupName = String(g.name);
+            if (!resellerNames.has(groupName)) {
+              this.logger.debug(
+                `Group "${groupName}" exists in panel ${id} but has no matching reseller locally.`,
+              );
+            }
           }
+        } catch (err: any) {
+          this.logger.warn(
+            `Failed to sync groups for panel ${id}: ${err.message}`,
+          );
         }
-      } catch (err: any) {
-        this.logger.warn(
-          `Failed to sync groups for panel ${id}: ${err.message}`,
-        );
       }
       // --- End Group Sync ---
 
@@ -1348,13 +1432,31 @@ export class PanelsService implements OnModuleInit {
       const apiInboundIdToDbId = new Map<number, string>();
       const syncedLocalInboundIds = new Set<string>();
 
+      // Preload local inbounds once — avoid per-inbound findFirst on every sync.
+      const existingInbounds = await this.prisma.inbound.findMany({
+        where: { panelId: panel.id },
+      });
+      const inboundByRemoteId = new Map<number, (typeof existingInbounds)[0]>();
+      const inboundById = new Map<string, (typeof existingInbounds)[0]>();
+      const legacyInboundsByPort = new Map<number, (typeof existingInbounds)[0][]>();
+      for (const ib of existingInbounds) {
+        inboundById.set(ib.id, ib);
+        if (ib.panelInboundId != null) {
+          inboundByRemoteId.set(ib.panelInboundId, ib);
+        } else {
+          const list = legacyInboundsByPort.get(ib.port) || [];
+          list.push(ib);
+          legacyInboundsByPort.set(ib.port, list);
+        }
+      }
+
       // 1. Sync Inbounds — ALWAYS prefer remote panelInboundId.
       // Same port on master + node is valid (distinct remote ids). Port fallback
       // only reclaims legacy local rows that still have null panelInboundId.
       // When a node/inbound disappears from the Sanaei API list, stale prune below
       // deletes the local row (matches panel API truth).
       this.logger.debug(
-        `[DIAGNOSTIC] Syncing ${apiInbounds.length} inbounds into Database`,
+        `[DIAGNOSTIC] Syncing ${apiInbounds.length} inbounds into Database (${mode})`,
       );
       for (const apiInbound of apiInbounds) {
         totalSyncedInbounds++;
@@ -1402,36 +1504,33 @@ export class PanelsService implements OnModuleInit {
 
         let dbInbound =
           remoteId != null && !Number.isNaN(remoteId)
-            ? await this.prisma.inbound.findFirst({
-                where: { panelId: panel.id, panelInboundId: remoteId },
-              })
+            ? inboundByRemoteId.get(remoteId) || null
             : null;
 
         // Legacy reclaim: only a row with NO remote id yet may bind by port.
         if (!dbInbound) {
-          const byPortLegacy = await this.prisma.inbound.findFirst({
-            where: {
-              panelId: panel.id,
-              port: apiInbound.port,
-              panelInboundId: null,
-            },
-          });
+          const byPortLegacy = (legacyInboundsByPort.get(apiInbound.port) ||
+            [])[0];
           if (byPortLegacy) {
             dbInbound = byPortLegacy;
+            legacyInboundsByPort.set(
+              apiInbound.port,
+              (legacyInboundsByPort.get(apiInbound.port) || []).filter(
+                (r) => r.id !== byPortLegacy.id,
+              ),
+            );
           }
-        } else if (remoteId != null && !Number.isNaN(remoteId)) {
+        } else if (remoteId != null && !Number.isNaN(remoteId) && isFull) {
           // Absorb pure legacy ghosts on this port into the ID-matched row.
-          const ghosts = await this.prisma.inbound.findMany({
-            where: {
-              panelId: panel.id,
-              port: apiInbound.port,
-              panelInboundId: null,
-              id: { not: dbInbound.id },
-            },
-            select: { id: true },
-          });
+          const ghosts = (legacyInboundsByPort.get(apiInbound.port) || []).filter(
+            (g) => g.id !== dbInbound!.id,
+          );
           for (const ghost of ghosts) {
             await this.mergeInboundInto(ghost.id, dbInbound.id);
+            inboundById.delete(ghost.id);
+          }
+          if (ghosts.length) {
+            legacyInboundsByPort.set(apiInbound.port, []);
           }
         }
 
@@ -1462,7 +1561,27 @@ export class PanelsService implements OnModuleInit {
               ...inboundData,
             },
           });
-        } else {
+          inboundById.set(dbInbound.id, dbInbound);
+          if (remoteId != null && !Number.isNaN(remoteId)) {
+            inboundByRemoteId.set(remoteId, dbInbound);
+          }
+        } else if (
+          inboundSyncFieldsChanged(
+            {
+              panelInboundId: dbInbound.panelInboundId,
+              tag: dbInbound.tag,
+              remark: dbInbound.remark,
+              port: dbInbound.port,
+              protocol: dbInbound.protocol,
+              settings: dbInbound.settings,
+              streamSettings: dbInbound.streamSettings,
+              nodeId: dbInbound.nodeId,
+              nodeName: dbInbound.nodeName,
+              originNodeGuid: dbInbound.originNodeGuid,
+            },
+            inboundData,
+          )
+        ) {
           dbInbound = await this.prisma.inbound.update({
             where: { id: dbInbound.id },
             data: {
@@ -1478,6 +1597,10 @@ export class PanelsService implements OnModuleInit {
               originNodeGuid,
             },
           });
+          inboundById.set(dbInbound.id, dbInbound);
+          if (remoteId != null && !Number.isNaN(remoteId)) {
+            inboundByRemoteId.set(remoteId, dbInbound);
+          }
         }
         if (remoteId != null && !Number.isNaN(remoteId)) {
           apiInboundIdToDbId.set(remoteId, dbInbound.id);
@@ -1486,48 +1609,63 @@ export class PanelsService implements OnModuleInit {
       }
 
       // Drop local inbounds no longer present on the remote panel
-      // (ClientInbound / AdminInbound cascade on delete).
-      const staleInbounds = await this.prisma.inbound.findMany({
-        where: {
-          panelId: panel.id,
-          id: { notIn: [...syncedLocalInboundIds] },
-        },
-        select: { id: true, port: true, tag: true, panelInboundId: true },
-      });
-      if (staleInbounds.length) {
-        const staleIds = staleInbounds.map((i) => i.id);
-        const staleIdSet = new Set(staleIds);
-        await this.prisma.inbound.deleteMany({
-          where: { id: { in: staleIds } },
-        });
-        this.logger.log(
-          `[SYNC] Panel ${panel.name}: pruned ${staleInbounds.length} stale inbound(s): ${staleInbounds
-            .map((i) => `${i.tag}:${i.port}`)
-            .join(', ')}`,
+      // (ClientInbound / AdminInbound cascade on delete). Full sync only —
+      // traffic polls must not thrash prune while the list is mid-refresh.
+      if (isFull) {
+        const staleInbounds = existingInbounds.filter(
+          (i) => !syncedLocalInboundIds.has(i.id) && inboundById.has(i.id),
         );
-
-        // Scrub JSON inbound refs on store provisioning profiles for this panel
-        try {
-          const profiles = await this.prisma.provisioningProfile.findMany({
-            where: { panelId: panel.id },
-            select: { id: true, inboundIds: true },
+        // Also include any rows still in DB that weren't in the preload map
+        // after merges — fall back to a targeted query when needed.
+        const staleFromDb = await this.prisma.inbound.findMany({
+          where: {
+            panelId: panel.id,
+            id: { notIn: [...syncedLocalInboundIds] },
+          },
+          select: { id: true, port: true, tag: true, panelInboundId: true },
+        });
+        const staleInboundsFinal =
+          staleFromDb.length > 0 ? staleFromDb : staleInbounds.map((i) => ({
+            id: i.id,
+            port: i.port,
+            tag: i.tag,
+            panelInboundId: i.panelInboundId,
+          }));
+        if (staleInboundsFinal.length) {
+          const staleIds = staleInboundsFinal.map((i) => i.id);
+          const staleIdSet = new Set(staleIds);
+          await this.prisma.inbound.deleteMany({
+            where: { id: { in: staleIds } },
           });
-          for (const profile of profiles) {
-            const ids = Array.isArray(profile.inboundIds)
-              ? (profile.inboundIds as string[])
-              : [];
-            const next = ids.filter((id) => !staleIdSet.has(id));
-            if (next.length !== ids.length) {
-              await this.prisma.provisioningProfile.update({
-                where: { id: profile.id },
-                data: { inboundIds: next },
-              });
-            }
-          }
-        } catch (scrubErr: any) {
-          this.logger.warn(
-            `[SYNC] Could not scrub store profile inbound refs: ${scrubErr?.message || scrubErr}`,
+          this.logger.log(
+            `[SYNC] Panel ${panel.name}: pruned ${staleInboundsFinal.length} stale inbound(s): ${staleInboundsFinal
+              .map((i) => `${i.tag}:${i.port}`)
+              .join(', ')}`,
           );
+
+          // Scrub JSON inbound refs on store provisioning profiles for this panel
+          try {
+            const profiles = await this.prisma.provisioningProfile.findMany({
+              where: { panelId: panel.id },
+              select: { id: true, inboundIds: true },
+            });
+            for (const profile of profiles) {
+              const ids = Array.isArray(profile.inboundIds)
+                ? (profile.inboundIds as string[])
+                : [];
+              const next = ids.filter((id) => !staleIdSet.has(id));
+              if (next.length !== ids.length) {
+                await this.prisma.provisioningProfile.update({
+                  where: { id: profile.id },
+                  data: { inboundIds: next },
+                });
+              }
+            }
+          } catch (scrubErr: any) {
+            this.logger.warn(
+              `[SYNC] Could not scrub store profile inbound refs: ${scrubErr?.message || scrubErr}`,
+            );
+          }
         }
       }
 
@@ -1535,10 +1673,35 @@ export class PanelsService implements OnModuleInit {
       const adminUsageCharges = new Map<string, bigint>();
 
       this.logger.debug(
-        `[DIAGNOSTIC] Syncing ${unifiedClients.length} clients into Database`,
+        `[DIAGNOSTIC] Syncing ${unifiedClients.length} clients into Database (${mode})`,
+      );
+
+      // One query for the whole panel instead of findUnique per email.
+      const existingClients = await this.prisma.client.findMany({
+        where: { panelId: panel.id },
+        include: { admin: true, inbounds: true },
+      });
+      const dbClientByEmail = new Map(
+        existingClients.map((c) => [c.email, c] as const),
       );
 
       const processedEmails = new Set<string>();
+      const pendingClientUpdates: Array<{
+        id: string;
+        data: Record<string, any>;
+      }> = [];
+      const pendingInboundUnlinks: Array<{
+        clientId: string;
+        inboundIds: string[];
+      }> = [];
+      const pendingInboundLinks: Array<{
+        clientId: string;
+        inboundId: string;
+      }> = [];
+      const pendingConflictAudits: Array<{
+        entityId: string;
+        changes: string[];
+      }> = [];
 
       for (const unifiedClient of unifiedClients) {
         totalSyncedClients++;
@@ -1560,12 +1723,7 @@ export class PanelsService implements OnModuleInit {
         apiEmails.add(trimmedEmail);
 
         try {
-          const dbClient = await this.prisma.client.findUnique({
-            where: {
-              panelId_email: { panelId: panel.id, email: trimmedEmail },
-            },
-            include: { admin: true, inbounds: true },
-          });
+          const dbClient = dbClientByEmail.get(trimmedEmail) || null;
 
           const up = BigInt(unifiedClient.up || 0);
           const down = BigInt(unifiedClient.down || 0);
@@ -1600,7 +1758,7 @@ export class PanelsService implements OnModuleInit {
             this.logger.log(
               `[SYNC_DECISION] email="${trimmedEmail}" panelId="${panel.id}" existingDBRecord=NONE decision=CREATE`,
             );
-            await this.prisma.client.create({
+            const created = await this.prisma.client.create({
               data: {
                 panelId: panel.id,
                 uuid: unifiedClient.uuid || crypto.randomUUID(), // Ensure UUID is always generated
@@ -1617,15 +1775,16 @@ export class PanelsService implements OnModuleInit {
                 flow: unifiedClient.flow || null,
                 connectionExtras,
                 inbounds: {
-                  create: localInboundIds.map((id: string) => ({
-                    inboundId: id,
+                  create: localInboundIds.map((inboundId: string) => ({
+                    inboundId,
                   })),
                 },
               },
+              include: { admin: true, inbounds: true },
             });
+            dbClientByEmail.set(trimmedEmail, created);
             syncReport.created++;
           } else {
-            syncReport.updated++;
             // Usage Accounting Delta Calculation
             const usedOldUp = dbClient.up;
             const usedOldDown = dbClient.down;
@@ -1661,16 +1820,9 @@ export class PanelsService implements OnModuleInit {
               );
 
             if (changes.length > 0) {
-              await this.prisma.auditLog.create({
-                data: {
-                  action: 'SYNC_CONFLICT_RESOLVED',
-                  entity: 'Client',
-                  entityId: dbClient.id,
-                  details: {
-                    message: 'Panel state overwrote DB state',
-                    changes,
-                  },
-                },
+              pendingConflictAudits.push({
+                entityId: dbClient.id,
+                changes,
               });
             }
 
@@ -1706,18 +1858,11 @@ export class PanelsService implements OnModuleInit {
                   `[SYNC] Preserving DB total for ${trimmedEmail}: ` +
                     `panel=${total} db=${dbClient.total}`,
                 );
-                await this.prisma.auditLog.create({
-                  data: {
-                    action: 'SYNC_TOTAL_CONFLICT',
-                    entity: 'Client',
-                    entityId: dbClient.id,
-                    details: {
-                      message:
-                        'Panel total lower than DB — preserving paid allocation',
-                      panelTotal: total.toString(),
-                      dbTotal: dbClient.total.toString(),
-                    },
-                  },
+                pendingConflictAudits.push({
+                  entityId: dbClient.id,
+                  changes: [
+                    `total preserved: panel=${total.toString()} db=${dbClient.total.toString()}`,
+                  ],
                 });
               } else {
                 changedData.total = total;
@@ -1731,14 +1876,26 @@ export class PanelsService implements OnModuleInit {
             }
             if (dbClient.flow !== unifiedClient.flow)
               changedData.flow = unifiedClient.flow;
-            // Always refresh protocol extras on sync (keys/endpoint may change)
-            changedData.connectionExtras = connectionExtras;
+            // Only refresh protocol extras when content actually changed.
+            // generatedAt alone must NOT dirty every client every poll.
+            if (
+              isFull &&
+              !connectionExtrasContentEqual(
+                dbClient.connectionExtras,
+                connectionExtras,
+              )
+            ) {
+              changedData.connectionExtras = connectionExtras;
+            }
 
             if (Object.keys(changedData).length > 0) {
-              await this.prisma.client.update({
-                where: { id: dbClient.id },
+              pendingClientUpdates.push({
+                id: dbClient.id,
                 data: changedData,
               });
+              syncReport.updated++;
+            } else {
+              syncReport.skipped++;
             }
 
             // Sync ClientInbound relations
@@ -1756,23 +1913,22 @@ export class PanelsService implements OnModuleInit {
               );
             } else {
               const toAdd = localInboundIds.filter(
-                (id: string) => !existingInbounds.includes(id),
+                (inboundId: string) => !existingInbounds.includes(inboundId),
               );
               const toRemove = existingInbounds.filter(
-                (id) => !localInboundIds.includes(id),
+                (inboundId) => !localInboundIds.includes(inboundId),
               );
 
               if (toRemove.length > 0) {
-                await this.prisma.clientInbound.deleteMany({
-                  where: { clientId: dbClient.id, inboundId: { in: toRemove } },
+                pendingInboundUnlinks.push({
+                  clientId: dbClient.id,
+                  inboundIds: toRemove,
                 });
               }
-              if (toAdd.length > 0) {
-                await this.prisma.clientInbound.createMany({
-                  data: toAdd.map((id: string) => ({
-                    clientId: dbClient.id,
-                    inboundId: id,
-                  })),
+              for (const inboundId of toAdd) {
+                pendingInboundLinks.push({
+                  clientId: dbClient.id,
+                  inboundId,
                 });
               }
             }
@@ -1785,8 +1941,63 @@ export class PanelsService implements OnModuleInit {
         }
       }
 
+      // Batch DB writes — far cheaper than one round-trip per client.
+      for (const batch of chunkArray(pendingClientUpdates, SYNC_DB_BATCH_SIZE)) {
+        await this.prisma.$transaction(
+          batch.map((u) =>
+            this.prisma.client.update({
+              where: { id: u.id },
+              data: u.data,
+            }),
+          ),
+        );
+      }
+      for (const unlink of pendingInboundUnlinks) {
+        await this.prisma.clientInbound.deleteMany({
+          where: {
+            clientId: unlink.clientId,
+            inboundId: { in: unlink.inboundIds },
+          },
+        });
+      }
+      for (const batch of chunkArray(pendingInboundLinks, SYNC_DB_BATCH_SIZE)) {
+        if (!batch.length) continue;
+        await this.prisma.clientInbound.createMany({
+          data: batch,
+          skipDuplicates: true,
+        });
+      }
+      if (pendingConflictAudits.length && isFull) {
+        for (const batch of chunkArray(
+          pendingConflictAudits,
+          SYNC_DB_BATCH_SIZE,
+        )) {
+          await this.prisma.$transaction(
+            batch.map((a) =>
+              this.prisma.auditLog.create({
+                data: {
+                  action: a.changes.some((c) => c.startsWith('total preserved'))
+                    ? 'SYNC_TOTAL_CONFLICT'
+                    : 'SYNC_CONFLICT_RESOLVED',
+                  entity: 'Client',
+                  entityId: a.entityId,
+                  details: {
+                    message: a.changes.some((c) =>
+                      c.startsWith('total preserved'),
+                    )
+                      ? 'Panel total lower than DB — preserving paid allocation'
+                      : 'Panel state overwrote DB state',
+                    changes: a.changes,
+                  },
+                },
+              }),
+            ),
+          );
+        }
+      }
+
       this.logger.log(
-        `[SYNC] Panel ${panel.name} Sync Report: Created=${syncReport.created}, Updated=${syncReport.updated}, Repaired=${syncReport.repaired}, Skipped=${syncReport.skipped}, Failed=${syncReport.failed}`,
+        `[SYNC] Panel ${panel.name} Sync Report (${mode}): Created=${syncReport.created}, Updated=${syncReport.updated}, Repaired=${syncReport.repaired}, Skipped=${syncReport.skipped}, Failed=${syncReport.failed}`,
       );
 
       // Apply Usage Charges for USAGE mode admins
@@ -1797,36 +2008,35 @@ export class PanelsService implements OnModuleInit {
         await this.adminQuota.applyUsageCharge(adminId, panelId, totalDelta);
       }
 
-      // Orphan Cleanup
-      const dbClientsInPanel = await this.prisma.client.findMany({
-        where: { panelId: panel.id },
-        include: { admin: true },
-      });
-
-      for (const dbC of dbClientsInPanel) {
-        if (!apiEmails.has(dbC.email)) {
-          try {
-            await this.clientsService.deleteOrphanFromSync(dbC);
-          } catch (orphanErr: any) {
-            this.logger.error(
-              `[SYNC] Orphan delete failed for ${dbC.email}: ${orphanErr.message}`,
-            );
+      // Orphan Cleanup — full sync only (avoids delete thrash on traffic polls)
+      if (isFull) {
+        for (const dbC of existingClients) {
+          if (!apiEmails.has(dbC.email)) {
+            try {
+              await this.clientsService.deleteOrphanFromSync(dbC);
+            } catch (orphanErr: any) {
+              this.logger.error(
+                `[SYNC] Orphan delete failed for ${dbC.email}: ${orphanErr.message}`,
+              );
+            }
           }
         }
       }
 
-      this.logger.debug(`[DIAGNOSTIC] Committing panel stats to DB`);
-      // Record global traffic deltas for this panel's clients
-      await this.prisma.systemStats.create({
-        data: {
-          serverId: panel.serverId,
-          cpuUsage,
-          ramUsage,
-          diskUsage,
-          netUp: panelUpDelta,
-          netDown: panelDownDelta,
-        },
-      });
+      // Record host/traffic samples only when useful (delta or full cadence).
+      if (isFull || panelUpDelta > 0n || panelDownDelta > 0n) {
+        this.logger.debug(`[DIAGNOSTIC] Committing panel stats to DB`);
+        await this.prisma.systemStats.create({
+          data: {
+            serverId: panel.serverId,
+            cpuUsage,
+            ramUsage,
+            diskUsage,
+            netUp: panelUpDelta,
+            netDown: panelDownDelta,
+          },
+        });
+      }
 
       await this.prisma.panel.update({
         where: { id },
@@ -1835,7 +2045,7 @@ export class PanelsService implements OnModuleInit {
           version,
           lastOnline: new Date(),
           lastSync: new Date(),
-          inboundCount: syncedLocalInboundIds.size,
+          inboundCount: syncedLocalInboundIds.size || existingInbounds.length,
           clientCount: apiEmails.size,
           syncState: {
             upsert: {
@@ -1854,30 +2064,7 @@ export class PanelsService implements OnModuleInit {
         },
       });
 
-      await this.prisma.auditLog.create({
-        data: {
-          action: 'SYNC_COMPLETED',
-          entity: 'Panel',
-          entityId: id,
-          details: {
-            message: 'Panel synchronization completed successfully',
-            inboundCount: syncedLocalInboundIds.size,
-            clientCount: apiEmails.size,
-          },
-        },
-      });
-
-      const dbClientCount = await this.prisma.client.count({
-        where: {
-          inbounds: {
-            some: {
-              inbound: {
-                panelId: id,
-              },
-            },
-          },
-        },
-      });
+      const dbClientCount = dbClientByEmail.size;
       const discrepancies = dbClientCount - totalSyncedClients;
       const discrepancyMsg =
         discrepancies === 0
@@ -1885,34 +2072,44 @@ export class PanelsService implements OnModuleInit {
           : `Found ${Math.abs(discrepancies)} ${discrepancies > 0 ? 'extra DB clients' : 'missing DB clients'}`;
 
       this.logger.log(
-        `Sync complete for Panel ${id}. API: ${totalSyncedClients}, DB: ${dbClientCount}. ${discrepancyMsg}`,
+        `Sync complete for Panel ${id} (${mode}). API: ${totalSyncedClients}, DB: ${dbClientCount}. ${discrepancyMsg}`,
       );
 
       const syncDurationMs = Date.now() - startTime;
 
-      await this.prisma.auditLog.create({
-        data: {
-          action: 'PANEL_SYNC_SUCCESS',
-          entity: 'Panel',
-          entityId: id,
-          details: {
-            syncedInbounds: syncedLocalInboundIds.size,
-            syncedClients: totalSyncedClients,
-            latencyMs,
+      if (isFull) {
+        this.lastFullSyncAt.set(id, Date.now());
+        await this.prisma.auditLog.create({
+          data: {
+            action: 'PANEL_SYNC_SUCCESS',
+            entity: 'Panel',
+            entityId: id,
+            details: {
+              mode,
+              syncedInbounds: syncedLocalInboundIds.size,
+              syncedClients: totalSyncedClients,
+              updatedClients: syncReport.updated,
+              skippedClients: syncReport.skipped,
+              latencyMs,
+              syncDurationMs,
+            },
           },
-        },
-      });
+        });
+      }
 
       this.logger.debug(`[DIAGNOSTIC] Sync Finished successfully`);
 
       return {
         success: true,
         version,
+        mode,
         syncedInbounds: syncedLocalInboundIds.size,
         syncedClients: totalSyncedClients,
         dbClientCount,
         discrepancyMsg,
         syncDurationMs,
+        updated: syncReport.updated,
+        skipped: syncReport.skipped,
       };
     } catch (err: any) {
       this.logger.error(
@@ -2205,8 +2402,21 @@ export class PanelsService implements OnModuleInit {
     // separate field, but the update endpoint binds Client.id as the uuid
     // string — sending the numeric id back makes 3.4.2+ panels reject with
     // "cannot unmarshal number into Go struct field .id of type string".
+    const uuidCandidate = String(normalized.uuid ?? '').trim();
     if (typeof normalized.id === 'number' || typeof normalized.id === 'bigint') {
-      normalized.id = String(normalized.uuid ?? '');
+      if (uuidCandidate) {
+        normalized.id = uuidCandidate;
+      } else {
+        // Empty uuid: omit id so the panel keeps its stored credential field.
+        delete normalized.id;
+      }
+    } else if (
+      typeof normalized.id === 'string' &&
+      /^\d+$/.test(normalized.id.trim()) &&
+      uuidCandidate
+    ) {
+      // Some proxies stringify the numeric row id; still coerce to uuid.
+      normalized.id = uuidCandidate;
     }
 
     // ClientRecord-only fields (api342) — not part of Client update schema
@@ -2751,6 +2961,7 @@ export class PanelsService implements OnModuleInit {
         this.logger.warn(
           `[UPDATE_CLIENT] Client ${email} update failed: ${panelMsg} (code=${code})`,
         );
+        this.markPanelUpdateFailure(panelId, email);
         return {
           success: false,
           error: {
@@ -2763,12 +2974,14 @@ export class PanelsService implements OnModuleInit {
           },
         };
       }
+      this.clearPanelUpdateFailure(panelId, email);
       return { success: true, data: res.data };
     } catch (err: any) {
       const apiError = this.classifyError(err, endpoint, startMs);
       this.logger.error(
         `[UPDATE_CLIENT] FAILED email=${email} error=${apiError.code}: ${apiError.message}`,
       );
+      this.markPanelUpdateFailure(panelId, email);
       await this.logProvisioningEvent({
         operation: 'UPDATE_CLIENT',
         adminId,
@@ -3744,9 +3957,32 @@ export class PanelsService implements OnModuleInit {
     }
   }
 
+  private panelUpdateFailKey(panelId: string, email: string) {
+    return `${panelId}:${email.trim().toLowerCase()}`;
+  }
+
+  private isPanelUpdateInCooldown(panelId: string, email: string): boolean {
+    const until = this.panelUpdateFailUntil.get(
+      this.panelUpdateFailKey(panelId, email),
+    );
+    return !!until && Date.now() < until;
+  }
+
+  private markPanelUpdateFailure(panelId: string, email: string) {
+    this.panelUpdateFailUntil.set(
+      this.panelUpdateFailKey(panelId, email),
+      Date.now() + PANEL_UPDATE_FAIL_COOLDOWN_MS,
+    );
+  }
+
+  private clearPanelUpdateFailure(panelId: string, email: string) {
+    this.panelUpdateFailUntil.delete(this.panelUpdateFailKey(panelId, email));
+  }
+
   /**
-   * Enable/disable a client on each distinct panel via email (not UUID).
-   * updateClient() is deprecated and 404s on /api/inbounds/updateClient/{uuid}.
+   * Enable/disable a client on every panel it is attached to.
+   * Uses updateClientOnPanel (email path) — never the deprecated UUID updateClient.
+   * Failed updates enter a cooldown so processSuspensions does not hammer the panel.
    */
   private async setClientEnableOnPanels(
     client: {
@@ -3767,13 +4003,23 @@ export class PanelsService implements OnModuleInit {
       throw new Error(`Client ${client.id} has no email; cannot update panel`);
     }
     for (const panelId of panelIds) {
+      if (this.isPanelUpdateInCooldown(panelId, email)) {
+        this.logger.warn(
+          `[SUSPEND] Skipping updateClientOnPanel for ${email} on ${panelId} (cooldown after prior failure)`,
+        );
+        throw new Error(
+          `updateClientOnPanel skipped for client ${client.id} on panel ${panelId} (cooldown)`,
+        );
+      }
       const result = await this.updateClientOnPanel(panelId, email, { enable });
       if (!result.success) {
+        this.markPanelUpdateFailure(panelId, email);
         throw new Error(
           result.error?.message ||
             `updateClientOnPanel failed for client ${client.id} on panel ${panelId}`,
         );
       }
+      this.clearPanelUpdateFailure(panelId, email);
     }
   }
 

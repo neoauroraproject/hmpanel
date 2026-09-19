@@ -2010,13 +2010,46 @@ export class StoreTelegramService implements OnModuleInit {
 
     // Forced-channel membership gate: admins and completed payments pass;
     // everyone else must be a member of store.telegramForceChannel (if set).
+    // "gate:joined" and "/start" bypass the cache so joining activates immediately.
     const gateSender = this.extractGateSender(update);
+    const gateCallbackData = String(update?.callback_query?.data || '');
+    const gateMessageText = String(
+      update?.message?.text || update?.message?.caption || '',
+    ).trim();
+    const gateJoinedTap =
+      !!gateSender?.isCallback && gateCallbackData === 'gate:joined';
+    const gateStartTap =
+      !!gateSender &&
+      !gateSender.isCallback &&
+      gateMessageText.toLowerCase().startsWith('/start');
+    const gateRecheck = gateJoinedTap || gateStartTap;
     if (gateSender && !this.isAdminActor(store.telegramAdminChatId, gateSender.fromId, gateSender.chatId)) {
-      const allowed = await this.isChannelMemberAllowed(store, botToken, gateSender.fromId);
+      const allowed = await this.isChannelMemberAllowed(
+        store,
+        botToken,
+        gateSender.fromId,
+        gateRecheck,
+      );
       if (!allowed) {
-        await this.sendChannelGatePrompt(store, botToken, gateSender);
+        await this.sendChannelGatePrompt(store, botToken, gateSender, {
+          recheck: gateJoinedTap,
+          forcePrompt: gateStartTap || gateJoinedTap,
+        });
         return { ok: true };
       }
+      if (gateJoinedTap) {
+        await this.answerCallback(botToken, update.callback_query.id).catch(() => undefined);
+        await this.sendCustomerWelcome(
+          store,
+          storeCtx,
+          botToken,
+          agencyMenu,
+          update.callback_query.from,
+          gateSender.chatId,
+        );
+        return { ok: true };
+      }
+      // /start (or other messages) after a successful membership check continue below.
     }
 
     const callback = update?.callback_query;
@@ -2172,14 +2205,27 @@ export class StoreTelegramService implements OnModuleInit {
     }
 
     if (text.startsWith('/admin') || text.startsWith('/setadmin')) {
-      await this.prisma.storeProfile.update({
-        where: { id: store.id },
-        data: { telegramAdminChatId: String(chatId) },
-      });
+      const configured = String(store.telegramAdminChatId || '').trim();
+      if (!configured) {
+        await this.sendMessage(
+          botToken,
+          chatId,
+          '⛔ شناسه ادمین هنوز در پنل ثبت نشده است.\nاز تنظیمات ربات فروشگاه، Chat ID ادمین را وارد کنید؛ سپس دوباره /admin بزنید.',
+        );
+        return { ok: true };
+      }
+      if (!this.isAdminActor(configured, String(from.id), chatId)) {
+        await this.sendMessage(
+          botToken,
+          chatId,
+          '⛔ فقط چت‌آیدی ادمین ثبت‌شده در پنل به منوی ادمین دسترسی دارد.',
+        );
+        return { ok: true };
+      }
       await this.sendMessage(
         botToken,
         chatId,
-        '✅ این چت به‌عنوان ادمین سفارش‌ها ذخیره شد.\nاز این پس با /start منوی ادمین (سفارش‌ها، درآمد، ورود به پنل) باز می‌شود.',
+        '✅ منوی ادمین سفارش‌ها فعال است.\nاز /start هم می‌توانید همین منو را باز کنید.',
       );
       await this.sendAdminHome(botToken, chatId, store);
       return { ok: true };
@@ -2247,11 +2293,13 @@ export class StoreTelegramService implements OnModuleInit {
     store: { adminId: string; telegramForceChannel?: string | null; telegramBotLocale?: string | null },
     botToken: string,
     fromId: string,
+    force = false,
   ): Promise<boolean> {
     const channel = normalizeChannelRef(String((store as any).telegramForceChannel || ''));
     if (!channel) return true;
 
     const cacheKey = `${store.adminId}:${channel}:${fromId}`;
+    if (force) this.channelGateCache.invalidate(cacheKey);
     const cached = this.channelGateCache.get(cacheKey);
     if (cached !== null) return cached;
 
@@ -2274,33 +2322,68 @@ export class StoreTelegramService implements OnModuleInit {
     store: { adminId: string; telegramForceChannel?: string | null; telegramBotLocale?: string | null },
     botToken: string,
     sender: { fromId: string; chatId?: number; isCallback: boolean; callbackId?: string },
+    opts: { recheck?: boolean; forcePrompt?: boolean } | boolean = false,
   ): Promise<void> {
+    const recheck = typeof opts === 'boolean' ? opts : !!opts.recheck;
+    const forcePrompt = typeof opts === 'boolean' ? false : !!opts.forcePrompt;
     const locale = normalizeBotLocale((store as any).telegramBotLocale);
-    const channel = this.normalizeChannelRef(String((store as any).telegramForceChannel || ''));
+    const channel = normalizeChannelRef(String((store as any).telegramForceChannel || ''));
     const promptKey = `${store.adminId}:${channel}:${sender.fromId}`;
 
-    // Answer callbacks always (clears the spinner); throttle chat prompts to 30s.
+    // Answer callbacks always (clears the spinner); throttle chat prompts to 30s
+    // unless this is /start or "I joined" (those must always get a visible reply).
     let answered = false;
     if (sender.isCallback && sender.callbackId) {
       answered = true;
-      await this.answerCallback(botToken, sender.callbackId, botT(locale, 'gate.channelRequired')).catch(
-        () => undefined,
-      );
+      await this.answerCallback(
+        botToken,
+        sender.callbackId,
+        recheck ? botT(locale, 'gate.stillNotMember') : undefined,
+      ).catch(() => undefined);
     }
     const lastPrompt = this.channelGatePromptAt.get(promptKey) || 0;
-    if (Date.now() - lastPrompt < 30_000) return;
+    const throttleMs = recheck ? 3_000 : 30_000;
+    if (!forcePrompt && Date.now() - lastPrompt < throttleMs) return;
     this.channelGatePromptAt.set(promptKey, Date.now());
 
     const url = await this.resolveChannelJoinLink(store.adminId, botToken, channel);
-    const keyboard = url
-      ? { inline_keyboard: [[{ text: botT(locale, 'gate.joinChannel'), url }]] }
-      : undefined;
+    const keyboard = {
+      inline_keyboard: [
+        ...(url ? [[{ text: botT(locale, 'gate.joinChannel'), url }]] : []),
+        [{ text: botT(locale, 'gate.iJoined'), callback_data: 'gate:joined' }],
+      ],
+    };
     const text = botT(locale, 'gate.channelRequired');
     if (sender.chatId != null) {
-      await this.sendMessage(botToken, sender.chatId, text, keyboard ? { reply_markup: keyboard } : undefined);
+      await this.sendMessage(botToken, sender.chatId, text, { reply_markup: keyboard });
     } else if (!answered && sender.isCallback && sender.callbackId) {
       await this.answerCallback(botToken, sender.callbackId, text).catch(() => undefined);
     }
+  }
+
+  /** Welcomes a user who just passed the forced-channel gate ("✅ عضو شدم"). */
+  private async sendCustomerWelcome(
+    store: any,
+    storeCtx: any,
+    botToken: string,
+    agencyMenu: boolean,
+    from: any,
+    chatId?: number,
+  ): Promise<void> {
+    if (!chatId || !from?.id) return;
+    const user = from as TelegramWebAppUser;
+    const { customer } = await this.findOrCreateByTelegram(store.adminId, user);
+    if (customer.status === 'blocked') return;
+    await this.commerce.ensureCustomerReferral(customer.id).catch(() => undefined);
+    const welcome =
+      store.telegramWelcomeText?.trim() || this.defaultWelcomeText(store.title);
+    await this.sendMessage(botToken, chatId, welcome, {
+      reply_markup: this.commerce.mainMenuKeyboard(
+        storeCtx,
+        this.buildMiniAppUrl(store),
+        { agencyMenu },
+      ),
+    });
   }
 
   /** Public @username channels get a t.me link; private channels get an invite link. */
@@ -3187,7 +3270,7 @@ export class StoreTelegramService implements OnModuleInit {
     }
     if (!store.telegramAdminChatId) {
       this.logger.warn(
-        `notifyAdminNewOrder: no telegramAdminChatId — admin must /admin in the bot`,
+        `notifyAdminNewOrder: no telegramAdminChatId — set Admin Chat ID in store bot settings`,
       );
       return false;
     }

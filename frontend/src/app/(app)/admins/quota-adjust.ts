@@ -18,9 +18,13 @@ export function applyTrafficDeltaBytes(currentBytes: number, deltaGb: string): n
 
 /**
  * Caps where 0 means unlimited. Empty delta keeps the current cap.
+ * Explicit `0` sets unlimited (even when the current cap is finite).
  * A positive delta on unlimited sets a finite cap; a negative delta on unlimited stays unlimited.
  */
 export function applyCountDelta(current: number, deltaRaw: string): number {
+  const trimmed = String(deltaRaw ?? '').trim();
+  // Absolute set-to-unlimited — distinct from empty (= no change).
+  if (trimmed === '0') return 0;
   const delta = parseAdjustDelta(deltaRaw);
   const cap = Math.max(0, Math.round(Number(current) || 0));
   if (delta == null) return cap;

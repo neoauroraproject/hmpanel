@@ -34,8 +34,17 @@ describe('normalizeClientUpdateBody', () => {
       enable: false,
     });
 
-    expect(out.id).toBe('');
+    expect(out.id).toBeUndefined();
     expect(out.uuid).toBeUndefined();
+  });
+
+  it('coerces a numeric-looking string id into the uuid when present', () => {
+    const out = normalize({
+      id: '789',
+      uuid: 'a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d',
+      email: 'alice',
+    });
+    expect(out.id).toBe('a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d');
   });
 
   it('keeps a string id untouched (legacy panels return the uuid in id)', () => {

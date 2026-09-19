@@ -54,12 +54,8 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
   onModuleInit() {
     this.logger.log('Starting Monitoring Cache Loops...');
 
-    // Server Status every 3 seconds
-    this.serverStatusTimer = setInterval(() => this.pollServerStatus(), 3000);
-    // Initial fetch
-    this.pollServerStatus();
-
-    // Initial fetch
+    // Server Status every 5 seconds (was 3s × 2 initial calls)
+    this.serverStatusTimer = setInterval(() => this.pollServerStatus(), 5000);
     this.pollServerStatus();
   }
 

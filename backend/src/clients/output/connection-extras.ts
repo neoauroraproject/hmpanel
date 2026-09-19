@@ -126,3 +126,22 @@ export function parseConnectionExtras(
         : {},
   };
 }
+
+/**
+ * Compare envelopes for sync writes. `generatedAt` is ignored so a rebuild
+ * with the same payload does not dirty every client every poll.
+ */
+export function connectionExtrasContentEqual(
+  a: unknown,
+  b: unknown,
+): boolean {
+  const left = parseConnectionExtras(a);
+  const right = parseConnectionExtras(b);
+  if (!left && !right) return true;
+  if (!left || !right) return false;
+  return (
+    left.protocol === right.protocol &&
+    left.protocolVersion === right.protocolVersion &&
+    JSON.stringify(left.payload) === JSON.stringify(right.payload)
+  );
+}

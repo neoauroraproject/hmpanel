@@ -1,77 +1,28 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { Cron } from '@nestjs/schedule';
 import { PanelsService } from './panels.service';
-import { PrismaService } from '../prisma/prisma.service';
-import { isExternalPanelType } from './native/native-panel-capabilities';
 
+/**
+ * Global panel sync scheduler.
+ *
+ * Traffic usage sync runs about every minute; a full structural sync (inbound
+ * prune, orphan cleanup, connectionExtras refresh) runs about every 5 minutes.
+ * PanelsService owns the non-overlapping lock so boot / manual / cron never stack.
+ */
 @Injectable()
 export class PanelsScheduler {
   private readonly logger = new Logger(PanelsScheduler.name);
-  private isSyncing = false;
 
-  constructor(
-    private readonly panelsService: PanelsService,
-    private readonly prisma: PrismaService,
-  ) {}
+  constructor(private readonly panelsService: PanelsService) {}
 
-  @Cron(CronExpression.EVERY_30_SECONDS)
+  /** Every minute — traffic-focused; escalates to full when due. */
+  @Cron('0 * * * * *')
   async handleGlobalSync() {
-    if (this.isSyncing) {
+    const result = await this.panelsService.runGlobalSyncCycle();
+    if (result.skipped) {
       this.logger.warn(
         'Previous global sync is still running. Skipping this cycle.',
       );
-      return;
-    }
-
-    this.isSyncing = true;
-    this.logger.log('Starting global panel sync...');
-
-    try {
-      const panels = await this.prisma.panel.findMany({
-        select: { id: true, name: true, panelType: true },
-      });
-
-      for (const panel of panels) {
-        if (isExternalPanelType(panel.panelType)) {
-          continue;
-        }
-        try {
-          await this.panelsService.sync(panel.id);
-          this.logger.debug(`Synced panel ${panel.name} successfully.`);
-        } catch (error) {
-          this.logger.error(
-            `Failed to sync panel ${panel.name}: ${error.message}`,
-          );
-
-          await this.prisma.syncState.upsert({
-            where: { panelId: panel.id },
-            update: {
-              status: 'offline',
-              errorLogs: error.message,
-              updatedAt: new Date(),
-            },
-            create: {
-              panelId: panel.id,
-              lastSync: new Date(0),
-              status: 'offline',
-              errorLogs: error.message,
-            },
-          });
-
-          await this.prisma.panel.update({
-            where: { id: panel.id },
-            data: { status: 'offline', lastOnline: null },
-          });
-        }
-      }
-
-      await this.panelsService.processSuspensions();
-
-      this.logger.log('Global panel sync completed.');
-    } catch (error) {
-      this.logger.error(`Global sync failed: ${error.message}`);
-    } finally {
-      this.isSyncing = false;
     }
   }
 }

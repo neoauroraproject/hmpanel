@@ -609,7 +609,7 @@
     "nativePanelUsesSharedPool": "The panel is assigned. Traffic and caps come from the shared pool under Limits.",
     "panelLimitsTitle": "Limits on this panel",
     "panelLimitsHint": "Applies only to clients this reseller creates on this panel.",
-    "adjustDeltaHint": "Empty = no change. 50 adds, -50 subtracts. Client / day / GB-per-client 0 stays unlimited until you type a positive number.",
+    "adjustDeltaHint": "Empty = no change. 50 adds, -50 subtracts. Typing 0 sets unlimited (removes the cap). Stays unlimited until you type a positive number.",
     "stockAvailable": "Available: {value}",
     "stockUnlimited": "Unlimited",
     "adjustClients": "Adjust clients (+/-)",
