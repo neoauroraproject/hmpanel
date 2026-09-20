@@ -95,7 +95,7 @@ export const MODULE_MANIFESTS: ModuleManifest[] = [
   },
   {
     id: 'store-digital',
-    name: 'Store Digital Goods',
+    name: 'Digital Goods',
     version: '1.0.0',
     description: 'Sell digital codes from an encrypted, atomically reserved inventory.',
     kind: 'BUSINESS',
@@ -112,8 +112,8 @@ export const MODULE_MANIFESTS: ModuleManifest[] = [
         write: true,
       },
     ],
-    routes: { backend: '/premium-modules/store', frontend: '/premium/store' },
-    menus: [],
+    routes: { backend: '/premium-modules/store', frontend: '/premium/store-digital' },
+    menus: [{ label: 'Digital Goods', path: '/premium/store-digital', icon: 'Gift' }],
     scheduler: [],
     readOnlyCapabilities: {
       read: ['view_inventory', 'view_stock'],
@@ -122,9 +122,9 @@ export const MODULE_MANIFESTS: ModuleManifest[] = [
   },
   {
     id: 'store-payg',
-    name: 'Store Pay As You Go',
+    name: 'Pay As You Go',
     version: '1.0.0',
-    description: 'Entitlement placeholder for usage-based products. No metering ships yet.',
+    description: 'Wallet-metered TIME or VOLUME plans with automatic 3x-ui limit sync.',
     kind: 'BUSINESS',
     phase: 2,
     defaultEnabled: false,
@@ -132,11 +132,11 @@ export const MODULE_MANIFESTS: ModuleManifest[] = [
     features: [],
     dependencies: ['store'],
     permissions: [
-      { id: 'store-payg.view', description: 'View pay-as-you-go products' },
-      { id: 'store-payg.manage', description: 'Manage pay-as-you-go products', write: true },
+      { id: 'store-payg.view', description: 'View pay-as-you-go plans and subscriptions' },
+      { id: 'store-payg.manage', description: 'Manage pay-as-you-go plans and subscriptions', write: true },
     ],
-    routes: { backend: '/premium-modules/store', frontend: '/premium/store' },
-    menus: [],
+    routes: { backend: '/premium-modules/store-payg', frontend: '/premium/store-payg' },
+    menus: [{ label: 'Pay As You Go', path: '/premium/store-payg', icon: 'Gauge' }],
     scheduler: [],
     readOnlyCapabilities: {
       read: ['view_payg'],

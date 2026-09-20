@@ -266,11 +266,20 @@ export class StoreAdminController {
     return this.store.setCustomerStatus(req.user.id, id, body?.status || '');
   }
 
+  @Get('customers/:id/services/search')
+  searchCustomerServices(
+    @Req() req: AuthRequest,
+    @Param('id') id: string,
+    @Query('q') q?: string,
+  ) {
+    return this.store.searchAttachableServices(req.user.id, req.user.role, id, q || '');
+  }
+
   @Post('customers/:id/services/attach')
   attachCustomerService(
     @Req() req: AuthRequest,
     @Param('id') id: string,
-    @Body() body: { clientId?: string; categoryId?: string },
+    @Body() body: { clientId?: string; categoryId?: string; subscriptionLink?: string },
   ) {
     return this.store.attachCustomerService(
       req.user.id,

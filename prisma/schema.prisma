@@ -223,6 +223,10 @@ model Admin {
   rechargeOrdersCreated  AdminRechargeOrder[] @relation("RechargeOrderCreated")
   botApiClients          BotApiClient[]
   inventoryPools         InventoryPool[]
+  paygSettings           PaygSettings?
+  paygCategories         PaygCategory[]
+  paygPlans              PaygPlan[]
+  paygSubscriptions      PaygSubscription[]
 }
 
 // Bridging table for Admin <-> Inbound access
@@ -311,6 +315,7 @@ model Client {
   transactions  TrafficTransaction[]
   createdOrders StoreOrder[]         @relation("CreatedClient")
   renewedOrders StoreOrder[]         @relation("RenewClient")
+  paygSubscriptions PaygSubscription[]
 
   @@unique([panelId, email])
   @@unique([panelId, uuid])
@@ -969,6 +974,7 @@ model StoreCustomer {
   couponRedemptions StoreCouponRedemption[]
   walletDeposits StoreWalletDeposit[]
   referralRewardGrants StoreReferralRewardGrant[]
+  paygSubscriptions PaygSubscription[]
 
   @@unique([adminId, telegramUserId])
   @@index([adminId])
@@ -1282,6 +1288,120 @@ model StoreCouponRedemption {
 
   @@index([couponId])
   @@index([customerId])
+}
+
+// ---------------------------------------------------------
+// Store PAYG (Pay As You Go)
+// ---------------------------------------------------------
+
+model PaygSettings {
+  id                 String   @id @default(uuid())
+  adminId            String   @unique
+  minWalletBalance   Float    @default(0)
+  meterIntervalHours Int      @default(1)
+  botButtonLabel     String?
+  botMenuEnabled     Boolean  @default(true)
+  autoResume         Boolean  @default(true)
+  currency           String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  admin Admin @relation(fields: [adminId], references: [id], onDelete: Cascade)
+}
+
+model PaygCategory {
+  id          String   @id @default(uuid())
+  adminId     String
+  name        String
+  description String?
+  sortOrder   Int      @default(0)
+  visible     Boolean  @default(true)
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  admin Admin     @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  plans PaygPlan[]
+
+  @@index([adminId, sortOrder])
+  @@index([adminId, enabled])
+}
+
+model PaygPlan {
+  id                     String   @id @default(uuid())
+  adminId                String
+  categoryId             String
+  name                   String
+  description            String?
+  /// TIME | VOLUME (exclusive)
+  billingMode            String
+  pricePerDay            Float?
+  pricePerHour           Float?
+  pricePerGb             Float?
+  limitIp                Int      @default(0)
+  provisioningProfileId  String
+  minWalletBalance       Float?
+  sortOrder              Int      @default(0)
+  active                 Boolean  @default(true)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  admin         Admin              @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  category      PaygCategory       @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  subscriptions PaygSubscription[]
+
+  @@index([adminId, active])
+  @@index([categoryId])
+  @@index([provisioningProfileId])
+}
+
+model PaygSubscription {
+  id               String    @id @default(uuid())
+  adminId          String
+  customerId       String
+  planId           String
+  clientId         String?
+  /// PENDING | ACTIVE | SUSPENDED | CLOSED | CANCELLED
+  status           String    @default("PENDING")
+  meterCursorBytes BigInt    @default(0)
+  meterCursorAt    DateTime?
+  lastBilledAt     DateTime?
+  activatedAt      DateTime?
+  suspendedAt      DateTime?
+  closedAt         DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  admin    Admin             @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  customer StoreCustomer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  plan     PaygPlan          @relation(fields: [planId], references: [id], onDelete: Restrict)
+  client   Client?           @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  ledger   PaygUsageLedger[]
+
+  @@index([adminId, status])
+  @@index([customerId, status])
+  @@index([planId])
+  @@index([clientId])
+}
+
+model PaygUsageLedger {
+  id             String   @id @default(uuid())
+  subscriptionId String
+  /// TIME | VOLUME
+  kind           String
+  /// hours (TIME) or GB (VOLUME)
+  quantity       Float
+  amount         Float
+  /// Idempotency key unique with subscriptionId
+  meterCursor    String
+  walletLedgerId String?
+  note           String?
+  createdAt      DateTime @default(now())
+
+  subscription PaygSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@unique([subscriptionId, meterCursor])
+  @@index([subscriptionId, createdAt])
 }
 
 // ---------------------------------------------------------

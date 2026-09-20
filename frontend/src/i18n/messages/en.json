@@ -31,6 +31,8 @@
     "customDomains": "Custom Domains",
     "clientTemplates": "Client Templates",
     "store": "Store",
+    "storeDigital": "Digital Goods",
+    "storePayg": "Pay As You Go",
     "paymentManagement": "Payment Management",
     "adminRecharge": "Admin Recharge",
     "monitoringPro": "Monitoring Pro",
@@ -1165,7 +1167,12 @@
     "orders": "Orders",
     "customers": "Customers",
     "settings": "Settings",
-    "newOrders": "New orders"
+    "newOrders": "New orders",
+    "telegramBot": {
+      "menuItem": {
+        "payg": "Pay As You Go"
+      }
+    }
   },
   "domains": {
     "title": "Custom Domain",
@@ -1236,5 +1243,107 @@
     "Asia/Dubai": "Dubai",
     "Asia/Istanbul": "Istanbul",
     "America/New_York": "New York"
+  },
+  "storeDigital": {
+    "title": "Digital Goods",
+    "subtitle": "Encrypted code inventory, delivery modes, and digital products",
+    "tabs": {
+      "products": "Products",
+      "inventory": "Inventory",
+      "deliveries": "Deliveries",
+      "settings": "Settings"
+    },
+    "products": {
+      "listTitle": "Digital products",
+      "empty": "No digital products yet.",
+      "createTitle": "Create product",
+      "name": "Name",
+      "price": "Price",
+      "deliveryMode": "Delivery mode",
+      "create": "Create",
+      "created": "Digital product created",
+      "saved": "Saved",
+      "untitled": "Digital product"
+    },
+    "inventory": {
+      "selectProduct": "Product",
+      "choose": "Select a product…",
+      "pickHint": "Select a digital product to manage stock."
+    },
+    "deliveries": {
+      "title": "Deliveries",
+      "hint": "Order deliveries appear here after checkout. Open a product from the list to focus inventory.",
+      "selected": "Focused product: {name}"
+    },
+    "settings": {
+      "title": "Product settings",
+      "hint": "Visibility and delivery mode for the selected digital product.",
+      "visible": "Visible in store"
+    },
+    "errors": {
+      "save": "Could not save"
+    }
+  },
+  "storePayg": {
+    "title": "Pay As You Go",
+    "subtitle": "TIME or VOLUME plans billed from the customer wallet with automatic 3x-ui limits",
+    "tabs": {
+      "dashboard": "Dashboard",
+      "categories": "Categories",
+      "plans": "Plans",
+      "subscriptions": "Subscriptions",
+      "usage": "Usage",
+      "settings": "Settings"
+    },
+    "dashboard": {
+      "active": "Active",
+      "suspended": "Suspended",
+      "closed": "Closed",
+      "revenue": "Billed amount"
+    },
+    "categories": {
+      "empty": "No categories yet.",
+      "create": "Create category",
+      "created": "Category created",
+      "name": "Category name"
+    },
+    "plans": {
+      "empty": "No plans yet.",
+      "create": "Create plan",
+      "created": "Plan created",
+      "name": "Plan name",
+      "billingMode": "Billing mode",
+      "pricePerDay": "Price per day",
+      "pricePerHour": "Price per hour",
+      "pricePerGb": "Price per GB",
+      "limitIp": "Device / IP limit",
+      "pickProfile": "Provisioning profile…",
+      "pickCategory": "Category…"
+    },
+    "subscriptions": {
+      "empty": "No subscriptions yet.",
+      "updated": "Subscription updated",
+      "suspend": "Suspend",
+      "resume": "Resume",
+      "close": "Close"
+    },
+    "usage": {
+      "empty": "No usage rows yet."
+    },
+    "settings": {
+      "saved": "Settings saved",
+      "minWallet": "Minimum wallet balance",
+      "meterHours": "Meter interval (hours)",
+      "botLabel": "Bot button label",
+      "botMenu": "Show PAYG button in store bot",
+      "autoResume": "Auto-resume after wallet top-up"
+    },
+    "meter": {
+      "runNow": "Run meter now",
+      "ran": "Meter processed {n} subscription(s)"
+    },
+    "errors": {
+      "save": "Could not save"
+    }
   }
 }

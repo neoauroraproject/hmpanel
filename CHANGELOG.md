@@ -8,6 +8,18 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [2.3.0] - 2026-09-20
+
+### Added
+- **Store Digital Goods & PAYG nav:** platform manifests and sidebar entitlements for `store-digital` / `store-payg` (activated via Premium license modules).
+- **PAYG schema foundation:** Prisma models and migration for Pay As You Go settings, categories, plans, subscriptions, and usage ledger; community `store-payg` metering stubs.
+
+### Fixed
+- **Customer service attach:** search and subscription-link resolve run before category selection so attach-by-link works reliably.
+
+### Notes
+- Full Digital Goods / PAYG UI and fulfillment ship in Premium bundle 2.3.0. Service renew updates volume/expiry only and leaves manual inbounds untouched.
+
 ## [2.2.24] - 2026-09-19
 
 ### Changed

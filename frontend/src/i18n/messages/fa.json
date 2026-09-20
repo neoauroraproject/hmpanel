@@ -31,6 +31,8 @@
     "customDomains": "دامنه اختصاصی",
     "clientTemplates": "قالب کلاینت",
     "store": "فروشگاه",
+    "storeDigital": "محصولات دیجیتال",
+    "storePayg": "پرداخت به‌ازای مصرف",
     "paymentManagement": "مدیریت پرداخت",
     "adminRecharge": "افزایش اعتبار",
     "monitoringPro": "مانیتورینگ حرفه‌ای",
@@ -1165,7 +1167,12 @@
     "orders": "سفارش‌ها",
     "customers": "مشتریان",
     "settings": "تنظیمات",
-    "newOrders": "سفارش‌های جدید"
+    "newOrders": "سفارش‌های جدید",
+    "telegramBot": {
+      "menuItem": {
+        "payg": "پرداخت به‌ازای مصرف"
+      }
+    }
   },
   "domains": {
     "title": "دامنه اختصاصی",
@@ -1236,5 +1243,107 @@
     "Asia/Dubai": "دبی",
     "Asia/Istanbul": "استانبول",
     "America/New_York": "نیویورک"
+  },
+  "storeDigital": {
+    "title": "محصولات دیجیتال",
+    "subtitle": "موجودی کد رمزنگاری‌شده، حالت تحویل و محصولات دیجیتال",
+    "tabs": {
+      "products": "محصولات",
+      "inventory": "موجودی",
+      "deliveries": "تحویل‌ها",
+      "settings": "تنظیمات"
+    },
+    "products": {
+      "listTitle": "محصولات دیجیتال",
+      "empty": "هنوز محصول دیجیتالی نیست.",
+      "createTitle": "ایجاد محصول",
+      "name": "نام",
+      "price": "قیمت",
+      "deliveryMode": "حالت تحویل",
+      "create": "ایجاد",
+      "created": "محصول دیجیتال ساخته شد",
+      "saved": "ذخیره شد",
+      "untitled": "محصول دیجیتال"
+    },
+    "inventory": {
+      "selectProduct": "محصول",
+      "choose": "انتخاب محصول…",
+      "pickHint": "برای مدیریت موجودی یک محصول دیجیتال انتخاب کنید."
+    },
+    "deliveries": {
+      "title": "تحویل‌ها",
+      "hint": "تحویل سفارش‌ها بعد از خرید اینجا دیده می‌شود.",
+      "selected": "محصول انتخاب‌شده: {name}"
+    },
+    "settings": {
+      "title": "تنظیمات محصول",
+      "hint": "نمایش و حالت تحویل برای محصول دیجیتال انتخاب‌شده.",
+      "visible": "نمایش در فروشگاه"
+    },
+    "errors": {
+      "save": "ذخیره ناموفق بود"
+    }
+  },
+  "storePayg": {
+    "title": "پرداخت به‌ازای مصرف",
+    "subtitle": "پلن‌های TIME یا VOLUME با کسر از کیف پول و محدودیت خودکار 3x-ui",
+    "tabs": {
+      "dashboard": "داشبورد",
+      "categories": "دسته‌ها",
+      "plans": "پلن‌ها",
+      "subscriptions": "اشتراک‌ها",
+      "usage": "مصرف",
+      "settings": "تنظیمات"
+    },
+    "dashboard": {
+      "active": "فعال",
+      "suspended": "معلق",
+      "closed": "بسته",
+      "revenue": "مبلغ صورتحساب"
+    },
+    "categories": {
+      "empty": "دسته‌ای نیست.",
+      "create": "ایجاد دسته",
+      "created": "دسته ساخته شد",
+      "name": "نام دسته"
+    },
+    "plans": {
+      "empty": "پلنی نیست.",
+      "create": "ایجاد پلن",
+      "created": "پلن ساخته شد",
+      "name": "نام پلن",
+      "billingMode": "حالت صورتحساب",
+      "pricePerDay": "قیمت هر روز",
+      "pricePerHour": "قیمت هر ساعت",
+      "pricePerGb": "قیمت هر گیگ",
+      "limitIp": "سقف دستگاه/IP",
+      "pickProfile": "پروفایل پروویژن…",
+      "pickCategory": "دسته…"
+    },
+    "subscriptions": {
+      "empty": "اشتراکی نیست.",
+      "updated": "اشتراک به‌روز شد",
+      "suspend": "تعلیق",
+      "resume": "ازسرگیری",
+      "close": "بستن"
+    },
+    "usage": {
+      "empty": "ردیفی از مصرف نیست."
+    },
+    "settings": {
+      "saved": "تنظیمات ذخیره شد",
+      "minWallet": "حداقل موجودی کیف پول",
+      "meterHours": "بازه مترینگ (ساعت)",
+      "botLabel": "متن دکمه ربات",
+      "botMenu": "نمایش دکمه PAYG در ربات فروشگاه",
+      "autoResume": "ازسرگیری خودکار بعد از شارژ کیف"
+    },
+    "meter": {
+      "runNow": "اجرای مترینگ الان",
+      "ran": "مترینگ برای {n} اشتراک اجرا شد"
+    },
+    "errors": {
+      "save": "ذخیره ناموفق بود"
+    }
   }
 }

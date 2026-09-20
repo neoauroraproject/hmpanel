@@ -6073,20 +6073,80 @@ export class StoreService implements OnModuleInit {
     return this.customers.setCustomerStatus(adminId, customerId, status);
   }
 
+  /** Find existing clients by name/email/sub token — category is assigned later on attach. */
+  async searchAttachableServices(
+    adminId: string,
+    role: string,
+    customerId: string,
+    q: string,
+  ) {
+    const customer = await this.prisma.storeCustomer.findFirst({
+      where: { id: customerId, adminId },
+      select: { id: true },
+    });
+    if (!customer) throw new NotFoundException('Customer not found');
+
+    const query = String(q || '').trim();
+    if (query.length < 2) return { data: [] };
+
+    const detail = await this.customers.getDetail(adminId, customerId);
+    const linkedIds = new Set(
+      ((detail?.services || []) as Array<{ id: string }>).map((s) => s.id),
+    );
+
+    const ownership =
+      role === 'SUPER_ADMIN'
+        ? {}
+        : { OR: [{ adminId }, { adminId: null as string | null }] };
+
+    const clients = await this.prisma.client.findMany({
+      where: {
+        ...ownership,
+        OR: [
+          { email: { contains: query, mode: 'insensitive' } },
+          { remark: { contains: query, mode: 'insensitive' } },
+          { subId: { contains: query, mode: 'insensitive' } },
+          { subToken: { contains: query, mode: 'insensitive' } },
+          { uuid: { equals: query, mode: 'insensitive' } },
+          { id: query },
+        ],
+      },
+      take: 40,
+      orderBy: { updatedAt: 'desc' },
+      select: {
+        id: true,
+        email: true,
+        remark: true,
+        subId: true,
+        uuid: true,
+      },
+    });
+
+    return {
+      data: clients.map((c) => ({
+        id: c.id,
+        label: c.remark || c.email || c.id.slice(0, 8),
+        email: c.email,
+        remark: c.remark,
+        subId: c.subId,
+        alreadyLinked: linkedIds.has(c.id),
+        providerId: 'panel_3xui',
+      })),
+    };
+  }
+
   async attachCustomerService(
     adminId: string,
     role: string,
     customerId: string,
-    input: { clientId?: string; categoryId?: string },
+    input: { clientId?: string; categoryId?: string; subscriptionLink?: string },
   ) {
     const customer = await this.prisma.storeCustomer.findFirst({
       where: { id: customerId, adminId },
     });
     if (!customer) throw new NotFoundException('Customer not found');
 
-    const clientId = String(input.clientId || '').trim();
     const categoryId = String(input.categoryId || '').trim();
-    if (!clientId) throw new BadRequestException('clientId is required');
     if (!categoryId) throw new BadRequestException('categoryId is required');
 
     const category = await this.prisma.productCategory.findFirst({
@@ -6094,12 +6154,60 @@ export class StoreService implements OnModuleInit {
     });
     if (!category) throw new BadRequestException('Invalid category');
 
+    const link = String(input.subscriptionLink || '').trim();
+    let clientId = String(input.clientId || '').trim();
+
+    if (!clientId && link) {
+      const eylanClaim = await this.tryClaimEylanOrder(adminId, customerId, link, categoryId);
+      if (eylanClaim) {
+        await this.unhideCustomerService(customerId, eylanClaim.id);
+        return this.customers.getDetail(adminId, customerId);
+      }
+      const pasarguardClaim = await this.tryClaimPasarguardOrder(
+        adminId,
+        customerId,
+        link,
+        categoryId,
+      );
+      if (pasarguardClaim) {
+        await this.unhideCustomerService(customerId, pasarguardClaim.id);
+        return this.customers.getDetail(adminId, customerId);
+      }
+      const nativeClaim = await this.tryClaimNativeClient(
+        adminId,
+        customerId,
+        link,
+        categoryId,
+      );
+      if (nativeClaim) {
+        await this.unhideCustomerService(customerId, nativeClaim.id);
+        return this.customers.getDetail(adminId, customerId);
+      }
+
+      const resolved = await this.provisioning.resolveRenewClientByToken(adminId, link);
+      clientId = resolved.id;
+      if (!resolved.adminId) {
+        await this.prisma.client.update({
+          where: { id: resolved.id },
+          data: { adminId },
+        });
+      } else if (resolved.adminId !== adminId && role !== 'SUPER_ADMIN') {
+        throw new BadRequestException('Client belongs to another admin');
+      }
+      await this.linkClientToCustomer(customerId, resolved.id, categoryId);
+      await this.unhideCustomerService(customerId, resolved.id);
+      return this.customers.getDetail(adminId, customerId);
+    }
+
+    if (!clientId) {
+      throw new BadRequestException('clientId or subscriptionLink is required');
+    }
+
     const detail = await this.customers.getDetail(adminId, customerId);
     const alreadyLinked = !!(detail?.services || []).some(
       (s: { id: string }) => s.id === clientId,
     );
 
-    // Synthetic Eylan / Pasarguard services: category only (no Community Client row).
     if (parseEylanServiceId(clientId) || parsePasarguardServiceId(clientId)) {
       if (!alreadyLinked) {
         throw new BadRequestException('Service is not linked to this customer');
@@ -6109,7 +6217,6 @@ export class StoreService implements OnModuleInit {
       return this.customers.getDetail(adminId, customerId);
     }
 
-    // Already linked 3x-ui service: update category without re-validating ownership.
     if (alreadyLinked) {
       await this.linkClientToCustomer(customerId, clientId, categoryId);
       await this.unhideCustomerService(customerId, clientId);
