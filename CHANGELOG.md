@@ -8,6 +8,11 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [2.3.2] - 2026-09-20
+
+### Fixed
+- **Docker build:** exclude `premium-modules/store-payg` from `tsconfig.build.json` so Community image compile no longer pulls the incomplete store graph (regression from 2.3.0/2.3.1). Full PAYG runtime remains in Premium bundle.
+
 ## [2.3.1] - 2026-09-20
 
 ### Added

@@ -8,6 +8,8 @@
     "**/*spec.ts",
     "src/premium-modules/store/**/*.ts",
     "src/premium-modules/store/*.ts",
+    "src/premium-modules/store-payg/**/*.ts",
+    "src/premium-modules/store-payg/*.ts",
     "src/branding/*.ts",
     "src/domains/**",
     "src/plugins/backup-center/**",
