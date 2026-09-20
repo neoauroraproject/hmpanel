@@ -3378,7 +3378,7 @@ export class StoreService implements OnModuleInit {
     // Claimed / manually assigned categories (fill gaps only)
     const claimed = this.getClientCategories(metadata);
     for (const [clientId, categoryId] of Object.entries(claimed)) {
-      if (clientId && categoryId && !map.has(clientId)) map.set(clientId, categoryId);
+      if (clientId && categoryId) map.set(clientId, categoryId);
     }
     return map;
   }

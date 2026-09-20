@@ -112,7 +112,7 @@ export class StoreCustomerService {
     }
     const claimed = this.getClientCategories(metadata);
     for (const [clientId, categoryId] of Object.entries(claimed)) {
-      if (clientId && categoryId && !map.has(clientId)) map.set(clientId, categoryId);
+      if (clientId && categoryId) map.set(clientId, categoryId);
     }
     return map;
   }
