@@ -35,6 +35,7 @@ import { formatMonthTable, renderYearlyRevenueChartPng } from './revenue-chart-p
 import { AdminRechargeTelegramCommerceService } from '../admin-recharge/admin-recharge-telegram-commerce.service';
 import { AdminRechargeService } from '../admin-recharge/admin-recharge.service';
 import { AdminRechargeTelegramService } from '../admin-recharge/admin-recharge-telegram.service';
+import { PaygService } from '../store-payg/payg.service';
 import { formatBotMoney, normalizeWalletCurrency, botT, normalizeBotLocale } from './store-bot-i18n';
 import {
   CHANNEL_GATE_TTL_MS,
@@ -54,10 +55,16 @@ import {
   type BroadcastAudience,
   filterBroadcastRecipients,
 } from './store-broadcast.util';
-import { isEylanProvider, parseFulfillment } from './providers/store-fulfillment.types';
+import {
+  isDigitalInventoryProvider,
+  isEylanProvider,
+  parseFulfillment,
+} from './providers/store-fulfillment.types';
 import { isNativeEylanSubUrl } from './providers/eylan/eylan-url.util';
 import { TelegramCoreService } from '../../bots/telegram-core.service';
 import { PaymentManagementService } from '../../payments/payment-management.service';
+import { FeatureManagerService } from '../../platform/feature-manager.service';
+import { STORE_DIGITAL_MODULE_ID } from './providers/digital-goods/digital-goods.provider';
 
 type TelegramWebAppUser = {
   id: number;
@@ -133,8 +140,12 @@ export class StoreTelegramService implements OnModuleInit {
     private readonly adminRecharge: AdminRechargeService,
     @Inject(forwardRef(() => AdminRechargeTelegramService))
     private readonly adminRechargeTelegram: AdminRechargeTelegramService,
+    @Optional()
+    @Inject(forwardRef(() => PaygService))
+    private readonly payg?: PaygService,
     @Optional() private readonly telegramCore?: TelegramCoreService,
     @Optional() private readonly paymentManagement?: PaymentManagementService,
+    @Optional() private readonly features?: FeatureManagerService,
   ) {}
 
   onModuleInit() {
@@ -1401,6 +1412,9 @@ export class StoreTelegramService implements OnModuleInit {
       forceChannel: (store as any).telegramForceChannel || null,
       botLocale,
       telegramBotLocale: botLocale,
+      botBuyVpnLabel: (store as { botBuyVpnLabel?: string | null }).botBuyVpnLabel || null,
+      botBuyDigitalLabel:
+        (store as { botBuyDigitalLabel?: string | null }).botBuyDigitalLabel || null,
       miniAppUrl: this.buildMiniAppUrl(store),
       shopUrl: this.buildShopUrl(store),
       botMenu: await loadStoreBotMenu(this.prisma, adminId),
@@ -1418,6 +1432,8 @@ export class StoreTelegramService implements OnModuleInit {
       telegramBotLocale?: string | null;
       botMenu?: BotMenuConfig | null;
       forceChannel?: string | null;
+      botBuyVpnLabel?: string | null;
+      botBuyDigitalLabel?: string | null;
     },
   ) {
     const store = await this.prisma.storeProfile.findUnique({ where: { adminId } });
@@ -1477,6 +1493,23 @@ export class StoreTelegramService implements OnModuleInit {
               })(),
             }
           : {}),
+        ...(input.botBuyVpnLabel !== undefined
+          ? {
+              botBuyVpnLabel:
+                input.botBuyVpnLabel == null || String(input.botBuyVpnLabel).trim() === ''
+                  ? null
+                  : String(input.botBuyVpnLabel).trim().slice(0, 64),
+            }
+          : {}),
+        ...(input.botBuyDigitalLabel !== undefined
+          ? {
+              botBuyDigitalLabel:
+                input.botBuyDigitalLabel == null ||
+                String(input.botBuyDigitalLabel).trim() === ''
+                  ? null
+                  : String(input.botBuyDigitalLabel).trim().slice(0, 64),
+            }
+          : {}),
       } as any,
       include: { domain: { select: { domain: true, status: true } } },
     });
@@ -1503,6 +1536,8 @@ export class StoreTelegramService implements OnModuleInit {
       forceChannel: (updated as any).telegramForceChannel || null,
       botLocale,
       telegramBotLocale: botLocale,
+      botBuyVpnLabel: (updated as any).botBuyVpnLabel || null,
+      botBuyDigitalLabel: (updated as any).botBuyDigitalLabel || null,
       miniAppUrl: this.buildMiniAppUrl(updated),
       shopUrl: this.buildShopUrl(updated),
       botMenu: await loadStoreBotMenu(this.prisma, adminId),
@@ -2005,8 +2040,37 @@ export class StoreTelegramService implements OnModuleInit {
     }
 
     const agencyMenu = await this.agencyCommerce.isAgencyEnabled(store.adminId);
+    let paygMenu = false;
+    let paygLabel: string | null = null;
+    if (this.payg) {
+      try {
+        const paygSettings = await this.payg.getOrCreateSettings(store.adminId);
+        paygMenu = !!paygSettings.botMenuEnabled;
+        paygLabel = paygSettings.botButtonLabel ?? null;
+      } catch (err: any) {
+        this.logger.warn(`PAYG settings load failed: ${err?.message || err}`);
+      }
+    }
+    let digitalMenu = false;
+    if (this.features) {
+      try {
+        digitalMenu = await this.features.canWrite(STORE_DIGITAL_MODULE_ID);
+      } catch (err: any) {
+        this.logger.warn(`Digital module check failed: ${err?.message || err}`);
+      }
+    }
     const botMenu = await loadStoreBotMenu(this.prisma, store.adminId);
-    const storeCtx = { ...store, _agencyMenu: agencyMenu, _botMenu: botMenu };
+    const storeCtx = {
+      ...store,
+      _agencyMenu: agencyMenu,
+      _paygMenu: paygMenu,
+      _paygLabel: paygLabel,
+      _digitalMenu: digitalMenu,
+      _buyVpnLabel: (store as { botBuyVpnLabel?: string | null }).botBuyVpnLabel ?? null,
+      _buyDigitalLabel:
+        (store as { botBuyDigitalLabel?: string | null }).botBuyDigitalLabel ?? null,
+      _botMenu: botMenu,
+    };
 
     // Forced-channel membership gate: admins and completed payments pass;
     // everyone else must be a member of store.telegramForceChannel (if set).
@@ -2044,6 +2108,8 @@ export class StoreTelegramService implements OnModuleInit {
           storeCtx,
           botToken,
           agencyMenu,
+          paygMenu,
+          paygLabel,
           update.callback_query.from,
           gateSender.chatId,
         );
@@ -2070,6 +2136,36 @@ export class StoreTelegramService implements OnModuleInit {
           send: (token, cid, text, extra, messageId) =>
             this.replyOrEdit(token, cid, text, extra, messageId),
           answer: (token, id, text) => this.answerCallback(token, id, text),
+        });
+        return { ok: true };
+      }
+
+      if (data === 'c:payg' || data.startsWith('c:payg:')) {
+        const user = (callback.from || {}) as TelegramWebAppUser;
+        if (!user?.id) return { ok: true };
+        const { customer } = await this.findOrCreateByTelegram(store.adminId, user);
+        if (customer.status === 'blocked') {
+          await this.answerCallback(botToken, callback.id).catch(() => undefined);
+          return { ok: true };
+        }
+        if (chatId) this.commerce.clearPending(chatId);
+        await this.commerce.ensureCustomerReferral(customer.id).catch(() => undefined);
+        const supportButtons = await this.supportKeyboardButtons(store.adminId);
+        await this.commerce.handleCallback({
+          botToken,
+          callback,
+          store: storeCtx,
+          customer,
+          send: (token, cid, text, extra, messageId) =>
+            this.replyOrEdit(token, cid, text, extra, messageId),
+          sendPhoto: (token, cid, dataUrl, caption, extra) =>
+            this.sendPhoto(token, cid, dataUrl, caption, extra),
+          answer: (token, id, text) => this.answerCallback(token, id, text),
+          supportButtons,
+          miniAppUrl: this.buildMiniAppUrl(store),
+          notifyDeposit: (payload) => this.notifyAdminWalletDeposit(payload),
+          resolveSubUrl: (subId) => this.resolveCustomerSubUrl(store, subId),
+          buildQr: (text) => this.buildQrDataUrl(text),
         });
         return { ok: true };
       }
@@ -2252,7 +2348,7 @@ export class StoreTelegramService implements OnModuleInit {
         reply_markup: this.commerce.mainMenuKeyboard(
           storeCtx,
           this.buildMiniAppUrl(store),
-          { agencyMenu },
+          { agencyMenu, paygMenu, paygLabel },
         ),
       });
     }
@@ -2367,6 +2463,8 @@ export class StoreTelegramService implements OnModuleInit {
     storeCtx: any,
     botToken: string,
     agencyMenu: boolean,
+    paygMenu: boolean,
+    paygLabel: string | null,
     from: any,
     chatId?: number,
   ): Promise<void> {
@@ -2381,7 +2479,7 @@ export class StoreTelegramService implements OnModuleInit {
       reply_markup: this.commerce.mainMenuKeyboard(
         storeCtx,
         this.buildMiniAppUrl(store),
-        { agencyMenu },
+        { agencyMenu, paygMenu, paygLabel },
       ),
     });
   }
@@ -3973,8 +4071,45 @@ export class StoreTelegramService implements OnModuleInit {
         if (configName && configName !== 'renewal') lines.push(`📦 <b>${configName}</b>`);
         break;
       }
+      case 'digital_code_ready': {
+        const digitalCode =
+          typeof payload.digitalCode === 'string' ? payload.digitalCode : null;
+        lines.push(botT(loc, 'digital.ready'));
+        if (serviceName || (configName && configName !== 'renewal')) {
+          lines.push(
+            botT(loc, 'digital.product', {
+              name: this.escapeHtml(serviceName || configName || ''),
+            }),
+          );
+        }
+        if (digitalCode) {
+          lines.push('', botT(loc, 'digital.code', { code: this.escapeHtml(digitalCode) }));
+        }
+        break;
+      }
       case 'service_ready':
       case 'subscription_updated': {
+        const isDigitalDelivery =
+          payload.displayKind === 'digital_code' ||
+          isDigitalInventoryProvider(
+            typeof payload.providerId === 'string' ? payload.providerId : null,
+          );
+        if (isDigitalDelivery) {
+          const digitalCode =
+            typeof payload.digitalCode === 'string' ? payload.digitalCode : null;
+          lines.push(botT(loc, 'digital.ready'));
+          if (serviceName || (configName && configName !== 'renewal')) {
+            lines.push(
+              botT(loc, 'digital.product', {
+                name: this.escapeHtml(serviceName || configName || ''),
+              }),
+            );
+          }
+          if (digitalCode) {
+            lines.push('', botT(loc, 'digital.code', { code: this.escapeHtml(digitalCode) }));
+          }
+          break;
+        }
         const isRenewal = !!payload.isRenewal || status === 'RENEWED';
         lines.push(
           bilingual(

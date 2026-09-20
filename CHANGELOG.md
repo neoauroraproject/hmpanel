@@ -8,6 +8,18 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [2.3.1] - 2026-09-20
+
+### Added
+- **Store bot buy labels:** `botBuyVpnLabel` / `botBuyDigitalLabel` on StoreProfile (migration) for configurable Buy hub button text.
+- **Digital delivery message:** schema field for per-product / profile digital delivery text.
+
+### Changed
+- **PAYG metering:** clearer insufficient-wallet error payload; low-balance / suspend customer notifications from meter tick.
+
+### Notes
+- Full Telegram buy-hub, wallet ledger aggregation, and PAYG top-up UX ship in Premium bundle 2.3.1.
+
 ## [2.3.0] - 2026-09-20
 
 ### Added

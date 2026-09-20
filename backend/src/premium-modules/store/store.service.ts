@@ -1164,6 +1164,23 @@ export class StoreService implements OnModuleInit {
           (primary?.iban as string | undefined) ?? (data.bankIban as string | undefined),
         bankAccountInfo: data.bankAccountInfo as string | undefined,
         theme: typeof data.theme === 'string' ? data.theme : undefined,
+        ...(data.botBuyVpnLabel !== undefined
+          ? {
+              botBuyVpnLabel:
+                data.botBuyVpnLabel == null || String(data.botBuyVpnLabel).trim() === ''
+                  ? null
+                  : String(data.botBuyVpnLabel).trim().slice(0, 64),
+            }
+          : {}),
+        ...(data.botBuyDigitalLabel !== undefined
+          ? {
+              botBuyDigitalLabel:
+                data.botBuyDigitalLabel == null ||
+                String(data.botBuyDigitalLabel).trim() === ''
+                  ? null
+                  : String(data.botBuyDigitalLabel).trim().slice(0, 64),
+            }
+          : {}),
       },
       include: { domain: { select: { domain: true, status: true } } },
     });

@@ -1,7 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional, forwardRef } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StoreWalletService } from '../store/store-wallet.service';
+import { StoreCustomerNotificationsService } from '../store/store-customer-notifications.service';
 import { PaygLimitSyncService } from './payg-limit-sync.service';
 import {
   computeTimeDelta,
@@ -11,6 +12,9 @@ import {
   volumeMeterCursorKey,
 } from './payg-math.util';
 
+/** Re-warn at most once per hour while balance stays low. */
+const WARN_THROTTLE_MS = 60 * 60 * 1000;
+
 @Injectable()
 export class PaygMeterService {
   private readonly logger = new Logger(PaygMeterService.name);
@@ -19,6 +23,9 @@ export class PaygMeterService {
     private readonly prisma: PrismaService,
     private readonly wallet: StoreWalletService,
     private readonly limits: PaygLimitSyncService,
+    @Optional()
+    @Inject(forwardRef(() => StoreCustomerNotificationsService))
+    private readonly notifications?: StoreCustomerNotificationsService,
   ) {}
 
   /** Meter all ACTIVE (and optionally SUSPENDED for catch-up) subscriptions for an admin, or globally. */
@@ -81,13 +88,29 @@ export class PaygMeterService {
     const mode = String(sub.plan.billingMode || '').toUpperCase();
     const now = new Date();
 
+    let result: {
+      subscriptionId: string;
+      charged: boolean;
+      amount: number;
+      skipped?: string;
+      suspended?: boolean;
+    };
+
     if (mode === 'VOLUME') {
-      return this.meterVolume(sub, now);
+      result = await this.meterVolume(sub, now);
+    } else if (mode === 'TIME') {
+      result = await this.meterTime(sub, now);
+    } else {
+      result = { subscriptionId, charged: false, amount: 0, skipped: 'bad_mode' };
     }
-    if (mode === 'TIME') {
-      return this.meterTime(sub, now);
+
+    if (!result.skipped || result.skipped === 'no_delta') {
+      await this.maybeWarnOrNotify(sub.customerId, sub.adminId, !!result.suspended);
+    } else if (result.suspended) {
+      await this.maybeWarnOrNotify(sub.customerId, sub.adminId, true);
     }
-    return { subscriptionId, charged: false, amount: 0, skipped: 'bad_mode' };
+
+    return result;
   }
 
   private async meterVolume(
@@ -405,6 +428,95 @@ export class PaygMeterService {
       } catch {
         /* best-effort */
       }
+    }
+  }
+
+  private async maybeWarnOrNotify(
+    customerId: string,
+    adminId: string,
+    suspended: boolean,
+  ) {
+    if (suspended) {
+      await this.notifySuspended(customerId);
+      return;
+    }
+    if (!this.notifications) return;
+
+    try {
+      const balance = await this.limits.getWalletBalance(customerId);
+      const settings = await this.prisma.paygSettings.findUnique({
+        where: { adminId },
+      });
+      const minBalance = Number(settings?.minWalletBalance || 0);
+
+      const activeTime = await this.prisma.paygSubscription.findMany({
+        where: {
+          customerId,
+          status: 'ACTIVE',
+        },
+        include: { plan: true },
+      });
+      let hourlyBurn = 0;
+      for (const s of activeTime) {
+        if (String(s.plan.billingMode || '').toUpperCase() !== 'TIME') continue;
+        const pph = resolvePricePerHour(s.plan);
+        if (pph != null && pph > 0) hourlyBurn += pph;
+      }
+
+      // Warn before empty: within ~3h of burn or 2× min balance, whichever is higher.
+      const warnThreshold = Math.max(minBalance * 2, hourlyBurn * 3);
+      if (!(balance <= warnThreshold)) return;
+      // Still warn at/below min so they know charge is urgent (before suspend path).
+      const hoursLeft =
+        hourlyBurn > 0 ? Math.max(0, Math.floor(balance / hourlyBurn)) : null;
+
+      const customer = await this.prisma.storeCustomer.findUnique({
+        where: { id: customerId },
+        select: { metadata: true },
+      });
+      const meta =
+        customer?.metadata && typeof customer.metadata === 'object'
+          ? ({ ...(customer.metadata as Record<string, unknown>) } as Record<
+              string,
+              unknown
+            >)
+          : {};
+      const lastWarnAt = Number(meta.paygLastWarnAt || 0);
+      if (lastWarnAt && Date.now() - lastWarnAt < WARN_THROTTLE_MS) return;
+
+      const hoursNote =
+        hoursLeft == null
+          ? ''
+          : ` ≈${hoursLeft}h left at current burn / حدود ${hoursLeft} ساعت تا اتمام.`;
+      await this.notifications.notifyCustomer(customerId, {
+        type: 'payg_low_balance',
+        title: '⚠️ موجودی کیف پول PAYG کم است / Low PAYG balance',
+        message: `موجودی: ${balance} | حداقل: ${minBalance} | مصرف ساعتی: ${hourlyBurn}.${hoursNote} لطفاً شارژ کنید تا سرویس قطع نشود.`,
+        payload: { balance, minBalance, warnThreshold, hourlyBurn, hoursLeft },
+      });
+
+      meta.paygLastWarnAt = Date.now();
+      await this.prisma.storeCustomer.update({
+        where: { id: customerId },
+        data: { metadata: meta as Prisma.InputJsonValue },
+      });
+    } catch (err: any) {
+      this.logger.warn(`PAYG low-balance warn failed: ${err?.message || err}`);
+    }
+  }
+
+  private async notifySuspended(customerId: string) {
+    if (!this.notifications) return;
+    try {
+      await this.notifications.notifyCustomer(customerId, {
+        type: 'payg_suspended',
+        title: '⛔ PAYG suspended / سرویس PAYG معلق شد',
+        message:
+          'Your PAYG service was suspended due to low wallet balance. Top up and resume. / به‌دلیل کمبود موجودی معلق شد؛ شارژ کنید.',
+        payload: {},
+      });
+    } catch (err: any) {
+      this.logger.warn(`PAYG suspended notify failed: ${err?.message || err}`);
     }
   }
 }

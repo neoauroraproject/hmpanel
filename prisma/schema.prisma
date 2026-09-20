@@ -641,6 +641,10 @@ model StoreProfile {
   telegramForceChannel String?
   /// Customer-facing Telegram bot UI language: "fa" | "en"
   telegramBotLocale   String   @default("fa")
+  /// Optional Telegram buy-hub button label for VPN catalog
+  botBuyVpnLabel      String?
+  /// Optional Telegram buy-hub button label for digital goods catalog
+  botBuyDigitalLabel  String?
   /// When true, paid orders auto-provision after autoDeliverDelayMinutes but stay tagged for admin confirm.
   autoDeliverEnabled   Boolean  @default(false)
   autoDeliverDelayMinutes Int   @default(10)
@@ -845,6 +849,8 @@ model StoreProduct {
   kind         String   @default("VPN")
   /// DIGITAL only: AUTOMATIC | MANUAL | HYBRID
   digitalDeliveryMode String @default("AUTOMATIC")
+  /// Optional message template shown with the delivered code. Use {code} placeholder.
+  digitalDeliveryMessage String?
   name         String
   description  String?
   priceToman   Float?

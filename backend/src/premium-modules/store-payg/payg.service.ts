@@ -35,7 +35,7 @@ export class PaygService {
     private readonly meter: PaygMeterService,
   ) {}
 
-  // â”€â”€ Settings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Settings ──────────────────────────────────────────────────────────────
 
   async getOrCreateSettings(adminId: string) {
     const existing = await this.prisma.paygSettings.findUnique({ where: { adminId } });
@@ -63,7 +63,7 @@ export class PaygService {
     return this.prisma.paygSettings.update({ where: { adminId }, data });
   }
 
-  // â”€â”€ Categories â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Categories ────────────────────────────────────────────────────────────
 
   listCategories(adminId: string) {
     return this.prisma.paygCategory.findMany({
@@ -112,7 +112,7 @@ export class PaygService {
     return { ok: true };
   }
 
-  // â”€â”€ Plans â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Plans ─────────────────────────────────────────────────────────────────
 
   listPlans(adminId: string, categoryId?: string) {
     return this.prisma.paygPlan.findMany({
@@ -235,7 +235,7 @@ export class PaygService {
     return { ok: true };
   }
 
-  // â”€â”€ Subscriptions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Subscriptions ─────────────────────────────────────────────────────────
 
   listSubscriptions(
     adminId: string,
@@ -309,12 +309,14 @@ export class PaygService {
     const balance = await this.limits.getWalletBalance(customerId);
     const minBalance = await this.limits.resolveMinBalance(adminId, plan);
     if (balance + 1e-9 < minBalance) {
-      throw new BadRequestException(
-        `Wallet balance ${balance} is below minimum ${minBalance}`,
-      );
+      throw new BadRequestException({
+        code: 'PAYG_INSUFFICIENT_WALLET',
+        balance,
+        minBalance,
+        shortfall: minBalance - balance,
+        message: `Wallet balance ${balance} is below minimum ${minBalance}`,
+      });
     }
-
-    await this.ensurePanelSynced(profile.panelId, inboundIds);
 
     const email = await this.generateUniqueConfigName('payg', adminId);
     const panel3xSettings = parsePanel3xuiSettings(profile.settings);
@@ -487,7 +489,7 @@ export class PaygService {
     return this.meter.runMeterTick({ adminId, subscriptionId });
   }
 
-  /** Optional daily digest prep â€” returns per-admin usage summary for bots/logs. */
+  /** Optional daily digest prep — returns per-admin usage summary for bots/logs. */
   async prepareDailyDigest(adminId: string) {
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const entries = await this.prisma.paygUsageLedger.findMany({
@@ -530,7 +532,7 @@ export class PaygService {
     return this.listSubscriptions(adminId, { customerId });
   }
 
-  // â”€â”€ Internals â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Internals ─────────────────────────────────────────────────────────────
 
   private assertPlanPricing(billingMode: string, body: Record<string, unknown>) {
     if (billingMode === 'VOLUME') {
