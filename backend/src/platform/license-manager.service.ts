@@ -1,10 +1,18 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { SettingsService } from '../settings/settings.service';
 import type { LicenseState } from './types/module-manifest.types';
-import { getAllFeatureIds } from './manifests';
+import { getModulesForFeature } from './manifests';
 import { PremiumBundleService } from './premium-bundle.service';
 import { InstanceFingerprintService } from './instance-fingerprint.service';
 import { requestLicenseServer } from './license-server.client';
+import {
+  decodeJwtPayload,
+  entitlementSourceFromResponse,
+  hydrateLicensedModules,
+  licensedModuleSet,
+  normalizeToModuleIds,
+  resolveEntitlement,
+} from './license-entitlement.util';
 
 const GRACE_DAYS = 7;
 const LICENSE_STATE_KEY = 'LICENSE_STATE';
@@ -27,14 +35,9 @@ export class LicenseManagerService {
         ? 'COMMUNITY'
         : 'PREMIUM';
 
-    const storedState = await this.settingsService.getSetting(LICENSE_STATE_KEY);
+    const storedState = await this.getStoredState();
     if (storedState) {
-      try {
-        const parsed = JSON.parse(storedState) as LicenseState;
-        return this.applyExpiry({ ...parsed, edition: parsed.edition || 'PREMIUM' });
-      } catch {
-        /* fall through */
-      }
+      return this.applyExpiry({ ...storedState, edition: storedState.edition || 'PREMIUM' });
     }
 
     const licenseKey = await this.settingsService.getSetting(LICENSE_KEY_KEY);
@@ -55,22 +58,54 @@ export class LicenseManagerService {
     return this.validateFromJwt(jwt, licenseKey);
   }
 
+  /** Licensed module ids for the current state — empty when nothing is licensed. */
+  async getLicensedModuleIds(): Promise<string[]> {
+    const state = await this.getLicenseState();
+    if (!this.isLicenseUsable(state)) return [];
+    return [...licensedModuleSet(state)];
+  }
+
+  async isModuleLicensed(moduleId: string): Promise<boolean> {
+    const state = await this.getLicenseState();
+    return this.stateLicensesModule(state, moduleId);
+  }
+
+  /**
+   * Feature ids are resolved through the manifests: a feature is licensed when any module
+   * that ships it is licensed. Module ids are accepted here too for call-site convenience.
+   */
   async isFeatureLicensed(featureId: string): Promise<boolean> {
     const state = await this.getLicenseState();
-    if (state.edition === 'COMMUNITY' || state.status === 'invalid') {
-      return false;
+    if (!this.isLicenseUsable(state)) return false;
+    if (state.legacyFull) return true;
+
+    const owners = getModulesForFeature(featureId);
+    if (owners.length) {
+      return owners.some((moduleId) => this.stateLicensesModule(state, moduleId));
     }
-    if (state.mode === 'disabled') return false;
-    if (state.licensedFeatures.length === 0) {
-      return state.status === 'active' || state.status === 'grace' || state.status === 'expired';
-    }
-    return state.licensedFeatures.includes(featureId);
+    return this.stateLicensesModule(state, featureId);
+  }
+
+  /**
+   * Normalises a JWT `features` claim into licensed module ids. An empty or missing claim
+   * licenses nothing — full access requires an explicit signal (see resolveEntitlement).
+   */
+  normalizeLicensedFeatures(features?: string[] | null): string[] {
+    if (!features?.length) return [];
+    return normalizeToModuleIds(features);
   }
 
   async setLicenseState(state: Omit<LicenseState, 'edition'> & { edition?: 'COMMUNITY' | 'PREMIUM' }): Promise<void> {
+    const licensedModules = state.licensedModules ?? state.licensedFeatures ?? [];
     await this.settingsService.setSetting(
       LICENSE_STATE_KEY,
-      JSON.stringify({ ...state, edition: state.edition || 'PREMIUM' }),
+      JSON.stringify({
+        ...state,
+        edition: state.edition || 'PREMIUM',
+        licensedModules,
+        licensedFeatures: licensedModules,
+        legacyFull: state.legacyFull === true,
+      }),
     );
   }
 
@@ -87,9 +122,9 @@ export class LicenseManagerService {
       }),
     });
     const now = new Date().toISOString();
-    const stored = await this.getStoredState();
 
     if (!res.ok || data.ok === false) {
+      const stored = await this.getStoredState();
       const next: LicenseState = {
         ...(stored || this.invalidState()),
         status: data.mode === 'disabled' ? 'invalid' : stored?.status || 'active',
@@ -101,30 +136,40 @@ export class LicenseManagerService {
         next.status = 'invalid';
         next.mode = 'disabled';
         next.licensedFeatures = [];
+        next.licensedModules = [];
+        next.legacyFull = false;
       }
       await this.setLicenseState(next);
       return this.getLicenseState();
     }
 
+    // Heartbeat may hand out a refreshed token; keep it so offline restarts see new modules.
+    if (typeof data.entitlementJwt === 'string' && data.entitlementJwt) {
+      await this.settingsService.setSetting(LICENSE_ENTITLEMENT_KEY, data.entitlementJwt);
+    }
+
+    const stored = (await this.getStoredState()) ?? (await this.getLicenseState());
     const expiresAt =
-      typeof data.expiresAt === 'string'
-        ? data.expiresAt
-        : stored?.expiresAt ?? null;
+      typeof data.expiresAt === 'string' ? data.expiresAt : stored?.expiresAt ?? null;
+    const entitlement = resolveEntitlement(entitlementSourceFromResponse(data));
 
     const next: LicenseState = {
-      ...(stored || {
-        status: 'active',
-        mode: 'full',
-        expiresAt,
-        graceEndsAt: null,
-        licensedFeatures: getAllFeatureIds(),
-      }),
+      ...stored,
       status: 'active',
       mode: data.mode === 'read_only' ? 'read_only' : 'full',
       expiresAt,
       lastHeartbeatAt: now,
       lastServerCheckAt: now,
       edition: 'PREMIUM',
+      // A thin heartbeat carries no entitlement data — never downgrade or expand on it.
+      ...(entitlement.present
+        ? {
+            licensedModules: entitlement.licensedModules,
+            licensedFeatures: entitlement.licensedModules,
+            legacyFull: entitlement.legacyFull,
+            licensePlan: entitlement.plan,
+          }
+        : {}),
     };
     await this.setLicenseState(next);
     return this.applyExpiry(next);
@@ -141,11 +186,23 @@ export class LicenseManagerService {
     });
   }
 
+  private isLicenseUsable(state: LicenseState): boolean {
+    if (state.edition === 'COMMUNITY') return false;
+    if (state.status === 'invalid' || state.status === 'community') return false;
+    return state.mode !== 'disabled';
+  }
+
+  private stateLicensesModule(state: LicenseState, moduleId: string): boolean {
+    if (!this.isLicenseUsable(state)) return false;
+    if (state.legacyFull) return true;
+    return licensedModuleSet(state).has(moduleId);
+  }
+
   private async getStoredState(): Promise<LicenseState | null> {
     const raw = await this.settingsService.getSetting(LICENSE_STATE_KEY);
     if (!raw) return null;
     try {
-      return JSON.parse(raw) as LicenseState;
+      return hydrateLicensedModules(JSON.parse(raw) as LicenseState);
     } catch {
       return null;
     }
@@ -158,6 +215,8 @@ export class LicenseManagerService {
       expiresAt: null,
       graceEndsAt: null,
       licensedFeatures: [],
+      licensedModules: [],
+      legacyFull: false,
       edition: 'COMMUNITY',
     };
   }
@@ -169,7 +228,19 @@ export class LicenseManagerService {
       expiresAt: null,
       graceEndsAt: null,
       licensedFeatures: [],
+      licensedModules: [],
+      legacyFull: false,
       edition: 'PREMIUM',
+    };
+  }
+
+  private revoked(state: LicenseState, patch: Partial<LicenseState>): LicenseState {
+    return {
+      ...state,
+      ...patch,
+      licensedFeatures: [],
+      licensedModules: [],
+      legacyFull: false,
     };
   }
 
@@ -179,7 +250,7 @@ export class LicenseManagerService {
     }
 
     if (state.mode === 'disabled' || state.status === 'invalid') {
-      return { ...state, mode: 'disabled', licensedFeatures: [] };
+      return this.revoked(state, { mode: 'disabled' });
     }
 
     // Local JWT + stored state drive premium while offline; server is only for validity checks.
@@ -205,17 +276,15 @@ export class LicenseManagerService {
         graceEndsAt: new Date(graceEndsAt).toISOString(),
       };
     }
-    return {
-      ...state,
+    return this.revoked(state, {
       status: 'expired',
       mode: 'disabled',
-      licensedFeatures: [],
       graceEndsAt: new Date(graceEndsAt).toISOString(),
-    };
+    });
   }
 
   private async validateFromJwt(jwt: string, licenseKey: string): Promise<LicenseState> {
-    const payload = this.decodeJwtPayload(jwt);
+    const payload = decodeJwtPayload(jwt);
     if (!payload) return this.invalidState();
 
     const instanceId = this.instanceFingerprint.getInstanceId();
@@ -232,18 +301,23 @@ export class LicenseManagerService {
         expiresAt: new Date(exp * 1000).toISOString(),
         graceEndsAt: null,
         licensedFeatures: [],
+        licensedModules: [],
+        legacyFull: false,
         edition: 'PREMIUM',
       };
     }
 
     const stored = await this.getStoredState();
-    const jwtFeatures = this.normalizeLicensedFeatures(payload.features as string[] | undefined);
+    const entitlement = resolveEntitlement(entitlementSourceFromResponse({}, jwt));
     return this.applyExpiry({
       status: 'active',
       mode: 'full',
       expiresAt: payload.exp ? new Date((payload.exp as number) * 1000).toISOString() : stored?.expiresAt ?? null,
       graceEndsAt: null,
-      licensedFeatures: jwtFeatures,
+      licensedFeatures: entitlement.licensedModules,
+      licensedModules: entitlement.licensedModules,
+      legacyFull: entitlement.legacyFull,
+      licensePlan: entitlement.plan,
       edition: 'PREMIUM',
       activationId: (payload.activationId as string) || stored?.activationId,
       instanceId,
@@ -251,32 +325,5 @@ export class LicenseManagerService {
       lastHeartbeatAt: stored?.lastHeartbeatAt,
       lastServerCheckAt: stored?.lastServerCheckAt,
     });
-  }
-
-  private normalizeLicensedFeatures(features?: string[]): string[] {
-    if (!features?.length) return getAllFeatureIds();
-    const moduleSlugs = new Set([
-      'monitoring',
-      'monitoring-pro',
-      'backup-center',
-      'store',
-      'branding',
-      'client-templates',
-      'custom-domains',
-      'premium-modules',
-    ]);
-    if (features.some((f) => moduleSlugs.has(f))) return getAllFeatureIds();
-    return features;
-  }
-
-  private decodeJwtPayload(token: string): Record<string, unknown> | null {
-    try {
-      const parts = token.split('.');
-      if (parts.length < 2) return null;
-      const json = Buffer.from(parts[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
-      return JSON.parse(json);
-    } catch {
-      return null;
-    }
   }
 }

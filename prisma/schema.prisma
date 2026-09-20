@@ -222,6 +222,7 @@ model Admin {
   rechargeOrdersAsTarget AdminRechargeOrder[] @relation("RechargeOrderTarget")
   rechargeOrdersCreated  AdminRechargeOrder[] @relation("RechargeOrderCreated")
   botApiClients          BotApiClient[]
+  inventoryPools         InventoryPool[]
 }
 
 // Bridging table for Admin <-> Inbound access
@@ -832,8 +833,13 @@ model StoreProduct {
   adminId      String
   /// Null for test SKUs (no storefront category)
   categoryId   String?
-  profileId    String
+  /// Null for DIGITAL products — they never create a VPN client
+  profileId    String?
   templateId   String?
+  /// VPN | PAYG | DIGITAL
+  kind         String   @default("VPN")
+  /// DIGITAL only: AUTOMATIC | MANUAL | HYBRID
+  digitalDeliveryMode String @default("AUTOMATIC")
   name         String
   description  String?
   priceToman   Float?
@@ -859,14 +865,74 @@ model StoreProduct {
 
   admin    Admin                @relation(fields: [adminId], references: [id], onDelete: Cascade)
   category ProductCategory?     @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  profile  ProvisioningProfile  @relation(fields: [profileId], references: [id], onDelete: Restrict)
+  profile  ProvisioningProfile? @relation(fields: [profileId], references: [id], onDelete: Restrict)
   template ProductTemplate?     @relation(fields: [templateId], references: [id], onDelete: SetNull)
   orders   StoreOrder[]
+  inventoryPools InventoryPool[]
 
   @@index([adminId])
   @@index([categoryId])
   @@index([profileId])
   @@index([isTest])
+  @@index([kind])
+}
+
+/// Digital goods stock bucket. One pool per product for v1.
+model InventoryPool {
+  id                String   @id @default(uuid())
+  adminId           String
+  productId         String
+  name              String?
+  lowStockThreshold Int      @default(10)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  admin   Admin           @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  product StoreProduct    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  units   InventoryUnit[]
+
+  @@unique([productId])
+  @@index([adminId])
+}
+
+/// A single sellable digital code. Plaintext never leaves `codeEnc`.
+model InventoryUnit {
+  id                 String    @id @default(uuid())
+  poolId             String
+  /// AES-256-GCM envelope (eylan-crypto encryptSecret)
+  codeEnc            String
+  /// sha256 of the normalized plaintext — dedupe only, never reversible
+  codeHash           String
+  /// AVAILABLE | RESERVED | SOLD | REVOKED | EXPIRED
+  status             String    @default("AVAILABLE")
+  reservedForOrderId String?
+  reservedAt         DateTime?
+  soldAt             DateTime?
+  expiresAt          DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  pool     InventoryPool    @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  delivery DigitalDelivery?
+
+  @@unique([poolId, codeHash])
+  @@index([poolId, status])
+  @@index([reservedForOrderId])
+}
+
+/// Links a paid order to the exact unit it consumed.
+model DigitalDelivery {
+  id          String    @id @default(uuid())
+  orderId     String    @unique
+  unitId      String    @unique
+  /// telegram | web | manual | system
+  channel     String    @default("system")
+  revealedAt  DateTime?
+  deliveredAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  order StoreOrder    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  unit  InventoryUnit @relation(fields: [unitId], references: [id], onDelete: Cascade)
 }
 
 model StoreCustomer {
@@ -1012,6 +1078,7 @@ model StoreOrder {
   timeline    OrderTimelineEvent[]
   activities  StoreCustomerActivity[]
   couponRedemption StoreCouponRedemption?
+  digitalDelivery  DigitalDelivery?
 
   @@index([storeId])
   @@index([customerId])

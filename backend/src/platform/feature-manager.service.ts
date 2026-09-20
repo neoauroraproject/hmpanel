@@ -1,8 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { LicenseManagerService } from './license-manager.service';
-import { getAllFeatureIds, getManifest, MODULE_MANIFESTS } from './manifests';
-import type { ModuleAccess } from './types/module-manifest.types';
+import { getManifest, MODULE_MANIFESTS } from './manifests';
+import { licensedModuleSet } from './license-entitlement.util';
+import type {
+  LicenseState,
+  ModuleAccess,
+  ModuleManifest,
+} from './types/module-manifest.types';
 
 @Injectable()
 export class FeatureManagerService {
@@ -67,20 +72,17 @@ export class FeatureManagerService {
       };
     }
 
-    const allFeatures = getAllFeatureIds();
     const featureLicensed =
-      license.status !== 'invalid' &&
-      (manifest.features.length === 0 ||
-        license.licensedFeatures.length === 0 ||
-        license.licensedFeatures.length >= allFeatures.length ||
-        manifest.features.every((f) => license.licensedFeatures.includes(f)));
+      license.status !== 'invalid' && this.isManifestLicensed(license, manifest);
 
     const state = await this.safeModuleState(moduleId);
     const moduleEnabled = state?.enabled ?? manifest.defaultEnabled;
 
     const enabled = featureLicensed && moduleEnabled && license.status !== 'invalid';
     const mode = !enabled ? 'disabled' : license.mode;
-    const canRead = enabled || (moduleEnabled && license.mode === 'read_only' && license.status !== 'invalid');
+    const canRead =
+      enabled ||
+      (featureLicensed && moduleEnabled && license.mode === 'read_only' && license.status !== 'invalid');
     const canWrite = enabled && license.mode === 'full';
 
     return {
@@ -111,6 +113,23 @@ export class FeatureManagerService {
       }
       throw new Error(`Module "${moduleId}" is not enabled`);
     }
+  }
+
+  /**
+   * A module is licensed when its id is in the licensed module set. Legacy tokens that
+   * list feature ids instead are still honoured when they cover every feature the module
+   * ships. Modules with no features are never auto-passed — they need their id licensed.
+   */
+  private isManifestLicensed(license: LicenseState, manifest: ModuleManifest): boolean {
+    if (license.legacyFull) return true;
+
+    const licensed = licensedModuleSet(license);
+    if (licensed.size === 0) return false;
+    if (licensed.has(manifest.id)) return true;
+
+    return (
+      manifest.features.length > 0 && manifest.features.every((f) => licensed.has(f))
+    );
   }
 
   private async safeModuleState(moduleId: string) {

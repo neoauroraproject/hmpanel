@@ -13,7 +13,10 @@ import { PremiumBundleService } from './premium-bundle.service';
 import { LicenseManagerService } from './license-manager.service';
 import { PluginsService } from '../plugins/plugins.service';
 import type { LicenseState } from './types/module-manifest.types';
-import { getAllFeatureIds } from './manifests';
+import {
+  entitlementSourceFromResponse,
+  resolveEntitlement,
+} from './license-entitlement.util';
 import { getPanelVersion } from '../common/utils/panel-version.util';
 import { getPremiumBootstrapResult } from '../plugins/premium-bootstrap';
 import {
@@ -156,12 +159,24 @@ export class LicenseActivationService {
       sha256?: string | null;
     } | undefined;
 
+    const entitlement = resolveEntitlement(entitlementSourceFromResponse(data));
+    this.logger.log(
+      `License entitlements: ${
+        entitlement.legacyFull
+          ? 'legacy full (all modules)'
+          : entitlement.licensedModules.join(', ') || 'none'
+      }${entitlement.plan ? ` — plan ${entitlement.plan}` : ''}`,
+    );
+
     const baseState: LicenseState = {
       status: 'active',
       mode: 'full',
       expiresAt: license?.expiresAt ?? null,
       graceEndsAt: null,
-      licensedFeatures: getAllFeatureIds(),
+      licensedFeatures: entitlement.licensedModules,
+      licensedModules: entitlement.licensedModules,
+      legacyFull: entitlement.legacyFull,
+      licensePlan: entitlement.plan,
       edition: 'PREMIUM',
       lastHeartbeatAt: now,
       lastServerCheckAt: now,
@@ -438,6 +453,9 @@ export class LicenseActivationService {
     const bundle = data.bundle as { version?: string | null } | undefined;
     const now = new Date().toISOString();
     const stored = await this.licenseManager.getLicenseState();
+    const entitlement = resolveEntitlement(entitlementSourceFromResponse(data));
+    const storedHasEntitlement =
+      stored.legacyFull === true || (stored.licensedModules?.length ?? 0) > 0;
 
     await this.licenseManager.setLicenseState({
       ...stored,
@@ -450,7 +468,16 @@ export class LicenseActivationService {
       instanceId,
       lastServerCheckAt: now,
       lastHeartbeatAt: now,
-      licensedFeatures: getAllFeatureIds(),
+      // Re-registering must not widen entitlements — a response without entitlement
+      // data keeps whatever the last valid activation stored.
+      ...(entitlement.present || !storedHasEntitlement
+        ? {
+            licensedFeatures: entitlement.licensedModules,
+            licensedModules: entitlement.licensedModules,
+            legacyFull: entitlement.legacyFull,
+            licensePlan: entitlement.plan,
+          }
+        : {}),
     });
 
     this.logger.log(`Panel instance re-registered with license server (${instanceId})`);
@@ -481,6 +508,9 @@ export class LicenseActivationService {
       expiresAt: null,
       graceEndsAt: null,
       licensedFeatures: [],
+      licensedModules: [],
+      legacyFull: false,
+      licensePlan: null,
       edition: 'COMMUNITY',
     });
 

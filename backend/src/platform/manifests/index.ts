@@ -94,6 +94,56 @@ export const MODULE_MANIFESTS: ModuleManifest[] = [
     },
   },
   {
+    id: 'store-digital',
+    name: 'Store Digital Goods',
+    version: '1.0.0',
+    description: 'Sell digital codes from an encrypted, atomically reserved inventory.',
+    kind: 'BUSINESS',
+    phase: 2,
+    defaultEnabled: false,
+    licenseRequirement: 'business',
+    features: [],
+    dependencies: ['store'],
+    permissions: [
+      { id: 'store-digital.view', description: 'View digital inventory and stock' },
+      {
+        id: 'store-digital.manage',
+        description: 'Import, reveal and revoke digital codes',
+        write: true,
+      },
+    ],
+    routes: { backend: '/premium-modules/store', frontend: '/premium/store' },
+    menus: [],
+    scheduler: [],
+    readOnlyCapabilities: {
+      read: ['view_inventory', 'view_stock'],
+      write: ['import_codes', 'reveal_code', 'revoke_code', 'deliver_code'],
+    },
+  },
+  {
+    id: 'store-payg',
+    name: 'Store Pay As You Go',
+    version: '1.0.0',
+    description: 'Entitlement placeholder for usage-based products. No metering ships yet.',
+    kind: 'BUSINESS',
+    phase: 2,
+    defaultEnabled: false,
+    licenseRequirement: 'business',
+    features: [],
+    dependencies: ['store'],
+    permissions: [
+      { id: 'store-payg.view', description: 'View pay-as-you-go products' },
+      { id: 'store-payg.manage', description: 'Manage pay-as-you-go products', write: true },
+    ],
+    routes: { backend: '/premium-modules/store', frontend: '/premium/store' },
+    menus: [],
+    scheduler: [],
+    readOnlyCapabilities: {
+      read: ['view_payg'],
+      write: ['manage_payg'],
+    },
+  },
+  {
     id: 'external-panels',
     name: 'Other Panels',
     version: '1.0.0',
@@ -272,4 +322,13 @@ export function getAllFeatureIds(): string[] {
     for (const f of m.features) set.add(f);
   }
   return [...set];
+}
+
+export function getAllModuleIds(): string[] {
+  return MODULE_MANIFESTS.map((m) => m.id);
+}
+
+/** Modules that ship a given legacy feature id (e.g. WHITE_LABEL -> branding). */
+export function getModulesForFeature(featureId: string): string[] {
+  return MODULE_MANIFESTS.filter((m) => m.features.includes(featureId)).map((m) => m.id);
 }

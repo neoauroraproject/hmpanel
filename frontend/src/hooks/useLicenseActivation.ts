@@ -15,6 +15,9 @@ export interface LicenseState {
   bundleVersion?: string | null;
   edition: string;
   supportUrl?: string;
+  licensePlan?: string | null;
+  licensedModules?: string[];
+  legacyFull?: boolean;
   bundle?: {
     installed: boolean;
     version: string | null;

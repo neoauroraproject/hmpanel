@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { LicenseManagerService } from './license-manager.service';
 import { FeatureEntitlementService } from './feature-entitlement.service';
+import { FeatureManagerService } from './feature-manager.service';
 import { MODULE_MANIFESTS } from './manifests';
 
 /** Community-side premium module list — works even before the premium bundle backend loads. */
@@ -12,7 +13,23 @@ export class PremiumCatalogService {
     private licenseManager: LicenseManagerService,
     private prisma: PrismaService,
     private entitlement: FeatureEntitlementService,
+    private features: FeatureManagerService,
   ) {}
+
+  /** Modules the caller may actually open: licensed by the plan *and* enabled. */
+  private async readableModuleIds(): Promise<Set<string>> {
+    const allowed = new Set<string>();
+    for (const manifest of MODULE_MANIFESTS) {
+      const access = await this.features.getModuleAccess(manifest.id);
+      if (access.canRead) allowed.add(manifest.id);
+    }
+    return allowed;
+  }
+
+  /** Modules covered by the license, regardless of whether an operator disabled them. */
+  private async licensedModuleIds(): Promise<Set<string>> {
+    return new Set(await this.licenseManager.getLicensedModuleIds());
+  }
 
   async listForLicensedAdmin(
     adminId: string,
@@ -60,7 +77,10 @@ export class PremiumCatalogService {
       }
     }
 
+    const readableModuleIds = await this.readableModuleIds();
+
     return MODULE_MANIFESTS.filter((m) => m.id !== 'job-center')
+      .filter((m) => readableModuleIds.has(m.id))
       .filter((m) => {
         if (role === 'SUPER_ADMIN') return true;
         return m.kind === 'BUSINESS' && assignedModuleIds?.has(m.id);
@@ -100,6 +120,7 @@ export class PremiumCatalogService {
       version: string;
       phase: number;
       enabled: boolean;
+      licensed: boolean;
       frontendPath: string;
       settingsSchema: Record<string, unknown>;
       settings: Record<string, unknown>;
@@ -112,6 +133,8 @@ export class PremiumCatalogService {
     if (!licensed) return [];
 
     await this.ensureModuleRowsSeeded();
+
+    const licensedModuleIds = await this.licensedModuleIds();
 
     let stateMap = new Map<string, { enabled: boolean; settings: Record<string, unknown> }>();
     try {
@@ -129,6 +152,7 @@ export class PremiumCatalogService {
     return MODULE_MANIFESTS.map((m) => {
       const row = stateMap.get(m.id);
       const enabled = row?.enabled ?? (m.defaultEnabled || m.phase <= 3);
+      const moduleLicensed = licensedModuleIds.has(m.id);
       return {
         id: m.id,
         name: m.name,
@@ -137,12 +161,14 @@ export class PremiumCatalogService {
         version: m.version,
         phase: m.phase,
         enabled,
+        // Unlicensed modules stay listed so Super Admin can see what the plan excludes.
+        licensed: moduleLicensed,
         frontendPath: m.routes.frontend,
         settingsSchema: {},
         settings: row?.settings ?? {},
         status: !enabled
           ? ('disabled' as const)
-          : !licensed
+          : !moduleLicensed
             ? ('disabled' as const)
             : license.mode === 'read_only'
               ? ('read_only' as const)

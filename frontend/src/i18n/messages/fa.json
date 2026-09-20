@@ -1074,7 +1074,11 @@
     "licenseUpdateBundle": "به‌روزرسانی باندل پرمیوم",
     "licenseRecheck": "بررسی مجدد لایسنس",
     "licenseDeactivate": "غیرفعال‌سازی",
-    "licenseLastHeartbeat": "آخرین heartbeat: {date}"
+    "licenseLastHeartbeat": "آخرین heartbeat: {date}",
+    "licensePlanLabel": "پلن",
+    "licensePlanLegacyFull": "Legacy Full (همه ماژول‌ها)",
+    "licensePlanCustom": "سفارشی / ماژولار",
+    "licenseModulesLabel": "ماژول‌های مجاز"
   },
   "premium": {
     "settingsTitle": "تنظیمات پرمیوم",

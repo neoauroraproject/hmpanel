@@ -47,6 +47,9 @@ export class PlatformController {
     const bundle = await this.licenseActivation.getBundleStatus();
     return {
       ...state,
+      licensedModules: await this.licenseManager.getLicensedModuleIds(),
+      legacyFull: state.legacyFull === true,
+      licensePlan: state.licensePlan ?? null,
       bundle,
       supportUrl: PREMIUM_SUPPORT_URL,
       licenseServer: {

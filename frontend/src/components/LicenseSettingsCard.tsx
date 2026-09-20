@@ -101,7 +101,33 @@ export function LicenseSettingsCard() {
             </p>
           )}
         </div>
+        {isPremium ? (
+          <div className="col-span-2">
+            <span className="text-zinc-500">{t("settings.licensePlanLabel")}</span>
+            <p className="font-medium">
+              {state?.legacyFull
+                ? t("settings.licensePlanLegacyFull")
+                : state?.licensePlan || t("settings.licensePlanCustom")}
+            </p>
+          </div>
+        ) : null}
       </div>
+
+      {isPremium && (state?.licensedModules?.length ?? 0) > 0 ? (
+        <div className="mb-4">
+          <span className="text-sm text-zinc-500">{t("settings.licenseModulesLabel")}</span>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {(state?.licensedModules || []).map((mod) => (
+              <span
+                key={mod}
+                className="rounded-md bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300"
+              >
+                {mod}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       <a
         href={SUPPORT_URL}

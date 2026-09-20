@@ -1074,7 +1074,11 @@
     "licenseUpdateBundle": "Update premium bundle",
     "licenseRecheck": "Re-check license",
     "licenseDeactivate": "Deactivate",
-    "licenseLastHeartbeat": "Last heartbeat: {date}"
+    "licenseLastHeartbeat": "Last heartbeat: {date}",
+    "licensePlanLabel": "Plan",
+    "licensePlanLegacyFull": "Legacy Full (all modules)",
+    "licensePlanCustom": "Custom / modular",
+    "licenseModulesLabel": "Licensed modules"
   },
   "premium": {
     "settingsTitle": "Premium Settings",

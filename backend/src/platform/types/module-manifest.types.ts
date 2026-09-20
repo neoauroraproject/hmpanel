@@ -53,7 +53,16 @@ export interface LicenseState {
   mode: LicenseMode;
   expiresAt: string | null;
   graceEndsAt: string | null;
+  /**
+   * Module ids, kept in sync with `licensedModules`. The field name predates modular
+   * licensing; legacy feature ids are normalised to module ids on read and on write.
+   */
   licensedFeatures: string[];
+  /** Licensed module ids (`store`, `payment-management`, …). Empty means nothing licensed. */
+  licensedModules?: string[];
+  /** Pre-modular license that entitles the whole catalog. Never inferred from an empty list. */
+  legacyFull?: boolean;
+  licensePlan?: string | null;
   edition: 'COMMUNITY' | 'PREMIUM';
   lastHeartbeatAt?: string | null;
   lastServerCheckAt?: string | null;
