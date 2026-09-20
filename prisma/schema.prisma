@@ -851,6 +851,10 @@ model StoreProduct {
   digitalDeliveryMode String @default("AUTOMATIC")
   /// Optional message template shown with the delivered code. Use {code} placeholder.
   digitalDeliveryMessage String?
+  /// Optional text shown when the order is placed / awaiting delivery.
+  digitalOrderMessage String?
+  /// Optional usage guide appended after delivery.
+  digitalGuideMessage String?
   name         String
   description  String?
   priceToman   Float?
@@ -1345,6 +1349,8 @@ model PaygPlan {
   pricePerHour           Float?
   pricePerGb             Float?
   limitIp                Int      @default(0)
+  /// JSON: [{ limitIp, priceExtra, label }] — priceExtra adds per GB (VOLUME) or per hour (TIME)
+  deviceTiers            Json?
   provisioningProfileId  String
   minWalletBalance       Float?
   sortOrder              Int      @default(0)
@@ -1369,6 +1375,10 @@ model PaygSubscription {
   clientId         String?
   /// PENDING | ACTIVE | SUSPENDED | CLOSED | CANCELLED
   status           String    @default("PENDING")
+  /// Concurrent device/IP limit chosen at activation
+  limitIp          Int       @default(0)
+  /// Snapshot: tier extra added to base unit price (per GB or per hour)
+  unitPriceExtra   Float     @default(0)
   meterCursorBytes BigInt    @default(0)
   meterCursorAt    DateTime?
   lastBilledAt     DateTime?

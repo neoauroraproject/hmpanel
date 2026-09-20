@@ -8,6 +8,15 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [2.3.3] - 2026-09-20
+
+### Added
+- **PAYG device tiers schema:** `PaygPlan.deviceTiers`, subscription `limitIp` / `unitPriceExtra`.
+- **Digital product messages:** `digitalOrderMessage`, `digitalGuideMessage` columns.
+
+### Notes
+- Runtime PAYG bot/UI and Digital Goods admin ship in Premium bundle 2.3.2.
+
 ## [2.3.2] - 2026-09-20
 
 ### Fixed
