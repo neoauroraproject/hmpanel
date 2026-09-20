@@ -66,6 +66,57 @@ export class StoreCustomerService {
     );
   }
 
+  private getClientCategories(metadata: unknown): Record<string, string> {
+    const meta = (metadata || {}) as { clientCategories?: unknown };
+    if (!meta.clientCategories || typeof meta.clientCategories !== 'object') return {};
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(meta.clientCategories as Record<string, unknown>)) {
+      if (typeof k === 'string' && k && typeof v === 'string' && v) out[k] = v;
+    }
+    return out;
+  }
+
+  /** Newest fulfilled order wins; claimed metadata fills gaps. */
+  private categoryIdByClientId(
+    orders: Array<{
+      id?: string;
+      clientId: string | null;
+      renewClientId?: string | null;
+      createdAt?: Date;
+      fulfillment?: unknown;
+      product?: { categoryId?: string | null } | null;
+    }>,
+    metadata?: unknown,
+  ): Map<string, string> {
+    const sorted = [...orders].sort((a, b) => {
+      const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return tb - ta;
+    });
+    const map = new Map<string, string>();
+    for (const order of sorted) {
+      const cat = order.product?.categoryId;
+      if (!cat) continue;
+      if (order.clientId && !map.has(order.clientId)) map.set(order.clientId, cat);
+      if (order.renewClientId && !map.has(order.renewClientId)) {
+        map.set(order.renewClientId, cat);
+      }
+      if (order.id && isEylanProvider(parseFulfillment(order.fulfillment)?.providerId)) {
+        const sid = eylanServiceId(order.id);
+        if (!map.has(sid)) map.set(sid, cat);
+      }
+      if (order.id && isPasarguardProvider(parseFulfillment(order.fulfillment)?.providerId)) {
+        const sid = pasarguardServiceId(order.id);
+        if (!map.has(sid)) map.set(sid, cat);
+      }
+    }
+    const claimed = this.getClientCategories(metadata);
+    for (const [clientId, categoryId] of Object.entries(claimed)) {
+      if (clientId && categoryId && !map.has(clientId)) map.set(clientId, categoryId);
+    }
+    return map;
+  }
+
   private collectServiceClientIds(
     orders: Array<{ clientId: string | null; renewClientId?: string | null }>,
     metadata?: unknown,
@@ -805,6 +856,25 @@ export class StoreCustomerService {
       customer.metadata,
     );
 
+    const categoryByClient = this.categoryIdByClientId(customer.orders, customer.metadata);
+    const categoryIds = [...new Set([...categoryByClient.values()])];
+    const categoryNameById = new Map<string, string>();
+    if (categoryIds.length) {
+      const cats = await this.prisma.productCategory.findMany({
+        where: { adminId, id: { in: categoryIds } },
+        select: { id: true, name: true },
+      });
+      for (const cat of cats) categoryNameById.set(cat.id, cat.name);
+    }
+    const servicesWithCategory = services.map((service) => {
+      const categoryId = categoryByClient.get(String(service.id)) || null;
+      return {
+        ...service,
+        categoryId,
+        categoryName: categoryId ? categoryNameById.get(categoryId) || null : null,
+      };
+    });
+
     const ledger = customer.wallet
       ? await this.prisma.storeWalletLedger.findMany({
           where: { accountId: customer.wallet.id },
@@ -815,7 +885,7 @@ export class StoreCustomerService {
 
     return {
       ...customer,
-      services,
+      services: servicesWithCategory,
       referral: await this.getReferralStats(customer.id),
       walletBalance: customer.wallet?.balance ?? 0,
       walletCurrency: customer.wallet?.currency ?? null,

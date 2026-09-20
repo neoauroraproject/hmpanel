@@ -6094,6 +6094,28 @@ export class StoreService implements OnModuleInit {
     });
     if (!category) throw new BadRequestException('Invalid category');
 
+    const detail = await this.customers.getDetail(adminId, customerId);
+    const alreadyLinked = !!(detail?.services || []).some(
+      (s: { id: string }) => s.id === clientId,
+    );
+
+    // Synthetic Eylan / Pasarguard services: category only (no Community Client row).
+    if (parseEylanServiceId(clientId) || parsePasarguardServiceId(clientId)) {
+      if (!alreadyLinked) {
+        throw new BadRequestException('Service is not linked to this customer');
+      }
+      await this.linkClientToCustomer(customerId, clientId, categoryId);
+      await this.unhideCustomerService(customerId, clientId);
+      return this.customers.getDetail(adminId, customerId);
+    }
+
+    // Already linked 3x-ui service: update category without re-validating ownership.
+    if (alreadyLinked) {
+      await this.linkClientToCustomer(customerId, clientId, categoryId);
+      await this.unhideCustomerService(customerId, clientId);
+      return this.customers.getDetail(adminId, customerId);
+    }
+
     const client = await this.prisma.client.findFirst({
       where: {
         id: clientId,
