@@ -11,6 +11,7 @@ import EclipseTheme from "./themes/EclipseTheme";
 import SunsetTheme from "./themes/SunsetTheme";
 import GlassTheme from "./themes/GlassTheme";
 import VibrantTheme from "./themes/VibrantTheme";
+import PaygSubPortal, { type PaygSubPortalPayload } from "./themes/PaygSubPortal";
 
 export default function SubscriptionPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -26,7 +27,19 @@ export default function SubscriptionPage({ params }: { params: Promise<{ id: str
     retry: false,
   });
 
-  if (isLoading) {
+  const { data: payg, isFetched: paygFetched } = useQuery({
+    queryKey: ["payg-sub-portal", id],
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE}/store/payg-sub/${encodeURIComponent(id)}`);
+      if (!res.ok) return null;
+      const json = (await res.json()) as PaygSubPortalPayload | null;
+      return json?.payg ? json : null;
+    },
+    retry: false,
+    enabled: !!id,
+  });
+
+  if (isLoading || !paygFetched) {
     return (
       <div className="flex h-full min-h-[100dvh] items-center justify-center bg-[#07101f]">
         <div className="h-12 w-12 animate-spin rounded-full border-4 border-slate-800 border-t-teal-400" />
@@ -42,6 +55,10 @@ export default function SubscriptionPage({ params }: { params: Promise<{ id: str
         <p className="mt-2 text-slate-400">This link may be invalid, expired, or deleted.</p>
       </div>
     );
+  }
+
+  if (payg?.payg) {
+    return <PaygSubPortal id={id} data={data} payg={payg} />;
   }
 
   const currentTheme = normalizePortalTheme(data.portalSettings?.theme);
