@@ -2345,6 +2345,20 @@ export class PanelsService implements OnModuleInit {
   //   → treat CLIENT_NOT_FOUND as successful rollback.
   // ═══════════════════════════════════════════════════════════════════════════
 
+  private async raceTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        promise,
+        new Promise<null>((resolve) => {
+          timer = setTimeout(() => resolve(null), ms);
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
   private async getPanelHttpContext(panelId: string) {
     const panel = await this.findOne(panelId);
     const base = resolvePanelApiBaseUrl(panel);
@@ -3289,9 +3303,9 @@ export class PanelsService implements OnModuleInit {
   }
 
   /**
-   * Live up/down for one client from 3x-ui, without the verbose verify logs.
-   * Used by PAYG volume metering (every 10s). Keep timeout short so a slow
-   * panel cannot stall the whole tick.
+   * Live up/down for one client from the panel, without the verbose verify logs.
+   * Used by PAYG volume metering (every 10s / hourly). Keep timeout short so a
+   * slow panel cannot stall the whole tick.
    */
   async getClientTrafficBytes(
     panelId: string,
@@ -3302,7 +3316,15 @@ export class PanelsService implements OnModuleInit {
     if (!panelId || !trimmed) return null;
     const timeout = Math.max(1000, Math.min(8_000, Number(opts?.timeoutMs) || 4_000));
     try {
-      const { base, headers, agent } = await this.getPanelHttpContext(panelId);
+      const { panel, base, headers, agent } = await this.getPanelHttpContext(panelId);
+      if (isExternalPanelType(panel.panelType)) {
+        const driver = this.panelDrivers.get(panel.panelType);
+        if (!driver?.getClient) return null;
+        if (!(await this.panelGate.canOperate(panel))) return null;
+        const snap = await this.raceTimeout(driver.getClient(panelId, trimmed), timeout);
+        if (!snap) return null;
+        return { up: snap.up ?? 0n, down: snap.down ?? 0n };
+      }
       const endpoint = `${base}/panel/api/clients/get/${encodeURIComponent(trimmed)}`;
       const res = await axios.get(endpoint, {
         headers,
@@ -3327,12 +3349,20 @@ export class PanelsService implements OnModuleInit {
 
   /**
    * Cheap online-email list for one panel. Returns [] when nobody is online,
-   * null when the panel did not answer — callers must not fall back to a
-   * full inbound dump on the 10s PAYG path.
+   * null when the panel did not answer or has no cheap onlines API — callers
+   * must not fall back to a full inbound dump on the 10s PAYG path.
    */
   async getOnlineClientEmails(panelId: string): Promise<string[] | null> {
     if (!panelId) return null;
     try {
+      const panel = await this.prisma.panel.findUnique({
+        where: { id: panelId },
+        select: { panelType: true },
+      });
+      if (panel && isExternalPanelType(panel.panelType)) {
+        // Native getOnlines lists every user. Too expensive for a 10s tick.
+        return null;
+      }
       const { base, headers, agent } = await this.getPanelHttpContext(panelId);
       for (const path of [
         '/panel/api/clients/onlines',

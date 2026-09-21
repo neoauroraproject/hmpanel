@@ -10,15 +10,12 @@ import axios from 'axios';
 import * as https from 'https';
 import { Response, Request } from 'express';
 import { normalizeTelegramLink } from '../common/utils/telegram-link';
-import { collectNativeSubscriptionUrls, collectPublicNativeSubscriptionUrls, customerFacingSubscriptionUrl, panelApiHostnames } from '../common/utils/native-sub-url';
+import { collectNativeSubscriptionUrls, collectPublicNativeSubscriptionUrls, customerFacingSubscriptionUrl, panelDeliveryHostnames, panelSubUrlHostnames } from '../common/utils/native-sub-url';
 import { isExternalPanelType } from '../panels/native/native-panel-capabilities';
 import { supports3xUi380Api } from '../common/utils/panel-version.util';
 import {
   getUriRemark,
-  matchHostForEndpoint,
   parseUriEndpoint,
-  pickConfigDisplayName,
-  setUriRemark,
 } from '../common/utils/sub-link-remark';
 import {
   looksLikeStructuredSubFeed,
@@ -222,119 +219,6 @@ export class SubscriptionsService {
     };
   }
 
-  private inboundForEndpoint(
-    inbounds: Array<{
-      port?: number;
-      protocol?: string;
-      panelInboundId?: number | null;
-      remark?: string | null;
-      tag?: string;
-      nodeName?: string | null;
-      panel?: { id?: string } | null;
-    }>,
-    endpoint: { address: string; port: number } | null,
-    protocol: string,
-  ) {
-    if (!inbounds?.length) return null;
-    if (endpoint?.port) {
-      const byPort = inbounds.filter((ib) => Number(ib.port) === endpoint.port);
-      if (byPort.length === 1) return byPort[0];
-      if (byPort.length > 1) {
-        const proto = protocol.toLowerCase();
-        const byProto = byPort.find(
-          (ib) => String(ib.protocol || '').toLowerCase() === proto,
-        );
-        if (byProto) return byProto;
-        return byPort[0];
-      }
-    }
-    // Do not fall back to the first inbound — that reused one name (e.g. US) on another node.
-    return null;
-  }
-
-  /**
-   * Keep the real 3x-ui URI name when it isn't the client email.
-   * Only rewrite blank/email fragments using host or inbound remarks.
-   */
-  private async applyConfigDisplayNames(
-    nodes: PortalNode[],
-    input: {
-      email?: string | null;
-      inbounds?: Array<{
-        port?: number;
-        protocol?: string;
-        panelInboundId?: number | null;
-        remark?: string | null;
-        tag?: string;
-        nodeName?: string | null;
-        panel?: { id?: string } | null;
-      }>;
-    },
-  ): Promise<PortalNode[]> {
-    if (!nodes.length) return nodes;
-    const inbounds = input.inbounds || [];
-    const email = String(input.email || '').trim();
-    const hostsByPanel = new Map<string, any[]>();
-    for (const panelId of this.collectPanelIds(inbounds as any)) {
-      try {
-        hostsByPanel.set(
-          panelId,
-          await this.panelsService.getPanelHostEndpoints(panelId),
-        );
-      } catch {
-        hostsByPanel.set(panelId, []);
-      }
-    }
-    for (const ib of inbounds) {
-      const panelId = ib.panel?.id;
-      const inboundId = Number(ib.panelInboundId || 0);
-      if (!panelId || !inboundId) continue;
-      const existing = hostsByPanel.get(panelId) || [];
-      if (existing.some((h) => Number(h.inboundId) === inboundId && h.remark)) {
-        continue;
-      }
-      try {
-        const extra = await this.panelsService.getPanelHostsByInbound(
-          panelId,
-          inboundId,
-        );
-        if (extra.length) {
-          hostsByPanel.set(panelId, [...existing, ...extra]);
-        }
-      } catch {
-        /* ignore */
-      }
-    }
-
-    return nodes.map((node) => {
-      const endpoint = parseUriEndpoint(node.link);
-      const inbound = this.inboundForEndpoint(
-        inbounds,
-        endpoint,
-        node.protocol,
-      );
-      const hosts = inbound?.panel?.id
-        ? hostsByPanel.get(inbound.panel.id) || []
-        : [...hostsByPanel.values()].flat();
-      const host = endpoint
-        ? matchHostForEndpoint(hosts, endpoint, inbound?.panelInboundId)
-        : null;
-      const name = pickConfigDisplayName({
-        hostRemark: host?.remark,
-        inboundRemark: inbound?.remark,
-        inboundTag: inbound?.tag,
-        nodeName: inbound?.nodeName,
-        existingRemark: node.tag,
-        email,
-      });
-      return {
-        ...node,
-        tag: name,
-        link: setUriRemark(node.link, name),
-      };
-    });
-  }
-
   private parseUriNodesFromText(content: string): PortalNode[] {
     const decoded = this.tryDecodeSubBody(content);
     const lines = String(decoded)
@@ -405,11 +289,11 @@ export class SubscriptionsService {
     return panelHosts.includes(addr);
   }
 
-  private nodesStampedWithPanelApiHost(
+  private nodesStampedWithDeliveryHost(
     nodes: PortalNode[],
-    inbounds: Array<{ panel?: { url?: string | null } | null }>,
+    inbounds: Array<{ panel?: { url?: string | null; subUrl?: string | null } | null }>,
   ): boolean {
-    const hosts = panelApiHostnames(inbounds);
+    const hosts = panelDeliveryHostnames(inbounds);
     if (!hosts.length) return false;
     return nodes.some((n) => this.uriUsesPanelApiHost(n.link, hosts));
   }
@@ -448,10 +332,9 @@ export class SubscriptionsService {
   }
 
   /**
-   * Individual configs must stay exactly as 3x-ui emitted them.
-   * Public `panel.subUrl` first (same feed as the native button). If that
-   * feed is empty or stamped with the panel API hostname, use 3x-ui Copy URL.
-   * Never rewrite vless/vmess hosts — only display names.
+   * Individual configs must match 3x-ui "Copy URL" exactly.
+   * Fetching public `/sub/` uses the subscription CDN as request Host, and
+   * 3x-ui then stamps that host/port into vless (b1sub.example vs b1.example).
    */
   private async resolveProtocolNodes(input: {
     email: string;
@@ -460,33 +343,35 @@ export class SubscriptionsService {
   }): Promise<PortalNode[]> {
     const { email, subId, inbounds } = input;
     const key = subId || email;
-    const publicFeeds = collectPublicNativeSubscriptionUrls(inbounds || [], key);
-    let nodes = publicFeeds.length ? await this.pullUriNodesFromUrls(publicFeeds) : [];
-    const stamped = nodes.length > 0 && this.nodesStampedWithPanelApiHost(nodes, inbounds || []);
 
-    if (!nodes.length || stamped) {
-      if (stamped) {
-        this.logger.warn(
-          `[SUB_NODES] Native feed stamped panel API host into configs email=${email}; using 3x-ui copy links`,
-        );
-      }
-      const apiNodes = await this.fetchNodesFromPanelApi(inbounds || [], email, subId);
-      if (apiNodes.length) return apiNodes;
+    const apiNodes = await this.fetchNodesFromPanelApi(inbounds || [], email, subId);
+    if (apiNodes.length) {
+      const subHosts = panelSubUrlHostnames(inbounds || []);
+      const withoutCdn = subHosts.length
+        ? apiNodes.filter((n) => !this.uriUsesPanelApiHost(n.link, subHosts))
+        : apiNodes;
+      return withoutCdn.length ? withoutCdn : apiNodes;
     }
 
-    if (nodes.length) return nodes;
+    const publicFeeds = collectPublicNativeSubscriptionUrls(inbounds || [], key);
+    let nodes = publicFeeds.length ? await this.pullUriNodesFromUrls(publicFeeds) : [];
+    if (nodes.length && !this.nodesStampedWithDeliveryHost(nodes, inbounds || [])) {
+      return nodes;
+    }
+    if (nodes.length) {
+      this.logger.warn(
+        `[SUB_NODES] Public /sub/ stamped delivery host into configs email=${email}; ignored`,
+      );
+    }
 
     const fallback = collectNativeSubscriptionUrls(inbounds || [], key).filter(
       (u) => !publicFeeds.includes(u),
     );
     if (fallback.length) {
       nodes = await this.pullUriNodesFromUrls(fallback);
-      if (nodes.length && !this.nodesStampedWithPanelApiHost(nodes, inbounds || [])) {
+      if (nodes.length && !this.nodesStampedWithDeliveryHost(nodes, inbounds || [])) {
         return nodes;
       }
-      const apiNodes = await this.fetchNodesFromPanelApi(inbounds || [], email, subId);
-      if (apiNodes.length) return apiNodes;
-      if (nodes.length) return nodes;
     }
 
     return [];
@@ -509,10 +394,7 @@ export class SubscriptionsService {
           client.panelId,
           { email, subId: client.subId || subId },
         );
-        return this.applyConfigDisplayNames(
-          links.map((l) => this.uriLineToNode(l)),
-          { email, inbounds: [{ panel: { id: client.panelId } }] },
-        );
+        return links.map((l) => this.uriLineToNode(l));
       }
       return [];
     }
@@ -523,7 +405,7 @@ export class SubscriptionsService {
     } else {
       this.logger.log(`[SUB_NODES] email=${email} → ${nodes.length} node(s)`);
     }
-    return this.applyConfigDisplayNames(nodes, { email, inbounds });
+    return nodes;
   }
 
   async proxySubscription(token: string, req: Request, res: Response) {
@@ -571,6 +453,21 @@ export class SubscriptionsService {
       });
       const panelType = String((details as { panelType?: string | null }).panelType || '').toLowerCase();
       const isExternal = isExternalPanelType(panelType);
+
+      if (!isExternal) {
+        const resolved = await this.resolveProtocolNodes({ email, subId, inbounds });
+        if (resolved.length) {
+          this.writeSubscriptionHeaders(res, details, {
+            token,
+            origin: getRequestOrigin(req),
+          });
+          res.setHeader('Content-Type', 'text/plain');
+          return res.send(
+            Buffer.from(resolved.map((n) => n.link).join('\n')).toString('base64'),
+          );
+        }
+      }
+
       const nativeUrls = isExternal
         ? nativeFromProvider
           ? [nativeFromProvider]
@@ -672,7 +569,7 @@ export class SubscriptionsService {
       let uriLines = lines.filter((l) => /^[a-z0-9+.-]+:\/\//i.test(l));
       const stamped =
         uriLines.length > 0 &&
-        this.nodesStampedWithPanelApiHost(
+        this.nodesStampedWithDeliveryHost(
           uriLines.map((l) => this.uriLineToNode(l)),
           inbounds,
         );
@@ -680,7 +577,7 @@ export class SubscriptionsService {
       if (uriLines.length === 0 || stamped) {
         if (stamped) {
           this.logger.warn(
-            `[SUB_PROXY] Native feed stamped panel API host into configs email=${email}; using 3x-ui copy links`,
+            `[SUB_PROXY] Native feed stamped delivery host into configs email=${email}; using 3x-ui copy links`,
           );
         } else {
           this.logger.warn(

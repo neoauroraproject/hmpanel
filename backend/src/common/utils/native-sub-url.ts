@@ -77,6 +77,19 @@ export function collectPublicNativeSubscriptionUrls(
   return [...urls];
 }
 
+export function hostnameFromPanelUrl(raw: string | null | undefined): string | null {
+  const value = String(raw || '').trim();
+  if (!value) return null;
+  try {
+    const host = new URL(value.includes('://') ? value : `https://${value}`).hostname
+      .replace(/^www\./i, '')
+      .toLowerCase();
+    return host || null;
+  } catch {
+    return null;
+  }
+}
+
 export function panelApiHostnames(
   inbounds: Array<{
     panel?: { url?: string | null } | null;
@@ -84,17 +97,39 @@ export function panelApiHostnames(
 ): string[] {
   const hosts = new Set<string>();
   for (const ib of inbounds || []) {
-    const raw = String(ib?.panel?.url || '').trim();
-    if (!raw) continue;
-    try {
-      const host = new URL(raw.includes('://') ? raw : `https://${raw}`).hostname
-        .replace(/^www\./i, '')
-        .toLowerCase();
-      if (host) hosts.add(host);
-    } catch {
-      /* ignore */
-    }
+    const host = hostnameFromPanelUrl(ib?.panel?.url);
+    if (host) hosts.add(host);
   }
+  return [...hosts];
+}
+
+export function panelSubUrlHostnames(
+  inbounds: Array<{
+    panel?: { subUrl?: string | null } | null;
+  }>,
+): string[] {
+  const hosts = new Set<string>();
+  for (const ib of inbounds || []) {
+    const host = hostnameFromPanelUrl(ib?.panel?.subUrl);
+    if (host) hosts.add(host);
+  }
+  return [...hosts];
+}
+
+/**
+ * Hostnames that 3x-ui `/sub/` may stamp into vless/vmess when Hosts are empty
+ * or when the request Host is the subscription CDN — never treat these as node
+ * addresses. Includes both the API URL and `panel.subUrl`.
+ */
+export function panelDeliveryHostnames(
+  inbounds: Array<{
+    panel?: { url?: string | null; subUrl?: string | null } | null;
+  }>,
+): string[] {
+  const hosts = new Set<string>([
+    ...panelApiHostnames(inbounds),
+    ...panelSubUrlHostnames(inbounds),
+  ]);
   return [...hosts];
 }
 

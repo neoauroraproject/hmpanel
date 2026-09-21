@@ -2,6 +2,8 @@ import {
   collectPublicNativeSubscriptionUrls,
   customerFacingSubscriptionUrl,
   panelApiHostnames,
+  panelDeliveryHostnames,
+  panelSubUrlHostnames,
   rewriteSubscriptionDeliveryHost,
   subscriptionUrlFromProviderMeta,
 } from './native-sub-url';
@@ -62,5 +64,26 @@ describe('native-sub-url extras', () => {
         { panel: { url: 'https://panel.wrong.test:2053/path' } },
       ]),
     ).toEqual(['panel.wrong.test']);
+  });
+
+  it('lists both API and subscription CDN hosts as delivery stamps', () => {
+    expect(
+      panelDeliveryHostnames([
+        {
+          panel: {
+            url: 'https://panel.api.test:2053',
+            subUrl: 'https://b1sub.hmray.pro/sub',
+          },
+        },
+      ]).sort(),
+    ).toEqual(['b1sub.hmray.pro', 'panel.api.test']);
+  });
+
+  it('lists subscription CDN hosts separately from the API host', () => {
+    expect(
+      panelSubUrlHostnames([
+        { panel: { subUrl: 'https://b1sub.hmray.pro/sub' } },
+      ]),
+    ).toEqual(['b1sub.hmray.pro']);
   });
 });
