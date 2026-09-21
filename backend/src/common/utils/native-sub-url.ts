@@ -53,6 +53,51 @@ export function collectNativeSubscriptionUrls(
   return [...urls];
 }
 
+/**
+ * Public 3x-ui /sub/ feeds only (`panel.subUrl`).
+ * Fetching `/sub/` from `panel.url` (API host) makes 3x-ui stamp that host
+ * into vless/vmess addresses when Hosts are empty — never use that for configs.
+ */
+export function collectPublicNativeSubscriptionUrls(
+  inbounds: Array<{
+    panel?: {
+      subUrl?: string | null;
+      url?: string | null;
+    } | null;
+  }>,
+  key: string,
+): string[] {
+  const urls = new Set<string>();
+  for (const ib of inbounds || []) {
+    const subUrl = String(ib?.panel?.subUrl || '').trim();
+    if (!subUrl) continue;
+    const built = buildNativeSubscriptionUrl(subUrl, null, key);
+    if (built) urls.add(built);
+  }
+  return [...urls];
+}
+
+export function panelApiHostnames(
+  inbounds: Array<{
+    panel?: { url?: string | null } | null;
+  }>,
+): string[] {
+  const hosts = new Set<string>();
+  for (const ib of inbounds || []) {
+    const raw = String(ib?.panel?.url || '').trim();
+    if (!raw) continue;
+    try {
+      const host = new URL(raw.includes('://') ? raw : `https://${raw}`).hostname
+        .replace(/^www\./i, '')
+        .toLowerCase();
+      if (host) hosts.add(host);
+    } catch {
+      /* ignore */
+    }
+  }
+  return [...hosts];
+}
+
 /** Prefer a stored provider snapshot URL over a constructed 3x-ui `/sub/{key}` path. */
 export function subscriptionUrlFromProviderMeta(meta: unknown): string | null {
   if (!meta || typeof meta !== 'object') return null;

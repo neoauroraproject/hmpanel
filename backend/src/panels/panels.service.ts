@@ -3289,6 +3289,75 @@ export class PanelsService implements OnModuleInit {
   }
 
   /**
+   * Live up/down for one client from 3x-ui, without the verbose verify logs.
+   * Used by PAYG volume metering (every 10s). Keep timeout short so a slow
+   * panel cannot stall the whole tick.
+   */
+  async getClientTrafficBytes(
+    panelId: string,
+    email: string,
+    opts?: { timeoutMs?: number },
+  ): Promise<{ up: bigint; down: bigint } | null> {
+    const trimmed = String(email || '').trim();
+    if (!panelId || !trimmed) return null;
+    const timeout = Math.max(1000, Math.min(8_000, Number(opts?.timeoutMs) || 4_000));
+    try {
+      const { base, headers, agent } = await this.getPanelHttpContext(panelId);
+      const endpoint = `${base}/panel/api/clients/get/${encodeURIComponent(trimmed)}`;
+      const res = await axios.get(endpoint, {
+        headers,
+        httpsAgent: agent,
+        timeout,
+      });
+      if (res.data?.success !== true || res.data?.obj == null) return null;
+      const parsed = this.parseClientGetObj(res.data.obj);
+      const client = parsed.client;
+      if (!client) return null;
+      const up = Number(client.traffic?.up ?? client.up ?? 0);
+      const down = Number(client.traffic?.down ?? client.down ?? 0);
+      if (!Number.isFinite(up) || !Number.isFinite(down)) return null;
+      return {
+        up: BigInt(Math.max(0, Math.floor(up))),
+        down: BigInt(Math.max(0, Math.floor(down))),
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Cheap online-email list for one panel. Returns [] when nobody is online,
+   * null when the panel did not answer — callers must not fall back to a
+   * full inbound dump on the 10s PAYG path.
+   */
+  async getOnlineClientEmails(panelId: string): Promise<string[] | null> {
+    if (!panelId) return null;
+    try {
+      const { base, headers, agent } = await this.getPanelHttpContext(panelId);
+      for (const path of [
+        '/panel/api/clients/onlines',
+        '/panel/api/inbounds/onlines',
+      ]) {
+        try {
+          const res = await axios.post(
+            `${base}${path}`,
+            {},
+            { headers, httpsAgent: agent, timeout: 4_000 },
+          );
+          if (res.data?.success) {
+            return extractOnlineEmails(res.data.obj ?? res.data);
+          }
+        } catch {
+          /* try next path */
+        }
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Host endpoints from 3x-ui (Hosts page). Remarks here are the names
    * that should appear on subscription configs — not the client email.
    */

@@ -2654,6 +2654,8 @@ server {
     }
 
     location /s/ {
+        gzip off;
+        proxy_set_header Accept-Encoding "";
         proxy_pass http://backend/s/;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -2727,6 +2729,8 @@ server {
     }
 
     location /s/ {
+        gzip off;
+        proxy_set_header Accept-Encoding "";
         proxy_pass http://backend/s/;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -2735,6 +2739,8 @@ server {
     }
 
     location /sub/ {
+        gzip off;
+        proxy_set_header Accept-Encoding "";
         proxy_pass http://backend/sub/;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;

@@ -211,7 +211,6 @@ function UsageMeter({
   usedLabel,
   remainCaption,
   usedCaption,
-  low,
 }: {
   pct: number;
   accent: string;
@@ -219,60 +218,37 @@ function UsageMeter({
   usedLabel: string;
   remainCaption: string;
   usedCaption: string;
-  low: boolean;
+  low?: boolean;
 }) {
   const remainPct = Math.max(0, Math.min(100, pct));
+  const cells = 28;
+  const filled = Math.round((remainPct / 100) * cells);
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       <div
-        className="relative h-24 overflow-hidden rounded-[28px] bg-zinc-950 p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.14)]"
+        className="flex h-2.5 w-full gap-[3px]"
         role="meter"
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={Math.round(remainPct)}
         aria-label={`${remainCaption} ${remainLabel}`}
       >
-        <div
-          className="pointer-events-none absolute inset-0 opacity-35"
-          style={{
-            backgroundImage:
-              "repeating-linear-gradient(115deg, transparent 0 12px, rgba(255,255,255,0.05) 12px 13px)",
-          }}
-        />
-        {[25, 50, 75].map((tick) => (
+        {Array.from({ length: cells }, (_, i) => (
           <div
-            key={tick}
-            className="pointer-events-none absolute top-4 bottom-4 w-px bg-white/10"
-            style={{ insetInlineStart: `${tick}%` }}
+            key={i}
+            className="h-full min-w-0 flex-1 rounded-[1px]"
+            style={{ background: i < filled ? accent : "rgba(24,24,27,0.12)" }}
           />
         ))}
-        <div
-          className="relative h-full overflow-hidden rounded-[20px] motion-safe:transition-[width] motion-safe:duration-500 motion-reduce:transition-none"
-          style={{
-            width: `${remainPct}%`,
-            background: `linear-gradient(90deg, ${accent} 0%, color-mix(in srgb, ${accent} 82%, white) 100%)`,
-            boxShadow: low ? "0 0 32px rgba(245, 158, 11, 0.4)" : `0 0 36px ${accent}73`,
-          }}
-        >
-          <div className="absolute inset-0 bg-gradient-to-b from-white/40 via-white/5 to-black/15" />
-          {remainPct >= 16 ? (
-            <div className="absolute end-2 top-1/2 z-10 flex h-11 min-w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/95 px-2.5 text-xs font-bold tabular-nums text-zinc-950 shadow-lg">
-              {Math.round(remainPct)}%
-            </div>
-          ) : null}
-        </div>
       </div>
       <div className="flex items-end justify-between gap-3 text-sm">
         <div>
-          <div className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">{remainCaption}</div>
-          <div className="text-base font-semibold tabular-nums">{remainLabel}</div>
+          <div className="text-[11px] font-medium text-zinc-400">{remainCaption}</div>
+          <div className="text-sm font-semibold tabular-nums">{remainLabel}</div>
         </div>
-        {remainPct < 16 ? (
-          <div className="text-xs font-semibold tabular-nums text-zinc-500">{Math.round(remainPct)}%</div>
-        ) : null}
         <div className="text-end">
-          <div className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">{usedCaption}</div>
-          <div className="text-base font-semibold tabular-nums">{usedLabel}</div>
+          <div className="text-[11px] font-medium text-zinc-400">{usedCaption}</div>
+          <div className="text-sm font-semibold tabular-nums">{usedLabel}</div>
         </div>
       </div>
     </div>
@@ -860,7 +836,6 @@ export default function PaygSubPortal({
             usedLabel={usageQtyLabel}
             remainCaption={tf("باقی‌مانده", "Left")}
             usedCaption={tf("مصرف", "Used")}
-            low={payg.remaining.low}
           />
           <p className="mt-3 text-xs text-zinc-400">
             {tf(

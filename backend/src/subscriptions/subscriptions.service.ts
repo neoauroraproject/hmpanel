@@ -10,7 +10,7 @@ import axios from 'axios';
 import * as https from 'https';
 import { Response, Request } from 'express';
 import { normalizeTelegramLink } from '../common/utils/telegram-link';
-import { collectNativeSubscriptionUrls, customerFacingSubscriptionUrl } from '../common/utils/native-sub-url';
+import { collectNativeSubscriptionUrls, collectPublicNativeSubscriptionUrls, customerFacingSubscriptionUrl, panelApiHostnames } from '../common/utils/native-sub-url';
 import { isExternalPanelType } from '../panels/native/native-panel-capabilities';
 import { supports3xUi380Api } from '../common/utils/panel-version.util';
 import {
@@ -20,6 +20,13 @@ import {
   pickConfigDisplayName,
   setUriRemark,
 } from '../common/utils/sub-link-remark';
+import {
+  looksLikeStructuredSubFeed,
+  nativeFetchUserAgent,
+  structuredFeedContentType,
+  tryDecodeSubBody,
+} from '../common/utils/subscription-feed.util';
+import { getRequestOrigin } from '../common/utils/request-origin';
 import { PanelsService } from '../panels/panels.service';
 
 const NATIVE_SUB_UA = 'v2rayNG/1.10.0';
@@ -201,25 +208,8 @@ export class SubscriptionsService {
     };
   }
 
-  private looksLikeClash(s: string) {
-    return (
-      /^\s*(proxies|proxy-groups|rules|mixed-port|port)\s*:/m.test(s) ||
-      s.includes('proxy-groups:') ||
-      s.includes('\nproxies:')
-    );
-  }
-
   private tryDecodeSubBody(content: string): string {
-    const trimmed = content.trim();
-    if (!trimmed) return '';
-    if (this.looksLikeClash(trimmed) || /:\/\//.test(trimmed)) return trimmed;
-    try {
-      const decoded = Buffer.from(trimmed, 'base64').toString('utf-8');
-      if (this.looksLikeClash(decoded) || /:\/\//.test(decoded)) return decoded;
-    } catch {
-      /* keep original */
-    }
-    return trimmed;
+    return tryDecodeSubBody(content);
   }
 
   private uriLineToNode(line: string): PortalNode {
@@ -408,6 +398,100 @@ export class SubscriptionsService {
     return nodes;
   }
 
+  private uriUsesPanelApiHost(link: string, panelHosts: string[]): boolean {
+    const ep = parseUriEndpoint(link);
+    if (!ep?.address) return false;
+    const addr = ep.address.replace(/^www\./i, '').toLowerCase();
+    return panelHosts.includes(addr);
+  }
+
+  private nodesStampedWithPanelApiHost(
+    nodes: PortalNode[],
+    inbounds: Array<{ panel?: { url?: string | null } | null }>,
+  ): boolean {
+    const hosts = panelApiHostnames(inbounds);
+    if (!hosts.length) return false;
+    return nodes.some((n) => this.uriUsesPanelApiHost(n.link, hosts));
+  }
+
+  private async pullUriNodesFromUrls(urls: string[]): Promise<PortalNode[]> {
+    if (!urls.length) return [];
+    const nodes: PortalNode[] = [];
+    const seen = new Set<string>();
+    const responses = await Promise.all(
+      urls.map((url) =>
+        axios
+          .get(url, {
+            httpsAgent: new https.Agent({ rejectUnauthorized: false }),
+            timeout: 10000,
+            responseType: 'text',
+            transformResponse: [(d) => d],
+            headers: { 'User-Agent': NATIVE_SUB_UA },
+          })
+          .catch((err) => {
+            this.logger.error(`Failed to fetch native nodes from ${url}`, err.message);
+            return null;
+          }),
+      ),
+    );
+    for (const response of responses) {
+      if (!response || response.data == null) continue;
+      let content = response.data;
+      if (typeof content !== 'string') content = JSON.stringify(content);
+      for (const node of this.parseUriNodesFromText(content)) {
+        if (seen.has(node.link)) continue;
+        seen.add(node.link);
+        nodes.push(node);
+      }
+    }
+    return nodes;
+  }
+
+  /**
+   * Individual configs must stay exactly as 3x-ui emitted them.
+   * Public `panel.subUrl` first (same feed as the native button). If that
+   * feed is empty or stamped with the panel API hostname, use 3x-ui Copy URL.
+   * Never rewrite vless/vmess hosts — only display names.
+   */
+  private async resolveProtocolNodes(input: {
+    email: string;
+    subId?: string | null;
+    inbounds: any[];
+  }): Promise<PortalNode[]> {
+    const { email, subId, inbounds } = input;
+    const key = subId || email;
+    const publicFeeds = collectPublicNativeSubscriptionUrls(inbounds || [], key);
+    let nodes = publicFeeds.length ? await this.pullUriNodesFromUrls(publicFeeds) : [];
+    const stamped = nodes.length > 0 && this.nodesStampedWithPanelApiHost(nodes, inbounds || []);
+
+    if (!nodes.length || stamped) {
+      if (stamped) {
+        this.logger.warn(
+          `[SUB_NODES] Native feed stamped panel API host into configs email=${email}; using 3x-ui copy links`,
+        );
+      }
+      const apiNodes = await this.fetchNodesFromPanelApi(inbounds || [], email, subId);
+      if (apiNodes.length) return apiNodes;
+    }
+
+    if (nodes.length) return nodes;
+
+    const fallback = collectNativeSubscriptionUrls(inbounds || [], key).filter(
+      (u) => !publicFeeds.includes(u),
+    );
+    if (fallback.length) {
+      nodes = await this.pullUriNodesFromUrls(fallback);
+      if (nodes.length && !this.nodesStampedWithPanelApiHost(nodes, inbounds || [])) {
+        return nodes;
+      }
+      const apiNodes = await this.fetchNodesFromPanelApi(inbounds || [], email, subId);
+      if (apiNodes.length) return apiNodes;
+      if (nodes.length) return nodes;
+    }
+
+    return [];
+  }
+
   async getSubscriptionNodes(id: string) {
     const details = await this.getSubscriptionDetails(id);
     const { email, subId, inbounds } = details;
@@ -416,7 +500,6 @@ export class SubscriptionsService {
       this.logger.warn(
         `[SUB_NODES] No ClientInbound links for sub key=${id} email=${email}`,
       );
-      // Still try panel API if we know the panel via client.panelId
       const client = await this.prisma.client.findFirst({
         where: { email },
         select: { panelId: true, subId: true },
@@ -434,81 +517,12 @@ export class SubscriptionsService {
       return [];
     }
 
-    const nativeUrls = collectNativeSubscriptionUrls(
-      inbounds,
-      subId || email,
-    );
-
-    const nodes: PortalNode[] = [];
-    const seen = new Set<string>();
-
-    if (nativeUrls.length > 0) {
-      this.logger.debug(
-        `[SUB_NODES] Fetching ${nativeUrls.length} native feed(s) for email=${email}`,
-      );
-      try {
-        const fetchPromises = nativeUrls.map((url) =>
-          axios
-            .get(url, {
-              httpsAgent: new https.Agent({ rejectUnauthorized: false }),
-              timeout: 10000,
-              responseType: 'text',
-              transformResponse: [(d) => d],
-              headers: { 'User-Agent': NATIVE_SUB_UA },
-            })
-            .catch((err) => {
-              this.logger.error(
-                `Failed to fetch native nodes from ${url}`,
-                err.message,
-              );
-              return null;
-            }),
-        );
-
-        const responses = await Promise.all(fetchPromises);
-        for (const response of responses) {
-          if (!response || response.data == null) continue;
-          let content = response.data;
-          if (typeof content !== 'string') {
-            content = JSON.stringify(content);
-          }
-          for (const node of this.parseUriNodesFromText(content)) {
-            if (seen.has(node.link)) continue;
-            seen.add(node.link);
-            nodes.push(node);
-          }
-        }
-      } catch (error: any) {
-        this.logger.error(`Failed to aggregate nodes`, error.message);
-      }
-    }
-
-    if (nodes.length === 0) {
-      this.logger.warn(
-        `[SUB_NODES] Native feed empty for email=${email}; trying panel API links`,
-      );
-      const apiNodes = await this.fetchNodesFromPanelApi(
-        inbounds,
-        email,
-        subId,
-      );
-      for (const node of apiNodes) {
-        if (seen.has(node.link)) continue;
-        seen.add(node.link);
-        nodes.push(node);
-      }
-    }
-
-    if (nodes.length === 0) {
-      this.logger.warn(
-        `[SUB_NODES] No URI nodes for email=${email} (native + panel API)`,
-      );
+    const nodes = await this.resolveProtocolNodes({ email, subId, inbounds });
+    if (!nodes.length) {
+      this.logger.warn(`[SUB_NODES] No URI nodes for email=${email} (native + panel API)`);
     } else {
-      this.logger.log(
-        `[SUB_NODES] email=${email} → ${nodes.length} node(s)`,
-      );
+      this.logger.log(`[SUB_NODES] email=${email} → ${nodes.length} node(s)`);
     }
-
     return this.applyConfigDisplayNames(nodes, { email, inbounds });
   }
 
@@ -535,10 +549,6 @@ export class SubscriptionsService {
         if (!links.length) {
           return res.status(404).send('Subscription not found');
         }
-        const labeled = await this.applyConfigDisplayNames(
-          links.map((l) => this.uriLineToNode(l)),
-          { email: client.email, inbounds: [{ panel: { id: client.panelId } }] },
-        );
         this.writeSubscriptionHeaders(res, {
           up: Number(client.up),
           down: Number(client.down),
@@ -547,11 +557,12 @@ export class SubscriptionsService {
           remark: client.remark,
           email: client.email,
           portalSettings: details.portalSettings,
+        }, {
+          token,
+          origin: getRequestOrigin(req),
         });
-        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-        return res.send(
-          Buffer.from(labeled.map((n) => n.link).join('\n')).toString('base64'),
-        );
+        res.setHeader('Content-Type', 'text/plain');
+        return res.send(Buffer.from(links.join('\n')).toString('base64'));
       }
 
       const nativeFromProvider = customerFacingSubscriptionUrl({
@@ -564,29 +575,27 @@ export class SubscriptionsService {
         ? nativeFromProvider
           ? [nativeFromProvider]
           : []
-        : collectNativeSubscriptionUrls(
-            inbounds,
-            subId || email,
-          );
+        : (() => {
+            const publicFeeds = collectPublicNativeSubscriptionUrls(
+              inbounds,
+              subId || email,
+            );
+            return publicFeeds.length
+              ? publicFeeds
+              : collectNativeSubscriptionUrls(inbounds, subId || email);
+          })();
 
       const headers: any = {
-        'User-Agent': NATIVE_SUB_UA,
+        'User-Agent': nativeFetchUserAgent(
+          String(req.headers['user-agent'] || ''),
+          NATIVE_SUB_UA,
+        ),
       };
-      const incomingUa = String(req.headers['user-agent'] || '');
-      if (
-        incomingUa &&
-        /v2ray|clash|hiddify|sing-box|singbox|shadowrocket|nekobox|okhttp|dart\//i.test(
-          incomingUa,
-        )
-      ) {
-        headers['User-Agent'] = incomingUa;
-      }
       if (req.headers['accept-language'])
         headers['Accept-Language'] = req.headers['accept-language'];
 
       let combinedData = '';
       let firstValidResponse: any = null;
-      let sawClashYaml = false;
 
       if (nativeUrls.length > 0) {
         const fetchPromises = nativeUrls.map((url) =>
@@ -617,18 +626,18 @@ export class SubscriptionsService {
             content = JSON.stringify(content);
           }
 
-          const decoded = this.tryDecodeSubBody(content);
-          if (this.looksLikeClash(decoded)) sawClashYaml = true;
-          combinedData += decoded + '\n';
+          combinedData += this.tryDecodeSubBody(content) + '\n';
         }
       }
 
-      this.writeSubscriptionHeaders(res, details);
+      this.writeSubscriptionHeaders(res, details, {
+        token,
+        origin: getRequestOrigin(req),
+      });
 
       if (firstValidResponse) {
         const headersToForward = [
           'profile-update-interval',
-          'profile-web-page-url',
           'content-disposition',
           'announce',
           'update-interval',
@@ -640,22 +649,20 @@ export class SubscriptionsService {
         }
       }
 
-      // Single Clash YAML response: passthrough
+      // Clash YAML / sing-box JSON: passthrough without re-base64 (apps reject wrapped feeds).
+      const structured = this.tryDecodeSubBody(combinedData);
       if (
         firstValidResponse &&
-        sawClashYaml &&
-        combinedData.trim() &&
+        looksLikeStructuredSubFeed(structured) &&
         !combinedData.includes('vless://') &&
         !combinedData.includes('vmess://')
       ) {
-        const raw = firstValidResponse.data;
-        const body = typeof raw === 'string' ? raw : JSON.stringify(raw);
         res.setHeader(
           'Content-Type',
           firstValidResponse.headers['content-type'] ||
-            'text/yaml; charset=utf-8',
+            structuredFeedContentType(structured),
         );
-        return res.send(body);
+        return res.send(structured.trim());
       }
 
       const lines = combinedData
@@ -663,36 +670,37 @@ export class SubscriptionsService {
         .map((l) => l.trim())
         .filter(Boolean);
       let uriLines = lines.filter((l) => /^[a-z0-9+.-]+:\/\//i.test(l));
-
-      // Public /sub/ often unreachable from HMPanel host; fill via panel API.
-      if (uriLines.length === 0) {
-        this.logger.warn(
-          `[SUB_PROXY] Native feed empty for email=${email}; trying panel API links`,
-        );
-        const apiNodes = await this.fetchNodesFromPanelApi(
+      const stamped =
+        uriLines.length > 0 &&
+        this.nodesStampedWithPanelApiHost(
+          uriLines.map((l) => this.uriLineToNode(l)),
           inbounds,
-          email,
-          subId,
         );
-        uriLines = apiNodes.map((n) => n.link);
+
+      if (uriLines.length === 0 || stamped) {
+        if (stamped) {
+          this.logger.warn(
+            `[SUB_PROXY] Native feed stamped panel API host into configs email=${email}; using 3x-ui copy links`,
+          );
+        } else {
+          this.logger.warn(
+            `[SUB_PROXY] Native feed empty for email=${email}; trying panel API links`,
+          );
+        }
+        const resolved = await this.resolveProtocolNodes({ email, subId, inbounds });
+        if (resolved.length) uriLines = resolved.map((n) => n.link);
       }
 
       if (uriLines.length === 0 && !lines.length) {
         return res.status(502).send('Bad Gateway - No panels responded');
       }
 
-      if (uriLines.length) {
-        const labeled = await this.applyConfigDisplayNames(
-          uriLines.map((l) => this.uriLineToNode(l)),
-          { email, inbounds },
-        );
-        uriLines = labeled.map((n) => n.link);
-      }
-
+      // Keep native URI bytes as-is. Extra Hosts lookups / remark rewrites
+      // slowed /s/ and broke parsers in some clients.
       const payload = (uriLines.length ? uriLines : lines).join('\n');
       const finalBase64 = Buffer.from(payload).toString('base64');
 
-      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.setHeader('Content-Type', 'text/plain');
       return res.send(finalBase64);
     } catch (error: any) {
       if (error instanceof NotFoundException) {
@@ -737,8 +745,13 @@ export class SubscriptionsService {
       email?: string | null;
       portalSettings?: Record<string, unknown> | null;
     },
+    opts?: { token?: string; origin?: string },
   ) {
-    const expireDate = Math.floor(Number(details.expiryTime || 0) / 1000);
+    res.setHeader('Cache-Control', 'no-store, no-transform');
+    const expireMs = Number(details.expiryTime || 0);
+    const expireDate = Number.isFinite(expireMs)
+      ? Math.floor(expireMs / 1000)
+      : 0;
     res.setHeader(
       'Subscription-Userinfo',
       `upload=${details.up}; download=${details.down}; total=${details.total}; expire=${expireDate}`,
@@ -749,6 +762,15 @@ export class SubscriptionsService {
       'profile-title',
       `base64:${Buffer.from(titleSource, 'utf8').toString('base64')}`,
     );
+
+    const origin = String(opts?.origin || '').replace(/\/+$/, '');
+    const token = String(opts?.token || '').trim();
+    if (origin && token) {
+      res.setHeader(
+        'profile-web-page-url',
+        `${origin}/p/${encodeURIComponent(token)}`,
+      );
+    }
 
     const ps = details.portalSettings || {};
     if (ps.websiteUrl) {

@@ -1,5 +1,7 @@
 import {
+  collectPublicNativeSubscriptionUrls,
   customerFacingSubscriptionUrl,
+  panelApiHostnames,
   rewriteSubscriptionDeliveryHost,
   subscriptionUrlFromProviderMeta,
 } from './native-sub-url';
@@ -40,5 +42,25 @@ describe('native-sub-url extras', () => {
         storeSubUrl: 'https://shop.test/s/token',
       }),
     ).toBe('https://shop.test/s/token');
+  });
+
+  it('collects only panel.subUrl for config feeds, not the API host', () => {
+    expect(
+      collectPublicNativeSubscriptionUrls(
+        [
+          { panel: { subUrl: 'https://cdn.vpn.test/sub', url: 'https://panel.wrong.test:2053' } },
+          { panel: { url: 'https://panel.only-api.test:2053' } },
+        ],
+        'abc',
+      ),
+    ).toEqual(['https://cdn.vpn.test/sub/abc']);
+  });
+
+  it('lists panel API hostnames for stamp detection', () => {
+    expect(
+      panelApiHostnames([
+        { panel: { url: 'https://panel.wrong.test:2053/path' } },
+      ]),
+    ).toEqual(['panel.wrong.test']);
   });
 });

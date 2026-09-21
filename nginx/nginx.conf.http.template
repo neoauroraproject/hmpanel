@@ -107,8 +107,10 @@ http {
             proxy_set_header X-Forwarded-Proto $scheme;
         }
 
-        # 🛡️ Subscription proxy (public) 🚀
+        # 🛡️ Subscription proxy (public) — no gzip: some VPN clients fail to decode compressed base64
         location /s/ {
+            gzip off;
+            proxy_set_header Accept-Encoding "";
             proxy_pass http://backend/s/;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
@@ -116,8 +118,10 @@ http {
             proxy_set_header X-Forwarded-Proto $scheme;
         }
 
-        # 🛡️ Subscription assets proxy (3x-ui static files) 🚀
+        # 🛡️ Subscription assets proxy (3x-ui static files)
         location /sub/ {
+            gzip off;
+            proxy_set_header Accept-Encoding "";
             proxy_pass http://backend/sub/;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;

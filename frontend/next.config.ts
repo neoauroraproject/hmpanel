@@ -31,6 +31,10 @@ const nextConfig: NextConfig = {
         source: "/sub/:path*",
         destination: "http://127.0.0.1:4000/sub/:path*",
       },
+      {
+        source: "/s/:path*",
+        destination: "http://127.0.0.1:4000/s/:path*",
+      },
     ];
   },
   async redirects() {

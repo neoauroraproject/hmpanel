@@ -37,6 +37,11 @@ export default function SubscriptionPage({ params }: { params: Promise<{ id: str
     },
     retry: false,
     enabled: !!id,
+    refetchInterval: (q) => {
+      const data = q.state.data;
+      if (!data?.payg) return false;
+      return String(data.plan?.billingMode || "").toUpperCase() === "VOLUME" ? 10_000 : 30_000;
+    },
   });
 
   if (isLoading || !paygFetched) {
