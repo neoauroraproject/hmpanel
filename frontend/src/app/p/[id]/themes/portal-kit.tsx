@@ -604,6 +604,7 @@ export function ConfigList({
   title,
   empty,
   nodesLabel,
+  hideHeader,
 }: {
   nodes: PortalNode[];
   copied: string | null;
@@ -614,15 +615,18 @@ export function ConfigList({
   title?: string;
   empty?: string;
   nodesLabel?: string;
+  hideHeader?: boolean;
 }) {
   return (
     <section className={className}>
-      <div className="mb-3 flex items-end justify-between gap-3">
-        <h3 className="text-sm font-semibold tracking-wide">{title || "Configurations"}</h3>
-        <span className="text-xs opacity-60">
-          {nodes.length} {nodesLabel || "nodes"}
-        </span>
-      </div>
+      {hideHeader ? null : (
+        <div className="mb-3 flex items-end justify-between gap-3">
+          <h3 className="text-sm font-semibold tracking-wide">{title || "Configurations"}</h3>
+          <span className="text-xs opacity-60">
+            {nodes.length} {nodesLabel || "nodes"}
+          </span>
+        </div>
+      )}
       {!nodes.length ? (
         <p className="text-sm opacity-60">{empty || "No configs available yet."}</p>
       ) : (
