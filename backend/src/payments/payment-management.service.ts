@@ -23,6 +23,13 @@ import {
   type PaymentBankCard,
 } from './payment-cards';
 import {
+  newPaymentCryptoWallet,
+  normalizePaymentCryptoWallet,
+  normalizePaymentCryptoWallets,
+  walletIsUsable,
+  type PaymentCryptoWallet,
+} from './payment-wallets';
+import {
   applyCardTitles,
   defaultPaymentManagementState,
   migratePaymentManagementState,
@@ -61,6 +68,7 @@ export type CheckoutPaymentResolution = {
   default: string;
   cardId: string | null;
   cards: PaymentBankCard[];
+  wallets: import('./payment-wallets').PaymentCryptoWallet[];
   assignmentEnabled: boolean;
   methods: ReturnType<typeof snapshotMethods>;
 };
@@ -199,6 +207,8 @@ export class PaymentManagementService {
     });
     let rechargeCards: unknown = [];
     let rechargeManual = true;
+    let rechargeWallets: unknown = [];
+    let rechargeCrypto = false;
     let isSuper = false;
     try {
       const admin = await this.prisma.admin.findUnique({
@@ -219,7 +229,9 @@ export class PaymentManagementService {
             ? (recharge.settings as Record<string, unknown>)
             : {};
         rechargeCards = settings.cards;
+        rechargeWallets = settings.wallets;
         rechargeManual = (settings.methods as { manual_bank?: boolean } | undefined)?.manual_bank !== false;
+        rechargeCrypto = (settings.methods as { crypto?: boolean } | undefined)?.crypto === true;
       }
     } catch {
       /* community-only */
@@ -248,8 +260,14 @@ export class PaymentManagementService {
       storeManualBankEnabled: (storeCfg.methods as { manual_bank?: boolean } | undefined)?.manual_bank !== false,
       rechargeCards,
       rechargeManualBankEnabled: rechargeManual,
+      rechargeWallets,
+      rechargeCryptoEnabled: rechargeCrypto,
     });
-    if (!current.initialized || (!current.cards.length && migrated.cards.length)) {
+    if (
+      !current.initialized ||
+      (!current.cards.length && migrated.cards.length) ||
+      (!current.wallets.length && migrated.wallets.length)
+    ) {
       return this.saveState(adminId, migrated);
     }
     return current;
@@ -257,6 +275,7 @@ export class PaymentManagementService {
 
   private async syncLegacyDestinations(adminId: string, state: PaymentManagementState) {
     const cards = state.cards;
+    const wallets = state.wallets;
     const primary = cards.find((c) => c.enabled !== false) || cards[0];
     try {
       const store = await this.prisma.storeProfile.findUnique({
@@ -271,11 +290,12 @@ export class PaymentManagementService {
         const methods = {
           ...((prev.methods as object) || {}),
           manual_bank: state.methods.manual_bank?.enabled !== false,
+          crypto: state.methods.crypto_manual?.enabled === true,
         };
         await this.prisma.storeProfile.update({
           where: { adminId },
           data: {
-            paymentConfig: { ...prev, methods, cards } as any,
+            paymentConfig: { ...prev, methods, cards, wallets } as any,
             bankName: primary?.bankName || '',
             bankCardNumber: primary?.cardNumber || '',
             bankCardHolder: primary?.cardHolder || '',
@@ -304,10 +324,11 @@ export class PaymentManagementService {
         const methods = {
           ...((prev.methods as object) || {}),
           manual_bank: state.methods.manual_bank?.enabled !== false,
+          crypto: state.methods.crypto_manual?.enabled === true,
         };
         await this.prisma.premiumModuleState.update({
           where: { moduleId: 'admin-recharge' },
-          data: { settings: { ...prev, methods, cards } as any },
+          data: { settings: { ...prev, methods, cards, wallets } as any },
         });
       }
     } catch (err: any) {
@@ -393,6 +414,7 @@ export class PaymentManagementService {
     const methods = snapshotMethods(state, {
       starsConfigured: conn.configured,
       cardsConfigured: state.cards.some(cardIsUsable),
+      walletsConfigured: state.wallets.some(walletIsUsable),
       walletPayConfigured: !!this.decryptBotToken(state.walletPay.apiTokenEnc),
     });
     const transactions = await this.ledger.list(adminId, 40);
@@ -410,6 +432,7 @@ export class PaymentManagementService {
     return {
       methods,
       cards: state.cards,
+      wallets: state.wallets,
       assignments,
       transactions,
       settings: {
@@ -444,6 +467,7 @@ export class PaymentManagementService {
         const n = cardIndex >= 0 ? ` / Card #${cardIndex + 1}` : '';
         return `Card to Card${n}`;
       }
+      if (id === 'crypto_manual') return 'Crypto';
       if (id === 'telegram_stars') return 'Telegram Stars';
       if (id === 'telegram_wallet') return 'Telegram Wallet Pay';
       if (id === 'wallet') return 'Wallet';
@@ -604,6 +628,46 @@ export class PaymentManagementService {
     return this.saveState(adminId, { ...state, cards: applyCardTitles(normalizePaymentBankCards(cards)) });
   }
 
+  async saveWallets(adminId: string, wallets: unknown) {
+    const state = await this.ensureMigrated(adminId);
+    const next = normalizePaymentCryptoWallets(wallets);
+    const methods = { ...state.methods };
+    if (next.some(walletIsUsable)) {
+      methods.crypto_manual = { enabled: methods.crypto_manual?.enabled !== false };
+    }
+    return this.saveState(adminId, { ...state, wallets: next, methods });
+  }
+
+  async upsertWallet(adminId: string, patch: Partial<PaymentCryptoWallet> & { id?: string }) {
+    const state = await this.ensureMigrated(adminId);
+    if (patch.id) {
+      const idx = state.wallets.findIndex((w) => w.id === patch.id);
+      if (idx === -1) throw new BadRequestException('Wallet not found');
+      const next = [...state.wallets];
+      const merged = normalizePaymentCryptoWallet({ ...next[idx], ...patch });
+      if (!merged) throw new BadRequestException('Invalid wallet');
+      next[idx] = merged;
+      return this.saveState(adminId, { ...state, wallets: next });
+    }
+    const created = newPaymentCryptoWallet(patch);
+    const normalized = normalizePaymentCryptoWallet(created);
+    if (!normalized) throw new BadRequestException('Address is required');
+    const methods = { ...state.methods, crypto_manual: { enabled: true } };
+    return this.saveState(adminId, {
+      ...state,
+      wallets: [...state.wallets, normalized],
+      methods,
+    });
+  }
+
+  async deleteWallet(adminId: string, id: string) {
+    const state = await this.ensureMigrated(adminId);
+    return this.saveState(adminId, {
+      ...state,
+      wallets: state.wallets.filter((w) => w.id !== id),
+    });
+  }
+
   async upsertCard(adminId: string, patch: Partial<PaymentBankCard> & { id?: string }) {
     const state = await this.ensureMigrated(adminId);
     if (patch.id) {
@@ -695,6 +759,7 @@ export class PaymentManagementService {
       );
     }
     if (id === 'manual_bank') return methods.manual_bank?.enabled !== false;
+    if (id === 'crypto_manual') return methods.crypto_manual?.enabled === true;
     if (id === 'wallet') return methods.wallet?.enabled !== false;
     return false;
   }
@@ -721,16 +786,22 @@ export class PaymentManagementService {
     const cards = gateways.includes('manual_bank')
       ? pickAssignedCards(state.cards, assignment?.cardId).filter(cardIsUsable)
       : [];
+    const wallets =
+      gateways.includes('crypto_manual') || gateways.includes('crypto')
+        ? state.wallets.filter(walletIsUsable)
+        : [];
     const conn = await this.starsConnection(adminId);
     return {
       gateways,
       default: defaultId,
       cardId: assignment?.cardId || null,
       cards,
+      wallets,
       assignmentEnabled: true,
       methods: snapshotMethods(state, {
         starsConfigured: conn.configured,
         cardsConfigured: state.cards.some(cardIsUsable),
+        walletsConfigured: state.wallets.some(walletIsUsable),
         walletPayConfigured: !!this.decryptBotToken(state.walletPay.apiTokenEnc),
       }),
     };

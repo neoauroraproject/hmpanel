@@ -9,6 +9,7 @@ export const PAYMENT_METHOD_IDS = [
   'wallet',
   'telegram_stars',
   'telegram_wallet',
+  'crypto_manual',
   'crypto_gateway',
   'rial_gateway',
 ] as const;
@@ -58,6 +59,13 @@ export const PAYMENT_METHOD_CATALOG: Array<{
     description: 'Pay with TON, USDT, BTC or NOT inside Telegram Wallet (Wallet Pay).',
     kind: 'implemented',
     gatewayId: 'telegram_wallet',
+  },
+  {
+    id: 'crypto_manual',
+    label: 'Crypto wallet',
+    description: 'Manual crypto transfer (USDT/TRX/…) with receipt review — multiple wallets/networks.',
+    kind: 'implemented',
+    gatewayId: 'crypto_manual',
   },
   {
     id: 'crypto_gateway',

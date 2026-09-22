@@ -44,6 +44,30 @@ export class PaymentManagementController {
     return this.payments.saveCards(req.user.id, body?.cards ?? body);
   }
 
+  @Put('wallets')
+  saveWallets(@Req() req: AuthRequest, @Body() body: { wallets?: unknown }) {
+    return this.payments.saveWallets(req.user.id, body?.wallets ?? body);
+  }
+
+  @Post('wallets')
+  createWallet(@Req() req: AuthRequest, @Body() body: Record<string, unknown>) {
+    return this.payments.upsertWallet(req.user.id, body);
+  }
+
+  @Patch('wallets/:id')
+  updateWallet(
+    @Req() req: AuthRequest,
+    @Param('id') id: string,
+    @Body() body: Record<string, unknown>,
+  ) {
+    return this.payments.upsertWallet(req.user.id, { ...body, id });
+  }
+
+  @Delete('wallets/:id')
+  deleteWallet(@Req() req: AuthRequest, @Param('id') id: string) {
+    return this.payments.deleteWallet(req.user.id, id);
+  }
+
   @Post('cards')
   createCard(@Req() req: AuthRequest, @Body() body: Record<string, unknown>) {
     return this.payments.upsertCard(req.user.id, body);

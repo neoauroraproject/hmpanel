@@ -17,6 +17,12 @@ import {
   normalizePaymentBankCards,
   type PaymentBankCard,
 } from './payment-cards';
+import {
+  mergePaymentCryptoWallets,
+  normalizePaymentCryptoWallets,
+  walletIsUsable,
+  type PaymentCryptoWallet,
+} from './payment-wallets';
 
 export const PAYMENT_MANAGEMENT_KEY_PREFIX = 'payment_management_v1:';
 
@@ -68,6 +74,7 @@ export type PaymentManagementState = {
   migratedAt?: string | null;
   methods: Record<PaymentMethodId, { enabled: boolean }>;
   cards: PaymentBankCard[];
+  wallets: PaymentCryptoWallet[];
   assignments: PaymentSurfaceAssignment[];
   stars: TelegramStarsPluginSettings;
   walletPay: WalletPayPluginSettings;
@@ -109,6 +116,7 @@ export function defaultPaymentManagementState(): PaymentManagementState {
     migratedAt: null,
     methods: defaultMethodEnables(),
     cards: [],
+    wallets: [],
     assignments: DEFAULT_PAYMENT_SURFACE_ASSIGNMENTS.map((row) => ({ ...row })),
     stars: { ...DEFAULT_STARS_SETTINGS },
     walletPay: { ...DEFAULT_WALLET_PAY_SETTINGS },
@@ -200,6 +208,7 @@ export function parsePaymentManagementState(raw: unknown): PaymentManagementStat
     migratedAt: rec.migratedAt ? String(rec.migratedAt) : null,
     methods,
     cards: normalizePaymentBankCards(rec.cards),
+    wallets: normalizePaymentCryptoWallets(rec.wallets),
     assignments: parsePaymentSurfaceAssignments(rec.assignments),
     stars: parseStars(rec.stars),
     walletPay,
@@ -211,6 +220,8 @@ export type LegacyPaymentSources = {
   storeManualBankEnabled?: boolean;
   rechargeCards?: unknown;
   rechargeManualBankEnabled?: boolean;
+  rechargeWallets?: unknown;
+  rechargeCryptoEnabled?: boolean;
 };
 
 /**
@@ -221,27 +232,37 @@ export function migratePaymentManagementState(
   current: PaymentManagementState,
   legacy: LegacyPaymentSources,
 ): PaymentManagementState {
-  if (current.initialized && current.cards.length) {
+  if (current.initialized && current.cards.length && current.wallets.length) {
     return current;
   }
   const cards = current.cards.length
     ? current.cards
     : mergeLegacyCards([legacy.storeCards, legacy.rechargeCards]);
+  const wallets = current.wallets.length
+    ? current.wallets
+    : mergePaymentCryptoWallets(legacy.rechargeWallets);
   const methods = { ...current.methods };
   if (legacy.storeManualBankEnabled === false && legacy.rechargeManualBankEnabled === false) {
     methods.manual_bank = { enabled: false };
   } else {
     methods.manual_bank = { enabled: true };
   }
+  if (wallets.some(walletIsUsable) || legacy.rechargeCryptoEnabled === true) {
+    methods.crypto_manual = { enabled: true };
+  }
   const firstCard = cards.find((c) => c.enabled !== false) || cards[0];
   const assignments = current.assignments.map((row) => {
     if (row.surface === 'store' || row.surface === 'add_balance') {
+      const allowed = row.allowedGatewayIds.length
+        ? row.allowedGatewayIds
+        : ['manual_bank', 'wallet'];
+      if (methods.crypto_manual?.enabled && !allowed.includes('crypto_manual')) {
+        allowed.push('crypto_manual');
+      }
       return {
         ...row,
         cardId: row.cardId || firstCard?.id || null,
-        allowedGatewayIds: row.allowedGatewayIds.length
-          ? row.allowedGatewayIds
-          : ['manual_bank', 'wallet'],
+        allowedGatewayIds: allowed,
       };
     }
     return { ...row, cardId: row.cardId || firstCard?.id || null };
@@ -252,6 +273,7 @@ export function migratePaymentManagementState(
     migratedAt: current.migratedAt || new Date().toISOString(),
     methods,
     cards,
+    wallets,
     assignments,
   };
 }
@@ -287,7 +309,12 @@ export type MethodSnapshot = PaymentMethodState & {
 
 export function snapshotMethods(
   state: PaymentManagementState,
-  extras: { starsConfigured: boolean; cardsConfigured: boolean; walletPayConfigured?: boolean },
+  extras: {
+    starsConfigured: boolean;
+    cardsConfigured: boolean;
+    walletsConfigured?: boolean;
+    walletPayConfigured?: boolean;
+  },
 ): MethodSnapshot[] {
   return PAYMENT_METHOD_CATALOG.map((entry) => {
     const enabled = state.methods[entry.id]?.enabled === true;
@@ -298,9 +325,11 @@ export function snapshotMethods(
           ? extras.walletPayConfigured === true
           : entry.id === 'manual_bank'
             ? extras.cardsConfigured
-            : entry.id === 'wallet'
-              ? true
-              : false;
+            : entry.id === 'crypto_manual'
+              ? extras.walletsConfigured === true
+              : entry.id === 'wallet'
+                ? true
+                : false;
     const kind = entry.kind;
     const status = deriveMethodUiStatus({ kind, enabled, configured });
     return {
