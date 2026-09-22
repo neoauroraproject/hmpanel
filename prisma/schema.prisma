@@ -1305,16 +1305,18 @@ model StoreCouponRedemption {
 // ---------------------------------------------------------
 
 model PaygSettings {
-  id                 String   @id @default(uuid())
-  adminId            String   @unique
-  minWalletBalance   Float    @default(0)
-  meterIntervalHours Int      @default(1)
-  botButtonLabel     String?
-  botMenuEnabled     Boolean  @default(true)
-  autoResume         Boolean  @default(true)
-  currency           String?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  id                            String   @id @default(uuid())
+  adminId                       String   @unique
+  minWalletBalance              Float    @default(0)
+  meterIntervalHours            Int      @default(1)
+  botButtonLabel                String?
+  botMenuEnabled                Boolean  @default(true)
+  autoResume                    Boolean  @default(true)
+  currency                      String?
+  /// 0 = unlimited open PAYG services per customer
+  maxSubscriptionsPerCustomer   Int      @default(0)
+  createdAt                     DateTime @default(now())
+  updatedAt                     DateTime @updatedAt
 
   admin Admin @relation(fields: [adminId], references: [id], onDelete: Cascade)
 }
@@ -1379,6 +1381,10 @@ model PaygSubscription {
   limitIp          Int       @default(0)
   /// Snapshot: tier extra added to base unit price (per GB or per hour)
   unitPriceExtra   Float     @default(0)
+  /// Customer paused TIME billing from Telegram (blocks auto-resume)
+  userPaused       Boolean   @default(false)
+  /// Prepaid units remaining from activation fee (hours or GB)
+  prepaidQuantity  Float     @default(0)
   meterCursorBytes BigInt    @default(0)
   meterCursorAt    DateTime?
   lastBilledAt     DateTime?
