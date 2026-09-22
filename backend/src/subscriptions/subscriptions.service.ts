@@ -11,6 +11,10 @@ import * as https from 'https';
 import { Response, Request } from 'express';
 import { normalizeTelegramLink } from '../common/utils/telegram-link';
 import { collectNativeSubscriptionUrls, collectPublicNativeSubscriptionUrls, customerFacingSubscriptionUrl, panelDeliveryHostnames, panelSubUrlHostnames } from '../common/utils/native-sub-url';
+import {
+  extractRawLinkUrisFromHtml,
+  looksLikeSubscriptionHtml,
+} from '../common/utils/native-sub-html-links';
 import { isExternalPanelType } from '../panels/native/native-panel-capabilities';
 import { supports3xUi380Api } from '../common/utils/panel-version.util';
 import {
@@ -28,6 +32,9 @@ import { getRequestOrigin } from '../common/utils/request-origin';
 import { PanelsService } from '../panels/panels.service';
 
 const NATIVE_SUB_UA = 'v2rayNG/1.10.0';
+/** Browser UA so 3x-ui renders the custom HTML template with `{{ .links }}`. */
+const NATIVE_SUB_BROWSER_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
 
 type PortalNode = { link: string; protocol: string; tag: string };
 
@@ -241,6 +248,45 @@ export class SubscriptionsService {
     return nodes;
   }
 
+  /**
+   * Same source as neo themes: `{{ range .links }}` rendered into `.raw-link`.
+   * @see https://github.com/MHSanaei/3x-ui/blob/main/docs/custom-subscription-templates.md
+   */
+  private parseUriNodesFromHtml(html: string, email?: string | null): PortalNode[] {
+    const uris = extractRawLinkUrisFromHtml(html);
+    const nodes: PortalNode[] = [];
+    const seen = new Set<string>();
+    for (const uri of uris) {
+      if (seen.has(uri)) continue;
+      seen.add(uri);
+      nodes.push(this.uriLineToNode(uri, email));
+    }
+    return nodes;
+  }
+
+  private async fetchNativePageBody(
+    url: string,
+    headers: Record<string, string>,
+  ): Promise<string | null> {
+    try {
+      const response = await axios.get(url, {
+        httpsAgent: new https.Agent({ rejectUnauthorized: false }),
+        timeout: 12000,
+        responseType: 'text',
+        transformResponse: [(d) => d],
+        headers,
+        maxRedirects: 5,
+      });
+      if (response?.data == null) return null;
+      return typeof response.data === 'string'
+        ? response.data
+        : JSON.stringify(response.data);
+    } catch (err: any) {
+      this.logger.error(`Failed to fetch native nodes from ${url}`, err.message);
+      return null;
+    }
+  }
+
   /** Unique panel ids linked through ClientInbound. */
   private collectPanelIds(
     inbounds: Array<{ panel?: { id?: string } | null }>,
@@ -310,39 +356,53 @@ export class SubscriptionsService {
     if (!urls.length) return [];
     const nodes: PortalNode[] = [];
     const seen = new Set<string>();
-    const responses = await Promise.all(
-      urls.map((url) =>
-        axios
-          .get(url, {
-            httpsAgent: new https.Agent({ rejectUnauthorized: false }),
-            timeout: 10000,
-            responseType: 'text',
-            transformResponse: [(d) => d],
-            headers: { 'User-Agent': NATIVE_SUB_UA },
-          })
-          .catch((err) => {
-            this.logger.error(`Failed to fetch native nodes from ${url}`, err.message);
-            return null;
-          }),
-      ),
-    );
-    for (const response of responses) {
-      if (!response || response.data == null) continue;
-      let content = response.data;
-      if (typeof content !== 'string') content = JSON.stringify(content);
-      for (const node of this.parseUriNodesFromText(content, email)) {
+    const pushAll = (list: PortalNode[]) => {
+      for (const node of list) {
         if (seen.has(node.link)) continue;
         seen.add(node.link);
         nodes.push(node);
       }
+    };
+
+    for (const url of urls) {
+      // 1) Browser request → custom HTML template with {{ .links }} (Hosts names/addrs)
+      const htmlBody = await this.fetchNativePageBody(url, {
+        'User-Agent': NATIVE_SUB_BROWSER_UA,
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      });
+      if (
+        htmlBody &&
+        (looksLikeSubscriptionHtml(htmlBody) || /raw-link/i.test(htmlBody))
+      ) {
+        const fromHtml = this.parseUriNodesFromHtml(htmlBody, email);
+        if (fromHtml.length) {
+          this.logger.log(
+            `[SUB_NODES] Native HTML .links from ${url} → ${fromHtml.length} node(s)`,
+          );
+          pushAll(fromHtml);
+          continue;
+        }
+      }
+
+      // 2) Client UA → base64/text subscription feed (may stamp CDN host)
+      const feedBody = await this.fetchNativePageBody(url, {
+        'User-Agent': NATIVE_SUB_UA,
+        Accept: '*/*',
+      });
+      if (!feedBody) continue;
+      if (looksLikeSubscriptionHtml(feedBody)) {
+        pushAll(this.parseUriNodesFromHtml(feedBody, email));
+      } else {
+        pushAll(this.parseUriNodesFromText(feedBody, email));
+      }
     }
+
     return nodes;
   }
 
   /**
-   * Individual configs must match the native 3x-ui /sub/ page (neo themes):
-   * same share URIs and remark names — not panel API copy-links that may use
-   * a different subscription proxy host (e.g. b1sub.hmray.pro vs hmrayapp.com).
+   * Individual configs must match the native 3x-ui HTML page (`{{ .links }}`),
+   * not panel API copy-links or a client feed stamped with the wrong CDN host.
    */
   private async resolveProtocolNodes(input: {
     email: string;
@@ -357,12 +417,12 @@ export class SubscriptionsService {
       const nodes = await this.pullUriNodesFromUrls(publicFeeds, email);
       if (nodes.length) {
         this.logger.log(
-          `[SUB_NODES] Public /sub/ feed email=${email} → ${nodes.length} node(s)`,
+          `[SUB_NODES] Public native page email=${email} → ${nodes.length} node(s)`,
         );
         return nodes;
       }
       this.logger.warn(
-        `[SUB_NODES] Public /sub/ empty for email=${email}; trying panel API`,
+        `[SUB_NODES] Public native page empty for email=${email}; trying panel API`,
       );
     }
 
