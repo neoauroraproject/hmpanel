@@ -18,6 +18,47 @@ function isBlankOrEmail(value: string | null | undefined, email?: string | null)
   return false;
 }
 
+/** Strip client-email suffixes from 3x-ui remark (matches neo theme configDisplayName). */
+export function stripEmailFromRemark(remark: string, emails: string[]): string {
+  let name = String(remark || '').trim();
+  for (const email of emails) {
+    const mail = String(email || '').trim();
+    if (!mail) continue;
+    if (name === mail) return '';
+    for (const suffix of [`-${mail}`, `_${mail}`, ` ${mail}`, `|${mail}`, `/${mail}`]) {
+      if (name.length > suffix.length && name.endsWith(suffix)) {
+        name = name.slice(0, -suffix.length).trim();
+      }
+    }
+  }
+  return name.trim();
+}
+
+/** Display name for a share URI — same rules as 3x-ui neo themes. */
+export function configDisplayNameFromUri(link: string, emails: string[] = []): string {
+  const remark = getUriRemark(link);
+  if (!remark) return '';
+  if (!emails.length) return remark;
+  for (const email of emails) {
+    if (remark === email) {
+      const ep = parseUriEndpoint(link);
+      return ep?.address || remark;
+    }
+  }
+  const stripped = stripEmailFromRemark(remark, emails);
+  if (stripped) {
+    for (const email of emails) {
+      if (stripped === email) {
+        const ep = parseUriEndpoint(link);
+        return ep?.address || remark;
+      }
+    }
+    return stripped;
+  }
+  const ep = parseUriEndpoint(link);
+  return ep?.address || remark;
+}
+
 export function getUriRemark(link: string): string {
   const trimmed = String(link || '').trim();
   if (!trimmed) return '';
