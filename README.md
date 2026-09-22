@@ -7,7 +7,7 @@
 
 [English](#english) | [فارسی](#فارسی)
 
-**Docs:** [neoauroraproject.github.io/hmpanel](https://neoauroraproject.github.io/hmpanel/) · Channel: [t.me/hmpanel](https://t.me/hmpanel) · License: [t.me/hmraysupport](https://t.me/hmraysupport)
+**Docs:** [neoauroraproject.github.io/hmpanel](https://neoauroraproject.github.io/hmpanel/) · Channel: [t.me/hmpanel](https://t.me/hmpanel) · Premium License: [t.me/hmraysupport](https://t.me/hmraysupport)
 
 </div>
 
@@ -63,7 +63,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/neoauroraproject/hmpanel/mai
 
 مستندات نسخهٔ Community و Premium: [https://neoauroraproject.github.io/hmpanel/fa/](https://neoauroraproject.github.io/hmpanel/fa/)
 
-کانال تلگرام: [t.me/hmpanel](https://t.me/hmpanel) · خرید لایسنس: [t.me/hmraysupport](https://t.me/hmraysupport)
+کانال تلگرام: [t.me/hmpanel](https://t.me/hmpanel) · خرید لایسنس نسخه پرمیوم: [t.me/hmraysupport](https://t.me/hmraysupport)
 
 ### 🚀 نصب و راه‌اندازی
 
