@@ -73,9 +73,23 @@ export class SettingsService {
   async setSettings(settings: Record<string, any>) {
     const results = [];
     for (const [key, value] of Object.entries(settings)) {
+      if (SettingsService.isProtectedLicenseKey(key)) {
+        continue;
+      }
       results.push(await this.setSetting(key, value));
     }
     return results;
+  }
+
+  /** LICENSE_* must only change via activate / recheck / deactivate — not generic settings POST. */
+  static isProtectedLicenseKey(key: string): boolean {
+    const k = String(key || '').trim().toUpperCase();
+    return (
+      k === 'LICENSE_STATE' ||
+      k === 'LICENSE_KEY' ||
+      k === 'LICENSE_ENTITLEMENT_JWT' ||
+      k === 'LICENSE_ENTITLEMENT'
+    );
   }
 
   getCurrentVersion() {

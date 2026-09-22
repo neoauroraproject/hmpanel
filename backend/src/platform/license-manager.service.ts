@@ -37,7 +37,13 @@ export class LicenseManagerService {
 
     const storedState = await this.getStoredState();
     if (storedState) {
-      return this.applyExpiry({ ...storedState, edition: storedState.edition || 'PREMIUM' });
+      const base = await this.clampExpiresToJwtEntitlement({
+        ...storedState,
+        edition: storedState.edition || 'PREMIUM',
+      });
+      const applied = this.applyExpiry(base);
+      await this.persistExpiryTransition(storedState, applied);
+      return applied;
     }
 
     const licenseKey = await this.settingsService.getSetting(LICENSE_KEY_KEY);
@@ -281,6 +287,43 @@ export class LicenseManagerService {
       mode: 'disabled',
       graceEndsAt: new Date(graceEndsAt).toISOString(),
     });
+  }
+
+  /**
+   * Cap stored expiresAt by entitlement JWT `exp` so editing LICENSE_STATE alone
+   * cannot extend past the last token the panel received from the license server.
+   */
+  private async clampExpiresToJwtEntitlement(state: LicenseState): Promise<LicenseState> {
+    const jwt = await this.settingsService.getSetting(LICENSE_ENTITLEMENT_KEY);
+    if (!jwt || typeof jwt !== 'string') return state;
+    const payload = decodeJwtPayload(jwt);
+    const expSec = payload?.exp;
+    if (typeof expSec !== 'number' || !(expSec > 0)) return state;
+    const jwtExpMs = expSec * 1000;
+    const stateExpMs = state.expiresAt ? new Date(state.expiresAt).getTime() : NaN;
+    if (!Number.isFinite(stateExpMs) || stateExpMs > jwtExpMs) {
+      return { ...state, expiresAt: new Date(jwtExpMs).toISOString() };
+    }
+    return state;
+  }
+
+  /** Persist grace/expired transitions so restart still sees cut-off until online recheck. */
+  private async persistExpiryTransition(
+    stored: LicenseState,
+    applied: LicenseState,
+  ): Promise<void> {
+    const becameTerminal =
+      (applied.status === 'expired' || applied.status === 'grace') &&
+      applied.status !== stored.status;
+    const modeChanged =
+      (applied.mode === 'disabled' || applied.mode === 'read_only') &&
+      applied.mode !== stored.mode;
+    if (!becameTerminal && !modeChanged) return;
+    try {
+      await this.setLicenseState(applied);
+    } catch (err: any) {
+      this.logger.warn(`persistExpiryTransition failed: ${err?.message || err}`);
+    }
   }
 
   private async validateFromJwt(jwt: string, licenseKey: string): Promise<LicenseState> {

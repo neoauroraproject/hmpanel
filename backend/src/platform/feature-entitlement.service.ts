@@ -56,4 +56,17 @@ export class FeatureEntitlementService {
         state.status === 'read_only')
     );
   }
+
+  /** Store bot + wallet top-up: only fully active premium before expiresAt (grace = off). */
+  async isStoreCommerceActive(): Promise<boolean> {
+    const state = await this.license.getLicenseState();
+    if (state.edition !== 'PREMIUM') return false;
+    if (state.mode !== 'full') return false;
+    if (state.status !== 'active') return false;
+    if (state.expiresAt) {
+      const exp = new Date(state.expiresAt).getTime();
+      if (Number.isFinite(exp) && Date.now() > exp) return false;
+    }
+    return true;
+  }
 }

@@ -36,7 +36,7 @@ import { AdminRechargeTelegramCommerceService } from '../admin-recharge/admin-re
 import { AdminRechargeService } from '../admin-recharge/admin-recharge.service';
 import { AdminRechargeTelegramService } from '../admin-recharge/admin-recharge-telegram.service';
 import { PaygService } from '../store-payg/payg.service';
-import { formatBotMoney, normalizeWalletCurrency, botT, normalizeBotLocale } from './store-bot-i18n';
+import { formatBotMoney, normalizeWalletCurrency, botT, normalizeBotLocale, digitalOrderSubmittedExtra } from './store-bot-i18n';
 import {
   CHANNEL_GATE_TTL_MS,
   TtlFlagCache,
@@ -58,12 +58,15 @@ import {
 import {
   isDigitalInventoryProvider,
   isEylanProvider,
+  normalizeProductKind,
   parseFulfillment,
+  productIsDigital,
 } from './providers/store-fulfillment.types';
 import { isNativeEylanSubUrl } from './providers/eylan/eylan-url.util';
 import { TelegramCoreService } from '../../bots/telegram-core.service';
 import { PaymentManagementService } from '../../payments/payment-management.service';
 import { FeatureManagerService } from '../../platform/feature-manager.service';
+import { FeatureEntitlementService } from '../../platform/feature-entitlement.service';
 import { STORE_DIGITAL_MODULE_ID } from './providers/digital-goods/digital-goods.provider';
 
 type TelegramWebAppUser = {
@@ -101,7 +104,8 @@ type AdminPromptDraft = {
     | 'prod_days'
     | 'prod_traffic'
     | 'prod_new_name'
-    | 'prod_new_prices';
+    | 'prod_new_prices'
+    | 'dig_code';
   targetId?: string;
   meta?: Record<string, string>;
 };
@@ -146,6 +150,7 @@ export class StoreTelegramService implements OnModuleInit {
     @Optional() private readonly telegramCore?: TelegramCoreService,
     @Optional() private readonly paymentManagement?: PaymentManagementService,
     @Optional() private readonly features?: FeatureManagerService,
+    @Optional() private readonly entitlement?: FeatureEntitlementService,
   ) {}
 
   onModuleInit() {
@@ -341,9 +346,15 @@ export class StoreTelegramService implements OnModuleInit {
     return `$${n.toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
   }
 
-  private adminHomeKeyboard(panelUrl: string | null, pendingCount = 0) {
+  private adminHomeKeyboard(
+    panelUrl: string | null,
+    pendingCount = 0,
+    pendingCodes = 0,
+  ) {
     const pendingLabel =
       pendingCount > 0 ? `🔔 در انتظار (${pendingCount})` : '🔔 در انتظار';
+    const codesLabel =
+      pendingCodes > 0 ? `📤 ارسال کد (${pendingCodes})` : '📤 ارسال کد';
     const rows: Array<Array<Record<string, unknown>>> = [
       [
         { text: '📊 داشبورد', callback_data: 'admin:home' },
@@ -351,16 +362,17 @@ export class StoreTelegramService implements OnModuleInit {
       ],
       [
         { text: '📋 سفارش‌ها', callback_data: 'admin:orders' },
+        { text: codesLabel, callback_data: 'admin:codes' },
+      ],
+      [
         { text: '💰 درآمد', callback_data: 'admin:revenue' },
-      ],
-      [
         { text: '📦 محصولات', callback_data: 'admin:products' },
-        { text: '👥 مشتریان', callback_data: 'admin:customers' },
       ],
       [
+        { text: '👥 مشتریان', callback_data: 'admin:customers' },
         { text: '🎟 کوپن‌ها', callback_data: 'admin:coupons' },
-        { text: '💳 کیف‌پول', callback_data: 'admin:wallet' },
       ],
+      [{ text: '💳 کیف‌پول', callback_data: 'admin:wallet' }],
       [{ text: '📢 پیام همگانی', callback_data: 'admin:broadcast' }],
     ];
     if (panelUrl) {
@@ -406,6 +418,9 @@ export class StoreTelegramService implements OnModuleInit {
       `✅ تکمیل‌شده: <b>${dash.completedOrders ?? 0}</b>`,
       `🛒 امروز: <b>${dash.todayOrders ?? 0}</b> سفارش`,
       `🧪 تست امروز: <b>${dash.testsSent ?? 0}</b> ارسال / <b>${dash.testsDelivered ?? 0}</b> تحویل`,
+      `🎁 دیجیتال امروز: <b>${dash.todayDigitalOrders ?? 0}</b> سفارش · <b>${dash.todayDigitalDelivered ?? 0}</b> تحویل`,
+      `⏳ دیجیتال در انتظار ارسال: <b>${dash.pendingDigitalDeliveries ?? 0}</b>`,
+      `⚡ PAYG امروز: <b>${dash.todayPaygActivations ?? 0}</b> فعال‌سازی`,
       `📦 محصول فعال: <b>${dash.activeProducts ?? 0}</b>`,
       `👥 مشتری: <b>${dash.customers ?? 0}</b>`,
       ``,
@@ -423,6 +438,7 @@ export class StoreTelegramService implements OnModuleInit {
         reply_markup: this.adminHomeKeyboard(
           this.panelAdminUrl('/premium/store'),
           Number(dash.newOrders || 0),
+          Number(dash.pendingDigitalDeliveries || 0),
         ),
       },
       messageId,
@@ -445,10 +461,14 @@ export class StoreTelegramService implements OnModuleInit {
             pendingReview: true,
             status: { in: ['ACTIVE', 'RENEWED', 'APPROVED', 'PROVISIONING'] },
           },
+          {
+            status: { in: ['ACTIVE', 'APPROVED', 'PROVISIONING'] },
+            product: { kind: 'DIGITAL' },
+          },
         ],
       },
       orderBy: { createdAt: 'desc' },
-      take: 8,
+      take: 16,
       select: {
         id: true,
         trackingCode: true,
@@ -456,16 +476,28 @@ export class StoreTelegramService implements OnModuleInit {
         currency: true,
         configName: true,
         isRenewal: true,
+        status: true,
+        fulfillment: true,
         ...(prismaKnowsOrderIsTest() ? { isTest: true } : {}),
-        product: { select: { name: true, isTest: true, category: { select: { name: true } } } },
+        product: { select: { name: true, isTest: true, kind: true, category: { select: { name: true } } } },
         renewClient: { select: { email: true, remark: true } },
         client: { select: { email: true, remark: true } },
       },
     });
 
+    const visible = pending.filter((o) => {
+      const digital = this.readDigitalAdminState(o);
+      if (digital.isDigital && digital.delivered) {
+        return ['UNDER_REVIEW', 'PAYMENT_SUBMITTED', 'PENDING_PAYMENT'].includes(
+          String(o.status || ''),
+        );
+      }
+      return true;
+    }).slice(0, 8);
+
     const homeKb = this.adminHomeKeyboard(this.panelAdminUrl('/premium/store'));
 
-    if (!pending.length) {
+    if (!visible.length) {
       await this.replyOrEdit(
         botToken,
         chatId,
@@ -477,16 +509,23 @@ export class StoreTelegramService implements OnModuleInit {
     }
 
     const lines = [
-      `📋 <b>${pending.length}</b> سفارش در صف بررسی`,
+      `📋 <b>${visible.length}</b> سفارش در صف بررسی`,
       ``,
-      ...pending.map((o, i) => {
+      ...visible.map((o, i) => {
         const money = this.formatMoneyLabel(
           Number(o.amount) || 0,
           ['TOMAN', 'IRT', 'IRR', 'TMN'].includes(String(o.currency || '').toUpperCase())
             ? 'toman'
             : 'usd',
         );
-        const kind = o.isRenewal ? 'تمدید' : 'جدید';
+        const digital = this.readDigitalAdminState(o);
+        const kind = digital.isDigital
+          ? digital.pendingManual
+            ? 'دیجیتال · ارسال کد'
+            : 'دیجیتال'
+          : o.isRenewal
+            ? 'تمدید'
+            : 'جدید';
         const cat = o.product?.category?.name
           ? this.escapeHtml(o.product.category.name)
           : '';
@@ -496,6 +535,7 @@ export class StoreTelegramService implements OnModuleInit {
           o.renewClient?.remark ||
           o.client?.email ||
           o.client?.remark ||
+          o.product?.name ||
           (o.configName && o.configName !== 'renewal' ? o.configName : null) ||
           '—';
         const name = this.escapeHtml(serverName);
@@ -503,15 +543,145 @@ export class StoreTelegramService implements OnModuleInit {
         return `${i + 1}. <code>${this.escapeHtml(o.trackingCode)}</code> · ${kind}${testTag}${catBit} · ${name} · ${money}`;
       }),
       ``,
-      `از دکمه‌های زیر تأیید یا رد کنید:`,
+      `از دکمه‌های زیر تأیید، رد یا ارسال کد کنید:`,
+    ];
+
+    const rows: Array<Array<Record<string, unknown>>> = [];
+    for (const o of visible) {
+      const short = String(o.trackingCode || o.id).slice(0, 12);
+      const digital = this.readDigitalAdminState(o);
+      if (digital.pendingManual) {
+        rows.push([
+          { text: `👁 ${short}`, callback_data: `admin:ord:v:${o.id}` },
+          { text: `📤 ارسال کد`, callback_data: `admin:dig:send:${o.id}` },
+        ]);
+      } else {
+        rows.push([
+          { text: `✅ ${short}`, callback_data: `approve:${o.id}` },
+          { text: `❌ ${short}`, callback_data: `reject:${o.id}` },
+        ]);
+      }
+    }
+    rows.push([{ text: '🏠 منوی ادمین', callback_data: 'admin:home' }]);
+
+    await this.replyOrEdit(
+      botToken,
+      chatId,
+      lines.join('\n'),
+      { reply_markup: { inline_keyboard: rows } },
+      messageId,
+    );
+  }
+
+  private async sendAdminPendingCodesList(
+    botToken: string,
+    chatId: string | number,
+    adminId: string,
+    storeId: string,
+    messageId?: number,
+  ) {
+    let rowsDb: Array<{
+      id: string;
+      trackingCode: string;
+      amount: number | null;
+      currency: string | null;
+      configName: string | null;
+      status: string;
+      fulfillment: unknown;
+      product: { name: string | null; kind: string | null } | null;
+      customer: {
+        name: string | null;
+        telegramUsername: string | null;
+        telegramUserId: string | null;
+      } | null;
+    }> = [];
+    try {
+      rowsDb = (await this.prisma.storeOrder.findMany({
+        where: {
+          storeId,
+          status: {
+            in: ['ACTIVE', 'APPROVED', 'PROVISIONING', 'UNDER_REVIEW', 'PAYMENT_SUBMITTED'],
+          },
+          product: { kind: 'DIGITAL' },
+          OR: [
+            { digitalDelivery: { is: null } },
+            { digitalDelivery: { is: { deliveredAt: null } } },
+          ],
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+        select: {
+          id: true,
+          trackingCode: true,
+          amount: true,
+          currency: true,
+          configName: true,
+          status: true,
+          fulfillment: true,
+          product: { select: { name: true, kind: true } },
+          customer: {
+            select: { name: true, telegramUsername: true, telegramUserId: true },
+          },
+        },
+      })) as typeof rowsDb;
+    } catch (err: any) {
+      this.logger.warn(`pending digital codes list failed: ${err?.message || err}`);
+    }
+    const pending = rowsDb
+      .filter((o) => {
+        const digital = this.readDigitalAdminState(o);
+        return digital.isDigital && digital.pendingManual && !digital.delivered;
+      })
+      .slice(0, 10);
+
+    const homeKb = this.adminHomeKeyboard(
+      this.panelAdminUrl('/premium/store'),
+      0,
+      pending.length,
+    );
+
+    if (!pending.length) {
+      await this.replyOrEdit(
+        botToken,
+        chatId,
+        [
+          '✅ <b>کدی در صف ارسال نیست</b>',
+          '',
+          'بعد از تأیید پرداخت، سفارش‌های دیجیتال که هنوز کد/لینک نگرفته‌اند اینجا می‌آیند.',
+        ].join('\n'),
+        { reply_markup: homeKb },
+        messageId,
+      );
+      return;
+    }
+
+    const lines = [
+      `📤 <b>${pending.length}</b> سفارش در انتظار ارسال کد / لینک`,
+      '',
+      'پرداخت این‌ها تأیید شده؛ کد یا لینک محصول را برای مشتری بفرستید.',
+      '',
+      ...pending.map((o, i) => {
+        const money = this.formatMoneyLabel(
+          Number(o.amount) || 0,
+          ['TOMAN', 'IRT', 'IRR', 'TMN'].includes(String(o.currency || '').toUpperCase())
+            ? 'toman'
+            : 'usd',
+        );
+        const who =
+          o.customer?.telegramUsername
+            ? `@${this.escapeHtml(o.customer.telegramUsername)}`
+            : this.escapeHtml(o.customer?.name || '—');
+        const product = this.escapeHtml(o.product?.name || o.configName || 'دیجیتال');
+        return `${i + 1}. <code>${this.escapeHtml(o.trackingCode)}</code> · ${product} · ${who} · ${money}`;
+      }),
     ];
 
     const rows: Array<Array<Record<string, unknown>>> = [];
     for (const o of pending) {
       const short = String(o.trackingCode || o.id).slice(0, 12);
       rows.push([
-        { text: `✅ ${short}`, callback_data: `approve:${o.id}` },
-        { text: `❌ ${short}`, callback_data: `reject:${o.id}` },
+        { text: `👁 ${short}`, callback_data: `admin:ord:v:${o.id}` },
+        { text: `📤 ارسال کد`, callback_data: `admin:dig:send:${o.id}` },
       ]);
     }
     rows.push([{ text: '🏠 منوی ادمین', callback_data: 'admin:home' }]);
@@ -1974,6 +2144,43 @@ export class StoreTelegramService implements OnModuleInit {
     });
   }
 
+  /** Same custom main menu as /start (agency, PAYG, labels, ordered buttons). */
+  private async attachBotMenuContext<T extends { adminId: string }>(store: T) {
+    const agencyMenu = await this.agencyCommerce.isAgencyEnabled(store.adminId);
+    let paygMenu = false;
+    let paygLabel: string | null = null;
+    if (this.payg) {
+      try {
+        const paygSettings = await this.payg.getOrCreateSettings(store.adminId);
+        paygMenu = !!paygSettings.botMenuEnabled;
+        paygLabel = paygSettings.botButtonLabel ?? null;
+      } catch (err: any) {
+        this.logger.warn(`PAYG settings load failed: ${err?.message || err}`);
+      }
+    }
+    let digitalMenu = false;
+    if (this.features) {
+      try {
+        digitalMenu = await this.features.canWrite(STORE_DIGITAL_MODULE_ID);
+      } catch (err: any) {
+        this.logger.warn(`Digital module check failed: ${err?.message || err}`);
+      }
+    }
+    const botMenu = await loadStoreBotMenu(this.prisma, store.adminId);
+    const storeCtx = {
+      ...store,
+      _agencyMenu: agencyMenu,
+      _paygMenu: paygMenu,
+      _paygLabel: paygLabel,
+      _digitalMenu: digitalMenu,
+      _buyVpnLabel: (store as { botBuyVpnLabel?: string | null }).botBuyVpnLabel ?? null,
+      _buyDigitalLabel:
+        (store as { botBuyDigitalLabel?: string | null }).botBuyDigitalLabel ?? null,
+      _botMenu: botMenu,
+    };
+    return { storeCtx, agencyMenu, paygMenu, paygLabel };
+  }
+
   async handleWebhook(slug: string, secret: string, update: any) {
     this.rateLimit.check('telegramWebhook', `${slug}:${secret.slice(0, 8)}`);
     const store = await this.prisma.storeProfile.findUnique({
@@ -1986,6 +2193,13 @@ export class StoreTelegramService implements OnModuleInit {
     }
     const botToken = this.decryptToken(store.telegramBotTokenEnc);
     if (!botToken) return { ok: true };
+
+    const commerceActive = this.entitlement
+      ? await this.entitlement.isStoreCommerceActive()
+      : true;
+    if (!commerceActive) {
+      return this.replyLicenseInactiveWebhook(store, botToken, update);
+    }
 
     const preCheckout = update?.pre_checkout_query;
     if (preCheckout?.id && this.paymentManagement) {
@@ -2039,38 +2253,8 @@ export class StoreTelegramService implements OnModuleInit {
       return { ok: true };
     }
 
-    const agencyMenu = await this.agencyCommerce.isAgencyEnabled(store.adminId);
-    let paygMenu = false;
-    let paygLabel: string | null = null;
-    if (this.payg) {
-      try {
-        const paygSettings = await this.payg.getOrCreateSettings(store.adminId);
-        paygMenu = !!paygSettings.botMenuEnabled;
-        paygLabel = paygSettings.botButtonLabel ?? null;
-      } catch (err: any) {
-        this.logger.warn(`PAYG settings load failed: ${err?.message || err}`);
-      }
-    }
-    let digitalMenu = false;
-    if (this.features) {
-      try {
-        digitalMenu = await this.features.canWrite(STORE_DIGITAL_MODULE_ID);
-      } catch (err: any) {
-        this.logger.warn(`Digital module check failed: ${err?.message || err}`);
-      }
-    }
-    const botMenu = await loadStoreBotMenu(this.prisma, store.adminId);
-    const storeCtx = {
-      ...store,
-      _agencyMenu: agencyMenu,
-      _paygMenu: paygMenu,
-      _paygLabel: paygLabel,
-      _digitalMenu: digitalMenu,
-      _buyVpnLabel: (store as { botBuyVpnLabel?: string | null }).botBuyVpnLabel ?? null,
-      _buyDigitalLabel:
-        (store as { botBuyDigitalLabel?: string | null }).botBuyDigitalLabel ?? null,
-      _botMenu: botMenu,
-    };
+    const { storeCtx, agencyMenu, paygMenu, paygLabel } =
+      await this.attachBotMenuContext(store);
 
     // Forced-channel membership gate: admins and completed payments pass;
     // everyone else must be a member of store.telegramForceChannel (if set).
@@ -2332,8 +2516,9 @@ export class StoreTelegramService implements OnModuleInit {
       const { customer } = await this.findOrCreateByTelegram(store.adminId, from);
       if (customer.status === 'blocked') return { ok: true };
       await this.commerce.ensureCustomerReferral(customer.id).catch(() => undefined);
+      let startKind: 'ref' | 'payg_wdep' | 'none' = 'none';
       if (startArg) {
-        await this.commerce.handleStartPayload(customer.id, startArg);
+        startKind = (await this.commerce.handleStartPayload(customer.id, startArg)).kind;
       }
       const welcome =
         store.telegramWelcomeText?.trim() || this.defaultWelcomeText(store.title);
@@ -2341,6 +2526,17 @@ export class StoreTelegramService implements OnModuleInit {
       // Store admin: home menu (orders / revenue / open panel)
       if (this.isAdminActor(store.telegramAdminChatId, String(from.id), chatId)) {
         await this.sendAdminHome(botToken, chatId, store);
+        return { ok: true };
+      }
+
+      if (startKind === 'payg_wdep') {
+        await this.commerce.startWalletTopupFromChat({
+          botToken,
+          store: storeCtx,
+          customer,
+          chatId,
+          send: (token, cid, msg, extra) => this.sendMessage(token, cid, msg, extra),
+        });
         return { ok: true };
       }
 
@@ -2522,6 +2718,63 @@ export class StoreTelegramService implements OnModuleInit {
     return url;
   }
 
+  /**
+   * License expired / grace: stop all store commerce in Telegram.
+   * Admin sees license-expired copy; customers see temporary inactive.
+   */
+  private async replyLicenseInactiveWebhook(
+    store: { telegramAdminChatId?: string | null; locale?: string | null },
+    botToken: string,
+    update: any,
+  ) {
+    const preCheckout = update?.pre_checkout_query;
+    if (preCheckout?.id) {
+      try {
+        await this.telegramHttp.postTelegramJson(
+          botToken,
+          'answerPreCheckoutQuery',
+          {
+            pre_checkout_query_id: String(preCheckout.id),
+            ok: false,
+            error_message: 'Store temporarily unavailable',
+          },
+          8_000,
+        );
+      } catch {
+        /* ignore */
+      }
+      return { ok: true };
+    }
+
+    const callback = update?.callback_query;
+    const message = update?.message || update?.edited_message;
+    const fromId = String(
+      callback?.from?.id || message?.from?.id || '',
+    ).trim();
+    const chatId =
+      callback?.message?.chat?.id ??
+      message?.chat?.id ??
+      callback?.from?.id ??
+      null;
+    if (chatId == null) return { ok: true };
+
+    const loc = normalizeBotLocale(store.locale || message?.from?.language_code);
+    const isAdmin = this.isAdminActor(store.telegramAdminChatId, fromId, chatId);
+    const text = isAdmin
+      ? botT(loc, 'license.expiredAdmin')
+      : botT(loc, 'license.botInactive');
+
+    if (callback?.id) {
+      try {
+        await this.answerCallback(botToken, String(callback.id));
+      } catch {
+        /* ignore */
+      }
+    }
+    await this.sendMessage(botToken, chatId, text);
+    return { ok: true };
+  }
+
   private isAdminActor(
     adminChatId: string | null | undefined,
     fromId: string,
@@ -2574,6 +2827,36 @@ export class StoreTelegramService implements OnModuleInit {
         if (chatId && store) {
           await this.sendAdminOrdersList(botToken, chatId, adminId, store.id, messageId);
         }
+        return;
+      }
+      if (data === 'admin:codes') {
+        await this.answerCallback(botToken, callbackId, '📤 ارسال کد');
+        if (chatId && store) {
+          await this.sendAdminPendingCodesList(botToken, chatId, adminId, store.id, messageId);
+        }
+        return;
+      }
+      const adminOrderView = /^admin:ord:v:(.+)$/.exec(data);
+      if (adminOrderView && chatId) {
+        await this.answerCallback(botToken, callbackId);
+        await this.syncAdminOrderTelegram(adminId, adminOrderView[1], '');
+        return;
+      }
+      const digSend = /^admin:dig:send:(.+)$/.exec(data);
+      if (digSend && chatId) {
+        await this.answerCallback(botToken, callbackId, 'کد را بفرستید');
+        await this.startAdminPrompt(
+          adminId,
+          chatId,
+          botToken,
+          { kind: 'dig_code', targetId: digSend[1] },
+          [
+            '🎁 <b>ارسال کد / لینک محصول</b>',
+            '',
+            'متن کد، لایسنس یا لینک را همین‌جا بفرستید.',
+            'پس از ارسال، همان متن برای مشتری تحویل داده می‌شود.',
+          ].join('\n'),
+        );
         return;
       }
       if (data === 'admin:revenue' || /^admin:rev:y:\d+$/.test(data)) {
@@ -3141,25 +3424,41 @@ export class StoreTelegramService implements OnModuleInit {
         await this.store.approveOrder(adminId, 'ADMIN', orderId);
         const after = await this.prisma.storeOrder.findFirst({
           where: { id: orderId, store: { adminId } },
-          select: { status: true },
+          include: {
+            product: { select: { kind: true } },
+          },
         });
         const confirmed =
           before?.pendingReview && ['ACTIVE', 'RENEWED'].includes(before.status || '');
         const provisioned = ['ACTIVE', 'RENEWED'].includes(after?.status || '');
+        const digital = this.readDigitalAdminState(after);
         await this.answerCallback(
           botToken,
           callbackId,
-          confirmed ? '✅ تأیید نهایی ثبت شد' : '✅ سفارش تأیید شد',
+          digital.pendingManual
+            ? '✅ تأیید شد — کد را بفرستید'
+            : digital.delivered
+              ? '⚡️ از موجودی تحویل شد'
+              : confirmed
+                ? '✅ تأیید نهایی ثبت شد'
+                : '✅ سفارش تأیید شد',
         );
-        await this.syncAdminOrderTelegram(
-          adminId,
-          orderId,
-          confirmed
-            ? '✅ <b>بررسی سفارش بسته شد — سرویس از قبل فعال بود.</b>'
-            : provisioned
-              ? '✅ <b>سرویس ساخته شد.</b>'
-              : '✅ <b>سفارش تأیید و در صف ساخت سرویس قرار گرفت.</b>',
-        );
+        const footer = digital.delivered
+          ? '⚡️ <b>تحویل خودکار از موجودی Inventory انجام شد.</b>'
+          : digital.fallbackToManual
+            ? '⚠️ <b>تحویل خودکار انجام نشد</b> چون موجودی Inventory صفر بود.\nنوع تحویل به «توسط اپراتور» تغییر کرد — کد یا لینک محصول را بفرستید.'
+            : digital.pendingManual
+              ? '🎁 <b>سفارش تأیید شد.</b> تحویل توسط اپراتور است — کد یا لینک را از همین‌جا بفرستید.'
+              : confirmed
+                ? '✅ <b>بررسی سفارش بسته شد — سرویس از قبل فعال بود.</b>'
+                : provisioned
+                  ? '✅ <b>سرویس ساخته شد.</b>'
+                  : '✅ <b>سفارش تأیید و در صف ساخت سرویس قرار گرفت.</b>';
+        await this.syncAdminOrderTelegram(adminId, orderId, footer, {
+          keepActions:
+            !digital.isDigital &&
+            !!(before?.autoDelivered && !confirmed && !provisioned),
+        });
         return;
       }
       if (rejectMatch) {
@@ -3328,11 +3627,14 @@ export class StoreTelegramService implements OnModuleInit {
     const store = await this.prisma.storeProfile.findUnique({
       where: { adminId: customer.adminId },
       select: {
+        adminId: true,
         telegramBotEnabled: true,
         telegramBotTokenEnc: true,
         telegramBotLocale: true,
         defaultCurrency: true,
         slug: true,
+        botBuyVpnLabel: true,
+        botBuyDigitalLabel: true,
         domain: { select: { domain: true, status: true } },
       },
     });
@@ -3352,8 +3654,12 @@ export class StoreTelegramService implements OnModuleInit {
       : botT(loc, 'wallet.rejected', {
           reason: input.reason ? `\n${input.reason}` : '',
         });
+    const { storeCtx } = await this.attachBotMenuContext(store);
     await this.sendMessage(botToken, customer.telegramUserId, text, {
-      reply_markup: this.commerce.mainMenuKeyboard(store as any, this.buildMiniAppUrl(store as any)),
+      reply_markup: this.commerce.mainMenuKeyboard(
+        storeCtx,
+        this.buildMiniAppUrl(storeCtx),
+      ),
     });
   }
 
@@ -3381,7 +3687,7 @@ export class StoreTelegramService implements OnModuleInit {
     const order = await this.prisma.storeOrder.findFirst({
       where: { id: orderId, store: { adminId } },
       include: {
-        product: { select: { name: true, isTest: true, category: { select: { name: true } } } },
+        product: { select: { name: true, isTest: true, kind: true, category: { select: { name: true } } } },
         customer: {
           select: {
             name: true,
@@ -3402,31 +3708,48 @@ export class StoreTelegramService implements OnModuleInit {
     const paidWithWallet =
       String(order.payment?.method || '').toUpperCase() === 'WALLET';
     const hasReceipt = !!(order.payment?.receiptText || order.payment?.receiptImage || paidWithWallet);
+    const digital = this.readDigitalAdminState(order);
     const approveLabel = order.autoDelivered
       ? '✅ تأیید نهایی'
-      : '✅ تأیید و فعال‌سازی';
+      : digital.isDigital
+        ? '✅ تأیید پرداخت'
+        : '✅ تأیید و فعال‌سازی';
     const rejectLabel = order.autoDelivered
       ? '↩️ رد و برگشت'
       : '❌ رد';
-    const keyboard = hasReceipt
+    const keyboard = digital.isDigital
       ? {
           inline_keyboard: [
             [
               { text: approveLabel, callback_data: `approve:${order.id}` },
-              { text: rejectLabel, callback_data: `reject:${order.id}` },
+              { text: '📤 ارسال کد', callback_data: `admin:dig:send:${order.id}` },
             ],
+            [{ text: rejectLabel, callback_data: `reject:${order.id}` }],
           ],
         }
-      : {
-          inline_keyboard: [
-            [{ text: '❌ رد سفارش', callback_data: `reject:${order.id}` }],
-          ],
-        };
+      : hasReceipt
+        ? {
+            inline_keyboard: [
+              [
+                { text: approveLabel, callback_data: `approve:${order.id}` },
+                { text: rejectLabel, callback_data: `reject:${order.id}` },
+              ],
+            ],
+          }
+        : {
+            inline_keyboard: [
+              [{ text: '❌ رد سفارش', callback_data: `reject:${order.id}` }],
+            ],
+          };
 
     const caption = this.buildAdminOrderBody(order, store, {
-      title: hasReceipt
-        ? '🛎️ <b>سفارش جدید — نیاز به بررسی</b>'
-        : '🛎️ <b>سفارش جدید — بدون رسید</b>',
+      title: digital.isDigital
+        ? hasReceipt
+          ? '🎁 <b>سفارش دیجیتال جدید — نیاز به بررسی</b>'
+          : '🎁 <b>سفارش دیجیتال جدید — بدون رسید</b>'
+        : hasReceipt
+          ? '🛎️ <b>سفارش جدید — نیاز به بررسی</b>'
+          : '🛎️ <b>سفارش جدید — بدون رسید</b>',
     });
 
     // Prefer a single message: receipt photo + order details as caption (+ buttons).
@@ -3590,6 +3913,53 @@ export class StoreTelegramService implements OnModuleInit {
     return sent.ok;
   }
 
+  async notifyAdminPaygActivated(input: {
+    adminId: string;
+    subscriptionId: string;
+    planName: string;
+    customerName?: string | null;
+    telegramUsername?: string | null;
+    telegramUserId?: string | number | null;
+    devices?: number | null;
+  }) {
+    const store = await this.prisma.storeProfile.findUnique({
+      where: { adminId: input.adminId },
+      select: {
+        telegramBotEnabled: true,
+        telegramBotTokenEnc: true,
+        telegramAdminChatId: true,
+      },
+    });
+    if (!store?.telegramBotEnabled || !store.telegramAdminChatId) return false;
+    const botToken = this.decryptToken(store.telegramBotTokenEnc);
+    if (!botToken) return false;
+
+    const who =
+      input.customerName ||
+      (input.telegramUsername ? `@${input.telegramUsername}` : null) ||
+      (input.telegramUserId ? String(input.telegramUserId) : '—');
+    const lines = [
+      '⚡ <b>فعال‌سازی PAYG</b>',
+      '',
+      `📦 پلن: <b>${this.escapeHtml(input.planName)}</b>`,
+      `👤 مشتری: ${this.escapeHtml(String(who))}`,
+    ];
+    if (input.telegramUserId) {
+      lines.push(`🆔 Telegram ID: <code>${this.escapeHtml(String(input.telegramUserId))}</code>`);
+    }
+    if (Number(input.devices) > 0) {
+      lines.push(`👥 کاربر: <b>${Number(input.devices)}</b>`);
+    }
+    lines.push(`🆔 اشتراک: <code>${this.escapeHtml(input.subscriptionId)}</code>`);
+
+    const sent = await this.sendMessage(botToken, store.telegramAdminChatId, lines.join('\n'), {
+      reply_markup: {
+        inline_keyboard: [[{ text: '🏠 منوی ادمین', callback_data: 'admin:home' }]],
+      },
+    });
+    return sent.ok;
+  }
+
   async sendStoreCustomerMessage(
     adminId: string,
     chatId: string | number,
@@ -3617,6 +3987,82 @@ export class StoreTelegramService implements OnModuleInit {
       '⚡️ <b>تحویل خودکار انجام شد</b> — تأیید نهایی یا رد کنید.',
       { keepActions: true },
     );
+  }
+
+  private readDigitalAdminState(order: {
+    product?: { kind?: string | null } | null;
+    fulfillment?: unknown;
+  }): {
+    isDigital: boolean;
+    pendingManual: boolean;
+    delivered: boolean;
+    fallbackToManual: boolean;
+  } {
+    const ff = parseFulfillment(order?.fulfillment);
+    const rec =
+      order?.fulfillment && typeof order.fulfillment === 'object'
+        ? (order.fulfillment as Record<string, unknown>)
+        : {};
+    const isDigital =
+      productIsDigital(order?.product) ||
+      isDigitalInventoryProvider(ff?.providerId);
+    if (!isDigital) {
+      return {
+        isDigital: false,
+        pendingManual: false,
+        delivered: false,
+        fallbackToManual: false,
+      };
+    }
+    const delivered =
+      (!!ff?.digitalCodeMasked || typeof rec.digitalCodeMasked === 'string') &&
+      rec.pendingManual !== true &&
+      ff?.pendingManual !== true;
+    const pendingManual =
+      rec.pendingManual === true ||
+      ff?.pendingManual === true ||
+      (!delivered && !ff?.unitId && !rec.unitId);
+    return {
+      isDigital: true,
+      pendingManual,
+      delivered,
+      fallbackToManual: rec.fallbackToManual === true || ff?.fallbackToManual === true,
+    };
+  }
+
+  private buildAdminOrderKeyboard(
+    order: { id: string; autoDelivered?: boolean | null },
+    opts: {
+      keepActions?: boolean;
+      digital: {
+        isDigital: boolean;
+        pendingManual: boolean;
+        delivered: boolean;
+        fallbackToManual: boolean;
+      };
+    },
+  ) {
+    const rows: Array<Array<Record<string, unknown>>> = [];
+    if (opts.digital.pendingManual) {
+      rows.push([
+        { text: '📤 ارسال کد / لینک', callback_data: `admin:dig:send:${order.id}` },
+        { text: '❌ رد', callback_data: `reject:${order.id}` },
+      ]);
+      rows.push([{ text: '📋 صف ارسال کد', callback_data: 'admin:codes' }]);
+    } else if (opts.keepActions) {
+      rows.push([
+        {
+          text: order.autoDelivered ? '✅ تأیید نهایی' : '✅ تأیید و فعال‌سازی',
+          callback_data: `approve:${order.id}`,
+        },
+        {
+          text: order.autoDelivered ? '↩️ رد و برگشت' : '❌ رد سفارش',
+          callback_data: `reject:${order.id}`,
+        },
+      ]);
+    }
+    rows.push([{ text: '🏠 منوی ادمین', callback_data: 'admin:home' }]);
+    return { inline_keyboard: rows };
   }
 
   private static readonly adminOrderClientSelect = {
@@ -3673,6 +4119,16 @@ export class StoreTelegramService implements OnModuleInit {
     const autoTag = order.autoDelivered
       ? `\n⚡️ <b>تحویل خودکار انجام شد</b>`
       : '';
+    const digital = this.readDigitalAdminState(order);
+    const digitalTag = !digital.isDigital
+      ? ''
+      : digital.delivered
+        ? `\n🎁 <b>کد / لینک تحویل شد</b>`
+        : digital.fallbackToManual
+          ? `\n⚠️ <b>تحویل خودکار ناموفق</b> — موجودی صفر؛ حالا توسط اپراتور`
+          : digital.pendingManual
+            ? `\n🎁 <b>در انتظار ارسال کد / لینک</b>`
+            : `\n🎁 محصول دیجیتال`;
     const tgUser = order.customer?.telegramUserId
       ? `<code>${this.escapeHtml(String(order.customer.telegramUserId))}</code>`
       : '—';
@@ -3707,7 +4163,7 @@ export class StoreTelegramService implements OnModuleInit {
       normalized.title || `🛎️ <b>سفارش — جزئیات</b>`,
       ``,
       this.orderNumberLine(order.trackingCode),
-      `${kind}${pendingTag}${autoTag}`,
+      `${kind}${pendingTag}${autoTag}${digitalTag}`,
       `📦 محصول: <b>${productName}</b>${testTag}`,
       ...(categoryName ? [`📂 دسته: <b>${categoryName}</b>`] : []),
       `🏷 کانفیگ: <code>${configName}</code>`,
@@ -3751,7 +4207,7 @@ export class StoreTelegramService implements OnModuleInit {
     const order = await this.prisma.storeOrder.findFirst({
       where: { id: orderId, store: { adminId } },
       include: {
-        product: { select: { name: true, isTest: true, category: { select: { name: true } } } },
+        product: { select: { name: true, isTest: true, kind: true, category: { select: { name: true } } } },
         customer: {
           select: {
             name: true,
@@ -3770,24 +4226,11 @@ export class StoreTelegramService implements OnModuleInit {
     if (!order) return false;
 
     const caption = this.buildAdminOrderBody(order, store, statusFooter);
-    const keyboard = opts?.keepActions
-      ? {
-          inline_keyboard: [
-            [
-              {
-                text: order.autoDelivered ? '✅ تأیید نهایی' : '✅ تأیید و فعال‌سازی',
-                callback_data: `approve:${order.id}`,
-              },
-              {
-                text: order.autoDelivered ? '↩️ رد و برگشت' : '❌ رد سفارش',
-                callback_data: `reject:${order.id}`,
-              },
-            ],
-          ],
-        }
-      : {
-          inline_keyboard: [[{ text: '🏠 منوی ادمین', callback_data: 'admin:home' }]],
-        };
+    const digital = this.readDigitalAdminState(order);
+    const keyboard = this.buildAdminOrderKeyboard(order, {
+      keepActions: !!opts?.keepActions,
+      digital,
+    });
 
     const chatId = order.telegramAdminChatId || store.telegramAdminChatId;
     const messageId = order.telegramAdminMessageId;
@@ -3917,29 +4360,71 @@ export class StoreTelegramService implements OnModuleInit {
     const payload = input.payload || {};
     const trackingCode =
       typeof payload.trackingCode === 'string' ? payload.trackingCode : null;
-    const subId = typeof payload.subId === 'string' ? payload.subId : null;
-    const payloadSubUrl = typeof payload.subUrl === 'string' ? payload.subUrl : null;
+    let subId =
+      typeof payload.subId === 'string' && payload.subId.trim() ? payload.subId.trim() : null;
+    let payloadSubUrl =
+      typeof payload.subUrl === 'string' && payload.subUrl.trim()
+        ? payload.subUrl.trim()
+        : null;
     const status = typeof payload.status === 'string' ? payload.status : null;
     const configName =
       typeof payload.configName === 'string' ? payload.configName : null;
     const serviceName =
       typeof payload.serviceName === 'string' ? payload.serviceName : null;
     const reason = typeof payload.reason === 'string' ? payload.reason : null;
+    const orderId = typeof payload.orderId === 'string' ? payload.orderId : null;
 
-    let nativePanel: { subUrl?: string | null; url?: string | null } | null = null;
-    if (subId && store.subscriptionLinkMode === 'native') {
-      const client = await this.prisma.client.findFirst({
-        where: {
-          OR: [{ subId }, { subToken: subId }],
-        },
-        select: {
-          inbound: {
-            select: { panel: { select: { subUrl: true, url: true } } },
+    let nativePanel: {
+      subUrl?: string | null;
+      url?: string | null;
+      panelType?: string | null;
+    } | null = null;
+    let nativeMetaUrl: string | null = null;
+    const takeClientRow = (row: {
+      subId?: string | null;
+      providerMeta?: unknown;
+      panel?: { subUrl?: string | null; url?: string | null; panelType?: string | null } | null;
+    } | null) => {
+      if (!row) return;
+      if (!subId && row.subId) subId = row.subId;
+      nativeMetaUrl = nativeMetaUrl || this.providerMetaSubUrl(row.providerMeta);
+      if (row.panel) nativePanel = row.panel;
+    };
+    try {
+      if (orderId) {
+        const orderRow = await this.prisma.storeOrder.findUnique({
+          where: { id: orderId },
+          select: {
+            fulfillment: true,
+            client: {
+              select: {
+                subId: true,
+                providerMeta: true,
+                panel: { select: { subUrl: true, url: true, panelType: true } },
+              },
+            },
           },
-        },
-      });
-      nativePanel = client?.inbound?.panel || null;
+        });
+        const ffUrl = this.httpsSubUrl(parseFulfillment(orderRow?.fulfillment)?.subUrl);
+        if (ffUrl) payloadSubUrl = payloadSubUrl || ffUrl;
+        takeClientRow(orderRow?.client || null);
+      }
+      if (subId) {
+        const client = await this.prisma.client.findFirst({
+          where: { OR: [{ subId }, { subToken: subId }] },
+          select: {
+            subId: true,
+            providerMeta: true,
+            panel: { select: { subUrl: true, url: true, panelType: true } },
+          },
+        });
+        takeClientRow(client);
+      }
+    } catch (err: any) {
+      this.logger.warn(`Telegram sub-url lookup failed: ${err?.message || err}`);
     }
+    if (!payloadSubUrl && nativeMetaUrl) payloadSubUrl = nativeMetaUrl;
+
     let resolvedSubUrl =
       (payloadSubUrl && isNativeEylanSubUrl(payloadSubUrl)
         ? payloadSubUrl
@@ -3948,7 +4433,9 @@ export class StoreTelegramService implements OnModuleInit {
         ? payloadSubUrl
         : null) ||
       this.resolveCustomerSubUrl(store, subId, nativePanel);
+    const nativeKind = String(nativePanel?.panelType || '').toLowerCase();
     const isEylanDelivery =
+      nativeKind === 'eylan' ||
       isEylanProvider(typeof payload.providerId === 'string' ? payload.providerId : null) ||
       isNativeEylanSubUrl(resolvedSubUrl) ||
       isNativeEylanSubUrl(payloadSubUrl);
@@ -3957,7 +4444,10 @@ export class StoreTelegramService implements OnModuleInit {
       resolvedSubUrl = String(payloadSubUrl).trim();
     }
     if (isEylanDelivery && resolvedSubUrl && /\/s\//i.test(resolvedSubUrl) && !/\/sub\//i.test(resolvedSubUrl)) {
-      resolvedSubUrl = null;
+      resolvedSubUrl = nativeMetaUrl || (isNativeEylanSubUrl(payloadSubUrl) ? payloadSubUrl : null);
+    }
+    if (nativeKind === 'pasarguard' && nativeMetaUrl) {
+      resolvedSubUrl = nativeMetaUrl;
     }
     const kindRaw =
       (typeof payload.kind === 'string' && payload.kind) ||
@@ -4030,17 +4520,29 @@ export class StoreTelegramService implements OnModuleInit {
               : 'Order created — waiting for payment details.',
           ),
         );
+        const digitalHint =
+          payload.digitalDeliveryHint === 'auto' || payload.digitalDeliveryHint === 'operator'
+            ? payload.digitalDeliveryHint
+            : null;
+        const digitalOrderMsg =
+          typeof payload.digitalOrderMessage === 'string' ? payload.digitalOrderMessage : null;
+        const digitalExtra = digitalOrderSubmittedExtra(loc, digitalHint, digitalOrderMsg);
+        if (digitalExtra) {
+          lines.push(digitalExtra.replace(/^\n+/, ''));
+        }
         break;
       }
       case 'payment_approved':
       case 'order_approved': {
         lines.push(bilingual('✅ <b>سفارش تأیید شد</b>', '✅ <b>Order approved</b>'));
-        lines.push(
-          bilingual(
-            'پرداخت تأیید شد؛ در حال ساخت سرویس…',
-            'Payment approved — creating your service…',
-          ),
-        );
+        if (payload.quiet !== true) {
+          lines.push(
+            bilingual(
+              'پرداخت تأیید شد؛ در حال ساخت سرویس…',
+              'Payment approved — creating your service…',
+            ),
+          );
+        }
         if (configName) lines.push(`🏷 <code>${configName}</code>`);
         break;
       }
@@ -4074,18 +4576,49 @@ export class StoreTelegramService implements OnModuleInit {
       case 'digital_code_ready': {
         const digitalCode =
           typeof payload.digitalCode === 'string' ? payload.digitalCode : null;
-        lines.push(botT(loc, 'digital.ready'));
-        if (serviceName || (configName && configName !== 'renewal')) {
-          lines.push(
-            botT(loc, 'digital.product', {
-              name: this.escapeHtml(serviceName || configName || ''),
-            }),
-          );
+        const deliveryTpl =
+          typeof payload.digitalDeliveryMessage === 'string'
+            ? payload.digitalDeliveryMessage.trim()
+            : '';
+        const guideTpl =
+          typeof payload.digitalGuideMessage === 'string'
+            ? payload.digitalGuideMessage.trim()
+            : '';
+        if (deliveryTpl && digitalCode) {
+          const safeCode = this.escapeHtml(digitalCode);
+          const safeName = this.escapeHtml(serviceName || configName || '');
+          const templated = this.escapeHtml(
+            deliveryTpl
+              .replace(/\{code\}/gi, '<<<DIGITAL_CODE>>>')
+              .replace(/\{name\}/gi, '<<<DIGITAL_NAME>>>'),
+          )
+            .replace(/&lt;&lt;&lt;DIGITAL_CODE&gt;&gt;&gt;/g, `<code>${safeCode}</code>`)
+            .replace(/&lt;&lt;&lt;DIGITAL_NAME&gt;&gt;&gt;/g, safeName);
+          lines.push(templated);
+          if (!/\{code\}/i.test(String(payload.digitalDeliveryMessage || ''))) {
+            lines.push('', botT(loc, 'digital.code', { code: safeCode }));
+          }
+        } else {
+          lines.push(botT(loc, 'digital.ready'));
+          if (serviceName || (configName && configName !== 'renewal')) {
+            lines.push(
+              botT(loc, 'digital.product', {
+                name: this.escapeHtml(serviceName || configName || ''),
+              }),
+            );
+          }
+          if (digitalCode) {
+            lines.push('', botT(loc, 'digital.code', { code: this.escapeHtml(digitalCode) }));
+          }
         }
-        if (digitalCode) {
-          lines.push('', botT(loc, 'digital.code', { code: this.escapeHtml(digitalCode) }));
+        if (guideTpl) {
+          lines.push('', this.escapeHtml(guideTpl));
         }
         break;
+      }
+      case 'digital_order_pending': {
+        // Customer should not see extra operator-delivery chatter until the code is sent.
+        return false;
       }
       case 'service_ready':
       case 'subscription_updated': {
@@ -4242,9 +4775,13 @@ export class StoreTelegramService implements OnModuleInit {
 
     let text = lines.join('\n');
     const subUrl = resolvedSubUrl;
+    if (kind === 'test_created' && subUrl) {
+      text = `${text}\n\n${botT(loc, 'services.subLink', { url: this.escapeHtml(subUrl) })}`;
+    }
     const isReady =
-      (kind === 'service_ready' || kind === 'subscription_updated') &&
-      kind !== 'test_created';
+      kind === 'service_ready' ||
+      kind === 'subscription_updated' ||
+      kind === 'test_created';
     const needsSupport =
       kind === 'payment_rejected' ||
       kind === 'order_cancelled' ||
@@ -4255,9 +4792,32 @@ export class StoreTelegramService implements OnModuleInit {
       : [];
 
     let replyMarkup: Record<string, unknown> | undefined;
-    if (kind === 'test_created') {
+    if (kind === 'digital_code_ready') {
       replyMarkup = {
         inline_keyboard: [
+          [
+            {
+              text: botT(loc, 'btn.digitalServices'),
+              callback_data: 'c:svc:digital',
+            },
+          ],
+          [
+            {
+              text: loc === 'en' ? '🏠 Main menu' : '🏠 منوی اصلی',
+              callback_data: 'c:home',
+            },
+          ],
+        ],
+      };
+    } else if (kind === 'digital_order_pending') {
+      replyMarkup = {
+        inline_keyboard: [
+          [
+            {
+              text: botT(loc, 'btn.digitalServices'),
+              callback_data: 'c:svc:digital',
+            },
+          ],
           [
             {
               text: loc === 'en' ? '⬅️ Back' : '⬅️ بازگشت',
@@ -4338,6 +4898,23 @@ export class StoreTelegramService implements OnModuleInit {
         },
       ]);
       replyMarkup = { inline_keyboard: rows };
+    } else if (kind === 'payg_low_balance' || kind === 'payg_suspended') {
+      replyMarkup = {
+        inline_keyboard: [
+          [
+            {
+              text: loc === 'en' ? '💰 Wallet' : '💰 کیف پول',
+              callback_data: 'c:wallet',
+            },
+          ],
+          [
+            {
+              text: loc === 'en' ? '🏠 Main menu' : '🏠 منوی اصلی',
+              callback_data: 'c:home',
+            },
+          ],
+        ],
+      };
     } else {
       replyMarkup = this.storeActionKeyboard(store, {
         supportButtons: supportButtons.length ? supportButtons : undefined,
@@ -4602,6 +5179,28 @@ export class StoreTelegramService implements OnModuleInit {
         this.adminPromptDrafts.delete(key);
         await this.sendMessage(botToken, chatId, '✅ محصول ساخته شد.');
         await this.sendAdminProductView(botToken, chatId, adminId, created.id);
+        return true;
+      }
+
+      if (draft.kind === 'dig_code' && draft.targetId) {
+        const code = raw.trim();
+        if (code.length < 2) throw new Error('کد یا لینک خیلی کوتاه است');
+        await this.store.digitalDeliverOrder(adminId, 'ADMIN', draft.targetId, { code });
+        this.adminPromptDrafts.delete(key);
+        await this.sendMessage(
+          botToken,
+          chatId,
+          '✅ کد / لینک برای مشتری ارسال شد.',
+          {
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: '📤 ارسال کد', callback_data: 'admin:codes' }],
+                [{ text: '📋 سفارش‌ها', callback_data: 'admin:orders' }],
+                [{ text: '🏠 منوی ادمین', callback_data: 'admin:home' }],
+              ],
+            },
+          },
+        );
         return true;
       }
 
