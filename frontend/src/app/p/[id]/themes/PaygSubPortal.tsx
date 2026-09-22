@@ -211,6 +211,7 @@ function UsageMeter({
   usedLabel,
   remainCaption,
   usedCaption,
+  percentLabel,
 }: {
   pct: number;
   accent: string;
@@ -218,6 +219,7 @@ function UsageMeter({
   usedLabel: string;
   remainCaption: string;
   usedCaption: string;
+  percentLabel: string;
   low?: boolean;
 }) {
   const remainPct = Math.max(0, Math.min(100, pct));
@@ -242,11 +244,14 @@ function UsageMeter({
         ))}
       </div>
       <div className="flex items-end justify-between gap-3 text-sm">
-        <div>
+        <div className="min-w-0">
           <div className="text-[11px] font-medium text-zinc-400">{remainCaption}</div>
           <div className="text-sm font-semibold tabular-nums">{remainLabel}</div>
         </div>
-        <div className="text-end">
+        <div className="pb-0.5 text-[11px] font-medium tabular-nums tracking-wide text-zinc-400">
+          {percentLabel}
+        </div>
+        <div className="min-w-0 text-end">
           <div className="text-[11px] font-medium text-zinc-400">{usedCaption}</div>
           <div className="text-sm font-semibold tabular-nums">{usedLabel}</div>
         </div>
@@ -836,6 +841,7 @@ export default function PaygSubPortal({
             usedLabel={usageQtyLabel}
             remainCaption={tf("باقی‌مانده", "Left")}
             usedCaption={tf("مصرف", "Used")}
+            percentLabel={tf(`${Math.round(barPct)}٪`, `${Math.round(barPct)}%`)}
           />
           <p className="mt-3 text-xs text-zinc-400">
             {tf(
