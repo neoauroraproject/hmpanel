@@ -23,7 +23,7 @@ Documentation for Community and Premium editions: [https://neoauroraproject.gith
 
 ### 🚀 Installation
 
-Execute the following on a fresh Ubuntu (20.04+) or Debian server:
+Execute the following on a fresh Ubuntu (24.04+) or Debian server:
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/neoauroraproject/hmpanel/main/install.sh)
 ```
