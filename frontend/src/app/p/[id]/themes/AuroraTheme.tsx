@@ -143,8 +143,10 @@ export default function AuroraTheme({ id, data }: { id: string; data: SubData })
               copied={copied}
               onCopy={copy}
               onQr={setQrValue}
+              copyLabel={t("copy")}
+              qrLabel={t("qr")}
               className="rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur-xl"
-              itemClassName="rounded-2xl border border-white/5 bg-black/20 px-3 py-2"
+              itemClassName="rounded-2xl border border-white/5 bg-black/20"
             />
 
             {ps.allowDirectImport !== false ? (

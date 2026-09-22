@@ -169,8 +169,10 @@ export default function SunsetTheme({ id, data }: { id: string; data: SubData })
           title={t("configs")}
           empty={t("noConfigs")}
           nodesLabel={t("nodes")}
+          copyLabel={t("copy")}
+          qrLabel={t("qr")}
           className="rounded-[1.5rem] border border-white/10 bg-white/[0.03] p-4 sm:p-5"
-          itemClassName="rounded-2xl border border-white/8 bg-[#121722]/60 px-3 py-2.5"
+          itemClassName="rounded-2xl border border-white/8 bg-[#121722]/60"
         />
 
         {ps.allowDirectImport !== false ? (

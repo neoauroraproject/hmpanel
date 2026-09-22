@@ -322,6 +322,7 @@ export function useSubscriptionNodes(id: string) {
   return useQuery({
     queryKey: ["subscriptionNodes", id],
     queryFn: async () => {
+      // Backend prefers native 3x-ui HTML `{{ .links }}` (same as custom sub templates).
       const res = await fetch(`${API_BASE}/subscriptions/${id}/nodes`);
       if (!res.ok) return [] as PortalNode[];
       return (await res.json()) as PortalNode[];
@@ -605,6 +606,8 @@ export function ConfigList({
   empty,
   nodesLabel,
   hideHeader,
+  copyLabel = "Copy",
+  qrLabel = "QR",
 }: {
   nodes: PortalNode[];
   copied: string | null;
@@ -616,6 +619,8 @@ export function ConfigList({
   empty?: string;
   nodesLabel?: string;
   hideHeader?: boolean;
+  copyLabel?: string;
+  qrLabel?: string;
 }) {
   return (
     <section className={className}>
@@ -630,36 +635,38 @@ export function ConfigList({
       {!nodes.length ? (
         <p className="text-sm opacity-60">{empty || "No configs available yet."}</p>
       ) : (
-        <ul className="space-y-2">
+        <ul className="space-y-2.5">
           {nodes.map((node, idx) => {
             const key = `node-${idx}`;
             return (
-              <li key={key} className={`flex items-center gap-3 ${itemClassName}`}>
+              <li
+                key={key}
+                className={`flex items-center gap-3 rounded-2xl px-3.5 py-3 ${itemClassName}`}
+              >
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-500 text-[9px] font-extrabold uppercase tracking-wide text-white">
+                  {(node.protocol || "CFG").slice(0, 5)}
+                </div>
                 <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="rounded-md bg-black/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider dark:bg-white/10">
-                      {node.protocol}
-                    </span>
-                    <span className="truncate text-sm font-medium">
-                      {node.tag || `Config ${idx + 1}`}
-                    </span>
+                  <div className="truncate text-sm font-semibold">
+                    {node.tag || `Config ${idx + 1}`}
+                  </div>
+                  <div className="truncate text-xs opacity-50">
+                    {(node.protocol || "").toLowerCase()}
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => onCopy(node.link, key)}
-                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-black/5 hover:bg-black/10 dark:bg-white/10"
-                  aria-label="Copy config"
+                  className="inline-flex h-9 shrink-0 items-center justify-center rounded-xl bg-black/5 px-3 text-xs font-semibold hover:bg-black/10 dark:bg-white/10"
                 >
-                  {copied === key ? <Check size={16} /> : <Copy size={16} />}
+                  {copied === key ? <Check size={14} /> : copyLabel}
                 </button>
                 <button
                   type="button"
                   onClick={() => onQr(node.link)}
-                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-black/5 hover:bg-black/10 dark:bg-white/10"
-                  aria-label="QR"
+                  className="inline-flex h-9 shrink-0 items-center justify-center rounded-xl bg-black/5 px-3 text-xs font-semibold hover:bg-black/10 dark:bg-white/10"
                 >
-                  <QrCode size={16} />
+                  {qrLabel}
                 </button>
               </li>
             );

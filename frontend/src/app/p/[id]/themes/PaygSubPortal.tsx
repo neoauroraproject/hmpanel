@@ -922,7 +922,9 @@ export default function PaygSubPortal({
                 hideHeader
                 empty={t("noConfigs")}
                 nodesLabel={t("nodes")}
-                itemClassName="rounded-2xl bg-zinc-50 px-3 py-2.5"
+                copyLabel={t("copy")}
+                qrLabel={t("qr")}
+                itemClassName="rounded-2xl bg-zinc-50"
               />
             </ExpandCard>
           </>

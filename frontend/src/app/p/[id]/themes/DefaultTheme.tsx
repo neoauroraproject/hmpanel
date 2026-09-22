@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Copy,
@@ -22,32 +21,25 @@ import {
 } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
 import { formatBytes, formatDate } from "@/lib/format";
-import { API_BASE } from "@/lib/api";
 import { normalizePortalTheme, resolveThemeLogo } from "@/modules/shared/brand-logo";
 import {
   buildNativeSubUrl,
   buildSystemSubUrl,
+  ConfigList,
   LangToggle,
   normalizeTelegramHref,
   PortalConnectionPanel,
   PortalDeviceLimit,
   useClientOutput,
   usePortalLocale,
+  useSubscriptionNodes,
   type SubData,
 } from "./portal-kit";
 import { ClientAppsSheet } from "./client-apps";
 
 export default function DefaultTheme({ id, data }: { id: string; data: SubData }) {
   const { lang, setLang, isFa, t, fontFamily } = usePortalLocale(data);
-  const { data: nodes } = useQuery({
-    queryKey: ["subscriptionNodes", id],
-    queryFn: async () => {
-      const res = await fetch(`${API_BASE}/subscriptions/${id}/nodes`);
-      if (!res.ok) return [];
-      return res.json();
-    },
-    retry: false,
-  });
+  const { data: nodes = [] } = useSubscriptionNodes(id);
   const { data: connectionOutput } = useClientOutput(id);
   const outputType = connectionOutput?.outputType || "subscription";
 
@@ -387,45 +379,19 @@ export default function DefaultTheme({ id, data }: { id: string; data: SubData }
               </div>
             </div>
 
-            {nodes && nodes.length > 0 && (
-              <div className="space-y-4 pt-4">
-                <h3 className={`mb-4 text-lg font-bold ${ts.heading}`}>{t("configs")}</h3>
-                <div className="flex flex-col gap-3">
-                  {nodes.map((node: any, idx: number) => (
-                    <div
-                      key={idx}
-                      className={`flex flex-col gap-4 border p-4 shadow-lg transition-colors sm:flex-row sm:items-center ${ts.card} ${ts.roundedLg} ${ts.cardHover}`}
-                    >
-                      <div className="flex shrink-0 gap-2">
-                        <span className="rounded-lg bg-blue-500/10 px-3 py-1 text-xs font-bold uppercase tracking-wider text-blue-400">
-                          {node.protocol}
-                        </span>
-                      </div>
-                      <div className={`flex-1 truncate text-base font-medium ${ts.text}`}>
-                        {node.tag}
-                      </div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        <button
-                          onClick={() => copyText(node.link, "node_" + idx)}
-                          className="rounded-xl bg-zinc-800 p-2.5 text-zinc-300 transition-colors hover:bg-zinc-700"
-                        >
-                          {copiedText === "node_" + idx ? (
-                            <Check size={16} className={ts.accent} />
-                          ) : (
-                            <Copy size={16} />
-                          )}
-                        </button>
-                        <button
-                          onClick={() => openQR(node.link)}
-                          className="rounded-xl bg-zinc-800 p-2.5 text-zinc-300 transition-colors hover:bg-zinc-700"
-                        >
-                          <QrCode size={16} />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
+            {nodes.length > 0 && (
+              <ConfigList
+                nodes={nodes}
+                copied={copiedText}
+                onCopy={(link, key) => copyText(link, key)}
+                onQr={openQR}
+                title={t("configs")}
+                nodesLabel={t("nodes")}
+                copyLabel={t("copy")}
+                qrLabel={t("qr")}
+                className="space-y-4 pt-4"
+                itemClassName={`border shadow-lg transition-colors ${ts.card} ${ts.roundedLg} ${ts.cardHover}`}
+              />
             )}
           </motion.div>
 
