@@ -51,4 +51,32 @@ describe('FeatureEntitlementService', () => {
     expect(await entitlement.isPremiumRuntimeActive()).toBe(true);
     expect(await entitlement.can('premium')).toBe(false);
   });
+
+  it('store commerce is off in grace and on only when fully active', async () => {
+    const active = new FeatureEntitlementService(
+      { isEnabled: jest.fn(), isFeatureEnabled: jest.fn() } as any,
+      {
+        getLicenseState: jest.fn().mockResolvedValue({
+          edition: 'PREMIUM',
+          mode: 'full',
+          status: 'active',
+          expiresAt: new Date(Date.now() + 86400000).toISOString(),
+        }),
+      } as any,
+    );
+    expect(await active.isStoreCommerceActive()).toBe(true);
+
+    const grace = new FeatureEntitlementService(
+      { isEnabled: jest.fn(), isFeatureEnabled: jest.fn() } as any,
+      {
+        getLicenseState: jest.fn().mockResolvedValue({
+          edition: 'PREMIUM',
+          mode: 'read_only',
+          status: 'grace',
+          expiresAt: new Date(Date.now() - 1000).toISOString(),
+        }),
+      } as any,
+    );
+    expect(await grace.isStoreCommerceActive()).toBe(false);
+  });
 });
