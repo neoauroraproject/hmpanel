@@ -258,10 +258,20 @@ export class PremiumCatalogService {
       throw new Error('Only business modules can be assigned to admins.');
     }
     const jsonSettings = settings as Prisma.InputJsonValue;
-    return this.prisma.adminModuleAssignment.upsert({
+    const row = await this.prisma.adminModuleAssignment.upsert({
       where: { adminId_moduleId: { adminId, moduleId } },
       create: { adminId, moduleId, enabled, settings: jsonSettings },
       update: { enabled, settings: jsonSettings },
     });
+
+    // Keep legacy Admin.storeEnabled in sync with Premium Settings / Admin Management.
+    if (moduleId === 'store') {
+      await this.prisma.admin.update({
+        where: { id: adminId },
+        data: { storeEnabled: enabled },
+      }).catch(() => undefined);
+    }
+
+    return row;
   }
 }

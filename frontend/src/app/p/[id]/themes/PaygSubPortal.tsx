@@ -35,6 +35,10 @@ export type PaygSubPortalPayload = {
   payg: true;
   status: string;
   clientEnable: boolean;
+  userPaused?: boolean;
+  panelType?: string | null;
+  preferNativeImport?: boolean;
+  nativeSubUrl?: string | null;
   plan: {
     name: string;
     description?: string | null;
@@ -643,6 +647,11 @@ export default function PaygSubPortal({
           `${trimNum(payg.usage.totalQuantity, 1)} ساعت`,
           `${trimNum(payg.usage.totalQuantity, 1)} h`,
         );
+  const preferNative = !!payg.preferNativeImport;
+  const nativeUrl = String(payg.nativeSubUrl || model.nativeUrl || "").trim() || null;
+  const importUrl =
+    preferNative && nativeUrl ? nativeUrl : model.systemUrl || nativeUrl || "";
+  const showConfigList = !preferNative && model.nodes.length > 0;
   const remainLabel = formatRemain(payg, isFa);
   const barPct = Math.max(0, Math.min(100, Number(payg.remaining.barPct) || 0));
   const needsCharge = payg.remaining.low || String(payg.status).toUpperCase() === "SUSPENDED";
@@ -884,17 +893,18 @@ export default function PaygSubPortal({
             <section className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-stretch">
               <DualSubCopyButtons
                 systemUrl={model.systemUrl}
-                nativeUrl={model.nativeUrl}
+                nativeUrl={nativeUrl}
                 copied={model.copied}
                 onCopy={model.copy}
                 onQr={model.setQrValue}
                 t={t}
-                showNative={model.ps.showNativeQR !== false}
+                showNative={preferNative ? true : model.ps.showNativeQR !== false}
+                preferNative={preferNative}
                 className="flex-1"
                 buttonClassName="inline-flex min-h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-2xl bg-zinc-950 px-4 py-3 text-sm font-semibold text-white"
                 nativeButtonClassName="inline-flex min-h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm font-semibold text-zinc-800"
               />
-              {model.ps.allowDirectImport !== false ? (
+              {model.ps.allowDirectImport !== false && importUrl ? (
                 <button
                   type="button"
                   onClick={() => setImportSheet(true)}
@@ -905,28 +915,37 @@ export default function PaygSubPortal({
                 </button>
               ) : null}
             </section>
-            <ExpandCard
-              title={t("configs")}
-              badge={
-                <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-xs text-zinc-500">
-                  {model.nodes.length} {t("nodes")}
-                </span>
-              }
-              defaultOpen
-            >
-              <ConfigList
-                nodes={model.nodes}
-                copied={model.copied}
-                onCopy={model.copy}
-                onQr={model.setQrValue}
-                hideHeader
-                empty={t("noConfigs")}
-                nodesLabel={t("nodes")}
-                copyLabel={t("copy")}
-                qrLabel={t("qr")}
-                itemClassName="rounded-2xl bg-zinc-50"
-              />
-            </ExpandCard>
+            {showConfigList ? (
+              <ExpandCard
+                title={t("configs")}
+                badge={
+                  <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-xs text-zinc-500">
+                    {model.nodes.length} {t("nodes")}
+                  </span>
+                }
+                defaultOpen
+              >
+                <ConfigList
+                  nodes={model.nodes}
+                  copied={model.copied}
+                  onCopy={model.copy}
+                  onQr={model.setQrValue}
+                  hideHeader
+                  empty={t("noConfigs")}
+                  nodesLabel={t("nodes")}
+                  copyLabel={t("copy")}
+                  qrLabel={t("qr")}
+                  itemClassName="rounded-2xl bg-zinc-50"
+                />
+              </ExpandCard>
+            ) : preferNative && nativeUrl ? (
+              <p className="mb-3 text-center text-xs text-zinc-500">
+                {tf(
+                  "برای افزودن به برنامه از لینک Native استفاده کنید.",
+                  "Use the Native link to add this service in your app.",
+                )}
+              </p>
+            ) : null}
           </>
         )}
       </div>
@@ -964,7 +983,7 @@ export default function PaygSubPortal({
       <ClientAppsSheet
         open={importSheet}
         onClose={() => setImportSheet(false)}
-        systemUrl={model.systemUrl}
+        systemUrl={importUrl}
         brandName={payg.branding.name}
         title={t("importApp")}
         cancelLabel={t("cancel")}

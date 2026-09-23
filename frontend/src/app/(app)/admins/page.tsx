@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { formatBytes, formatDate } from "@/lib/format";
 import { Card, PageHeader, Badge, Spinner, ErrorBox } from "@/components/ui";
@@ -185,8 +185,9 @@ export default function AdminsPage() {
   });
   const isOwner = sessionAdmin?.isOwner === true || selfProfile?.isOwner === true;
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, isFetching, error } = useQuery({
     queryKey: ["admins", activeTab, debouncedSearch],
+    placeholderData: keepPreviousData,
     queryFn: async () => {
       const q = new URLSearchParams({
         limit: "100",
@@ -242,8 +243,10 @@ export default function AdminsPage() {
     quickAction.mutate({ id: admin.id, payload: { status: admin.status === 'active' ? 'disabled' : 'active' } });
   };
 
-  if (isLoading) return <Spinner />;
-  if (error) return <ErrorBox message={t("admins.loadFailed")} />;
+  // Keep the page (and search input) mounted while the query key changes —
+  // returning <Spinner /> on isLoading unmounts the input and closes the mobile keyboard.
+  if (isLoading && !data) return <Spinner />;
+  if (error && !data) return <ErrorBox message={t("admins.loadFailed")} />;
 
   const admins = data?.data ?? [];
 
@@ -297,6 +300,11 @@ export default function AdminsPage() {
             placeholder={t("admins.searchPlaceholder")}
             className="w-full bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-lg ps-9 pe-4 py-2 text-sm text-zinc-800 dark:text-zinc-100 focus:outline-none focus:border-blue-500"
           />
+          {isFetching && data ? (
+            <div className="pointer-events-none absolute inset-y-0 end-3 flex items-center">
+              <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-zinc-300 border-t-blue-500 dark:border-zinc-600 dark:border-t-blue-400" />
+            </div>
+          ) : null}
         </div>
       </div>
 
