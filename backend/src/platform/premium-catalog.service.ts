@@ -87,7 +87,7 @@ export class PremiumCatalogService {
       })
       .map((m) => {
         const row = stateMap.get(m.id);
-        const enabled = row?.enabled ?? (m.defaultEnabled || m.phase <= 3);
+        const enabled = row?.enabled ?? m.defaultEnabled;
         return {
           id: m.id,
           name: m.name,
@@ -151,7 +151,7 @@ export class PremiumCatalogService {
 
     return MODULE_MANIFESTS.map((m) => {
       const row = stateMap.get(m.id);
-      const enabled = row?.enabled ?? (m.defaultEnabled || m.phase <= 3);
+      const enabled = row?.enabled ?? m.defaultEnabled;
       const moduleLicensed = licensedModuleIds.has(m.id);
       return {
         id: m.id,
@@ -181,13 +181,14 @@ export class PremiumCatalogService {
 
   private async ensureModuleRowsSeeded(): Promise<void> {
     try {
+      // New module IDs only — create ENABLED; never flip existing admin choices.
       for (const m of MODULE_MANIFESTS) {
         await this.prisma.premiumModuleState.upsert({
           where: { moduleId: m.id },
           create: {
             moduleId: m.id,
             kind: m.kind as 'PLATFORM' | 'BUSINESS',
-            enabled: m.defaultEnabled || m.phase <= 3,
+            enabled: true,
             settings: {},
           },
           update: {},
@@ -237,7 +238,7 @@ export class PremiumCatalogService {
       create: {
         moduleId,
         kind: manifest.kind as 'PLATFORM' | 'BUSINESS',
-        enabled: manifest.defaultEnabled || manifest.phase <= 3,
+        enabled: true,
         settings: jsonSettings,
       },
       update: { settings: jsonSettings },

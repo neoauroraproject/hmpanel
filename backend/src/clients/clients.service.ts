@@ -83,6 +83,7 @@ import {
 } from './limit-mapper.util';
 import { PanelDriverRegistry } from '../panels/native/panel-driver.registry';
 import { PanelOperationGate } from '../panels/native/panel-operation-gate';
+import { PanelPriorityGate } from '../panels/native/panel-priority-gate';
 import { isExternalPanelType } from '../panels/native/native-panel-capabilities';
 import { snapshotToClientUuid, mapSnapshotMeta } from '../panels/native/native-panel.orchestrator';
 import { ClientOutputService } from './output/client-output.service';
@@ -107,6 +108,7 @@ export class ClientsService {
     private adminQuota: AdminQuotaService,
     private panelDrivers: PanelDriverRegistry,
     private panelGate: PanelOperationGate,
+    private priorityGate: PanelPriorityGate,
     @Inject(forwardRef(() => ClientOutputService))
     private clientOutput: ClientOutputService,
     private featureFlags: FeatureFlagsService,
@@ -813,17 +815,19 @@ export class ClientsService {
 
     let remote;
     try {
-      remote = await driver.createClient(panel.id, {
-        username: data.email,
-        totalBytes,
-        expiryTimeMs: data.expiryTime || 0,
-        enable: true,
-        remark: data.remark,
-        limitIp: data.limitIp,
-        inboundIds: data.inboundIds,
-        resourceIds: inbounds.map((i) => i.remoteResourceId || String(i.panelInboundId || i.id)),
-        providerExtras,
-      });
+      remote = await this.priorityGate.runInteractive(panel.id, () =>
+        driver.createClient(panel.id, {
+          username: data.email,
+          totalBytes,
+          expiryTimeMs: data.expiryTime || 0,
+          enable: true,
+          remark: data.remark,
+          limitIp: data.limitIp,
+          inboundIds: data.inboundIds,
+          resourceIds: inbounds.map((i) => i.remoteResourceId || String(i.panelInboundId || i.id)),
+          providerExtras,
+        }),
+      );
     } catch (err: any) {
       throw new BadRequestException(err?.message || 'Remote create failed');
     }
@@ -960,15 +964,17 @@ export class ClientsService {
         : [];
       providerExtras = extrasForPasarguard(data.providerExtras, inboundRows, data.limitIp);
     }
-    const remote = await driver.updateClient(panel.id, username, {
-      totalBytes: data.total !== undefined ? BigInt(data.total) : undefined,
-      expiryTimeMs: data.expiryTime,
-      enable: data.enable,
-      remark: data.remark,
-      limitIp: data.limitIp,
-      inboundIds: data.inboundIds,
-      providerExtras,
-    });
+    const remote = await this.priorityGate.runInteractive(panel.id, () =>
+      driver.updateClient(panel.id, username, {
+        totalBytes: data.total !== undefined ? BigInt(data.total) : undefined,
+        expiryTimeMs: data.expiryTime,
+        enable: data.enable,
+        remark: data.remark,
+        limitIp: data.limitIp,
+        inboundIds: data.inboundIds,
+        providerExtras,
+      }),
+    );
     const previousAllocation = BigInt(existing.total || 0);
     const newAllocation =
       data.total !== undefined ? BigInt(data.total) : previousAllocation;
@@ -1074,7 +1080,9 @@ export class ClientsService {
     }
     const username = existing.remoteUsername || existing.email;
     try {
-      await driver.deleteClient(panel.id, username);
+      await this.priorityGate.runInteractive(panel.id, () =>
+        driver.deleteClient(panel.id, username),
+      );
     } catch (err: any) {
       const msg = String(err?.message || '');
       if (!/not found|404|does not exist/i.test(msg)) {

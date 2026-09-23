@@ -22,6 +22,7 @@ import * as https from 'https';
 import * as crypto from 'crypto';
 import { NativePanelOrchestrator } from './native/native-panel.orchestrator';
 import { PanelOperationGate, withOperable } from './native/panel-operation-gate';
+import { PanelPriorityGate, isAbortError } from './native/panel-priority-gate';
 import { PanelDriverRegistry } from './native/panel-driver.registry';
 import {
   XUI_NATIVE_CAPABILITIES,
@@ -135,6 +136,7 @@ export class PanelsService implements OnModuleInit {
     private nativeOrchestrator: NativePanelOrchestrator,
     private panelGate: PanelOperationGate,
     private panelDrivers: PanelDriverRegistry,
+    private priorityGate: PanelPriorityGate,
   ) {}
 
   // ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -143,13 +145,19 @@ export class PanelsService implements OnModuleInit {
   private async retryRequest<T>(
     fn: () => Promise<T>,
     label: string,
+    opts?: { signal?: AbortSignal },
   ): Promise<T> {
     let lastErr: any;
     for (let attempt = 0; attempt <= PANEL_RETRY_COUNT; attempt++) {
       try {
+        if (opts?.signal?.aborted) {
+          throw Object.assign(new Error('aborted'), { name: 'AbortError' });
+        }
         return await fn();
       } catch (err: any) {
         lastErr = err;
+        // Priority-gate aborts must not be swallowed by retry backoff.
+        if (isAbortError(err) || opts?.signal?.aborted) throw err;
         const isTimeout =
           err.code === 'ECONNABORTED' ||
           err.code === 'ETIMEDOUT' ||
@@ -1105,6 +1113,68 @@ export class PanelsService implements OnModuleInit {
     return run;
   }
 
+  /** True while a sync promise is registered for this panel (any mode). */
+  isSyncInFlight(panelId: string): boolean {
+    return this.panelSyncInFlight.has(panelId);
+  }
+
+  /**
+   * Ensure inbound rows have remote panelInboundId mapped — used by store/PAYG
+   * before create. Does NOT join an in-flight full sync promise (which can run
+   * for minutes on large panels). Instead: kick sync if idle, then poll until
+   * inbound IDs appear (inbounds are written early in executeSync).
+   */
+  async ensureInboundsReady(
+    panelId: string,
+    inboundIds: string[],
+    timeoutMs = 60_000,
+  ): Promise<void> {
+    const ids = [...new Set(inboundIds.filter(Boolean))];
+    if (!ids.length) return;
+
+    const mapped = async () => {
+      const rows = await this.prisma.inbound.findMany({
+        where: { id: { in: ids }, panelId },
+        select: { id: true, panelInboundId: true },
+      });
+      if (rows.length < ids.length) return false;
+      return rows.every((r) => r.panelInboundId != null);
+    };
+
+    if (await mapped()) return;
+
+    if (!this.panelSyncInFlight.has(panelId)) {
+      this.logger.warn(
+        `[SYNC] ensureInboundsReady: starting sync for panel ${panelId}`,
+      );
+      void this.sync(panelId).catch((err: any) => {
+        this.logger.warn(
+          `[SYNC] ensureInboundsReady background sync failed: ${err?.message || err}`,
+        );
+      });
+    } else {
+      this.logger.debug(
+        `[SYNC] ensureInboundsReady: panel ${panelId} sync already running — polling for inbound IDs`,
+      );
+    }
+
+    const started = Date.now();
+    while (Date.now() - started < timeoutMs) {
+      if (await mapped()) return;
+      await new Promise((r) => setTimeout(r, 200));
+    }
+
+    const still = await this.prisma.inbound.findMany({
+      where: { id: { in: ids }, panelId, panelInboundId: null },
+      select: { id: true },
+    });
+    throw new BadRequestException(
+      `Panel sync required before creating clients. The following inbounds have not been synced yet: ${
+        still.map((i) => i.id).join(', ') || ids.join(', ')
+      }. Please trigger a panel sync and retry.`,
+    );
+  }
+
   private async executeSync(id: string, mode: PanelSyncMode) {
     const panel = await this.findOne(id);
     if (isExternalPanelType(panel.panelType)) {
@@ -1119,17 +1189,18 @@ export class PanelsService implements OnModuleInit {
     );
 
     try {
+      await this.priorityGate.yieldToInteractive(id);
       this.logger.debug(`[DIAGNOSTIC] GET /panel/api/server/status`);
-      const statusRes = await axios.get(
-        `${apiBaseUrl}/panel/api/server/status`,
-        {
+      const statusRes = await this.priorityGate.runBackground(id, (signal) =>
+        axios.get(`${apiBaseUrl}/panel/api/server/status`, {
           headers: {
             Authorization: panel.apiToken
               ? `Bearer ${panel.apiToken}`
               : undefined,
           },
           timeout: 5000,
-        },
+          signal,
+        }),
       );
 
       this.logger.debug(
@@ -1231,11 +1302,15 @@ export class PanelsService implements OnModuleInit {
         const inboundsUrl = caps.slimInbounds
           ? '/panel/api/inbounds/list/slim'
           : '/panel/api/inbounds/list';
+        await this.priorityGate.yieldToInteractive(id);
         this.logger.debug(`[DIAGNOSTIC] GET ${inboundsUrl}`);
-        const inboundsRes = await axios.get(`${apiBaseUrl}${inboundsUrl}`, {
-          headers,
-          timeout: PANEL_REQUEST_TIMEOUT_MS,
-        });
+        const inboundsRes = await this.priorityGate.runBackground(id, (signal) =>
+          axios.get(`${apiBaseUrl}${inboundsUrl}`, {
+            headers,
+            timeout: PANEL_REQUEST_TIMEOUT_MS,
+            signal,
+          }),
+        );
         this.logger.debug(
           `[DIAGNOSTIC] Response ${inboundsUrl} | HTTP ${inboundsRes.status} | success: ${inboundsRes.data?.success} | msg: ${inboundsRes.data?.msg} | obj length: ${Array.isArray(inboundsRes.data?.obj) ? inboundsRes.data.obj.length : typeof inboundsRes.data?.obj}`,
         );
@@ -1243,10 +1318,14 @@ export class PanelsService implements OnModuleInit {
           throw new Error(inboundsRes.data?.msg || 'Failed to fetch inbounds');
         apiInbounds = inboundsRes.data.obj || [];
 
+        await this.priorityGate.yieldToInteractive(id);
         this.logger.debug(`[DIAGNOSTIC] GET /panel/api/clients/list`);
-        const clientsRes = await axios.get(
-          `${apiBaseUrl}/panel/api/clients/list`,
-          { headers, timeout: PANEL_REQUEST_TIMEOUT_MS },
+        const clientsRes = await this.priorityGate.runBackground(id, (signal) =>
+          axios.get(`${apiBaseUrl}/panel/api/clients/list`, {
+            headers,
+            timeout: PANEL_REQUEST_TIMEOUT_MS,
+            signal,
+          }),
         );
         this.logger.debug(
           `[DIAGNOSTIC] Response /clients/list | HTTP ${clientsRes.status} | success: ${clientsRes.data?.success} | msg: ${clientsRes.data?.msg} | obj length: ${Array.isArray(clientsRes.data?.obj) ? clientsRes.data.obj.length : typeof clientsRes.data?.obj}`,
@@ -1298,12 +1377,16 @@ export class PanelsService implements OnModuleInit {
           });
         }
       } else {
+        await this.priorityGate.yieldToInteractive(id);
         this.logger.debug(
           `[DIAGNOSTIC] GET /panel/api/inbounds/list (Legacy parsing)`,
         );
-        const inboundsRes = await axios.get(
-          `${apiBaseUrl}/panel/api/inbounds/list`,
-          { headers, timeout: PANEL_REQUEST_TIMEOUT_MS },
+        const inboundsRes = await this.priorityGate.runBackground(id, (signal) =>
+          axios.get(`${apiBaseUrl}/panel/api/inbounds/list`, {
+            headers,
+            timeout: PANEL_REQUEST_TIMEOUT_MS,
+            signal,
+          }),
         );
         this.logger.debug(
           `[DIAGNOSTIC] Response /inbounds/list | HTTP ${inboundsRes.status} | success: ${inboundsRes.data?.success} | msg: ${inboundsRes.data?.msg} | obj length: ${Array.isArray(inboundsRes.data?.obj) ? inboundsRes.data.obj.length : typeof inboundsRes.data?.obj}`,
@@ -1376,11 +1459,15 @@ export class PanelsService implements OnModuleInit {
       // read as "this panel has no nodes".
       let nodeRegistryKnown = false;
       try {
-        const nodesRes = await axios.get(`${apiBaseUrl}/panel/api/nodes/list`, {
-          headers,
-          httpsAgent: this.getHttpsAgent(),
-          timeout: PANEL_REQUEST_TIMEOUT_MS,
-        });
+        await this.priorityGate.yieldToInteractive(id);
+        const nodesRes = await this.priorityGate.runBackground(id, (signal) =>
+          axios.get(`${apiBaseUrl}/panel/api/nodes/list`, {
+            headers,
+            httpsAgent: this.getHttpsAgent(),
+            timeout: PANEL_REQUEST_TIMEOUT_MS,
+            signal,
+          }),
+        );
         if (nodesRes.data?.success && Array.isArray(nodesRes.data.obj)) {
           nodeRegistryKnown = true;
           for (const n of nodesRes.data.obj) {
@@ -1458,7 +1545,11 @@ export class PanelsService implements OnModuleInit {
       this.logger.debug(
         `[DIAGNOSTIC] Syncing ${apiInbounds.length} inbounds into Database (${mode})`,
       );
+      let inboundWriteCount = 0;
       for (const apiInbound of apiInbounds) {
+        if (++inboundWriteCount % SYNC_DB_BATCH_SIZE === 0) {
+          await this.priorityGate.yieldToInteractive(id);
+        }
         totalSyncedInbounds++;
         const settings =
           typeof apiInbound.settings === 'string'
@@ -1943,6 +2034,7 @@ export class PanelsService implements OnModuleInit {
 
       // Batch DB writes — far cheaper than one round-trip per client.
       for (const batch of chunkArray(pendingClientUpdates, SYNC_DB_BATCH_SIZE)) {
+        await this.priorityGate.yieldToInteractive(id);
         await this.prisma.$transaction(
           batch.map((u) =>
             this.prisma.client.update({
@@ -1953,6 +2045,7 @@ export class PanelsService implements OnModuleInit {
         );
       }
       for (const unlink of pendingInboundUnlinks) {
+        await this.priorityGate.yieldToInteractive(id);
         await this.prisma.clientInbound.deleteMany({
           where: {
             clientId: unlink.clientId,
@@ -1962,6 +2055,7 @@ export class PanelsService implements OnModuleInit {
       }
       for (const batch of chunkArray(pendingInboundLinks, SYNC_DB_BATCH_SIZE)) {
         if (!batch.length) continue;
+        await this.priorityGate.yieldToInteractive(id);
         await this.prisma.clientInbound.createMany({
           data: batch,
           skipDuplicates: true,
@@ -1972,6 +2066,7 @@ export class PanelsService implements OnModuleInit {
           pendingConflictAudits,
           SYNC_DB_BATCH_SIZE,
         )) {
+          await this.priorityGate.yieldToInteractive(id);
           await this.prisma.$transaction(
             batch.map((a) =>
               this.prisma.auditLog.create({
@@ -2468,6 +2563,7 @@ export class PanelsService implements OnModuleInit {
     },
     adminId?: string,
   ): Promise<PanelApiResult> {
+    return this.priorityGate.runInteractive(panelId, async () => {
     const { panel, base, headers, agent } =
       await this.getPanelHttpContext(panelId);
     const endpoint = `${base}/panel/api/clients/add`;
@@ -2577,6 +2673,7 @@ export class PanelsService implements OnModuleInit {
       });
       return { success: false, error: apiError };
     }
+    });
   }
 
   /**
@@ -2589,6 +2686,7 @@ export class PanelsService implements OnModuleInit {
     items: Array<{ client: Record<string, any>; inboundIds: number[] }>,
     adminId?: string,
   ): Promise<PanelApiResult> {
+    return this.priorityGate.runInteractive(panelId, async () => {
     const { panel, base, headers, agent } =
       await this.getPanelHttpContext(panelId);
     const endpoint = `${base}/panel/api/clients/bulkCreate`;
@@ -2649,6 +2747,7 @@ export class PanelsService implements OnModuleInit {
       const apiError = this.classifyError(err, endpoint, startMs);
       return { success: false, error: apiError };
     }
+    });
   }
 
   /**
@@ -2663,6 +2762,22 @@ export class PanelsService implements OnModuleInit {
       addBytes?: number;
       flow?: string;
       /** 3.8.0+: max registered devices; 0 = unlimited. */
+      limitHwid?: number;
+    },
+    adminId?: string,
+  ): Promise<PanelApiResult> {
+    return this.priorityGate.runInteractive(panelId, async () =>
+      this.bulkAdjustClientsOnPanelUnlocked(panelId, body, adminId),
+    );
+  }
+
+  private async bulkAdjustClientsOnPanelUnlocked(
+    panelId: string,
+    body: {
+      emails: string[];
+      addDays?: number;
+      addBytes?: number;
+      flow?: string;
       limitHwid?: number;
     },
     adminId?: string,
@@ -2712,6 +2827,17 @@ export class PanelsService implements OnModuleInit {
    * `obj.skipped`, so a successful response can still contain skipped emails.
    */
   async bulkDeleteClientsOnPanel(
+    panelId: string,
+    emails: string[],
+    opts?: { keepTraffic?: boolean },
+    adminId?: string,
+  ): Promise<PanelApiResult> {
+    return this.priorityGate.runInteractive(panelId, async () =>
+      this.bulkDeleteClientsOnPanelUnlocked(panelId, emails, opts, adminId),
+    );
+  }
+
+  private async bulkDeleteClientsOnPanelUnlocked(
     panelId: string,
     emails: string[],
     opts?: { keepTraffic?: boolean },
@@ -2856,6 +2982,17 @@ export class PanelsService implements OnModuleInit {
    * Content-Type: application/json (not form-encoded)
    */
   async updateClientOnPanel(
+    panelId: string,
+    email: string,
+    clientPayload: Record<string, any>,
+    adminId?: string,
+  ): Promise<PanelApiResult> {
+    return this.priorityGate.runInteractive(panelId, async () =>
+      this.updateClientOnPanelUnlocked(panelId, email, clientPayload, adminId),
+    );
+  }
+
+  private async updateClientOnPanelUnlocked(
     panelId: string,
     email: string,
     clientPayload: Record<string, any>,
@@ -3018,6 +3155,17 @@ export class PanelsService implements OnModuleInit {
     inboundIds: number[],
     adminId?: string,
   ): Promise<PanelApiResult> {
+    return this.priorityGate.runInteractive(panelId, async () =>
+      this.attachInboundsToClientUnlocked(panelId, email, inboundIds, adminId),
+    );
+  }
+
+  private async attachInboundsToClientUnlocked(
+    panelId: string,
+    email: string,
+    inboundIds: number[],
+    adminId?: string,
+  ): Promise<PanelApiResult> {
     const { panel, base, headers, agent } =
       await this.getPanelHttpContext(panelId);
     const endpoint = `${base}/panel/api/clients/${encodeURIComponent(email)}/attach`;
@@ -3070,6 +3218,17 @@ export class PanelsService implements OnModuleInit {
   }
 
   async detachInboundsFromClient(
+    panelId: string,
+    email: string,
+    inboundIds: number[],
+    adminId?: string,
+  ): Promise<PanelApiResult> {
+    return this.priorityGate.runInteractive(panelId, async () =>
+      this.detachInboundsFromClientUnlocked(panelId, email, inboundIds, adminId),
+    );
+  }
+
+  private async detachInboundsFromClientUnlocked(
     panelId: string,
     email: string,
     inboundIds: number[],
@@ -3133,6 +3292,17 @@ export class PanelsService implements OnModuleInit {
    * Treat CLIENT_NOT_FOUND as a successful rollback (client was never there).
    */
   async deleteClientOnPanel(
+    panelId: string,
+    email: string,
+    adminId?: string,
+    isRollback = false,
+  ): Promise<PanelApiResult> {
+    return this.priorityGate.runInteractive(panelId, async () =>
+      this.deleteClientOnPanelUnlocked(panelId, email, adminId, isRollback),
+    );
+  }
+
+  private async deleteClientOnPanelUnlocked(
     panelId: string,
     email: string,
     adminId?: string,
@@ -3652,6 +3822,16 @@ export class PanelsService implements OnModuleInit {
    * in memory and had no real effect on many 3x-ui versions.
    */
   async resetClientTrafficOnPanel(
+    panelId: string,
+    email: string,
+    adminId?: string,
+  ): Promise<PanelApiResult> {
+    return this.priorityGate.runInteractive(panelId, async () =>
+      this.resetClientTrafficOnPanelUnlocked(panelId, email, adminId),
+    );
+  }
+
+  private async resetClientTrafficOnPanelUnlocked(
     panelId: string,
     email: string,
     adminId?: string,
