@@ -10,7 +10,6 @@ import { TrafficModule } from '../traffic/traffic.module';
 import { PanelDriverRegistry } from './native/panel-driver.registry';
 import { PanelOperationGate } from './native/panel-operation-gate';
 import { PanelOperationRouter } from './native/panel-operation.router';
-import { PanelPriorityGate } from './native/panel-priority-gate';
 import { NativePanelOrchestrator } from './native/native-panel.orchestrator';
 import { XuiPanelDriver } from './native/xui-panel.driver';
 
@@ -29,7 +28,6 @@ import { XuiPanelDriver } from './native/xui-panel.driver';
     PanelDriverRegistry,
     PanelOperationGate,
     PanelOperationRouter,
-    PanelPriorityGate,
     NativePanelOrchestrator,
     XuiPanelDriver,
   ],
@@ -40,7 +38,6 @@ import { XuiPanelDriver } from './native/xui-panel.driver';
     PanelDriverRegistry,
     PanelOperationGate,
     PanelOperationRouter,
-    PanelPriorityGate,
     NativePanelOrchestrator,
   ],
 })
