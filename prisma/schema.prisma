@@ -652,6 +652,10 @@ model StoreProfile {
   nextOrderNumber     Int      @default(1000)
   /// Which subscription URL customers receive: "hmpanel" (/s/…) or "native" (3x-ui /sub/…).
   subscriptionLinkMode String  @default("hmpanel")
+  /// When true, customers may request cancel + wallet refund for their services.
+  cancelRefundEnabled Boolean @default(false)
+  /// When true, customers may request wallet settlement (payout to card).
+  walletSettlementEnabled Boolean @default(false)
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
@@ -983,6 +987,8 @@ model StoreCustomer {
   wallet        StoreWalletAccount?
   couponRedemptions StoreCouponRedemption[]
   walletDeposits StoreWalletDeposit[]
+  walletSettlements StoreWalletSettlement[]
+  cancelRequests StoreServiceCancelRequest[]
   referralRewardGrants StoreReferralRewardGrant[]
   paygSubscriptions PaygSubscription[]
 
@@ -1151,7 +1157,7 @@ model StoreWalletAccount {
 model StoreWalletLedger {
   id        String   @id @default(uuid())
   accountId String
-  type      String // deposit | purchase | refund | adjust
+  type      String // deposit | purchase | refund | adjust | settlement
   amount    Float
   balanceAfter Float
   orderId   String?
@@ -1185,6 +1191,56 @@ model StoreWalletDeposit {
 
   @@index([customerId, createdAt])
   @@index([adminId, status])
+}
+
+/// Customer request to settle wallet balance to a bank card (admin pays offline, then approves debit).
+model StoreWalletSettlement {
+  id           String   @id @default(uuid())
+  customerId   String
+  adminId      String
+  amount       Float
+  currency     String   @default("USD")
+  cardNumber   String
+  cardHolder   String?
+  status       String   @default("PENDING") // PENDING | APPROVED | REJECTED
+  rejectReason String?
+  reviewedAt   DateTime?
+  reviewedBy   String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  customer StoreCustomer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId, createdAt])
+  @@index([adminId, status])
+}
+
+/// Customer request to cancel a VPN/PAYG service with optional wallet refund (admin sets amount).
+model StoreServiceCancelRequest {
+  id                 String    @id @default(uuid())
+  adminId            String
+  customerId         String
+  /// vpn_client | payg_sub
+  targetType         String
+  clientId           String?
+  paygSubscriptionId String?
+  orderId            String?
+  reason             String?
+  status             String    @default("PENDING") // PENDING | APPROVED | REJECTED
+  refundAmount       Float?
+  refundCurrency     String?
+  rejectReason       String?
+  reviewedAt         DateTime?
+  reviewedBy         String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  customer StoreCustomer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId, createdAt])
+  @@index([adminId, status])
+  @@index([clientId])
+  @@index([paygSubscriptionId])
 }
 
 model StoreCoupon {
