@@ -15,7 +15,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Search, Plus, ChevronDown, ChevronUp, Copy, Check, CheckCircle2,
   Trash2, X, Play, Square, CheckSquare, Eye, MoreVertical, QrCode, Link, Edit2, Power, 
-  Activity, Users, HardDrive, CalendarDays, Filter, FolderPlus, RotateCcw, AlertTriangle, Database, Network, Download, UserPlus
+  Activity, Users, HardDrive, CalendarDays, Filter, FolderPlus, RotateCcw, AlertTriangle, Database, Network, Download, UserPlus, Smartphone, Globe
 } from "lucide-react";
 import { io } from "socket.io-client";
 import { ConnectionDetailsModal } from "@/components/ConnectionDetailsModal";
@@ -186,6 +186,10 @@ export default function ClientsPage() {
     refetchInterval: 15000,
   });
   const onlineIps = onlineIpsQuery.data ?? {};
+  const [onlineSessionsClient, setOnlineSessionsClient] = useState<{
+    email: string;
+    label: string;
+  } | null>(null);
 
   // Filter States
   const [search, setSearch] = useState("");
@@ -996,8 +1000,17 @@ export default function ClientsPage() {
               {displayClients.map((c, i) => {
                 const isExpanded = expandedId === c.id;
                 const isSelected = !!selectedClients[c.id];
-                const isOnline = onlineClients.includes(c.email.trim().toLowerCase());
-                const ipCount = onlineIps[c.email.trim()] || 0;
+                const emailKey = c.email.trim().toLowerCase();
+                const isOnline = onlineClients.includes(emailKey);
+                const ipCount = onlineIps[emailKey] || onlineIps[c.email.trim()] || 0;
+                const openOnlineSessions = (e: React.MouseEvent) => {
+                  e.stopPropagation();
+                  if (!isOnline && ipCount <= 0) return;
+                  setOnlineSessionsClient({
+                    email: c.email.trim(),
+                    label: c.remark || c.email,
+                  });
+                };
                 return (
                   <AnimatePresence key={c.id}>
                       <motion.tr
@@ -1048,9 +1061,14 @@ export default function ClientsPage() {
                                   <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]"></span>
                                 </span>
                                 {ipCount > 0 && (
-                                  <span className="text-[10px] font-bold text-emerald-500 bg-emerald-500/10 px-1.5 py-0.5 rounded-md" title={t("clients.ipsConnected", { count: ipCount })}>
+                                  <button
+                                    type="button"
+                                    onClick={openOnlineSessions}
+                                    className="text-[10px] font-bold text-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20 px-1.5 py-0.5 rounded-md transition-colors"
+                                    title={t("clients.ipsConnected", { count: ipCount })}
+                                  >
                                     {t("clients.ipShort", { count: ipCount })}
-                                  </span>
+                                  </button>
                                 )}
                               </div>
                             )}
@@ -1067,7 +1085,16 @@ export default function ClientsPage() {
                               if (!c.enable) return <Badge tone="gray">{t("common.disabled")}</Badge>;
                               if (outOfTraffic) return <Badge tone="red">{t("clients.noTraffic")}</Badge>;
                               if (expired) return <Badge tone="red">{t("common.expired")}</Badge>;
-                              if (isOnline) return <Badge tone="green">{t("common.online")}</Badge>;
+                              if (isOnline) {
+                                return (
+                                  <button type="button" onClick={openOnlineSessions} className="inline-flex">
+                                    <Badge tone="green">
+                                      {t("common.online")}
+                                      {ipCount > 0 ? ` · ${ipCount}` : ""}
+                                    </Badge>
+                                  </button>
+                                );
+                              }
                               return <Badge tone="blue">{t("common.active")}</Badge>;
                             })()}
                           </div>
@@ -1123,13 +1150,21 @@ export default function ClientsPage() {
                           }
                           if (isOnline) {
                             return (
-                              <div className="flex items-center gap-2" title={t("common.online")}>
+                              <button
+                                type="button"
+                                onClick={openOnlineSessions}
+                                className="flex items-center gap-2 rounded-md hover:bg-emerald-500/10 px-1.5 py-0.5 -mx-1.5 transition-colors"
+                                title={t("clients.ipsConnected", { count: ipCount || 1 })}
+                              >
                                 <span className="relative flex h-2 w-2">
                                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                                   <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                                 </span>
-                                <span className="text-xs text-emerald-400">{t("common.online")}{ipCount > 0 ? ` (${ipCount})` : ""}</span>
-                              </div>
+                                <span className="text-xs text-emerald-400">
+                                  {t("common.online")}
+                                  {ipCount > 0 ? ` (${ipCount})` : ""}
+                                </span>
+                              </button>
                             );
                           }
                           return (
@@ -1686,6 +1721,14 @@ export default function ClientsPage() {
           />
         )}
       </AnimatePresence>
+
+      {onlineSessionsClient && (
+        <OnlineSessionsModal
+          email={onlineSessionsClient.email}
+          label={onlineSessionsClient.label}
+          onClose={() => setOnlineSessionsClient(null)}
+        />
+      )}
 
       {/* Bulk Group Assign Modal */}
       {groupAssignModalOpen && (
@@ -3326,5 +3369,130 @@ function MobileActionsSheet({
         </div>
       </motion.div>
     </motion.div>
+  );
+}
+
+type OnlineSession = {
+  ip: string;
+  device?: string | null;
+  hwid?: string | null;
+};
+
+function OnlineSessionsModal({
+  email,
+  label,
+  onClose,
+}: {
+  email: string;
+  label: string;
+  onClose: () => void;
+}) {
+  const t = useT();
+  const sessionsQuery = useQuery({
+    queryKey: ["online-sessions", email],
+    queryFn: async () =>
+      (
+        await api.get<{ email: string; sessions: OnlineSession[] }>(
+          `/panels/online-sessions?email=${encodeURIComponent(email)}`,
+        )
+      ).data,
+    refetchInterval: 10000,
+  });
+
+  const sessions = sessionsQuery.data?.sessions ?? [];
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-start sm:items-center justify-center bg-black/60 pt-[10dvh] px-4 sm:pt-0 sm:p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-sm rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
+              {t("clients.onlineSessionsTitle")}
+            </h3>
+            <p className="mt-0.5 text-xs text-zinc-500">{t("clients.onlineSessionsHint")}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-200 shrink-0"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="mb-4 rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-3 py-2.5">
+          <div className="text-[10px] uppercase tracking-wide text-emerald-600/80 dark:text-emerald-400/80 font-semibold">
+            {t("clients.onlineSessionUser")}
+          </div>
+          <div className="mt-0.5 font-semibold text-zinc-900 dark:text-zinc-50 truncate">
+            {label}
+          </div>
+          {label !== email && (
+            <div className="text-xs text-zinc-500 truncate">{email}</div>
+          )}
+        </div>
+
+        {sessionsQuery.isLoading ? (
+          <div className="py-8 flex justify-center">
+            <Spinner />
+          </div>
+        ) : sessionsQuery.error ? (
+          <p className="py-6 text-center text-sm text-red-400">
+            {t("clients.onlineSessionsLoadFailed")}
+          </p>
+        ) : sessions.length === 0 ? (
+          <p className="py-6 text-center text-sm text-zinc-500">
+            {t("clients.onlineSessionsEmpty")}
+          </p>
+        ) : (
+          <ul className="space-y-2 max-h-[50dvh] overflow-y-auto">
+            {sessions.map((s, idx) => (
+              <li
+                key={`${s.ip}-${s.hwid || idx}`}
+                className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 px-3 py-2.5"
+              >
+                <div className="flex items-center gap-2 text-sm font-semibold text-zinc-800 dark:text-zinc-100">
+                  <Globe size={14} className="text-emerald-500 shrink-0" />
+                  <span className="truncate">
+                    {t("clients.onlineSessionIp")}: {s.ip}
+                  </span>
+                </div>
+                {(s.device || s.hwid) && (
+                  <div className="mt-1.5 space-y-1 text-xs text-zinc-500">
+                    {s.device ? (
+                      <div className="flex items-center gap-1.5">
+                        <Smartphone size={12} className="shrink-0" />
+                        <span className="truncate">
+                          {t("clients.onlineSessionDevice")}: {s.device}
+                        </span>
+                      </div>
+                    ) : null}
+                    {s.hwid ? (
+                      <div className="truncate font-mono text-[11px]">
+                        {t("clients.onlineSessionHwid")}: {s.hwid}
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <button
+          type="button"
+          onClick={onClose}
+          className="mt-4 w-full rounded-lg border border-zinc-200 dark:border-zinc-800 px-4 py-2 text-sm text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800"
+        >
+          {t("common.close")}
+        </button>
+      </div>
+    </div>
   );
 }

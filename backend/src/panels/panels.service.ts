@@ -32,8 +32,11 @@ import { flatCapabilitiesFor } from './native/panel-capability.catalog';
 import { generatePanelKey } from './native/panel-identity.util';
 import { allowedUsersFromXuiClient } from '../clients/limit-mapper.util';
 import {
+  extractHwidDevices,
   extractOnlineEmails,
   extractOnlineIpCounts,
+  extractOnlineIpDetails,
+  type OnlineSession,
 } from './xui-online-response.util';
 import { buildConnectionExtrasEnvelope, connectionExtrasContentEqual } from '../clients/output/connection-extras';
 import {
@@ -151,6 +154,10 @@ export class PanelsService implements OnModuleInit {
   > = {};
   private onlineIpsCache: { data: Record<string, number>; timestamp: number } =
     { data: {}, timestamp: 0 };
+  private onlineSessionsCache: {
+    data: Record<string, OnlineSession[]>;
+    timestamp: number;
+  } = { data: {}, timestamp: 0 };
 
   /** Global cron/boot lock — never overlap full fleet sync cycles. */
   private globalSyncRunning = false;
@@ -4659,6 +4666,176 @@ export class PanelsService implements OnModuleInit {
     );
 
     this.onlineIpsCache = { data: result, timestamp: Date.now() };
+    return result;
+  }
+
+  /**
+   * Live online sessions (IP + optional device/hwid) for one client email.
+   * Soft-fails per panel; returns whatever 3x-ui exposes.
+   */
+  async getOnlineSessionsForEmail(email: string): Promise<{
+    email: string;
+    sessions: OnlineSession[];
+  }> {
+    const normalized = String(email || '')
+      .trim()
+      .toLowerCase();
+    if (!normalized) {
+      return { email: '', sessions: [] };
+    }
+
+    const now = Date.now();
+    let allDetails = this.onlineSessionsCache.data;
+    if (now - this.onlineSessionsCache.timestamp >= 15000) {
+      allDetails = await this.fetchAllOnlineIpDetails();
+      this.onlineSessionsCache = { data: allDetails, timestamp: Date.now() };
+      // Keep count cache in sync when we already paid for the round-trip.
+      const counts: Record<string, number> = {};
+      for (const [e, sessions] of Object.entries(allDetails)) {
+        counts[e] = sessions.length;
+      }
+      this.onlineIpsCache = { data: counts, timestamp: Date.now() };
+    }
+
+    let sessions = [...(allDetails[normalized] || [])];
+
+    // Enrich with HWID/device info when panels expose the hwids API.
+    const panels = await this.prisma.panel.findMany({
+      where: { status: 'online' },
+      select: {
+        id: true,
+        apiToken: true,
+        apiBaseUrl: true,
+        url: true,
+        panelType: true,
+        capabilities: true,
+        apiVersion: true,
+      },
+    });
+
+    for (const p of panels) {
+      if (isExternalPanelType(p.panelType)) continue;
+      const caps = (p.capabilities || {}) as Record<string, unknown>;
+      if (caps.hwidsApi !== true) continue;
+      try {
+        const apiBaseUrl = resolvePanelApiBaseUrl(p);
+        const res = await axios.get(
+          `${apiBaseUrl}/panel/api/clients/hwids/${encodeURIComponent(normalized)}`,
+          {
+            headers: {
+              Authorization: p.apiToken ? `Bearer ${p.apiToken}` : undefined,
+            },
+            timeout: 5000,
+          },
+        );
+        if (!res.data?.success) continue;
+        const devices = extractHwidDevices(res.data.obj ?? res.data);
+        for (const d of devices) {
+          if (d.ip) {
+            const existing = sessions.find((s) => s.ip === d.ip);
+            if (existing) {
+              if (!existing.device && d.device) existing.device = d.device;
+              if (!existing.hwid && d.hwid) existing.hwid = d.hwid;
+            } else {
+              sessions.push({
+                ip: d.ip,
+                device: d.device ?? null,
+                hwid: d.hwid ?? null,
+              });
+            }
+          } else if (d.device || d.hwid) {
+            // Device without IP — attach to first session missing device, or append placeholder.
+            const bare = sessions.find((s) => !s.device && !s.hwid);
+            if (bare) {
+              bare.device = d.device ?? bare.device;
+              bare.hwid = d.hwid ?? bare.hwid;
+            } else if (sessions.length === 0) {
+              sessions.push({
+                ip: '—',
+                device: d.device ?? null,
+                hwid: d.hwid ?? null,
+              });
+            } else {
+              // Extra device row without IP
+              sessions.push({
+                ip: '—',
+                device: d.device ?? null,
+                hwid: d.hwid ?? null,
+              });
+            }
+          }
+        }
+      } catch {
+        // Soft fail — HWID endpoint optional
+      }
+    }
+
+    return { email: normalized, sessions };
+  }
+
+  private async fetchAllOnlineIpDetails(): Promise<
+    Record<string, OnlineSession[]>
+  > {
+    const panels = await this.prisma.panel.findMany({
+      where: { status: 'online' },
+      select: {
+        id: true,
+        apiToken: true,
+        apiBaseUrl: true,
+        url: true,
+        panelType: true,
+      },
+    });
+
+    const result: Record<string, OnlineSession[]> = {};
+
+    await Promise.all(
+      panels.map(async (p) => {
+        if (isExternalPanelType(p.panelType)) return;
+        try {
+          const apiBaseUrl = resolvePanelApiBaseUrl(p);
+          const headers = {
+            Authorization: p.apiToken ? `Bearer ${p.apiToken}` : undefined,
+          };
+          let details: Record<string, OnlineSession[]> | null = null;
+          try {
+            const res = await axios.get(
+              `${apiBaseUrl}/panel/api/server/clientIps`,
+              { headers, timeout: 5000 },
+            );
+            if (res.data?.success && res.data.obj != null) {
+              details = extractOnlineIpDetails(res.data.obj);
+            }
+          } catch {
+            details = null;
+          }
+          if (details == null) {
+            const res = await axios.post(
+              `${apiBaseUrl}/panel/api/inbounds/clientIps`,
+              {},
+              { headers, timeout: 5000 },
+            );
+            if (res.data?.success && res.data.obj != null) {
+              details = extractOnlineIpDetails(res.data.obj);
+            }
+          }
+          if (!details) return;
+          for (const [email, sessions] of Object.entries(details)) {
+            const prev = result[email] ?? [];
+            const seen = new Set(prev.map((s) => s.ip));
+            for (const s of sessions) {
+              if (!s.ip || seen.has(s.ip)) continue;
+              seen.add(s.ip);
+              prev.push(s);
+            }
+            result[email] = prev;
+          }
+        } catch {
+          // Soft fail
+        }
+      }),
+    );
+
     return result;
   }
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowDownRight,
@@ -114,6 +114,95 @@ function actionTone(action: string): "green" | "amber" | "purple" | "red" | "blu
   return "blue";
 }
 
+type ActionChange = { field: string; from: unknown; to: unknown };
+
+function fieldLabel(
+  field: string,
+  t: (key: string, params?: Record<string, string | number>) => string,
+) {
+  const map: Record<string, string> = {
+    email: "traffic.fieldEmail",
+    enable: "traffic.fieldEnable",
+    total: "traffic.fieldTotal",
+    expiryTime: "traffic.fieldExpiryTime",
+    remark: "traffic.fieldRemark",
+    limitIp: "traffic.fieldLimitIp",
+    flow: "traffic.fieldFlow",
+    subId: "traffic.fieldSubId",
+    inbounds: "traffic.fieldInbounds",
+  };
+  return map[field] ? t(map[field]) : field;
+}
+
+function formatChangeValue(
+  field: string,
+  value: unknown,
+  t: (key: string, params?: Record<string, string | number>) => string,
+): string {
+  if (value == null || value === "") return "—";
+  if (field === "enable") {
+    return value ? t("traffic.enabled") : t("traffic.disabled");
+  }
+  if (field === "total") {
+    const n = Number(value);
+    return Number.isFinite(n) ? formatBytes(n) : String(value);
+  }
+  if (field === "expiryTime") {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n <= 0) return "—";
+    return formatDateTime(n);
+  }
+  if (field === "inbounds" && typeof value === "object") {
+    const rec = value as { added?: string[]; removed?: string[] };
+    const parts: string[] = [];
+    if (rec.added?.length) parts.push(`${t("traffic.inboundsAdded")}: ${rec.added.length}`);
+    if (rec.removed?.length) parts.push(`${t("traffic.inboundsRemoved")}: ${rec.removed.length}`);
+    return parts.join(" · ") || "—";
+  }
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+
+function getActionChanges(details: Record<string, unknown>): ActionChange[] {
+  const raw = details.changes;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(
+    (c): c is ActionChange =>
+      !!c && typeof c === "object" && typeof (c as ActionChange).field === "string",
+  );
+}
+
+function actionSummary(
+  row: ActionLogRow,
+  t: (key: string, params?: Record<string, string | number>) => string,
+): string {
+  const details = row.details || {};
+  const changes = getActionChanges(details);
+  if (changes.length) {
+    return t("traffic.changesCount", { count: changes.length });
+  }
+  if (row.action === "CLIENT_ASSIGNED_ADMIN") {
+    const from = details.fromAdminUsername ? String(details.fromAdminUsername) : "—";
+    const to = details.toAdminUsername ? String(details.toAdminUsername) : "—";
+    return `${from} → ${to}`;
+  }
+  if (row.action === "CLIENT_DELETED" || row.action === "CLIENT_CLEANUP") {
+    if (details.trafficRefunded != null) {
+      const n = Number(details.trafficRefunded);
+      return Number.isFinite(n) && n > 0
+        ? `${t("traffic.trafficRefunded")}: ${formatBytes(n)}`
+        : "—";
+    }
+  }
+  if (row.action === "CLIENT_CREATED" && Array.isArray(details.panelsProvisioned)) {
+    return `${t("traffic.createdOnPanels")}: ${details.panelsProvisioned.length}`;
+  }
+  if (row.action === "BULK_CLIENT_CREATED" && details.count != null) {
+    return String(details.count);
+  }
+  return "—";
+}
+
 const TRAFFIC_PANEL_TAB_KEY = "hmpanel.traffic.panelId";
 
 function storageKey(adminId: string) {
@@ -147,6 +236,7 @@ export default function TrafficPage() {
   const [adminId, setAdminId] = useState<string>("");
   const [panelId, setPanelId] = useState<string>("");
   const [viewTab, setViewTab] = useState<"ledger" | "actions">("ledger");
+  const [expandedActionId, setExpandedActionId] = useState<string | null>(null);
 
   const [page, setPage] = useState(1);
   const [type, setType] = useState<string>("");
@@ -279,6 +369,7 @@ export default function TrafficPage() {
     setSearch("");
     setSearchInput("");
     setType("");
+    setExpandedActionId(null);
   };
 
   return (
@@ -416,7 +507,9 @@ export default function TrafficPage() {
           )}
 
           {viewTab === "actions" && (
-            <p className="text-sm text-zinc-500 dark:text-zinc-400">{t("traffic.actionsSubtitle")}</p>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">
+              {t("traffic.actionsSubtitle")} · {t("traffic.actionDetailsHint")}
+            </p>
           )}
 
           <div className="flex flex-col sm:flex-row gap-4 justify-between items-center bg-white dark:bg-zinc-900/40 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800">
@@ -580,64 +673,68 @@ export default function TrafficPage() {
                   <tbody className="block md:table-row-group space-y-3 md:space-y-0">
                     {(actions.data?.data ?? []).map((row) => {
                       const details = row.details || {};
-                      const extra =
-                        row.action === "CLIENT_ASSIGNED_ADMIN" && details.toAdminUsername
-                          ? ` → ${String(details.toAdminUsername)}`
-                          : row.action === "BULK_CLIENT_CREATED" && details.count
-                            ? ` (${details.count})`
-                            : row.action === "BULK_ASSIGNADMIN" && details.count
-                              ? ` (${details.count})`
-                              : "";
+                      const changes = getActionChanges(details);
+                      const open = expandedActionId === row.id;
                       return (
-                        <tr
-                          key={row.id}
-                          className="block md:table-row bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 md:border-b md:border-x-0 md:border-t-0 md:border-zinc-100 dark:md:border-zinc-800/60 rounded-xl md:rounded-none last:border-b-0 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
-                        >
-                          <td className="block md:table-cell px-4 py-3">
-                            <div className="flex items-center justify-between gap-2 md:block">
-                              <Badge tone={actionTone(row.action)}>
-                                {actionLabel(row.action, t)}
-                                {extra}
-                              </Badge>
-                              <span className="md:hidden text-xs text-zinc-500">
-                                {formatDateTime(row.createdAt)}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="block md:table-cell px-4 py-2 md:py-3 text-zinc-700 dark:text-zinc-200 font-medium">
-                            <div className="md:hidden text-[10px] uppercase text-zinc-500 font-semibold mb-1 tracking-wider">
-                              {t("traffic.colClient")}
-                            </div>
-                            {row.clientEmail ??
-                              (typeof details.prefix === "string" ? `${details.prefix}*` : "—")}
-                          </td>
-                          <td className="block md:table-cell px-4 py-2 md:py-3 text-zinc-500 dark:text-zinc-400">
-                            <div className="md:hidden text-[10px] uppercase text-zinc-500 font-semibold mb-1 tracking-wider">
-                              {t("traffic.colActor")}
-                            </div>
-                            {row.actor?.username ?? "—"}
-                          </td>
-                          <td className="block md:table-cell px-4 py-2 md:py-3 text-zinc-500 dark:text-zinc-400 text-xs">
-                            <div className="md:hidden text-[10px] uppercase text-zinc-500 font-semibold mb-1 tracking-wider">
-                              {t("traffic.colDescription")}
-                            </div>
-                            {row.action === "CLIENT_ASSIGNED_ADMIN"
-                              ? [
-                                  details.fromAdminUsername
-                                    ? String(details.fromAdminUsername)
-                                    : "—",
-                                  details.toAdminUsername
-                                    ? String(details.toAdminUsername)
-                                    : "—",
-                                ].join(" → ")
-                              : row.action === "CLIENT_UPDATED"
-                                ? t("traffic.actionUpdated")
-                                : "—"}
-                          </td>
-                          <td className="hidden md:table-cell px-4 py-3 text-zinc-500 dark:text-zinc-400">
-                            {formatDateTime(row.createdAt)}
-                          </td>
-                        </tr>
+                        <Fragment key={row.id}>
+                          <tr
+                            onClick={() =>
+                              setExpandedActionId(open ? null : row.id)
+                            }
+                            className={`block md:table-row bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 md:border-b md:border-x-0 md:border-t-0 md:border-zinc-100 dark:md:border-zinc-800/60 rounded-xl md:rounded-none last:border-b-0 hover:bg-zinc-100 dark:hover:bg-zinc-800/50 transition-colors cursor-pointer ${
+                              open ? "bg-white dark:bg-zinc-900/40" : ""
+                            }`}
+                          >
+                            <td className="block md:table-cell px-4 py-3">
+                              <div className="flex items-center justify-between gap-2 md:block">
+                                <Badge tone={actionTone(row.action)}>
+                                  {actionLabel(row.action, t)}
+                                </Badge>
+                                <span className="md:hidden text-xs text-zinc-500">
+                                  {formatDateTime(row.createdAt)}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="block md:table-cell px-4 py-2 md:py-3 text-zinc-700 dark:text-zinc-200 font-medium">
+                              <div className="md:hidden text-[10px] uppercase text-zinc-500 font-semibold mb-1 tracking-wider">
+                                {t("traffic.colClient")}
+                              </div>
+                              {row.clientEmail ??
+                                (typeof details.prefix === "string"
+                                  ? `${details.prefix}*`
+                                  : "—")}
+                            </td>
+                            <td className="block md:table-cell px-4 py-2 md:py-3 text-zinc-500 dark:text-zinc-400">
+                              <div className="md:hidden text-[10px] uppercase text-zinc-500 font-semibold mb-1 tracking-wider">
+                                {t("traffic.colActor")}
+                              </div>
+                              {row.actor?.username ?? "—"}
+                            </td>
+                            <td className="block md:table-cell px-4 py-2 md:py-3 text-zinc-500 dark:text-zinc-400 text-xs">
+                              <div className="md:hidden text-[10px] uppercase text-zinc-500 font-semibold mb-1 tracking-wider">
+                                {t("traffic.colDescription")}
+                              </div>
+                              {actionSummary(row, t)}
+                            </td>
+                            <td className="hidden md:table-cell px-4 py-3 text-zinc-500 dark:text-zinc-400">
+                              {formatDateTime(row.createdAt)}
+                            </td>
+                          </tr>
+                          {open && (
+                            <tr className="block md:table-row bg-zinc-50/80 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 md:border-b md:border-x-0 md:border-t-0 rounded-xl md:rounded-none">
+                              <td
+                                colSpan={5}
+                                className="block md:table-cell px-4 py-4"
+                              >
+                                <ActionDetailsPanel
+                                  row={row}
+                                  changes={changes}
+                                  t={t}
+                                />
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
                       );
                     })}
                     {(actions.data?.data.length ?? 0) === 0 && (
@@ -721,6 +818,136 @@ function PaginationBar({
           <NextIcon size={16} aria-hidden />
         </button>
       </div>
+    </div>
+  );
+}
+
+function ActionDetailsPanel({
+  row,
+  changes,
+  t,
+}: {
+  row: ActionLogRow;
+  changes: ActionChange[];
+  t: (key: string, params?: Record<string, string | number>) => string;
+}) {
+  const details = row.details || {};
+
+  if (changes.length > 0) {
+    return (
+      <div className="space-y-3">
+        <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+          {t("traffic.actionDetails")}
+        </div>
+        <div className="overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-zinc-100/80 dark:bg-zinc-800/60 text-xs uppercase tracking-wide text-zinc-500">
+                <th className="px-3 py-2 text-start font-medium">{t("traffic.changeField")}</th>
+                <th className="px-3 py-2 text-start font-medium">{t("traffic.changeFrom")}</th>
+                <th className="px-3 py-2 text-start font-medium">{t("traffic.changeTo")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {changes.map((c) => (
+                <tr
+                  key={c.field}
+                  className="border-t border-zinc-200 dark:border-zinc-800"
+                >
+                  <td className="px-3 py-2 font-medium text-zinc-700 dark:text-zinc-200">
+                    {fieldLabel(c.field, t)}
+                  </td>
+                  <td className="px-3 py-2 text-zinc-500 dark:text-zinc-400 break-all">
+                    {formatChangeValue(c.field, c.from, t)}
+                  </td>
+                  <td className="px-3 py-2 text-zinc-800 dark:text-zinc-100 break-all font-medium">
+                    {formatChangeValue(c.field, c.to, t)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
+
+  const metaRows: Array<{ label: string; value: string }> = [];
+  if (row.action === "CLIENT_ASSIGNED_ADMIN") {
+    metaRows.push({
+      label: t("traffic.assignedFromTo"),
+      value: `${details.fromAdminUsername ?? "—"} → ${details.toAdminUsername ?? "—"}`,
+    });
+    if (details.groupName) {
+      metaRows.push({
+        label: t("traffic.fieldGroup"),
+        value: String(details.groupName),
+      });
+    }
+  }
+  if (row.action === "CLIENT_DELETED" || row.action === "CLIENT_CLEANUP") {
+    if (details.trafficRefunded != null) {
+      const n = Number(details.trafficRefunded);
+      metaRows.push({
+        label: t("traffic.trafficRefunded"),
+        value: Number.isFinite(n) ? formatBytes(n) : String(details.trafficRefunded),
+      });
+    }
+    if (details.adminUsername) {
+      metaRows.push({
+        label: t("traffic.colActor"),
+        value: String(details.adminUsername),
+      });
+    }
+  }
+  if (row.action === "CLIENT_CREATED" && Array.isArray(details.panelsProvisioned)) {
+    metaRows.push({
+      label: t("traffic.createdOnPanels"),
+      value: String(details.panelsProvisioned.length),
+    });
+  }
+  if (row.action === "BULK_CLIENT_CREATED") {
+    if (details.count != null) {
+      metaRows.push({ label: t("traffic.actionBulkCreated"), value: String(details.count) });
+    }
+    if (details.prefix) {
+      metaRows.push({ label: t("traffic.fieldEmail"), value: `${details.prefix}*` });
+    }
+  }
+  // Legacy CLIENT_UPDATED rows without structured changes
+  if (row.action === "CLIENT_UPDATED") {
+    if (details.previousAllocation != null || details.newAllocation != null) {
+      metaRows.push({
+        label: t("traffic.fieldTotal"),
+        value: `${formatChangeValue("total", details.previousAllocation, t)} → ${formatChangeValue("total", details.newAllocation, t)}`,
+      });
+    }
+  }
+
+  if (!metaRows.length) {
+    return (
+      <p className="text-sm text-zinc-500">{t("traffic.actionNoDetails")}</p>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+        {t("traffic.actionDetails")}
+      </div>
+      <dl className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {metaRows.map((r) => (
+          <div
+            key={r.label}
+            className="rounded-lg border border-zinc-200 dark:border-zinc-800 px-3 py-2"
+          >
+            <dt className="text-[10px] uppercase tracking-wide text-zinc-500">{r.label}</dt>
+            <dd className="mt-0.5 text-sm font-medium text-zinc-800 dark:text-zinc-100 break-all">
+              {r.value}
+            </dd>
+          </div>
+        ))}
+      </dl>
     </div>
   );
 }

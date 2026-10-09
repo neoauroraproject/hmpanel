@@ -2431,6 +2431,82 @@ export class ClientsService {
           where: { id },
           data: updateData,
         });
+
+        const changes: Array<{ field: string; from: unknown; to: unknown }> =
+          [];
+        if (emailChanged) {
+          changes.push({ field: 'email', from: currentEmail, to: nextEmail });
+        }
+        if (
+          data.enable !== undefined &&
+          Boolean(data.enable) !== Boolean(existing.enable)
+        ) {
+          changes.push({
+            field: 'enable',
+            from: existing.enable,
+            to: data.enable,
+          });
+        }
+        if (data.total !== undefined && newAllocation !== existing.total) {
+          changes.push({
+            field: 'total',
+            from: previousAllocation.toString(),
+            to: newAllocation.toString(),
+          });
+        }
+        if (
+          data.expiryTime !== undefined &&
+          BigInt(newExpiry) !== BigInt(existing.expiryTime || 0)
+        ) {
+          changes.push({
+            field: 'expiryTime',
+            from: existing.expiryTime?.toString?.() ?? String(existing.expiryTime),
+            to: String(newExpiry),
+          });
+        }
+        if (data.remark !== undefined && data.remark !== existing.remark) {
+          changes.push({
+            field: 'remark',
+            from: existing.remark ?? '',
+            to: data.remark ?? '',
+          });
+        }
+        if (
+          data.limitIp !== undefined &&
+          Number(data.limitIp) !== Number(existing.limitIp || 0)
+        ) {
+          changes.push({
+            field: 'limitIp',
+            from: existing.limitIp ?? 0,
+            to: data.limitIp,
+          });
+        }
+        if (data.flow !== undefined && data.flow !== existing.flow) {
+          changes.push({
+            field: 'flow',
+            from: existing.flow ?? '',
+            to: data.flow ?? '',
+          });
+        }
+        if (data.subId !== undefined && nextSubId !== existing.subId) {
+          changes.push({
+            field: 'subId',
+            from: existing.subId ?? '',
+            to: nextSubId,
+          });
+        }
+        if (addedInboundDbIds.length || removedInboundDbIds.length) {
+          changes.push({
+            field: 'inbounds',
+            from: {
+              removed: removedInboundDbIds,
+            },
+            to: {
+              added: addedInboundDbIds,
+            },
+          });
+        }
+
         await tx.auditLog.create({
           data: {
             action: 'CLIENT_UPDATED',
@@ -2438,13 +2514,15 @@ export class ClientsService {
             entityId: id,
             adminId,
             details: {
-              clientEmail: existing.email,
+              clientEmail: nextEmail || existing.email,
               previousAllocation: previousAllocation.toString(),
               newAllocation: newAllocation.toString(),
               trafficDifference: diff.toString(),
               inboundsAdded: addedInboundDbIds,
               inboundsRemoved: removedInboundDbIds,
               newInboundIds: data.inboundIds || 'unchanged',
+              changes,
+              changeFields: changes.map((c) => c.field),
             },
           },
         });

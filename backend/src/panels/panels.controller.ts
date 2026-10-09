@@ -6,12 +6,17 @@ import {
   Delete,
   Body,
   Param,
+  Query,
+  Req,
   UseGuards,
+  ForbiddenException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { RolesGuard, Roles } from '../common/roles.guard';
 import { PanelsService } from './panels.service';
+import { PrismaService } from '../prisma/prisma.service';
+import type { AuthRequest } from '../common/auth-request';
 
 @ApiTags('Panels')
 @ApiBearerAuth()
@@ -19,7 +24,10 @@ import { PanelsService } from './panels.service';
 @Roles('SUPER_ADMIN')
 @Controller('panels')
 export class PanelsController {
-  constructor(private panelsService: PanelsService) {}
+  constructor(
+    private panelsService: PanelsService,
+    private prisma: PrismaService,
+  ) {}
 
   @Post('test-connection')
   @ApiOperation({ summary: 'Test connectivity to a panel URL' })
@@ -34,6 +42,33 @@ export class PanelsController {
   @ApiOperation({ summary: 'Get active IP counts for online clients' })
   getOnlineIps() {
     return this.panelsService.getOnlineClientIps();
+  }
+
+  @Get('online-sessions')
+  @Roles('SUPER_ADMIN', 'RESELLER')
+  @ApiOperation({
+    summary: 'Get live online sessions (IP / device) for a client email',
+  })
+  async getOnlineSessions(
+    @Req() req: AuthRequest,
+    @Query('email') email?: string,
+  ) {
+    const normalized = String(email || '')
+      .trim()
+      .toLowerCase();
+    if (req.user.role !== 'SUPER_ADMIN' && normalized) {
+      const owned = await this.prisma.client.findFirst({
+        where: {
+          adminId: req.user.id,
+          email: { equals: normalized, mode: 'insensitive' },
+        },
+        select: { id: true },
+      });
+      if (!owned) {
+        throw new ForbiddenException('Client not found');
+      }
+    }
+    return this.panelsService.getOnlineSessionsForEmail(normalized);
   }
 
   @Post()
