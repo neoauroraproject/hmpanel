@@ -1,10 +1,48 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   AdminQuotaService,
   panelMatchesQuotaFilter,
 } from './admin-quota.service';
+
+const CLIENT_ACTION_LOG_ACTIONS = [
+  'CLIENT_CREATED',
+  'CLIENT_UPDATED',
+  'CLIENT_DELETED',
+  'CLIENT_CLEANUP',
+  'CLIENT_ASSIGNED_ADMIN',
+  'BULK_CLIENT_CREATED',
+] as const;
+
+function isNoOpClientUpdate(details: unknown): boolean {
+  if (!details || typeof details !== 'object') return true;
+  const d = details as Record<string, unknown>;
+  if (Array.isArray(d.changes)) return d.changes.length === 0;
+  if (Array.isArray(d.changeFields)) return d.changeFields.length === 0;
+  // Legacy rows that only recorded identical allocations.
+  if (
+    d.previousAllocation != null &&
+    d.newAllocation != null &&
+    String(d.previousAllocation) === String(d.newAllocation)
+  ) {
+    const added = Array.isArray(d.inboundsAdded) ? d.inboundsAdded : [];
+    const removed = Array.isArray(d.inboundsRemoved) ? d.inboundsRemoved : [];
+    const diff = d.trafficDifference;
+    if (
+      added.length === 0 &&
+      removed.length === 0 &&
+      (diff == null || String(diff) === '0')
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
 
 @Injectable()
 export class TrafficService {
@@ -531,6 +569,7 @@ export class TrafficService {
     page = 1,
     limit = 50,
     search?: string,
+    action?: string,
   ) {
     const admin = await this.prisma.admin.findUnique({
       where: { id: adminId },
@@ -538,51 +577,14 @@ export class TrafficService {
     });
     if (!admin) throw new NotFoundException('Admin not found');
 
-    const clientActions = [
-      'CLIENT_CREATED',
-      'CLIENT_UPDATED',
-      'CLIENT_DELETED',
-      'CLIENT_CLEANUP',
-      'CLIENT_ASSIGNED_ADMIN',
-      'BULK_CLIENT_CREATED',
-      'BULK_ASSIGNADMIN',
-    ];
+    await this.purgeNoOpClientUpdates(adminId);
 
+    const where = await this.buildActionLogWhere(adminId, search, action);
     const owned = await this.prisma.client.findMany({
       where: { adminId },
       select: { id: true, email: true },
     });
-    const ownedIds = owned.map((c) => c.id);
     const emailById = new Map(owned.map((c) => [c.id, c.email]));
-
-    const orFilters: Prisma.AuditLogWhereInput[] = [
-      { adminId },
-      { details: { path: ['targetAdminId'], equals: adminId } },
-      { details: { path: ['toAdminId'], equals: adminId } },
-      { details: { path: ['fromAdminId'], equals: adminId } },
-    ];
-    if (ownedIds.length) {
-      orFilters.push({ entityId: { in: ownedIds } });
-    }
-
-    const where: Prisma.AuditLogWhereInput = {
-      entity: 'Client',
-      action: { in: clientActions },
-      OR: orFilters,
-    };
-
-    const q = String(search || '').trim();
-    if (q) {
-      where.AND = [
-        {
-          OR: [
-            { details: { path: ['clientEmail'], string_contains: q } },
-            { details: { path: ['prefix'], string_contains: q } },
-            { action: { contains: q, mode: 'insensitive' } },
-          ],
-        },
-      ];
-    }
 
     const [rows, total] = await Promise.all([
       this.prisma.auditLog.findMany({
@@ -597,7 +599,6 @@ export class TrafficService {
       this.prisma.auditLog.count({ where }),
     ]);
 
-    // Resolve emails for older rows that only stored entityId.
     const missingIds = rows
       .map((r) => r.entityId)
       .filter((id): id is string => !!id && !emailById.has(id));
@@ -629,6 +630,136 @@ export class TrafficService {
     });
 
     return { data, total, page, limit };
+  }
+
+  /**
+   * Delete action-log rows for an admin (selected ids, action category, or all scoped).
+   */
+  async deleteActionLogs(
+    adminId: string,
+    opts: {
+      ids?: string[];
+      actions?: string[];
+      search?: string;
+      all?: boolean;
+    },
+  ) {
+    const admin = await this.prisma.admin.findUnique({
+      where: { id: adminId },
+      select: { id: true },
+    });
+    if (!admin) throw new NotFoundException('Admin not found');
+
+    const ids = Array.isArray(opts.ids)
+      ? opts.ids.map((id) => String(id || '').trim()).filter(Boolean)
+      : [];
+    const actions = Array.isArray(opts.actions)
+      ? opts.actions
+          .map((a) => String(a || '').trim())
+          .filter((a) =>
+            (CLIENT_ACTION_LOG_ACTIONS as readonly string[]).includes(a),
+          )
+      : [];
+
+    if (!opts.all && !ids.length && !actions.length && !String(opts.search || '').trim()) {
+      throw new BadRequestException(
+        'Specify ids, actions, search, or all=true to delete logs',
+      );
+    }
+
+    const baseWhere = await this.buildActionLogWhere(
+      adminId,
+      opts.search,
+      actions.length === 1 ? actions[0] : undefined,
+    );
+
+    const where: Prisma.AuditLogWhereInput = {
+      AND: [
+        baseWhere,
+        ...(ids.length ? [{ id: { in: ids } }] : []),
+        ...(actions.length > 1 ? [{ action: { in: actions } }] : []),
+      ],
+    };
+
+    const result = await this.prisma.auditLog.deleteMany({ where });
+    return { deleted: result.count };
+  }
+
+  private async buildActionLogWhere(
+    adminId: string,
+    search?: string,
+    action?: string,
+  ): Promise<Prisma.AuditLogWhereInput> {
+    const owned = await this.prisma.client.findMany({
+      where: { adminId },
+      select: { id: true },
+    });
+    const ownedIds = owned.map((c) => c.id);
+
+    const orFilters: Prisma.AuditLogWhereInput[] = [
+      { adminId },
+      { details: { path: ['targetAdminId'], equals: adminId } },
+      { details: { path: ['toAdminId'], equals: adminId } },
+      { details: { path: ['fromAdminId'], equals: adminId } },
+    ];
+    if (ownedIds.length) {
+      orFilters.push({ entityId: { in: ownedIds } });
+    }
+
+    let actionFilter: Prisma.AuditLogWhereInput['action'] = {
+      in: [...CLIENT_ACTION_LOG_ACTIONS],
+    };
+    const actionKey = String(action || '').trim();
+    if (actionKey) {
+      if (actionKey === 'CLIENT_DELETED') {
+        actionFilter = { in: ['CLIENT_DELETED', 'CLIENT_CLEANUP'] };
+      } else if (
+        !(CLIENT_ACTION_LOG_ACTIONS as readonly string[]).includes(actionKey)
+      ) {
+        throw new BadRequestException('Invalid action filter');
+      } else {
+        actionFilter = actionKey;
+      }
+    }
+
+    const where: Prisma.AuditLogWhereInput = {
+      entity: 'Client',
+      action: actionFilter,
+      OR: orFilters,
+    };
+
+    const q = String(search || '').trim();
+    if (q) {
+      where.AND = [
+        {
+          OR: [
+            { details: { path: ['clientEmail'], string_contains: q } },
+            { details: { path: ['prefix'], string_contains: q } },
+            { details: { path: ['toAdminUsername'], string_contains: q } },
+            { details: { path: ['fromAdminUsername'], string_contains: q } },
+            { admin: { username: { contains: q, mode: 'insensitive' } } },
+          ],
+        },
+      ];
+    }
+
+    return where;
+  }
+
+  /** Remove legacy CLIENT_UPDATED rows that recorded no real field changes. */
+  private async purgeNoOpClientUpdates(adminId: string) {
+    const scope = await this.buildActionLogWhere(adminId, undefined, 'CLIENT_UPDATED');
+    const candidates = await this.prisma.auditLog.findMany({
+      where: scope,
+      select: { id: true, details: true },
+      take: 500,
+      orderBy: { createdAt: 'desc' },
+    });
+    const noopIds = candidates
+      .filter((c) => isNoOpClientUpdate(c.details))
+      .map((c) => c.id);
+    if (!noopIds.length) return;
+    await this.prisma.auditLog.deleteMany({ where: { id: { in: noopIds } } });
   }
 
   private async ledgerPanelWhere(

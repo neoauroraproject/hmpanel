@@ -1117,8 +1117,49 @@ export class ClientsService {
       }
       await tx.clientInbound.deleteMany({ where: { clientId: id } });
       await tx.client.delete({ where: { id } });
+      await this.purgeClientActionLogs(tx, id, existing.email);
+      await tx.auditLog.create({
+        data: {
+          action: skipRefund ? 'CLIENT_CLEANUP' : 'CLIENT_DELETED',
+          entity: 'Client',
+          entityId: id,
+          adminId,
+          details: {
+            clientEmail: existing.email,
+            adminUsername: existing.admin?.username ?? null,
+          },
+        },
+      });
     });
     return { ok: true };
+  }
+
+  /** Drop prior client action logs so a delete keeps a single clean event. */
+  private async purgeClientActionLogs(
+    tx: Prisma.TransactionClient,
+    clientId: string,
+    clientEmail?: string | null,
+  ) {
+    const or: Prisma.AuditLogWhereInput[] = [{ entityId: clientId }];
+    const email = String(clientEmail || '').trim();
+    if (email) {
+      or.push({ details: { path: ['clientEmail'], equals: email } });
+    }
+    await tx.auditLog.deleteMany({
+      where: {
+        entity: 'Client',
+        action: {
+          in: [
+            'CLIENT_CREATED',
+            'CLIENT_UPDATED',
+            'CLIENT_DELETED',
+            'CLIENT_CLEANUP',
+            'CLIENT_ASSIGNED_ADMIN',
+          ],
+        },
+        OR: or,
+      },
+    });
   }
 
   async create(
@@ -2507,25 +2548,22 @@ export class ClientsService {
           });
         }
 
-        await tx.auditLog.create({
-          data: {
-            action: 'CLIENT_UPDATED',
-            entity: 'Client',
-            entityId: id,
-            adminId,
-            details: {
-              clientEmail: nextEmail || existing.email,
-              previousAllocation: previousAllocation.toString(),
-              newAllocation: newAllocation.toString(),
-              trafficDifference: diff.toString(),
-              inboundsAdded: addedInboundDbIds,
-              inboundsRemoved: removedInboundDbIds,
-              newInboundIds: data.inboundIds || 'unchanged',
-              changes,
-              changeFields: changes.map((c) => c.field),
+        // Only real admin edits — skip no-op sync/update noise.
+        if (changes.length > 0) {
+          await tx.auditLog.create({
+            data: {
+              action: 'CLIENT_UPDATED',
+              entity: 'Client',
+              entityId: id,
+              adminId,
+              details: {
+                clientEmail: nextEmail || existing.email,
+                changes,
+                changeFields: changes.map((c) => c.field),
+              },
             },
-          },
-        });
+          });
+        }
         return client;
       },
     );
@@ -2647,6 +2685,8 @@ export class ClientsService {
             );
 
             await tx.client.delete({ where: { id } });
+            // Keep only the delete event — drop prior create/edit/assign noise.
+            await this.purgeClientActionLogs(tx, id, existing.email);
             await tx.auditLog.create({
               data: {
                 action: skipRefund ? 'CLIENT_CLEANUP' : 'CLIENT_DELETED',
@@ -2656,11 +2696,6 @@ export class ClientsService {
                 details: {
                   clientEmail: existing.email,
                   adminUsername: existing.admin?.username,
-                  trafficBefore: existing.total.toString(),
-                  trafficRefunded: refundResult.refundedAmount.toString(),
-                  verified: true,
-                  refundGranted: refundResult.refundGranted,
-                  refundSkippedReason: refundResult.refundSkippedReason,
                 },
               },
             });
@@ -3771,6 +3806,7 @@ export class ClientsService {
       );
 
       await tx.client.delete({ where: { id: existing.id } });
+      await this.purgeClientActionLogs(tx, existing.id, existing.email);
       await tx.auditLog.create({
         data: {
           action: skipRefund ? 'CLIENT_CLEANUP' : 'CLIENT_DELETED',
@@ -3780,12 +3816,7 @@ export class ClientsService {
           details: {
             clientEmail: existing.email,
             adminUsername: existing.admin?.username,
-            trafficBefore: existing.total.toString(),
-            trafficRefunded: refundResult.refundedAmount.toString(),
-            verified: true,
             bulkDeleted: true,
-            refundGranted: refundResult.refundGranted,
-            refundSkippedReason: refundResult.refundSkippedReason,
           },
         },
       });

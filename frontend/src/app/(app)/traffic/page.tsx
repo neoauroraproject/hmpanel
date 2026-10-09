@@ -1,7 +1,7 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowDownRight,
   ArrowUpRight,
@@ -13,6 +13,9 @@ import {
   Network,
   Gauge,
   ScrollText,
+  Trash2,
+  CheckSquare,
+  Square,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { Admin, Paginated, Transaction } from "@/lib/types";
@@ -20,6 +23,7 @@ import { formatBytes, formatDateTime } from "@/lib/format";
 import { Card, PageHeader, Badge, Spinner, ErrorBox } from "@/components/ui";
 import { useAuth } from "@/store/auth";
 import { useLocale, useT } from "@/i18n";
+import { useToast } from "@/components/toast";
 
 type LedgerQuota = {
   quotaMode: string;
@@ -179,7 +183,7 @@ function actionSummary(
   const details = row.details || {};
   const changes = getActionChanges(details);
   if (changes.length) {
-    return t("traffic.changesCount", { count: changes.length });
+    return changes.map((c) => fieldLabel(c.field, t)).join(" · ");
   }
   if (row.action === "CLIENT_ASSIGNED_ADMIN") {
     const from = details.fromAdminUsername ? String(details.fromAdminUsername) : "—";
@@ -187,12 +191,7 @@ function actionSummary(
     return `${from} → ${to}`;
   }
   if (row.action === "CLIENT_DELETED" || row.action === "CLIENT_CLEANUP") {
-    if (details.trafficRefunded != null) {
-      const n = Number(details.trafficRefunded);
-      return Number.isFinite(n) && n > 0
-        ? `${t("traffic.trafficRefunded")}: ${formatBytes(n)}`
-        : "—";
-    }
+    return t("traffic.actionDeleted");
   }
   if (row.action === "CLIENT_CREATED" && Array.isArray(details.panelsProvisioned)) {
     return `${t("traffic.createdOnPanels")}: ${details.panelsProvisioned.length}`;
@@ -202,6 +201,15 @@ function actionSummary(
   }
   return "—";
 }
+
+const ACTION_FILTERS = [
+  { value: "", labelKey: "traffic.actionFilterAll" },
+  { value: "CLIENT_CREATED", labelKey: "traffic.actionFilterCreated" },
+  { value: "CLIENT_UPDATED", labelKey: "traffic.actionFilterUpdated" },
+  { value: "CLIENT_DELETED", labelKey: "traffic.actionFilterDeleted" },
+  { value: "CLIENT_ASSIGNED_ADMIN", labelKey: "traffic.actionFilterAssigned" },
+  { value: "BULK_CLIENT_CREATED", labelKey: "traffic.actionFilterBulk" },
+] as const;
 
 const TRAFFIC_PANEL_TAB_KEY = "hmpanel.traffic.panelId";
 
@@ -233,10 +241,14 @@ export default function TrafficPage() {
   const NextIcon = dir === "rtl" ? ChevronLeft : ChevronRight;
   const admin = useAuth((s) => s.admin);
   const isSuper = admin?.role === "SUPER_ADMIN";
+  const qc = useQueryClient();
+  const toast = useToast((s) => s.push);
   const [adminId, setAdminId] = useState<string>("");
   const [panelId, setPanelId] = useState<string>("");
   const [viewTab, setViewTab] = useState<"ledger" | "actions">("ledger");
   const [expandedActionId, setExpandedActionId] = useState<string | null>(null);
+  const [selectedLogIds, setSelectedLogIds] = useState<Record<string, boolean>>({});
+  const [actionFilter, setActionFilter] = useState("");
 
   const [page, setPage] = useState(1);
   const [type, setType] = useState<string>("");
@@ -305,6 +317,7 @@ export default function TrafficPage() {
     page: page.toString(),
     limit: "15",
     ...(search ? { search } : {}),
+    ...(actionFilter ? { action: actionFilter } : {}),
   }).toString();
 
   const ledger = useQuery({
@@ -323,6 +336,38 @@ export default function TrafficPage() {
       (await api.get<ActionLogResponse>(`${actionsPath}?${actionsParams}`)).data,
     enabled: viewTab === "actions" && !!actionsPath,
   });
+
+  const purgePath = isSuper
+    ? adminId
+      ? `/traffic/actions/${adminId}/purge`
+      : null
+    : "/traffic/actions/purge";
+
+  const purgeMutation = useMutation({
+    mutationFn: async (body: {
+      ids?: string[];
+      actions?: string[];
+      search?: string;
+      all?: boolean;
+    }) => (await api.post<{ deleted: number }>(purgePath!, body)).data,
+    onSuccess: (res) => {
+      toast(t("traffic.deleteLogsDone", { count: res.deleted }), "success");
+      setSelectedLogIds({});
+      setExpandedActionId(null);
+      qc.invalidateQueries({ queryKey: ["traffic-actions"] });
+    },
+    onError: (err: any) => {
+      toast(err.response?.data?.message || t("traffic.deleteLogsFailed"), "error");
+    },
+  });
+
+  const pageLogIds = useMemo(
+    () => (actions.data?.data ?? []).map((r) => r.id),
+    [actions.data?.data],
+  );
+  const selectedCount = pageLogIds.filter((id) => selectedLogIds[id]).length;
+  const allPageSelected =
+    pageLogIds.length > 0 && pageLogIds.every((id) => selectedLogIds[id]);
 
   const resellers = (adminsQuery.data?.data ?? []).filter(
     (a) => a.role === "RESELLER" && a.status === "active",
@@ -369,7 +414,62 @@ export default function TrafficPage() {
     setSearch("");
     setSearchInput("");
     setType("");
+    setActionFilter("");
+    setSelectedLogIds({});
     setExpandedActionId(null);
+  };
+
+  const toggleLog = (id: string) => {
+    setSelectedLogIds((prev) => {
+      const next = { ...prev };
+      if (next[id]) delete next[id];
+      else next[id] = true;
+      return next;
+    });
+  };
+
+  const toggleAllPageLogs = () => {
+    setSelectedLogIds((prev) => {
+      if (allPageSelected) {
+        const next = { ...prev };
+        for (const id of pageLogIds) delete next[id];
+        return next;
+      }
+      const next = { ...prev };
+      for (const id of pageLogIds) next[id] = true;
+      return next;
+    });
+  };
+
+  const deleteSelectedLogs = () => {
+    const ids = Object.keys(selectedLogIds);
+    if (!ids.length || !purgePath) return;
+    if (!confirm(t("traffic.deleteLogsConfirmSelected", { count: ids.length }))) return;
+    purgeMutation.mutate({ ids });
+  };
+
+  const deleteCategoryLogs = () => {
+    if (!purgePath) return;
+    if (!confirm(t("traffic.deleteLogsConfirmCategory"))) return;
+    if (actionFilter) {
+      purgeMutation.mutate({
+        actions: actionFilter === "CLIENT_DELETED"
+          ? ["CLIENT_DELETED", "CLIENT_CLEANUP"]
+          : [actionFilter],
+        ...(search ? { search } : {}),
+      });
+      return;
+    }
+    purgeMutation.mutate({
+      all: true,
+      ...(search ? { search } : {}),
+    });
+  };
+
+  const deleteAllLogs = () => {
+    if (!purgePath) return;
+    if (!confirm(t("traffic.deleteLogsConfirmAll"))) return;
+    purgeMutation.mutate({ all: true });
   };
 
   return (
@@ -508,41 +608,94 @@ export default function TrafficPage() {
 
           {viewTab === "actions" && (
             <p className="text-sm text-zinc-500 dark:text-zinc-400">
-              {t("traffic.actionsSubtitle")} · {t("traffic.actionDetailsHint")}
+              {t("traffic.actionsSubtitle")} · {t("traffic.selectLogsHint")}
             </p>
           )}
 
-          <div className="flex flex-col sm:flex-row gap-4 justify-between items-center bg-white dark:bg-zinc-900/40 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800">
-            <form onSubmit={handleSearch} className="relative w-full sm:w-64">
-              <Search className="absolute start-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
-              <input
-                type="text"
-                placeholder={
-                  viewTab === "actions"
-                    ? t("traffic.actionsSearchPlaceholder")
-                    : t("traffic.searchPlaceholder")
-                }
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                className="w-full ps-9 pe-4 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 outline-none focus:border-blue-500 dark:focus:border-blue-500"
-              />
-            </form>
+          <div className="flex flex-col gap-3 bg-white dark:bg-zinc-900/40 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800">
+            <div className="flex flex-col sm:flex-row gap-3 justify-between items-stretch sm:items-center">
+              <form onSubmit={handleSearch} className="relative w-full sm:w-72">
+                <Search className="absolute start-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
+                <input
+                  type="text"
+                  placeholder={
+                    viewTab === "actions"
+                      ? t("traffic.actionsSearchPlaceholder")
+                      : t("traffic.searchPlaceholder")
+                  }
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  className="w-full ps-9 pe-4 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 outline-none focus:border-blue-500 dark:focus:border-blue-500"
+                />
+              </form>
 
-            {viewTab === "ledger" && (
-              <div className="flex gap-2 w-full sm:w-auto">
-                <select
-                  value={type}
-                  onChange={(e) => {
-                    setType(e.target.value);
-                    setPage(1);
-                  }}
-                  className="w-full sm:w-auto rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-sm text-zinc-700 dark:text-zinc-200 outline-none focus:border-blue-500"
+              {viewTab === "ledger" ? (
+                <div className="flex gap-2 w-full sm:w-auto">
+                  <select
+                    value={type}
+                    onChange={(e) => {
+                      setType(e.target.value);
+                      setPage(1);
+                    }}
+                    className="w-full sm:w-auto rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-sm text-zinc-700 dark:text-zinc-200 outline-none focus:border-blue-500"
+                  >
+                    <option value="">{t("traffic.allTypes")}</option>
+                    <option value="CREDIT">{t("traffic.creditsOnly")}</option>
+                    <option value="DEBIT">{t("traffic.debitsOnly")}</option>
+                    <option value="USAGE_CHARGE">{t("traffic.usageCharges")}</option>
+                  </select>
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+                  <select
+                    value={actionFilter}
+                    onChange={(e) => {
+                      setActionFilter(e.target.value);
+                      setPage(1);
+                      setSelectedLogIds({});
+                    }}
+                    className="flex-1 sm:flex-none rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-sm text-zinc-700 dark:text-zinc-200 outline-none focus:border-blue-500"
+                  >
+                    {ACTION_FILTERS.map((f) => (
+                      <option key={f.value || "all"} value={f.value}>
+                        {t(f.labelKey)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+
+            {viewTab === "actions" && (
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={!selectedCount || purgeMutation.isPending}
+                  onClick={deleteSelectedLogs}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 dark:border-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-800 disabled:opacity-40"
                 >
-                  <option value="">{t("traffic.allTypes")}</option>
-                  <option value="CREDIT">{t("traffic.creditsOnly")}</option>
-                  <option value="DEBIT">{t("traffic.debitsOnly")}</option>
-                  <option value="USAGE_CHARGE">{t("traffic.usageCharges")}</option>
-                </select>
+                  <Trash2 size={14} />
+                  {t("traffic.deleteSelectedLogs")}
+                  {selectedCount ? ` (${selectedCount})` : ""}
+                </button>
+                <button
+                  type="button"
+                  disabled={purgeMutation.isPending || !(actions.data?.total)}
+                  onClick={deleteCategoryLogs}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 dark:border-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-800 disabled:opacity-40"
+                >
+                  <Trash2 size={14} />
+                  {t("traffic.deleteCategoryLogs")}
+                </button>
+                <button
+                  type="button"
+                  disabled={purgeMutation.isPending || !(actions.data?.total)}
+                  onClick={deleteAllLogs}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-red-500/30 bg-red-500/5 px-3 py-1.5 text-xs font-medium text-red-500 hover:bg-red-500/10 disabled:opacity-40"
+                >
+                  <Trash2 size={14} />
+                  {t("traffic.deleteAllLogs")}
+                </button>
               </div>
             )}
           </div>
@@ -663,6 +816,19 @@ export default function TrafficPage() {
                 <table className="w-full text-sm block md:table">
                   <thead className="hidden md:table-header-group">
                     <tr className="border-b border-zinc-200 dark:border-zinc-800 text-start text-xs uppercase tracking-wide text-zinc-500">
+                      <th className="px-3 py-3 font-medium w-10">
+                        <button
+                          type="button"
+                          onClick={toggleAllPageLogs}
+                          className="text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-200"
+                        >
+                          {allPageSelected ? (
+                            <CheckSquare size={16} className="text-blue-500" />
+                          ) : (
+                            <Square size={16} />
+                          )}
+                        </button>
+                      </th>
                       <th className="px-4 py-3 font-medium">{t("traffic.colAction")}</th>
                       <th className="px-4 py-3 font-medium">{t("traffic.colClient")}</th>
                       <th className="px-4 py-3 font-medium">{t("traffic.colActor")}</th>
@@ -675,6 +841,7 @@ export default function TrafficPage() {
                       const details = row.details || {};
                       const changes = getActionChanges(details);
                       const open = expandedActionId === row.id;
+                      const checked = !!selectedLogIds[row.id];
                       return (
                         <Fragment key={row.id}>
                           <tr
@@ -685,11 +852,45 @@ export default function TrafficPage() {
                               open ? "bg-white dark:bg-zinc-900/40" : ""
                             }`}
                           >
+                            <td
+                              className="hidden md:table-cell px-3 py-3"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleLog(row.id);
+                              }}
+                            >
+                              <button
+                                type="button"
+                                className="text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-200"
+                              >
+                                {checked ? (
+                                  <CheckSquare size={16} className="text-blue-500" />
+                                ) : (
+                                  <Square size={16} />
+                                )}
+                              </button>
+                            </td>
                             <td className="block md:table-cell px-4 py-3">
                               <div className="flex items-center justify-between gap-2 md:block">
-                                <Badge tone={actionTone(row.action)}>
-                                  {actionLabel(row.action, t)}
-                                </Badge>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    className="md:hidden text-zinc-500"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      toggleLog(row.id);
+                                    }}
+                                  >
+                                    {checked ? (
+                                      <CheckSquare size={16} className="text-blue-500" />
+                                    ) : (
+                                      <Square size={16} />
+                                    )}
+                                  </button>
+                                  <Badge tone={actionTone(row.action)}>
+                                    {actionLabel(row.action, t)}
+                                  </Badge>
+                                </div>
                                 <span className="md:hidden text-xs text-zinc-500">
                                   {formatDateTime(row.createdAt)}
                                 </span>
@@ -723,7 +924,7 @@ export default function TrafficPage() {
                           {open && (
                             <tr className="block md:table-row bg-zinc-50/80 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 md:border-b md:border-x-0 md:border-t-0 rounded-xl md:rounded-none">
                               <td
-                                colSpan={5}
+                                colSpan={6}
                                 className="block md:table-cell px-4 py-4"
                               >
                                 <ActionDetailsPanel
@@ -739,7 +940,7 @@ export default function TrafficPage() {
                     })}
                     {(actions.data?.data.length ?? 0) === 0 && (
                       <tr className="block md:table-row">
-                        <td colSpan={5} className="block md:table-cell px-4 py-10 text-center text-zinc-500">
+                        <td colSpan={6} className="block md:table-cell px-4 py-10 text-center text-zinc-500">
                           {t("traffic.actionsEmpty")}
                         </td>
                       </tr>
@@ -886,17 +1087,10 @@ function ActionDetailsPanel({
     }
   }
   if (row.action === "CLIENT_DELETED" || row.action === "CLIENT_CLEANUP") {
-    if (details.trafficRefunded != null) {
-      const n = Number(details.trafficRefunded);
+    if (row.clientEmail || details.clientEmail) {
       metaRows.push({
-        label: t("traffic.trafficRefunded"),
-        value: Number.isFinite(n) ? formatBytes(n) : String(details.trafficRefunded),
-      });
-    }
-    if (details.adminUsername) {
-      metaRows.push({
-        label: t("traffic.colActor"),
-        value: String(details.adminUsername),
+        label: t("traffic.colClient"),
+        value: String(row.clientEmail || details.clientEmail),
       });
     }
   }
@@ -914,9 +1108,13 @@ function ActionDetailsPanel({
       metaRows.push({ label: t("traffic.fieldEmail"), value: `${details.prefix}*` });
     }
   }
-  // Legacy CLIENT_UPDATED rows without structured changes
+  // Legacy CLIENT_UPDATED: only show allocation when it actually changed.
   if (row.action === "CLIENT_UPDATED") {
-    if (details.previousAllocation != null || details.newAllocation != null) {
+    if (
+      details.previousAllocation != null &&
+      details.newAllocation != null &&
+      String(details.previousAllocation) !== String(details.newAllocation)
+    ) {
       metaRows.push({
         label: t("traffic.fieldTotal"),
         value: `${formatChangeValue("total", details.previousAllocation, t)} → ${formatChangeValue("total", details.newAllocation, t)}`,

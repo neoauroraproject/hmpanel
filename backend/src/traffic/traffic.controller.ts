@@ -102,13 +102,33 @@ export class TrafficController {
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('search') search?: string,
+    @Query('action') action?: string,
   ) {
     return this.trafficService.getActionLog(
       req.user.id,
       Number(page) || 1,
       Number(limit) || 50,
       search,
+      action,
     );
+  }
+
+  @Post('actions/purge')
+  @ApiOperation({
+    summary:
+      'Delete action-log rows for the caller (ids / action category / search / all)',
+  })
+  purgeActions(
+    @Req() req: AuthRequest,
+    @Body()
+    body: {
+      ids?: string[];
+      actions?: string[];
+      search?: string;
+      all?: boolean;
+    },
+  ) {
+    return this.trafficService.deleteActionLogs(req.user.id, body || {});
   }
 
   @Get('actions/:adminId')
@@ -120,12 +140,34 @@ export class TrafficController {
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('search') search?: string,
+    @Query('action') action?: string,
   ) {
     return this.trafficService.getActionLog(
       adminId,
       Number(page) || 1,
       Number(limit) || 50,
       search,
+      action,
     );
+  }
+
+  @Post('actions/:adminId/purge')
+  @UseGuards(RolesGuard)
+  @Roles('SUPER_ADMIN')
+  @ApiOperation({
+    summary:
+      'Delete action-log rows for a specific admin (ids / action category / search / all)',
+  })
+  purgeAdminActions(
+    @Param('adminId') adminId: string,
+    @Body()
+    body: {
+      ids?: string[];
+      actions?: string[];
+      search?: string;
+      all?: boolean;
+    },
+  ) {
+    return this.trafficService.deleteActionLogs(adminId, body || {});
   }
 }
