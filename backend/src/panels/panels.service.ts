@@ -12,10 +12,10 @@ import { PrismaService } from '../prisma/prisma.service';
 import { PanelCapabilitiesService } from './panel-capabilities.service';
 import { ClientsService } from '../clients/clients.service';
 import { AdminQuotaService } from '../traffic/admin-quota.service';
-import { agentDebugLog } from '../debug-agent-log';
 import {
   classifyPanelDisableReason,
   isUsageManualHold,
+  syncXuiTrafficMirror,
 } from '../traffic/usage-mode-xui.util';
 import {
   derivePanelConnectionFromUrl,
@@ -2015,28 +2015,6 @@ export class PanelsService implements OnModuleInit {
               !!ownerId &&
               poolOpen &&
               (!enable || total > 0n);
-            // #region agent log
-            if (!enable || total > 0n || dbClient.disableReason) {
-              agentDebugLog({
-                hypothesisId: !enable ? 'H2' : 'H4',
-                location: 'panels.service.ts:syncRepairGate',
-                message: 'USAGE sync repair gate',
-                data: {
-                  email: trimmedEmail,
-                  panelEnable: enable,
-                  panelTotal: Number(total),
-                  dbTotal: Number(dbClient.total),
-                  dbEnable: dbClient.enable,
-                  disableReason: dbClient.disableReason,
-                  manualHold,
-                  poolOpen,
-                  notExpired,
-                  wouldRepair,
-                  usedNow: Number(usedNow),
-                },
-              });
-            }
-            // #endregion
             if (wouldRepair) {
               quotaRepairs.push({ email: trimmedEmail });
               if (!enable) {
@@ -2644,7 +2622,7 @@ export class PanelsService implements OnModuleInit {
     delete normalized.createdAt;
     delete normalized.updatedAt;
 
-    return normalized;
+    return syncXuiTrafficMirror(normalized);
   }
 
   /**
@@ -4494,20 +4472,6 @@ export class PanelsService implements OnModuleInit {
           this.logger.warn(
             `[SUSPEND] Disabling ${client.email || client.id} admin=${adminId} usageRemaining=${remaining}`,
           );
-          // #region agent log
-          agentDebugLog({
-            hypothesisId: 'H5',
-            location: 'panels.service.ts:suspendBalanceExhaustedClients',
-            message: 'suspending client for exhausted pool',
-            data: {
-              adminId,
-              clientId: client.id,
-              email: client.email,
-              remaining,
-              panelId: panelId || null,
-            },
-          });
-          // #endregion
           await this.setClientEnableOnPanels(client, false);
           await this.prisma.client.update({
             where: { id: client.id },

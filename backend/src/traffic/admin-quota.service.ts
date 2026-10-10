@@ -13,7 +13,6 @@ import { GLOBAL_POOL_TX_DESCRIPTION, nextQuotaLedger } from './quota-balance-pat
 import { PolicyEngine } from '../authz/policy.engine';
 import { FeatureFlagsService } from '../platform/architecture/feature-flags.service';
 import { PLATFORM_FLAGS } from '../platform/architecture/feature-flags';
-import { agentDebugLog } from '../debug-agent-log';
 import { xuiTotalBytesForMode } from './usage-mode-xui.util';
 
 export type AdminQuotaAdmin = {
@@ -139,15 +138,6 @@ export class AdminQuotaService implements OnModuleInit {
     this.logger.warn(
       `[USAGE-XUI] Healed ${Number(result) || 0} AdminPanelQuota row(s) ALLOCATION→USAGE`,
     );
-    // #region agent log
-    agentDebugLog({
-      hypothesisId: 'H6',
-      location: 'admin-quota.service.ts:healUsagePanelQuotaModes',
-      message: 'healed stale PER_PANEL ALLOCATION rows for USAGE admins',
-      data: { updated: Number(result) || 0 },
-      runId: 'post-fix',
-    });
-    // #endregion
   }
 
   /**
@@ -1274,25 +1264,7 @@ export class AdminQuotaService implements OnModuleInit {
       undefined,
       this.isPerPanel(admin) ? panelId : undefined,
     );
-    const result = xuiTotalBytesForMode(mode, requestedBytes);
-    // #region agent log
-    agentDebugLog({
-      hypothesisId: 'H1',
-      location: 'admin-quota.service.ts:panelTotalBytesForXui',
-      message: 'xui totalGB resolution',
-      data: {
-        adminId,
-        panelId,
-        requestedBytes,
-        mode,
-        quotaMode: admin.quotaMode,
-        adminTrafficMode: admin.trafficMode,
-        result,
-        perPanel: this.isPerPanel(admin),
-      },
-    });
-    // #endregion
-    return result;
+    return xuiTotalBytesForMode(mode, requestedBytes);
   }
 
   /**
@@ -1301,70 +1273,18 @@ export class AdminQuotaService implements OnModuleInit {
    */
   async usagePoolStillOpen(adminId: string, panelId: string): Promise<boolean> {
     const admin = await this.loadAdmin(adminId);
-    if (this.skipTrafficAccounting(admin)) {
-      // #region agent log
-      agentDebugLog({
-        hypothesisId: 'H3',
-        location: 'admin-quota.service.ts:usagePoolStillOpen',
-        message: 'pool open skipped accounting',
-        data: { adminId, panelId, open: false, reason: 'skipTrafficAccounting' },
-      });
-      // #endregion
-      return false;
-    }
+    if (this.skipTrafficAccounting(admin)) return false;
     const mode = await this.resolveTrafficMode(
       adminId,
       undefined,
       undefined,
       this.isPerPanel(admin) ? panelId : undefined,
     );
-    if (mode !== 'USAGE') {
-      // #region agent log
-      agentDebugLog({
-        hypothesisId: 'H3',
-        location: 'admin-quota.service.ts:usagePoolStillOpen',
-        message: 'pool open false non-USAGE',
-        data: {
-          adminId,
-          panelId,
-          mode,
-          adminTrafficMode: admin.trafficMode,
-          quotaMode: admin.quotaMode,
-          open: false,
-        },
-      });
-      // #endregion
-      return false;
-    }
-    if (await this.isPanelUnlimited(admin, panelId)) {
-      // Unlimited USAGE pool is always open for 3x-ui repair.
-      // #region agent log
-      agentDebugLog({
-        hypothesisId: 'H3',
-        location: 'admin-quota.service.ts:usagePoolStillOpen',
-        message: 'pool open true unlimited panel',
-        data: { adminId, panelId, mode, open: true },
-      });
-      // #endregion
-      return true;
-    }
+    if (mode !== 'USAGE') return false;
+    // Unlimited USAGE pool is always open for 3x-ui repair.
+    if (await this.isPanelUnlimited(admin, panelId)) return true;
     const bucket = await this.getPanelBalance(admin, panelId);
-    const open = Math.max(0, Number(bucket.balance) || 0) > 0;
-    // #region agent log
-    agentDebugLog({
-      hypothesisId: 'H3',
-      location: 'admin-quota.service.ts:usagePoolStillOpen',
-      message: 'pool open balance check',
-      data: {
-        adminId,
-        panelId,
-        mode,
-        balance: Number(bucket.balance) || 0,
-        open,
-      },
-    });
-    // #endregion
-    return open;
+    return Math.max(0, Number(bucket.balance) || 0) > 0;
   }
 
   /** Same rule for one panel. GLOBAL usage uses the account pool. */

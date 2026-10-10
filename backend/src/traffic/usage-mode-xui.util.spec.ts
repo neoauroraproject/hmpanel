@@ -1,6 +1,7 @@
 import {
   classifyPanelDisableReason,
   isUsageManualHold,
+  syncXuiTrafficMirror,
   xuiTotalBytesForMode,
 } from './usage-mode-xui.util';
 
@@ -52,5 +53,21 @@ describe('usage-mode-xui.util', () => {
         usagePoolOpen: false,
       }),
     ).toBe('MANUAL');
+  });
+
+  it('mirrors enable/totalGB onto nested traffic for 3x-ui 3.8', () => {
+    const next = syncXuiTrafficMirror({
+      enable: true,
+      totalGB: 0,
+      traffic: { enable: false, total: 50 * 1024 ** 3, up: 1, down: 2 },
+    });
+    expect(next.enable).toBe(true);
+    expect(next.totalGB).toBe(0);
+    expect(next.traffic).toEqual({
+      enable: true,
+      total: 0,
+      up: 1,
+      down: 2,
+    });
   });
 });

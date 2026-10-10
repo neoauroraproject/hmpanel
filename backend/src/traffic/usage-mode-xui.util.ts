@@ -12,6 +12,26 @@ export function xuiTotalBytesForMode(
 }
 
 /**
+ * 3x-ui 3.8+ stores the live enable/total on Client.traffic. Updating only
+ * top-level enable/totalGB leaves traffic.enable=false and the client looks
+ * disabled again on the next sync. Keep both layers in sync when present.
+ */
+export function syncXuiTrafficMirror(body: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...body };
+  const hasEnable = Object.prototype.hasOwnProperty.call(out, 'enable');
+  const hasTotal = Object.prototype.hasOwnProperty.call(out, 'totalGB');
+  if (!hasEnable && !hasTotal) return out;
+  const prev =
+    out.traffic && typeof out.traffic === 'object' && !Array.isArray(out.traffic)
+      ? { ...(out.traffic as Record<string, unknown>) }
+      : {};
+  if (hasEnable) prev.enable = out.enable !== false;
+  if (hasTotal) prev.total = Math.max(0, Number(out.totalGB) || 0);
+  out.traffic = prev;
+  return out;
+}
+
+/**
  * Sync must not treat a panel-unlimited (total=0) disable as a permanent
  * manual hold — that is how USAGE clients get stuck after create/repair.
  * True API MANUAL disables still hold when the panel still has a per-client cap.
