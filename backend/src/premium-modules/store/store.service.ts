@@ -460,6 +460,12 @@ export class StoreService implements OnModuleInit {
     const limitIp = Math.max(0, Math.floor(Number(row?.limitIp || 0)));
     const days = Math.max(0, Math.floor(Number(row?.days || 0)));
     const label = String(row?.label || '').trim();
+    const priceExtraUsd = Math.max(0, Number(row?.priceExtraUsd || 0));
+    const priceExtraToman = Math.max(0, Number(row?.priceExtraToman || 0));
+    // Prefer store currency, but never drop a filled price if only one side is set.
+    const priceExtra = toman
+      ? priceExtraToman || priceExtraUsd
+      : priceExtraUsd || priceExtraToman;
     return {
       id: String(row?.id || ''),
       type,
@@ -472,11 +478,11 @@ export class StoreService implements OnModuleInit {
           : limitIp === 1
             ? '+1 user'
             : `+${limitIp} users`),
-      priceExtraUsd: Math.max(0, Number(row?.priceExtraUsd || 0)),
-      priceExtraToman: Math.max(0, Number(row?.priceExtraToman || 0)),
+      priceExtraUsd,
+      priceExtraToman,
       sortOrder: Number(row?.sortOrder || 0),
       enabled: row?.enabled !== false,
-      priceExtra: toman ? Math.max(0, Number(row?.priceExtraToman || 0)) : Math.max(0, Number(row?.priceExtraUsd || 0)),
+      priceExtra,
     };
   }
 
@@ -4877,7 +4883,11 @@ export class StoreService implements OnModuleInit {
       }),
       products: await Promise.all(
         visibleCatalog.map(async (product) => {
-          const enriched = await this.enrichProductIpOptions(customer.adminId, product);
+          const enriched = await this.enrichProductIpOptions(
+            customer.adminId,
+            product,
+            store?.defaultCurrency,
+          );
           if (!product.isTest) return enriched;
           const eligibility = await this.getTestProductEligibility(customer.id, product);
           return {
@@ -5253,7 +5263,10 @@ export class StoreService implements OnModuleInit {
     });
 
     const isTestProduct = !!(product as any).isTest;
-    const instantFreeCheckout = this.isInstantFreeCheckoutProduct(product as any, authChannel);
+    // Zero-price base + paid add-ons must still charge (common for EXTRA_DAYS addons).
+    const instantFreeCheckout =
+      this.isInstantFreeCheckoutProduct(product as any, authChannel) &&
+      !(amountWithIp > 0);
     if (isTestProduct) {
       await this.assertTestProductAllowed(customer.id, product as any);
       await this.assertTestCheckoutChannel(customer, {
