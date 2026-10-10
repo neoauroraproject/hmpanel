@@ -1,4 +1,10 @@
-import { BadRequestException, Injectable, OnModuleInit, Optional } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  OnModuleInit,
+  Optional,
+} from '@nestjs/common';
 import { Prisma, QuotaMode } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { calculateAdminTrafficSummary } from '../common/utils/traffic.util';
@@ -80,7 +86,9 @@ export function panelMatchesQuotaFilter(
 
 @Injectable()
 export class AdminQuotaService implements OnModuleInit {
+  private readonly logger = new Logger(AdminQuotaService.name);
   private pastDeductionRepair: Promise<void> | null = null;
+  private usageQuotaModeHeal: Promise<void> | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -91,6 +99,55 @@ export class AdminQuotaService implements OnModuleInit {
 
   onModuleInit() {
     void this.ensurePastDeductionRepair();
+    void this.ensureUsagePanelQuotaModeHeal();
+  }
+
+  /**
+   * One-shot: PER_PANEL quota rows created via topUp/templates defaulted to
+   * ALLOCATION even when Admin.trafficMode is USAGE — new clients then got a
+   * real 3x-ui cap and stayed disabled. Stamp USAGE onto those rows once.
+   */
+  private ensureUsagePanelQuotaModeHeal(): Promise<void> {
+    if (!this.usageQuotaModeHeal) {
+      this.usageQuotaModeHeal = this.healUsagePanelQuotaModes().catch((err) => {
+        this.logger.warn(
+          `[USAGE-XUI] panel quota trafficMode heal failed: ${err?.message || err}`,
+        );
+        this.usageQuotaModeHeal = null;
+      });
+    }
+    return this.usageQuotaModeHeal;
+  }
+
+  private async healUsagePanelQuotaModes() {
+    const key = 'traffic.usagePanelQuotaModeHeal.v1';
+    try {
+      await this.prisma.systemSetting.create({
+        data: { key, value: JSON.stringify(Date.now()) },
+      });
+    } catch {
+      return;
+    }
+    const result = await this.prisma.$executeRaw`
+      UPDATE "AdminPanelQuota" AS q
+      SET "trafficMode" = 'USAGE'
+      FROM "Admin" AS a
+      WHERE q."adminId" = a.id
+        AND a."trafficMode" = 'USAGE'
+        AND q."trafficMode" = 'ALLOCATION'
+    `;
+    this.logger.warn(
+      `[USAGE-XUI] Healed ${Number(result) || 0} AdminPanelQuota row(s) ALLOCATION→USAGE`,
+    );
+    // #region agent log
+    agentDebugLog({
+      hypothesisId: 'H6',
+      location: 'admin-quota.service.ts:healUsagePanelQuotaModes',
+      message: 'healed stale PER_PANEL ALLOCATION rows for USAGE admins',
+      data: { updated: Number(result) || 0 },
+      runId: 'post-fix',
+    });
+    // #endregion
   }
 
   /**
@@ -1280,15 +1337,16 @@ export class AdminQuotaService implements OnModuleInit {
       return false;
     }
     if (await this.isPanelUnlimited(admin, panelId)) {
+      // Unlimited USAGE pool is always open for 3x-ui repair.
       // #region agent log
       agentDebugLog({
         hypothesisId: 'H3',
         location: 'admin-quota.service.ts:usagePoolStillOpen',
-        message: 'pool open false unlimited panel',
-        data: { adminId, panelId, mode, open: false },
+        message: 'pool open true unlimited panel',
+        data: { adminId, panelId, mode, open: true },
       });
       // #endregion
-      return false;
+      return true;
     }
     const bucket = await this.getPanelBalance(admin, panelId);
     const open = Math.max(0, Number(bucket.balance) || 0) > 0;

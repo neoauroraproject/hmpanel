@@ -1500,6 +1500,43 @@ export class ClientsService {
         }
 
         createdOnPanels.push(panelId);
+
+        // USAGE owners: force panel unlimited + enable after create. A leftover
+        // per-client totalGB makes 3x-ui disable the client while the pool still
+        // has traffic (and sync used to mis-tag that as MANUAL).
+        const ownerMode = await this.adminQuota.resolveTrafficMode(
+          targetAdminId,
+          undefined,
+          undefined,
+          targetAdmin.quotaMode === 'PER_PANEL' ? panelId : undefined,
+        );
+        if (ownerMode === 'USAGE') {
+          const forced = await this.panelsService.updateClientOnPanel(
+            panelId,
+            data.email,
+            { enable: true, totalGB: 0 },
+          );
+          // #region agent log
+          agentDebugLog({
+            hypothesisId: 'H6',
+            location: 'clients.service.ts:create',
+            message: 'post-create USAGE force enable+totalGB0',
+            data: {
+              panelId,
+              email: data.email,
+              ownerMode,
+              ok: !!forced?.success,
+              err: forced?.error?.message || null,
+            },
+            runId: 'post-fix',
+          });
+          // #endregion
+          if (!forced?.success) {
+            this.logger.warn(
+              `[USAGE-XUI] post-create force failed for ${data.email} on ${panelId}: ${forced?.error?.message || 'unknown'}`,
+            );
+          }
+        }
       }
 
       // ── Step 5: Assign to reseller group (advisory) ────────────────────────
