@@ -12,6 +12,11 @@ import { PrismaService } from '../prisma/prisma.service';
 import { PanelCapabilitiesService } from './panel-capabilities.service';
 import { ClientsService } from '../clients/clients.service';
 import { AdminQuotaService } from '../traffic/admin-quota.service';
+import { agentDebugLog } from '../debug-agent-log';
+import {
+  classifyPanelDisableReason,
+  isUsageManualHold,
+} from '../traffic/usage-mode-xui.util';
 import {
   derivePanelConnectionFromUrl,
   panelEndpointFieldsFromUrl,
@@ -1932,17 +1937,19 @@ export class PanelsService implements OnModuleInit {
               changedData.enable = enable;
               if (!enable) {
                 const usedNew = up + down;
-                if (dbClient.disableReason !== 'BALANCE_EXHAUSTED') {
-                  if (total > 0n && usedNew >= total) {
-                    changedData.disableReason = 'TRAFFIC_LIMIT';
-                  } else if (expiryTime > 0n && BigInt(Date.now()) >= expiryTime) {
-                    changedData.disableReason = 'EXPIRED';
-                  } else if (dbClient.admin?.gracePeriodStart) {
-                    changedData.disableReason = 'BALANCE_EXHAUSTED';
-                  } else {
-                    changedData.disableReason = 'MANUAL';
-                  }
-                }
+                const ownerForReason = dbClient.adminId;
+                const poolOpenForReason = ownerForReason
+                  ? await usagePoolOpen(ownerForReason)
+                  : false;
+                const reason = classifyPanelDisableReason({
+                  panelTotal: total,
+                  used: usedNew,
+                  expiryTime,
+                  existingReason: dbClient.disableReason,
+                  gracePeriod: !!dbClient.admin?.gracePeriodStart,
+                  usagePoolOpen: poolOpenForReason,
+                });
+                if (reason) changedData.disableReason = reason;
               } else {
                 changedData.disableReason = null;
               }
@@ -1991,17 +1998,46 @@ export class PanelsService implements OnModuleInit {
             const notExpired =
               expiryTime === 0n || expiryTime > BigInt(Date.now());
             const ownerId = dbClient.adminId;
-            const manualHold =
-              dbClient.disableReason === 'MANUAL' &&
-              (dbClient.total === 0n || usedNow < dbClient.total);
-            if (
+            const poolOpen = ownerId ? await usagePoolOpen(ownerId) : false;
+            const effectiveReason =
+              (changedData.disableReason as string | undefined) ??
+              dbClient.disableReason;
+            const manualHold = isUsageManualHold({
+              disableReason: effectiveReason,
+              dbTotal: dbClient.total,
+              usedNow,
+              panelTotal: total,
+            });
+            const wouldRepair =
               !missingSample &&
               notExpired &&
               !manualHold &&
-              ownerId &&
-              (await usagePoolOpen(ownerId)) &&
-              (!enable || total > 0n)
-            ) {
+              !!ownerId &&
+              poolOpen &&
+              (!enable || total > 0n);
+            // #region agent log
+            if (!enable || total > 0n || dbClient.disableReason) {
+              agentDebugLog({
+                hypothesisId: !enable ? 'H2' : 'H4',
+                location: 'panels.service.ts:syncRepairGate',
+                message: 'USAGE sync repair gate',
+                data: {
+                  email: trimmedEmail,
+                  panelEnable: enable,
+                  panelTotal: Number(total),
+                  dbTotal: Number(dbClient.total),
+                  dbEnable: dbClient.enable,
+                  disableReason: dbClient.disableReason,
+                  manualHold,
+                  poolOpen,
+                  notExpired,
+                  wouldRepair,
+                  usedNow: Number(usedNow),
+                },
+              });
+            }
+            // #endregion
+            if (wouldRepair) {
               quotaRepairs.push({ email: trimmedEmail });
               if (!enable) {
                 delete changedData.enable;
@@ -4458,6 +4494,20 @@ export class PanelsService implements OnModuleInit {
           this.logger.warn(
             `[SUSPEND] Disabling ${client.email || client.id} admin=${adminId} usageRemaining=${remaining}`,
           );
+          // #region agent log
+          agentDebugLog({
+            hypothesisId: 'H5',
+            location: 'panels.service.ts:suspendBalanceExhaustedClients',
+            message: 'suspending client for exhausted pool',
+            data: {
+              adminId,
+              clientId: client.id,
+              email: client.email,
+              remaining,
+              panelId: panelId || null,
+            },
+          });
+          // #endregion
           await this.setClientEnableOnPanels(client, false);
           await this.prisma.client.update({
             where: { id: client.id },

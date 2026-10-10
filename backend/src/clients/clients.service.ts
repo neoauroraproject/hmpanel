@@ -77,6 +77,7 @@ import {
   supports3xUiBulkHwid,
 } from '../common/utils/panel-version.util';
 import { AdminQuotaService } from '../traffic/admin-quota.service';
+import { agentDebugLog } from '../debug-agent-log';
 import {
   resolve3xUiLimit,
   normalizeAllowedUsers,
@@ -1354,14 +1355,31 @@ export class ClientsService {
         );
         const clientUuid = randomUUID();
         const clientSubToken = require('crypto').randomBytes(5).toString('hex');
+        const totalGB = await this.adminQuota.panelTotalBytesForXui(
+          targetAdminId,
+          panelId,
+          Number(data.total) || 0,
+        );
+        // #region agent log
+        agentDebugLog({
+          hypothesisId: 'H1',
+          location: 'clients.service.ts:create',
+          message: 'create payload totalGB/enable',
+          data: {
+            targetAdminId,
+            panelId,
+            email: data.email,
+            requestedTotal: Number(data.total) || 0,
+            totalGB,
+            enable: true,
+            adminTrafficMode: targetAdmin.trafficMode,
+          },
+        });
+        // #endregion
         const payload: Record<string, unknown> = {
           id: clientUuid,
           email: data.email,
-          totalGB: await this.adminQuota.panelTotalBytesForXui(
-            targetAdminId,
-            panelId,
-            Number(data.total) || 0,
-          ),
+          totalGB,
           expiryTime: data.expiryTime || 0,
           limitIp: limits.limitIp,
           limitHwid: limits.limitHwid,
@@ -2241,6 +2259,25 @@ export class ClientsService {
           Number(newTotal),
         )
       : Number(newTotal);
+    // #region agent log
+    if (data.enable !== undefined || existing.enable !== newEnable) {
+      agentDebugLog({
+        hypothesisId: 'H4',
+        location: 'clients.service.ts:update',
+        message: 'manual enable/update panel payload',
+        data: {
+          clientId: existing.id,
+          email: nextEmail,
+          prevEnable: existing.enable,
+          newEnable,
+          panelTotalGb,
+          dbTotal: Number(newTotal),
+          disableReason: existing.disableReason,
+          dataEnable: data.enable,
+        },
+      });
+    }
+    // #endregion
     const baseClientPayload: any = {
       id: existing.uuid,
       subId: nextSubId,

@@ -7,6 +7,8 @@ import { GLOBAL_POOL_TX_DESCRIPTION, nextQuotaLedger } from './quota-balance-pat
 import { PolicyEngine } from '../authz/policy.engine';
 import { FeatureFlagsService } from '../platform/architecture/feature-flags.service';
 import { PLATFORM_FLAGS } from '../platform/architecture/feature-flags';
+import { agentDebugLog } from '../debug-agent-log';
+import { xuiTotalBytesForMode } from './usage-mode-xui.util';
 
 export type AdminQuotaAdmin = {
   id: string;
@@ -204,8 +206,17 @@ export class AdminQuotaService implements OnModuleInit {
         where: { adminId_panelId: { adminId, panelId } },
         select: { trafficMode: true },
       });
-      if (quota?.trafficMode === 'USAGE' || quota?.trafficMode === 'ALLOCATION') {
-        return quota.trafficMode;
+      if (quota?.trafficMode === 'USAGE') return 'USAGE';
+      if (quota?.trafficMode === 'ALLOCATION') {
+        // topUp/buildPanelQuotas historically omitted trafficMode, so PER_PANEL
+        // rows defaulted to ALLOCATION even when Admin.trafficMode is USAGE.
+        // Prefer the account mode so new clients get totalGB=0 and sync repairs.
+        const adminRow = await db.admin.findUnique({
+          where: { id: adminId },
+          select: { trafficMode: true },
+        });
+        if (adminRow?.trafficMode === 'USAGE') return 'USAGE';
+        return 'ALLOCATION';
       }
     }
 
@@ -742,6 +753,8 @@ export class AdminQuotaService implements OnModuleInit {
         });
         const before = row?.balance ?? 0;
         const after = before + Number(amountBytes);
+        const trafficMode =
+          admin.trafficMode === 'USAGE' ? 'USAGE' : 'ALLOCATION';
         await tx.adminPanelQuota.upsert({
           where: { adminId_panelId: { adminId, panelId } },
           create: {
@@ -749,10 +762,13 @@ export class AdminQuotaService implements OnModuleInit {
             panelId,
             balance: after,
             totalAssigned: Number(amountBytes),
+            trafficMode,
           },
           update: {
             balance: after,
             totalAssigned: { increment: Number(amountBytes) },
+            // Heal stale ALLOCATION defaults when the admin is USAGE-billed.
+            ...(admin.trafficMode === 'USAGE' ? { trafficMode: 'USAGE' } : {}),
           },
         });
         await tx.trafficTransaction.create({
@@ -1168,9 +1184,16 @@ export class AdminQuotaService implements OnModuleInit {
     }
     const quotas = await this.listPanelQuotas(adminId);
     const usageRows = quotas.filter((q) => q.trafficMode === 'USAGE');
-    if (!usageRows.length) return Number.POSITIVE_INFINITY;
-    if (usageRows.some((q) => q.unlimitedTraffic)) return Number.POSITIVE_INFINITY;
-    return usageRows.reduce(
+    // Stale PER_PANEL rows may still say ALLOCATION while the admin is USAGE.
+    const rows =
+      usageRows.length > 0
+        ? usageRows
+        : admin.trafficMode === 'USAGE'
+          ? quotas
+          : [];
+    if (!rows.length) return Number.POSITIVE_INFINITY;
+    if (rows.some((q) => q.unlimitedTraffic)) return Number.POSITIVE_INFINITY;
+    return rows.reduce(
       (sum, row) => sum + Math.max(0, Number(row.balance) || 0),
       0,
     );
@@ -1194,8 +1217,25 @@ export class AdminQuotaService implements OnModuleInit {
       undefined,
       this.isPerPanel(admin) ? panelId : undefined,
     );
-    if (mode !== 'USAGE') return requestedBytes;
-    return 0;
+    const result = xuiTotalBytesForMode(mode, requestedBytes);
+    // #region agent log
+    agentDebugLog({
+      hypothesisId: 'H1',
+      location: 'admin-quota.service.ts:panelTotalBytesForXui',
+      message: 'xui totalGB resolution',
+      data: {
+        adminId,
+        panelId,
+        requestedBytes,
+        mode,
+        quotaMode: admin.quotaMode,
+        adminTrafficMode: admin.trafficMode,
+        result,
+        perPanel: this.isPerPanel(admin),
+      },
+    });
+    // #endregion
+    return result;
   }
 
   /**
@@ -1204,17 +1244,69 @@ export class AdminQuotaService implements OnModuleInit {
    */
   async usagePoolStillOpen(adminId: string, panelId: string): Promise<boolean> {
     const admin = await this.loadAdmin(adminId);
-    if (this.skipTrafficAccounting(admin)) return false;
+    if (this.skipTrafficAccounting(admin)) {
+      // #region agent log
+      agentDebugLog({
+        hypothesisId: 'H3',
+        location: 'admin-quota.service.ts:usagePoolStillOpen',
+        message: 'pool open skipped accounting',
+        data: { adminId, panelId, open: false, reason: 'skipTrafficAccounting' },
+      });
+      // #endregion
+      return false;
+    }
     const mode = await this.resolveTrafficMode(
       adminId,
       undefined,
       undefined,
       this.isPerPanel(admin) ? panelId : undefined,
     );
-    if (mode !== 'USAGE') return false;
-    if (await this.isPanelUnlimited(admin, panelId)) return false;
+    if (mode !== 'USAGE') {
+      // #region agent log
+      agentDebugLog({
+        hypothesisId: 'H3',
+        location: 'admin-quota.service.ts:usagePoolStillOpen',
+        message: 'pool open false non-USAGE',
+        data: {
+          adminId,
+          panelId,
+          mode,
+          adminTrafficMode: admin.trafficMode,
+          quotaMode: admin.quotaMode,
+          open: false,
+        },
+      });
+      // #endregion
+      return false;
+    }
+    if (await this.isPanelUnlimited(admin, panelId)) {
+      // #region agent log
+      agentDebugLog({
+        hypothesisId: 'H3',
+        location: 'admin-quota.service.ts:usagePoolStillOpen',
+        message: 'pool open false unlimited panel',
+        data: { adminId, panelId, mode, open: false },
+      });
+      // #endregion
+      return false;
+    }
     const bucket = await this.getPanelBalance(admin, panelId);
-    return Math.max(0, Number(bucket.balance) || 0) > 0;
+    const open = Math.max(0, Number(bucket.balance) || 0) > 0;
+    // #region agent log
+    agentDebugLog({
+      hypothesisId: 'H3',
+      location: 'admin-quota.service.ts:usagePoolStillOpen',
+      message: 'pool open balance check',
+      data: {
+        adminId,
+        panelId,
+        mode,
+        balance: Number(bucket.balance) || 0,
+        open,
+      },
+    });
+    // #endregion
+    return open;
   }
 
   /** Same rule for one panel. GLOBAL usage uses the account pool. */
