@@ -8,6 +8,13 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [2.5.5] - 2026-10-13
+
+### Fixed
+- **About showed an old version (e.g. 2.5.0) after updating:** Settings → About now reads `/api/public/app-version` (image `VERSION` file) instead of the cached GitHub update check; runtime version prefers `/app/VERSION` over a stale `APP_VERSION` env.
+- **Stale frontend after update (missing Panel Ports card):** Docker frontend build now bakes `APP_VERSION` / `NEXT_PUBLIC_APP_VERSION` and writes `public/VERSION.txt`; nginx serves HTML with `Cache-Control: no-store` so browsers pick up new `/_next/static` chunks; `hm update` force-recreates nginx; PWA reloads once when UI build ≠ runtime version.
+- **Panel Ports card** remains on Settings → SSL/TLS (below the SSL manager).
+
 ## [2.5.4] - 2026-10-13
 
 ### Fixed

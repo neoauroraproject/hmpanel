@@ -377,6 +377,8 @@ END \$\$;
   compose up -d --remove-orphans --force-recreate redis >/dev/null 2>&1 || true
   sleep 2
   compose up -d --remove-orphans --force-recreate panel-app
+  # Nginx must reload host templates (Cache-Control / ports) after panel updates.
+  compose up -d --remove-orphans --force-recreate nginx >/dev/null 2>&1 || true
   compose up -d --remove-orphans
 
   step "[8/8] Verifying Health & Cleaning Up"

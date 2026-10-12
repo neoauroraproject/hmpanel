@@ -54,7 +54,19 @@ export function PwaManager() {
 
       const previous = localStorage.getItem(APP_VERSION_STORAGE_KEY);
       localStorage.setItem(APP_VERSION_STORAGE_KEY, key);
-      if (!previous || previous === key) return;
+
+      // UI build id baked into the JS bundle — if the server moved ahead but
+      // this tab still has an old chunk, force one hard reload.
+      const build = (process.env.NEXT_PUBLIC_APP_VERSION || "").replace(/^v/i, "");
+      const runtime = key.split("-")[0]?.replace(/^v/i, "") || "";
+      const uiStale =
+        !!build &&
+        build !== "unknown" &&
+        !!runtime &&
+        runtime !== "unknown" &&
+        build !== runtime;
+
+      if (!uiStale && (!previous || previous === key)) return;
       if (sessionStorage.getItem(RELOAD_GUARD_KEY) === key) return;
 
       sessionStorage.setItem(RELOAD_GUARD_KEY, key);

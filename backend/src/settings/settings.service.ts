@@ -122,9 +122,13 @@ export class SettingsService {
       const fs = require('fs');
 
       const now = Date.now();
-      // Cache for 5 minutes (was 1h) so Settings refresh sees new releases sooner
+      // Cache GitHub lookup for 5 minutes, but always refresh currentVersion from
+      // the image VERSION file so About never sticks on a pre-update value.
       if (this.cachedUpdateResult && now - this.lastUpdateCheckTime < 300_000) {
-        return this.cachedUpdateResult;
+        return {
+          ...this.cachedUpdateResult,
+          currentVersion: this.getCurrentVersion(),
+        };
       }
 
       const headers = { 'User-Agent': 'HMPanel' };

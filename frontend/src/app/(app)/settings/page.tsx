@@ -284,7 +284,7 @@ export default function GlobalSettingsPage() {
       )}
 
       {tab === "ssl" && (
-        <div className="max-w-3xl">
+        <div className="max-w-3xl space-y-6">
           <Card className="p-6">
             <div className="flex items-center gap-3 mb-4">
               <div className="p-3 rounded-lg bg-indigo-500/10 text-indigo-500">
@@ -304,9 +304,8 @@ export default function GlobalSettingsPage() {
               {t("settings.openSslManager")}
             </button>
           </Card>
-          <div className="mt-6">
-            <PanelPortsCard />
-          </div>
+          {/* Panel HTTP/HTTPS ports — must stay on this tab (added in 2.5.1+). */}
+          <PanelPortsCard />
         </div>
       )}
 
@@ -629,12 +628,33 @@ interface SslStatus {
 
 function VersionDisplay() {
   const t = useT();
-  const { data: updateInfo } = useQuery({
-    queryKey: ['check-update'],
-    queryFn: async () => (await api.get("/settings/check-update")).data,
-    refetchInterval: 1000 * 60 * 60,
+  // Prefer the public runtime VERSION (image file) over check-update, which
+  // can be cached / blocked by GitHub and previously left About on an old tag.
+  const { data } = useQuery({
+    queryKey: ["app-version"],
+    queryFn: async () => {
+      const res = await fetch("/api/public/app-version", { cache: "no-store" });
+      if (!res.ok) throw new Error(`app-version ${res.status}`);
+      return (await res.json()) as { app?: string };
+    },
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   });
-  return <>{updateInfo?.currentVersion || t("common.loading")}</>;
+  const runtime = data?.app ? String(data.app).replace(/^v/i, "") : null;
+  const build = (process.env.NEXT_PUBLIC_APP_VERSION || "").replace(/^v/i, "");
+  if (!runtime) return <>{t("common.loading")}</>;
+  const label = runtime.startsWith("v") ? runtime : `v${runtime}`;
+  if (build && build !== "unknown" && build !== runtime) {
+    return (
+      <span title={`UI build v${build}`}>
+        {label}{" "}
+        <span className="text-amber-600 dark:text-amber-400 text-xs font-normal">
+          (UI v{build})
+        </span>
+      </span>
+    );
+  }
+  return <>{label}</>;
 }
 
 function UpdateCard() {

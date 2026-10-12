@@ -30,6 +30,8 @@ RUN npx prisma generate
 # ─────────────────────────────────────────────────────────────────
 FROM node:20-alpine AS builder
 
+ARG APP_VERSION=unknown
+
 WORKDIR /app
 
 # Install system dependencies for build
@@ -45,6 +47,11 @@ COPY prisma ./prisma/
 COPY package*.json ./
 COPY VERSION ./
 
+# Prefer CI-provided version so layer cache cannot serve a stale VERSION.
+RUN if [ -n "$APP_VERSION" ] && [ "$APP_VERSION" != "unknown" ]; then \
+      printf '%s\n' "$APP_VERSION" > VERSION; \
+    fi
+
 # Copy backend source
 COPY backend ./backend
 
@@ -57,9 +64,12 @@ RUN cd backend && npm run build
 # Copy frontend source
 COPY frontend ./frontend
 
-# Build frontend (Next.js standalone)
+# Bake version into the Next build (About + PWA reload key) and bust cache on bump.
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN cd frontend && npm run build
+ENV NEXT_PUBLIC_APP_VERSION=${APP_VERSION}
+RUN cp VERSION frontend/public/VERSION.txt \
+  && printf '%s\n' "$APP_VERSION" > frontend/.build-version \
+  && cd frontend && npm run build
 
 # Validate no hardcoded localhost
 RUN if grep -r "127.0.0.1:4000" frontend/.next/static/; then \

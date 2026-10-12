@@ -3,6 +3,8 @@ import fs from "fs";
 import path from "path";
 
 function readAppVersion(): string {
+  const fromEnv = process.env.NEXT_PUBLIC_APP_VERSION?.trim().replace(/^v/i, "");
+  if (fromEnv && fromEnv !== "unknown") return fromEnv;
   const versionFile = path.join(__dirname, "..", "VERSION");
   if (fs.existsSync(versionFile)) {
     return fs.readFileSync(versionFile, "utf8").trim().replace(/^v/i, "");

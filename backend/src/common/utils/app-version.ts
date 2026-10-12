@@ -33,15 +33,11 @@ function versionFromPackageJson(filePath: string): string | null {
 
 /**
  * Single source of truth for the running app version.
- * Priority: APP_VERSION env → /app/VERSION → repo VERSION → package.json fallbacks.
+ * Prefer the image VERSION file over APP_VERSION env — an old compose/.env
+ * APP_VERSION can otherwise pin About to a stale release after updates.
  */
 export function getAppVersion(): string {
   if (cachedVersion) return cachedVersion;
-
-  if (process.env.APP_VERSION?.trim()) {
-    cachedVersion = normalizeVersion(process.env.APP_VERSION);
-    return cachedVersion;
-  }
 
   const fromFile = [
     '/app/VERSION',
@@ -55,6 +51,11 @@ export function getAppVersion(): string {
 
   if (fromFile) {
     cachedVersion = fromFile;
+    return cachedVersion;
+  }
+
+  if (process.env.APP_VERSION?.trim()) {
+    cachedVersion = normalizeVersion(process.env.APP_VERSION);
     return cachedVersion;
   }
 
