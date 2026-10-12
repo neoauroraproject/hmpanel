@@ -8,6 +8,11 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [2.5.7] - 2026-10-13
+
+### Fixed
+- **Restore loop against 3x-ui:** when 3x-ui flips restored volumes back to unlimited a poll later, the per-client back-off was reset by the brief restore, so HMPanel re-wrote ~30 clients every other minute. The count now survives a brief restore (2 tries, then every 30 min), and the one-time heal only ends after 5 consecutive clean syncs instead of one.
+
 ## [2.5.6] - 2026-10-13
 
 ### Added

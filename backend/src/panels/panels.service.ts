@@ -128,6 +128,9 @@ const VOLUME_PUSH_LIMIT = 500;
 // carries 0 and overwrites the master) is retried at this pace, not every poll.
 const CAP_RESTORE_FREE_TRIES = 2;
 const CAP_RESTORE_RETRY_MS = 30 * 60_000;
+// 3x-ui can flip restored caps back a poll later, so one clean read is not
+// proof the heal is done.
+const ZERO_CAP_HEAL_CLEAN_SYNCS = 5;
 
 export interface PanelVolumeConflict {
   clientId: string;
@@ -236,6 +239,7 @@ export class PanelsService implements OnModuleInit {
   /** `${panelId}:${email}` -> restore pushes that did not stick. */
   private readonly capRestoreTries = new Map<string, { count: number; lastAt: number }>();
   private readonly capRevertWarnedAt = new Map<string, number>();
+  private readonly zeroCapCleanSyncs = new Map<string, number>();
   /** Per panel: 3x-ui nodes that look unable to apply master pushes. */
   private readonly nodeIssues = new Map<string, string[]>();
 
@@ -2192,7 +2196,13 @@ export class PanelsService implements OnModuleInit {
                 tries.count >= CAP_RESTORE_FREE_TRIES &&
                 Date.now() - tries.lastAt < CAP_RESTORE_RETRY_MS;
             } else {
-              this.capRestoreTries.delete(restoreKey);
+              // Keep the count while the client is briefly back: a cap that 3x-ui
+              // keeps flipping to 0 must still hit the back-off. Only forget it
+              // once it has held for a full retry window.
+              const tries = this.capRestoreTries.get(restoreKey);
+              if (tries && Date.now() - tries.lastAt > CAP_RESTORE_RETRY_MS) {
+                this.capRestoreTries.delete(restoreKey);
+              }
             }
             if (quotaAction.kind !== 'none' && !skipRestore) {
               quotaRepairs.push({
@@ -2406,7 +2416,17 @@ export class PanelsService implements OnModuleInit {
       }
       // Restored caps read back from 3x-ui on the next poll; once a poll
       // finds none left, the panel is healed and 3x-ui's value always wins.
-      if (healZeroedCaps && zeroedCapsSeen === 0 && unifiedClients.length > 0) {
+      if (healZeroedCaps && unifiedClients.length > 0) {
+        this.zeroCapCleanSyncs.set(
+          panel.id,
+          zeroedCapsSeen === 0 ? (this.zeroCapCleanSyncs.get(panel.id) ?? 0) + 1 : 0,
+        );
+      }
+      if (
+        healZeroedCaps &&
+        unifiedClients.length > 0 &&
+        (this.zeroCapCleanSyncs.get(panel.id) ?? 0) >= ZERO_CAP_HEAL_CLEAN_SYNCS
+      ) {
         await this.finishZeroCapHeal(panel.id);
         this.logger.log(`[SYNC] Zero-cap heal finished for ${panel.name}`);
       }
