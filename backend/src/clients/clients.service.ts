@@ -1488,7 +1488,8 @@ export class ClientsService {
         const remoteClient = verifyResult.data?.client || verifyResult.data || {};
         const rawRemoteTotal =
           remoteClient.totalGB ?? remoteClient.total ?? remoteClient.traffic?.total;
-        const sentTotal = Math.max(0, Number(pData.totalGB) || 0);
+        // Same value the create payload carried (pData.payload.totalGB).
+        const sentTotal = Math.max(0, Number(pData.payload?.totalGB) || 0);
         const totalMismatch =
           rawRemoteTotal != null && (Number(rawRemoteTotal) || 0) !== sentTotal;
         const remoteDisabled =

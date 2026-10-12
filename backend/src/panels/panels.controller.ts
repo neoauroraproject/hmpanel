@@ -158,6 +158,22 @@ export class PanelsController {
     return this.panelsService.sync(id);
   }
 
+  @Get(':id/volume-conflicts')
+  @ApiOperation({
+    summary: 'Clients whose 3x-ui volume is below the one recorded in HMPanel',
+  })
+  volumeConflicts(@Param('id') id: string) {
+    return this.panelsService.getVolumeConflicts(id);
+  }
+
+  @Post(':id/volume-conflicts/push')
+  @ApiOperation({
+    summary: 'Write HMPanel volumes to 3x-ui for the listed conflicts (manual)',
+  })
+  pushVolumes(@Param('id') id: string, @Body() body: { emails?: string[] }) {
+    return this.panelsService.pushVolumesFromHmpanel(id, body?.emails);
+  }
+
   @Post(':id/restart-xray')
   @ApiOperation({ summary: 'Restart Xray on the panel node' })
   restartXray(@Param('id') id: string) {

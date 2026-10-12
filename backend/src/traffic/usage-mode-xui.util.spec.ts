@@ -21,45 +21,52 @@ describe('usage-mode-xui.util', () => {
       disableReason: null as string | null,
       hasOwner: true,
       poolOpen: true,
+      healZeroedCaps: false,
       nowMs: NOW,
     };
-    const plan = (o: Partial<typeof base> & Record<string, unknown> = {}) =>
-      planSyncQuotaAction({ ...base, ...o } as any).kind;
+    const plan = (o: Partial<typeof base> = {}) => planSyncQuotaAction({ ...base, ...o });
 
-    it('leaves a client alone when the panel holds its own volume', () => {
-      expect(plan()).toBe('none');
-      expect(plan({ poolOpen: false })).toBe('none');
+    it('treats the 3x-ui cap as the client volume', () => {
+      expect(plan()).toEqual({ kind: 'none', capBytes: BigInt(50 * GB) });
+      // Lowered in 3x-ui: 3x-ui wins, nothing is pushed back.
+      expect(plan({ panelTotal: BigInt(5 * GB), dbTotal: BigInt(20 * GB) })).toEqual({
+        kind: 'none',
+        capBytes: BigInt(5 * GB),
+      });
+      // Unlimited in 3x-ui after the heal window: stays unlimited.
+      expect(plan({ panelTotal: 0n }).kind).toBe('none');
     });
 
-    it('restores a cap zeroed on 3x-ui (regression: v2.5.1 made USAGE clients unlimited)', () => {
-      expect(plan({ panelTotal: 0n })).toBe('restoreCap');
-      expect(plan({ panelTotal: 0n, poolOpen: false, hasOwner: false })).toBe('restoreCap');
-      expect(plan({ panelTotal: BigInt(10 * GB) })).toBe('restoreCap');
+    it('restores caps zeroed by v2.5.1 while the heal is on (regression)', () => {
+      expect(plan({ panelTotal: 0n, healZeroedCaps: true })).toEqual({
+        kind: 'restoreCap',
+        capBytes: BigInt(50 * GB),
+      });
+      expect(plan({ panelTotal: 0n, healZeroedCaps: true, hasOwner: false }).kind).toBe('none');
+      expect(plan({ panelTotal: 0n, dbTotal: 0n, healZeroedCaps: true }).kind).toBe('none');
+      expect(plan({ panelTotal: BigInt(5 * GB), healZeroedCaps: true }).kind).toBe('none');
     });
 
-    it('never pushes 0 for a client that has a volume, even with an open USAGE pool', () => {
-      expect(plan({ panelEnable: false, panelTotal: 0n })).toBe('reenable');
-      // reenable also sends totalGB = dbTotal (see panels.service repair loop)
+    it('re-enables only USAGE-pool suspensions with volume left on the 3x-ui cap', () => {
+      expect(plan({ panelEnable: false, disableReason: 'BALANCE_EXHAUSTED' }).kind).toBe('reenable');
+      expect(plan({ panelEnable: false, used: BigInt(50 * GB) }).kind).toBe('none');
+      expect(plan({ panelEnable: false, poolOpen: false }).kind).toBe('none');
+      expect(plan({ panelEnable: false, disableReason: 'MANUAL' }).kind).toBe('none');
+      expect(plan({ panelEnable: false, expiryTime: NOW - 1 }).kind).toBe('none');
+      expect(plan({ panelEnable: false, hasOwner: false }).kind).toBe('none');
+      // Zeroed and already over its volume: the cap comes back, client stays off.
+      expect(
+        plan({ panelEnable: false, panelTotal: 0n, healZeroedCaps: true, used: BigInt(60 * GB) }).kind,
+      ).toBe('restoreCap');
+      // Zeroed and suspended with volume left: back on with the restored cap.
+      expect(plan({ panelEnable: false, panelTotal: 0n, healZeroedCaps: true })).toEqual({
+        kind: 'reenable',
+        capBytes: BigInt(50 * GB),
+      });
     });
 
-    it('switches off a client that already used its volume', () => {
-      expect(plan({ panelTotal: 0n, used: BigInt(50 * GB) })).toBe('disableOverLimit');
-      expect(plan({ used: BigInt(60 * GB) })).toBe('disableOverLimit');
-      // Already off on its real cap: nothing to do, and the pool must not revive it.
-      expect(plan({ panelEnable: false, used: BigInt(50 * GB) })).toBe('none');
-    });
-
-    it('re-enables only USAGE-pool suspensions with volume left', () => {
-      expect(plan({ panelEnable: false, disableReason: 'BALANCE_EXHAUSTED' })).toBe('reenable');
-      expect(plan({ panelEnable: false, poolOpen: false })).toBe('none');
-      expect(plan({ panelEnable: false, disableReason: 'MANUAL' })).toBe('none');
-      expect(plan({ panelEnable: false, expiryTime: NOW - 1 })).toBe('none');
-      expect(plan({ panelEnable: false, hasOwner: false })).toBe('none');
-    });
-
-    it('keeps unlimited clients unlimited and ignores missing samples', () => {
-      expect(plan({ dbTotal: 0n, panelTotal: 0n, used: BigInt(500 * GB) })).toBe('none');
-      expect(plan({ missingSample: true, panelTotal: 0n })).toBe('none');
+    it('ignores missing samples', () => {
+      expect(plan({ missingSample: true, panelTotal: 0n, healZeroedCaps: true }).kind).toBe('none');
     });
   });
 

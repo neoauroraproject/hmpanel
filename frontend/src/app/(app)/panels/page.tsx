@@ -3,11 +3,11 @@
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  Plus, Pencil, Trash2, PlugZap, RefreshCw, Power, ScrollText, X, CheckCircle2, XCircle, FileText, Network
+  Plus, Pencil, Trash2, PlugZap, RefreshCw, Power, ScrollText, X, CheckCircle2, XCircle, FileText, Network, Scale
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { PanelRow } from "@/lib/types";
-import { formatDateTime } from "@/lib/format";
+import { formatBytes, formatDateTime } from "@/lib/format";
 import { Card, PageHeader, Badge, Spinner, ErrorBox } from "@/components/ui";
 import { useToast } from "@/components/toast";
 import { useT } from "@/i18n";
@@ -41,6 +41,7 @@ export default function PanelsPage() {
   const [wizardOpen, setWizardOpen] = useState(false);
   const [logsFor, setLogsFor] = useState<any | null>(null);
   const [inboundsFor, setInboundsFor] = useState<any | null>(null);
+  const [volumesFor, setVolumesFor] = useState<any | null>(null);
   const [syncStatus, setSyncStatus] = useState<Record<string, 'Started' | 'Running' | 'Finished' | undefined>>({});
 
   useEffect(() => {
@@ -213,6 +214,9 @@ export default function PanelsPage() {
                     {(!p.panelType || p.panelType === "3x-ui") && (
                       <IconBtn title={t("panels.restartXray")} disabled={p.operable === false} onClick={() => restart.mutate(p.id)}><Power size={15} /></IconBtn>
                     )}
+                    {(!p.panelType || p.panelType === "3x-ui") && (
+                      <IconBtn title={t("panels.volumeConflicts")} disabled={p.operable === false} onClick={() => setVolumesFor(p)}><Scale size={15} /></IconBtn>
+                    )}
                     <PluginSlot name="panels.row.actions" props={{ panel: p }} />
                     <IconBtn title={t("panels.inbounds")} onClick={() => setInboundsFor(p)}><Network size={15} /></IconBtn>
                     {(!p.panelType || p.panelType === "3x-ui") && (
@@ -238,7 +242,119 @@ export default function PanelsPage() {
         {editing && <EditPanel panel={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); invalidate(); }} />}
         {logsFor && <LogsModal panel={logsFor} onClose={() => setLogsFor(null)} />}
         {inboundsFor && <InboundsModal panel={inboundsFor} onClose={() => setInboundsFor(null)} />}
+        {volumesFor && <VolumeConflictsModal panel={volumesFor} onClose={() => setVolumesFor(null)} />}
       </AnimatePresence>
+    </motion.div>
+  );
+}
+
+type VolumeConflict = {
+  clientId: string;
+  email: string;
+  panelTotal: string;
+  hmpanelTotal: string;
+  used: string;
+  enable: boolean;
+};
+
+/**
+ * Lists clients whose 3x-ui volume is below HMPanel's and, only when the
+ * operator asks, writes HMPanel's volume to 3x-ui for the selected ones.
+ */
+function VolumeConflictsModal({ panel, onClose }: { panel: any; onClose: () => void }) {
+  const t = useT();
+  const toast = useToast((s) => s.push);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const { data, isLoading, error, refetch, isFetching } = useQuery({
+    queryKey: ["panel-volume-conflicts", panel.id],
+    queryFn: async () =>
+      (await api.get<{ checkedAt: number | null; items: VolumeConflict[] }>(`/panels/${panel.id}/volume-conflicts`, { timeout: 120_000 })).data,
+  });
+  const items = data?.items ?? [];
+  const allSelected = items.length > 0 && items.every((c) => selected.has(c.email));
+
+  const push = useMutation({
+    mutationFn: async (emails: string[]) =>
+      (await api.post(`/panels/${panel.id}/volume-conflicts/push`, { emails }, { timeout: 600_000 })).data,
+    onSuccess: (r: any) => {
+      toast(t("panels.volumePushDone", { pushed: r.pushed ?? 0, total: r.total ?? 0 }), r.failed?.length ? "error" : undefined);
+      setSelected(new Set());
+      refetch();
+    },
+    onError: () => toast(t("panels.volumePushFailed"), "error"),
+  });
+
+  const toggle = (email: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(email)) next.delete(email);
+      else next.add(email);
+      return next;
+    });
+
+  const cap = (v: string) => (Number(v) > 0 ? formatBytes(v) : t("common.unlimited"));
+
+  return (
+    <motion.div {...MOTION_CONFIG.modalOverlay} className="fixed inset-0 z-[100] flex items-start sm:items-center justify-center bg-black/60 pt-[6dvh] px-4 sm:pt-0 sm:p-4 backdrop-blur-sm">
+      <motion.div {...MOTION_CONFIG.modalContent} className="w-full max-w-2xl rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 shadow-2xl flex flex-col max-h-[88dvh]">
+        <div className="mb-3 flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800/50 pb-2">
+          <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">{t("panels.volumeConflictsTitle", { name: panel.name })}</h2>
+          <button onClick={onClose} className="text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300"><X size={18} /></button>
+        </div>
+        <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-3">{t("panels.volumeConflictsHint")}</p>
+
+        <div className="flex-1 overflow-y-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+          {isLoading || isFetching ? (
+            <div className="p-6 flex justify-center"><Spinner /></div>
+          ) : error ? (
+            <div className="p-4 text-sm text-red-500">{t("panels.volumeConflictsLoadFailed")}</div>
+          ) : items.length === 0 ? (
+            <div className="p-6 text-center text-sm text-emerald-600 dark:text-emerald-400">{t("panels.volumeConflictsNone")}</div>
+          ) : (
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-zinc-50 dark:bg-zinc-900 text-zinc-500">
+                <tr>
+                  <th className="p-2 text-start w-8">
+                    <input type="checkbox" checked={allSelected} onChange={() => setSelected(allSelected ? new Set() : new Set(items.map((c) => c.email)))} />
+                  </th>
+                  <th className="p-2 text-start">{t("panels.volumeClient")}</th>
+                  <th className="p-2 text-start">{t("panels.volume3xui")}</th>
+                  <th className="p-2 text-start">{t("panels.volumeHmpanel")}</th>
+                  <th className="p-2 text-start">{t("panels.volumeUsed")}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                {items.map((c) => (
+                  <tr key={c.email} className="text-zinc-700 dark:text-zinc-200">
+                    <td className="p-2"><input type="checkbox" checked={selected.has(c.email)} onChange={() => toggle(c.email)} /></td>
+                    <td className="p-2 font-medium" dir="ltr">{c.email}</td>
+                    <td className={`p-2 ${Number(c.panelTotal) === 0 ? "text-red-500 font-semibold" : ""}`} dir="ltr">{cap(c.panelTotal)}</td>
+                    <td className="p-2" dir="ltr">{cap(c.hmpanelTotal)}</td>
+                    <td className="p-2 text-zinc-500" dir="ltr">{formatBytes(c.used)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+          <button type="button" onClick={() => refetch()} disabled={isFetching || push.isPending} className="inline-flex items-center gap-1 rounded-lg border border-zinc-300 dark:border-zinc-700 px-3 py-2 text-xs text-zinc-600 dark:text-zinc-300 disabled:opacity-50">
+            <RefreshCw size={13} /> {t("panels.volumeRecheck")}
+          </button>
+          <button
+            type="button"
+            disabled={selected.size === 0 || push.isPending}
+            onClick={() => {
+              if (confirm(t("panels.volumePushConfirm", { count: selected.size }))) push.mutate([...selected]);
+            }}
+            className="inline-flex items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {push.isPending ? <Spinner /> : <Scale size={15} />}
+            {t("panels.volumePush", { count: selected.size })}
+          </button>
+        </div>
+      </motion.div>
     </motion.div>
   );
 }

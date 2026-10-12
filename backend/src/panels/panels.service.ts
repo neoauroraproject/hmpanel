@@ -118,6 +118,29 @@ const SYNC_DB_BATCH_SIZE = 50;
 const SYNC_QUOTA_RESTORE_LIMIT = 200;
 /** One log/audit entry per client per hour when the panel keeps disabling it. */
 const PANEL_SIDE_DISABLE_NOTE_INTERVAL_MS = 60 * 60 * 1000;
+// v2.5.1 pushed totalGB=0 for clients created with a volume. For a limited
+// time after upgrading, a 3x-ui cap of 0 with a DB volume is treated as that
+// bug and restored; afterwards 3x-ui's value always wins.
+const ZERO_CAP_HEAL_KEY_PREFIX = 'traffic.zeroCapHeal.v253:';
+const ZERO_CAP_HEAL_WINDOW_MS = 24 * 60 * 60 * 1000;
+const VOLUME_PUSH_LIMIT = 500;
+
+export interface PanelVolumeConflict {
+  clientId: string;
+  email: string;
+  /** Bytes as strings (BigInt-safe JSON). 0 = unlimited. */
+  panelTotal: string;
+  hmpanelTotal: string;
+  used: string;
+  enable: boolean;
+  /** 3x-ui deadline; resent so an update cannot restart a delayed start. */
+  expiryTime: string;
+}
+
+/** An empty client list is a failed read, not a panel without conflicts. */
+function missingPanelSnapshot(clients: unknown[]): boolean {
+  return clients.length === 0;
+}
 
 /**
  * One pooled agent for every panel call that skips certificate checks.
@@ -199,6 +222,13 @@ export class PanelsService implements OnModuleInit {
   private readonly inboundFingerprints = new Map<string, string>();
   /** panelId:email → last time a panel-side USAGE disable was recorded. */
   private readonly panelSideDisableNotedAt = new Map<string, number>();
+  /** Last sync's clients whose 3x-ui volume is below HMPanel's, per panel. */
+  private readonly volumeConflicts = new Map<
+    string,
+    { at: number; items: PanelVolumeConflict[] }
+  >();
+  /** Panels whose one-time zero-cap heal is finished (cached setting). */
+  private readonly zeroCapHealDone = new Set<string>();
 
   constructor(
     private prisma: PrismaService,
@@ -1787,8 +1817,11 @@ export class PanelsService implements OnModuleInit {
         email: string;
         expiryTime: bigint;
         totalBytes: bigint;
-        action: 'restoreCap' | 'disableOverLimit' | 'reenable';
+        action: 'restoreCap' | 'reenable';
       }> = [];
+      const healZeroedCaps = await this.isZeroCapHealActive(panel.id);
+      let zeroedCapsSeen = 0;
+      const volumeConflicts = new Map<string, PanelVolumeConflict>();
       const usageOpenCache = new Map<string, Promise<boolean>>();
       const usagePoolOpen = (adminId: string) => {
         let pending = usageOpenCache.get(adminId);
@@ -1826,7 +1859,15 @@ export class PanelsService implements OnModuleInit {
         lastSyncedAt: true,
         // Read only by the full-sync comparison below.
         connectionExtras: isFull,
-        admin: { select: { gracePeriodStart: true } },
+        admin: {
+          select: {
+            gracePeriodStart: true,
+            // Who v2.5.1 zeroed: owners whose account mode was USAGE.
+            trafficMode: true,
+            role: true,
+            unlimitedTraffic: true,
+          },
+        },
         inbounds: { select: { inboundId: true } },
       } satisfies Prisma.ClientSelect;
 
@@ -2026,8 +2067,7 @@ export class PanelsService implements OnModuleInit {
               changedData.enable = enable;
               if (!enable) {
                 const reason = classifyPanelDisableReason({
-                  // The client's own volume, even if the panel cap was zeroed.
-                  panelTotal: dbClient.total > 0n ? dbClient.total : total,
+                  panelTotal: total,
                   used: up + down,
                   expiryTime,
                   existingReason: dbClient.disableReason,
@@ -2064,12 +2104,29 @@ export class PanelsService implements OnModuleInit {
             }
             if (!missingSample && dbClient.up !== up) changedData.up = up;
             if (!missingSample && dbClient.down !== down) changedData.down = down;
-            if (dbClient.total !== total) {
+            // Neither side's volume changes on its own: a smaller 3x-ui value
+            // keeps the DB value and is listed as a conflict that the panel
+            // page can push from HMPanel on request. Only caps the v2.5.1 bug
+            // zeroed are pushed back automatically, once (heal below).
+            const zeroCapEligible =
+              healZeroedCaps &&
+              !!dbClient.adminId &&
+              dbClient.admin?.trafficMode === 'USAGE' &&
+              dbClient.admin?.role !== 'SUPER_ADMIN' &&
+              dbClient.admin?.unlimitedTraffic !== true;
+            const zeroedByBug =
+              zeroCapEligible && total === 0n && dbClient.total > 0n;
+            if (!missingSample && dbClient.total !== total) {
               if (total < dbClient.total) {
-                this.logger.warn(
-                  `[SYNC] Preserving DB total for ${trimmedEmail}: ` +
-                    `panel=${total} db=${dbClient.total}`,
-                );
+                volumeConflicts.set(trimmedEmail, {
+                  clientId: dbClient.id,
+                  email: trimmedEmail,
+                  panelTotal: total.toString(),
+                  hmpanelTotal: dbClient.total.toString(),
+                  used: (up + down).toString(),
+                  enable,
+                  expiryTime: expiryTime.toString(),
+                });
                 pendingConflictAudits.push({
                   entityId: dbClient.id,
                   changes: [
@@ -2080,15 +2137,13 @@ export class PanelsService implements OnModuleInit {
                 changedData.total = total;
               }
             }
-            // The DB volume is the client's limit and 3x-ui's cap is the only
-            // thing enforcing it, so keep the panel on it (v2.5.1 zeroed it for
-            // USAGE owners). The USAGE pool only decides when a client the pool
-            // suspended may come back on. A client a person disabled stays off.
+            // A client the USAGE pool suspended comes back on once the pool has
+            // traffic again, if it still has volume. A client a person
+            // disabled stays off.
             const ownerId = dbClient.adminId;
             const effectiveReason =
               (changedData.disableReason as string | undefined) ??
               dbClient.disableReason;
-            const needsPoolCheck = !enable && !!ownerId;
             const quotaAction = planSyncQuotaAction({
               missingSample,
               panelEnable: enable,
@@ -2098,13 +2153,15 @@ export class PanelsService implements OnModuleInit {
               expiryTime,
               disableReason: effectiveReason,
               hasOwner: !!ownerId,
-              poolOpen: needsPoolCheck ? await usagePoolOpen(ownerId!) : false,
+              poolOpen: !enable && !!ownerId ? await usagePoolOpen(ownerId) : false,
+              healZeroedCaps: zeroCapEligible,
             });
+            if (zeroedByBug) zeroedCapsSeen++;
             if (quotaAction.kind !== 'none') {
               quotaRepairs.push({
                 email: trimmedEmail,
                 expiryTime,
-                totalBytes: dbClient.total,
+                totalBytes: quotaAction.capBytes,
                 action: quotaAction.kind,
               });
               if (quotaAction.kind === 'reenable') {
@@ -2242,6 +2299,13 @@ export class PanelsService implements OnModuleInit {
         }
       }
 
+      if (!missingPanelSnapshot(unifiedClients)) {
+        this.volumeConflicts.set(panel.id, {
+          at: Date.now(),
+          items: [...volumeConflicts.values()],
+        });
+      }
+
       const repairBatch = quotaRepairs.slice(0, SYNC_QUOTA_RESTORE_LIMIT);
       if (quotaRepairs.length > repairBatch.length) {
         this.logger.warn(
@@ -2265,7 +2329,6 @@ export class PanelsService implements OnModuleInit {
             : {}),
         };
         if (repair.action === 'reenable') update.enable = true;
-        if (repair.action === 'disableOverLimit') update.enable = false;
         const result = await this.updateClientOnPanel(panel.id, repair.email, update);
         if (!result.success) {
           this.markPanelUpdateFailure(panel.id, repair.email);
@@ -2279,13 +2342,14 @@ export class PanelsService implements OnModuleInit {
             where: { panelId: panel.id, email: repair.email },
             data: { enable: true, disableReason: null },
           });
-        } else if (repair.action === 'disableOverLimit') {
-          await this.prisma.client.updateMany({
-            where: { panelId: panel.id, email: repair.email },
-            data: { enable: false, disableReason: 'TRAFFIC_LIMIT' },
-          });
         }
         syncReport.repaired++;
+      }
+      // Restored caps read back from 3x-ui on the next poll; once a poll
+      // finds none left, the panel is healed and 3x-ui's value always wins.
+      if (healZeroedCaps && zeroedCapsSeen === 0 && unifiedClients.length > 0) {
+        await this.finishZeroCapHeal(panel.id);
+        this.logger.log(`[SYNC] Zero-cap heal finished for ${panel.name}`);
       }
 
       // Traffic polls update usage counters every minute; only surface the
@@ -4385,6 +4449,115 @@ export class PanelsService implements OnModuleInit {
    * not turned off by this app. Record what the panel reported so the cause
    * can be traced; sync re-enables it in the same cycle.
    */
+  /**
+   * Clients whose 3x-ui volume is below the one HMPanel recorded. Read from
+   * the last sync; refreshed with a traffic sync when missing or stale.
+   */
+  async getVolumeConflicts(panelId: string) {
+    await this.findOne(panelId);
+    let snap = this.volumeConflicts.get(panelId);
+    if (!snap || Date.now() - snap.at > 2 * 60_000) {
+      await this.sync(panelId, { mode: 'traffic' });
+      snap = this.volumeConflicts.get(panelId);
+    }
+    return { checkedAt: snap?.at ?? null, items: snap?.items ?? [] };
+  }
+
+  /**
+   * Manual only (panel page button): write HMPanel's volume to 3x-ui for the
+   * listed conflicts (or all of them). Nothing else on the client changes.
+   */
+  async pushVolumesFromHmpanel(panelId: string, emails?: string[]) {
+    await this.findOne(panelId);
+    await this.sync(panelId, { mode: 'traffic' });
+    const items = this.volumeConflicts.get(panelId)?.items ?? [];
+    const wanted =
+      Array.isArray(emails) && emails.length
+        ? new Set(emails.map((e) => String(e).trim()))
+        : null;
+    const targets = items
+      .filter((c) => !wanted || wanted.has(c.email))
+      .slice(0, VOLUME_PUSH_LIMIT);
+
+    let pushed = 0;
+    const failed: Array<{ email: string; error: string }> = [];
+    for (const c of targets) {
+      const expiry = BigInt(c.expiryTime || '0');
+      const result = await this.updateClientOnPanel(panelId, c.email, {
+        totalGB: Number(c.hmpanelTotal),
+        ...(expiry > 0n ? { expiryTime: Number(expiry) } : {}),
+      });
+      if (result.success) pushed++;
+      else
+        failed.push({
+          email: c.email,
+          error: result.error?.message || 'panel rejected the update',
+        });
+    }
+    this.logger.log(
+      `[VOLUME_PUSH] ${pushed}/${targets.length} client volume(s) written from HMPanel to panel ${panelId}${failed.length ? ` (${failed.length} failed)` : ''}`,
+    );
+    if (pushed) {
+      await this.prisma.auditLog
+        .create({
+          data: {
+            action: 'PANEL_VOLUME_PUSH',
+            entity: 'Panel',
+            entityId: panelId,
+            details: {
+              pushed,
+              failed: failed.length,
+              emails: targets.map((t) => t.email).slice(0, 200),
+            } as any,
+          },
+        })
+        .catch(() => undefined);
+      await this.sync(panelId, { mode: 'traffic' }).catch(() => undefined);
+    }
+    return {
+      total: targets.length,
+      pushed,
+      failed,
+      remaining: Math.max(0, items.length - targets.length),
+    };
+  }
+
+  private async isZeroCapHealActive(panelId: string): Promise<boolean> {
+    if (this.zeroCapHealDone.has(panelId)) return false;
+    const key = `${ZERO_CAP_HEAL_KEY_PREFIX}${panelId}`;
+    try {
+      const row = await this.prisma.systemSetting.findUnique({ where: { key } });
+      if (!row) {
+        await this.prisma.systemSetting.createMany({
+          data: [{ key, value: JSON.stringify({ startedAt: Date.now() }) }],
+          skipDuplicates: true,
+        });
+        return true;
+      }
+      const state = JSON.parse(row.value || '{}');
+      if (state?.done) {
+        this.zeroCapHealDone.add(panelId);
+        return false;
+      }
+      if (Date.now() - Number(state?.startedAt || 0) > ZERO_CAP_HEAL_WINDOW_MS) {
+        await this.finishZeroCapHeal(panelId);
+        return false;
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async finishZeroCapHeal(panelId: string) {
+    const key = `${ZERO_CAP_HEAL_KEY_PREFIX}${panelId}`;
+    const value = JSON.stringify({ done: true, finishedAt: Date.now() });
+    await this.prisma.systemSetting
+      .upsert({ where: { key }, create: { key, value }, update: { value } })
+      .catch(() => undefined);
+    this.zeroCapHealDone.add(panelId);
+  }
+
   private async notePanelSideUsageDisable(
     panel: { id: string; name: string },
     clientId: string,

@@ -115,13 +115,13 @@ export class AdminQuotaService implements OnModuleInit {
   private async repairPastAdminDeductions() {
     const key = 'traffic.totalAssignedDeductionRepair.v1';
     const cutoff = new Date();
-    try {
-      await this.prisma.systemSetting.create({
-        data: { key, value: JSON.stringify(cutoff.getTime()) },
-      });
-    } catch {
-      return;
-    }
+    // ON CONFLICT DO NOTHING: a plain create logs a unique-violation ERROR
+    // in Postgres on every boot after the first.
+    const claimed = await this.prisma.systemSetting.createMany({
+      data: [{ key, value: JSON.stringify(cutoff.getTime()) }],
+      skipDuplicates: true,
+    });
+    if (claimed.count === 0) return;
 
     const rows = await this.prisma.trafficTransaction.groupBy({
       by: ['adminId', 'panelId'],

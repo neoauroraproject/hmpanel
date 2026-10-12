@@ -8,6 +8,17 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [2.5.3] - 2026-10-13
+
+### Fixed
+- **New clients became unlimited on 3x-ui (2.5.2):** the post-create check read the volume from the wrong place and sent `totalGB=0` right after every create. New and edited clients now keep exactly the volume that was set.
+- **Volumes no longer change on their own.** Sync never writes HMPanel's volume over 3x-ui and never lowers HMPanel's volume from 3x-ui (2.5.2 pushed HMPanel's value over volumes changed in 3x-ui).
+- **One-time repair of volumes broken by 2.5.1:** right after updating, clients of usage-billed admins that were created with a volume but show unlimited (0) in 3x-ui get HMPanel's volume back, once per panel (ends when none remain or after 24h). Volumes that were simply changed in 3x-ui are left alone, and a later 0 set in 3x-ui is respected.
+- One-shot repair claims no longer log unique-constraint errors in Postgres on every boot.
+
+### Added
+- **Panels → volume conflicts button:** lists clients whose 3x-ui volume is lower than HMPanel's (unlimited shown in red) and, only for the clients you select and confirm, writes HMPanel's volume to 3x-ui. Nothing else on the client changes; each push is audit-logged.
+
 ## [2.5.2] - 2026-10-13
 
 ### Fixed
