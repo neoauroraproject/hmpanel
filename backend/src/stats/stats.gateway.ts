@@ -23,16 +23,18 @@ export class StatsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   handleConnection(client: Socket) {
     this.logger.log(`Dashboard WS connected: ${client.id}`);
+    this.monitoringService.viewerConnected();
     client.emit('live-speed', this.monitoringService.getLatestServerStatus());
   }
 
   handleDisconnect(client: Socket) {
     this.logger.log(`Dashboard WS disconnected: ${client.id}`);
+    this.monitoringService.viewerDisconnected();
   }
 
   private startLiveSpeedBroadcast() {
     this.interval = setInterval(() => {
-      if (!this.server) return;
+      if (!this.server || !this.monitoringService.hasViewers()) return;
 
       const speedData = this.monitoringService.getLatestServerStatus();
 

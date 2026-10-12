@@ -1,6 +1,6 @@
 import { Injectable, Logger, HttpException, HttpStatus } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { ReplaySubject } from 'rxjs';
+import { Observable, ReplaySubject } from 'rxjs';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
@@ -14,6 +14,12 @@ import { HmctlClient, HmctlEvent } from './hmctl.client';
 
 const execAsync = promisify(exec);
 
+type SslStreamEvent = { data: unknown };
+const SSL_OP_ID_RE = /^[A-Za-z0-9_-]{6,64}$/;
+const STREAM_REPLAY = 200;
+const STREAM_IDLE_TTL_MS = 30 * 60_000;
+const STREAM_DONE_TTL_MS = 10 * 60_000;
+
 @Injectable()
 export class SslService {
   private readonly logger = new Logger(SslService.name);
@@ -22,6 +28,12 @@ export class SslService {
   private readonly acmeShPath = '/app/acme.sh/acme.sh';
 
   private isExecuting = false;
+  private readonly opStreams = new Map<
+    string,
+    { subject: ReplaySubject<SslStreamEvent>; expiresAt: number }
+  >();
+  /** Latest operation's stream, for clients that do not send an opId. */
+  private legacyStream: ReplaySubject<SslStreamEvent> | null = null;
 
   private getLiveEnv(): Record<string, string> {
     const env: Record<string, string> = {};
@@ -416,7 +428,82 @@ export class SslService {
     return result;
   }
 
-  async renew() {
+  async renew(opId?: string) {
+    // The button is an explicit request, so it forces; the nightly cron only
+    // renews certificates that are due.
+    const data = await this.runStreamed('renew', ['force'], opId);
+    return {
+      success: true,
+      log: typeof data.log === 'string' ? data.log : 'Success',
+    };
+  }
+
+  async switchMode(enableHttps: boolean, opId?: string) {
+    await this.runStreamed(enableHttps ? 'enable' : 'disable', [], opId);
+    return { success: true, https: enableHttps };
+  }
+
+  async issue(
+    domain: string,
+    email: string,
+    selfSigned: boolean = false,
+    opId?: string,
+  ) {
+    const value = this.assertValidDomain(domain);
+    if (selfSigned) {
+      return this.runStreamed('selfsigned', [value], opId);
+    }
+    return this.runStreamed('issue', [value, this.normalizeEmail(email)], opId);
+  }
+
+  async changeDomain(domain: string, email: string, opId?: string) {
+    const value = this.assertValidDomain(domain);
+    return this.runStreamed(
+      'change-domain',
+      [value, this.normalizeEmail(email)],
+      opId,
+    );
+  }
+
+  async repair(opId?: string) {
+    return this.runStreamed('repair', [], opId);
+  }
+
+  /**
+   * Progress stream for one operation. The UI subscribes with the same opId it
+   * then POSTs, so it can never receive a previous operation's events.
+   */
+  getStream(opId?: string): Observable<SslStreamEvent> {
+    if (opId && SSL_OP_ID_RE.test(opId)) {
+      return this.streamFor(opId).asObservable();
+    }
+    if (!this.legacyStream) {
+      this.legacyStream = new ReplaySubject<SslStreamEvent>(STREAM_REPLAY);
+    }
+    return this.legacyStream.asObservable();
+  }
+
+  private streamFor(opId: string): ReplaySubject<SslStreamEvent> {
+    const now = Date.now();
+    for (const [key, entry] of this.opStreams) {
+      if (entry.expiresAt <= now) this.opStreams.delete(key);
+    }
+    let entry = this.opStreams.get(opId);
+    if (!entry) {
+      entry = {
+        subject: new ReplaySubject<SslStreamEvent>(STREAM_REPLAY),
+        expiresAt: now + STREAM_IDLE_TTL_MS,
+      };
+      this.opStreams.set(opId, entry);
+    }
+    return entry.subject;
+  }
+
+  private async runStreamed(
+    action: string,
+    args: string[],
+    clientOpId: string | undefined,
+  ): Promise<Record<string, unknown>> {
     if (this.isExecuting) {
       throw new HttpException(
         'SSL operation already in progress.',
@@ -424,85 +511,56 @@ export class SslService {
       );
     }
     this.isExecuting = true;
-    const opId = Math.random().toString(16).substring(2, 8);
-    this.logger.log(`[SSL][${opId}] Triggering host renewal...`);
+    const hostOpId = Math.random().toString(16).substring(2, 8);
+    const streamKey =
+      clientOpId && SSL_OP_ID_RE.test(clientOpId)
+        ? clientOpId
+        : `srv-${hostOpId}`;
+    const stream = this.streamFor(streamKey);
+    this.legacyStream = stream;
+    this.logger.log(`[SSL][${hostOpId}] Triggering ${action}`);
+
     try {
-      const result = (await this.hmctl.execute('ssl', 'renew', [], opId)) as {
-        log?: string;
-      };
-      this.logger.log(
-        `[SSL][${opId}] Renewal result: ${JSON.stringify(result)}`,
-      );
-      return { success: true, log: result.log || 'Success' };
-    } catch (e: unknown) {
-      const errMsg = e instanceof Error ? e.message : String(e);
-      this.logger.error(`[SSL][${opId}] Renewal failed: ` + errMsg, e);
-      throw new HttpException(
-        'Renewal failed: ' + errMsg,
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      return await new Promise<Record<string, unknown>>((resolve, reject) => {
+        this.hmctl.executeStream('ssl', action, args, hostOpId).subscribe({
+          next: (event: HmctlEvent) => {
+            if (event.type === 'progress') {
+              stream.next({
+                data: { type: 'progress', message: event.message },
+              });
+            } else if (event.type === 'complete') {
+              stream.next({ data: { type: 'complete', data: event.data } });
+              resolve((event.data ?? {}) as Record<string, unknown>);
+            } else {
+              stream.next({ data: { type: 'error', error: event.error } });
+              const message =
+                event.error?.reason ||
+                event.error?.message ||
+                'SSL operation failed';
+              this.logger.warn(`[SSL][${hostOpId}] ${action} failed: ${message}`);
+              reject(
+                new HttpException(message, HttpStatus.INTERNAL_SERVER_ERROR),
+              );
+            }
+          },
+          error: (err: unknown) => {
+            const message = err instanceof Error ? err.message : String(err);
+            stream.next({ data: { type: 'error', error: { message } } });
+            reject(new HttpException(message, HttpStatus.INTERNAL_SERVER_ERROR));
+          },
+        });
+      });
     } finally {
       this.isExecuting = false;
+      // Completed streams still replay to a reconnecting browser (nginx is
+      // recreated mid-operation), then expire.
+      stream.complete();
+      const entry = this.opStreams.get(streamKey);
+      if (entry) entry.expiresAt = Date.now() + STREAM_DONE_TTL_MS;
     }
   }
 
-  async switchMode(enableHttps: boolean) {
-    if (this.isExecuting) {
-      throw new HttpException(
-        'SSL operation already in progress.',
-        HttpStatus.CONFLICT,
-      );
-    }
-    this.isExecuting = true;
-    const opId = Math.random().toString(16).substring(2, 8);
-    const cmdAction = enableHttps ? 'enable' : 'disable';
-    this.logger.log(`[SSL][${opId}] Triggering switchMode: ${cmdAction}`);
-
-    this.stream$ = new ReplaySubject<{ data: unknown }>(100);
-
-    return new Promise((resolve, reject) => {
-      this.hmctl.executeStream('ssl', cmdAction, [], opId).subscribe({
-        next: (event: HmctlEvent) => {
-          if (event.type === 'progress') {
-            this.stream$?.next({
-              data: { type: 'progress', message: event.message },
-            });
-          } else if (event.type === 'complete') {
-            this.stream$?.next({
-              data: { type: 'complete', data: event.data },
-            });
-            resolve({ success: true, https: enableHttps });
-          } else if (event.type === 'error') {
-            this.stream$?.next({ data: { type: 'error', error: event.error } });
-            reject(
-              new HttpException(
-                event.error?.message || 'Error',
-                HttpStatus.INTERNAL_SERVER_ERROR,
-              ),
-            );
-          }
-        },
-        error: (err: unknown) => {
-          const message = err instanceof Error ? err.message : String(err);
-          this.stream$?.next({ data: { type: 'error', error: { message } } });
-          reject(new HttpException(message, HttpStatus.INTERNAL_SERVER_ERROR));
-        },
-      });
-    }).finally(() => {
-      this.isExecuting = false;
-    });
-  }
-
-  private stream$: ReplaySubject<{ data: unknown }> | null = null;
-
-  getStream() {
-    if (!this.stream$) {
-      this.stream$ = new ReplaySubject<{ data: unknown }>(100);
-    }
-    return this.stream$.asObservable();
-  }
-
-  private assertValidDomain(domain: string) {
+  private assertValidDomain(domain: string): string {
     const value = (domain || '').trim().toLowerCase();
     const isFqdn =
       /^(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/.test(
@@ -514,151 +572,20 @@ export class SslService {
         HttpStatus.BAD_REQUEST,
       );
     }
+    return value;
   }
 
-  async issue(domain: string, email: string, selfSigned: boolean = false) {
-    this.assertValidDomain(domain);
-    if (this.isExecuting) {
+  /** Empty is allowed: the CLI then registers admin@<domain>. */
+  private normalizeEmail(email: string | undefined): string {
+    const value = (email || '').trim();
+    if (!value) return '';
+    if (!/^[^\s@"'`\\]+@[^\s@"'`\\]+\.[^\s@"'`\\]+$/.test(value)) {
       throw new HttpException(
-        'SSL operation already in progress.',
-        HttpStatus.CONFLICT,
+        `"${value}" is not a valid email address.`,
+        HttpStatus.BAD_REQUEST,
       );
     }
-    this.isExecuting = true;
-    const opId = Math.random().toString(16).substring(2, 8);
-    const action = selfSigned ? 'selfsigned' : 'issue';
-    const args = selfSigned ? [domain] : [domain, email];
-    this.logger.log(
-      `[SSL][${opId}] Triggering issue: ${action} for domain: ${domain}`,
-    );
-
-    this.stream$ = new ReplaySubject<{ data: unknown }>(100);
-
-    return new Promise((resolve, reject) => {
-      this.hmctl.executeStream('ssl', action, args, opId).subscribe({
-        next: (event: HmctlEvent) => {
-          if (event.type === 'progress') {
-            this.stream$?.next({
-              data: { type: 'progress', message: event.message },
-            });
-          } else if (event.type === 'complete') {
-            this.stream$?.next({
-              data: { type: 'complete', data: event.data },
-            });
-            resolve(event.data);
-          } else if (event.type === 'error') {
-            this.stream$?.next({ data: { type: 'error', error: event.error } });
-            reject(
-              new HttpException(
-                event.error?.message || 'Error',
-                HttpStatus.INTERNAL_SERVER_ERROR,
-              ),
-            );
-          }
-        },
-        error: (err: unknown) => {
-          const message = err instanceof Error ? err.message : String(err);
-          this.stream$?.next({ data: { type: 'error', error: { message } } });
-          reject(new HttpException(message, HttpStatus.INTERNAL_SERVER_ERROR));
-        },
-      });
-    }).finally(() => {
-      this.isExecuting = false;
-    });
-  }
-
-  async changeDomain(domain: string, email: string) {
-    this.assertValidDomain(domain);
-    if (this.isExecuting) {
-      throw new HttpException(
-        'SSL operation already in progress.',
-        HttpStatus.CONFLICT,
-      );
-    }
-    this.isExecuting = true;
-    const opId = Math.random().toString(16).substring(2, 8);
-    this.logger.log(`[SSL][${opId}] Triggering changeDomain: ${domain}`);
-
-    this.stream$ = new ReplaySubject<{ data: unknown }>(100);
-
-    return new Promise((resolve, reject) => {
-      this.hmctl
-        .executeStream('ssl', 'change-domain', [domain, email], opId)
-        .subscribe({
-          next: (event: HmctlEvent) => {
-            if (event.type === 'progress') {
-              this.stream$?.next({
-                data: { type: 'progress', message: event.message },
-              });
-            } else if (event.type === 'complete') {
-              this.stream$?.next({
-                data: { type: 'complete', data: event.data },
-              });
-              resolve(event.data);
-            } else if (event.type === 'error') {
-              this.stream$?.next({
-                data: { type: 'error', error: event.error },
-              });
-              reject(
-                new HttpException(
-                  event.error?.message || 'Error',
-                  HttpStatus.INTERNAL_SERVER_ERROR,
-                ),
-              );
-            }
-          },
-          error: (err: unknown) => {
-            const message = err instanceof Error ? err.message : String(err);
-            this.stream$?.next({ data: { type: 'error', error: { message } } });
-            reject(
-              new HttpException(message, HttpStatus.INTERNAL_SERVER_ERROR),
-            );
-          },
-        });
-    }).finally(() => {
-      this.isExecuting = false;
-    });
-  }
-
-  async repair() {
-    this.isExecuting = false; // Force clear any active locks for repair
-    this.isExecuting = true;
-    const opId = Math.random().toString(16).substring(2, 8);
-    this.logger.log(`[SSL][${opId}] Triggering repair`);
-
-    this.stream$ = new ReplaySubject<{ data: unknown }>(100);
-
-    return new Promise((resolve, reject) => {
-      this.hmctl.executeStream('ssl', 'repair', [], opId).subscribe({
-        next: (event: HmctlEvent) => {
-          if (event.type === 'progress') {
-            this.stream$?.next({
-              data: { type: 'progress', message: event.message },
-            });
-          } else if (event.type === 'complete') {
-            this.stream$?.next({
-              data: { type: 'complete', data: event.data },
-            });
-            resolve(event.data);
-          } else if (event.type === 'error') {
-            this.stream$?.next({ data: { type: 'error', error: event.error } });
-            reject(
-              new HttpException(
-                event.error?.message || 'Error',
-                HttpStatus.INTERNAL_SERVER_ERROR,
-              ),
-            );
-          }
-        },
-        error: (err: unknown) => {
-          const message = err instanceof Error ? err.message : String(err);
-          this.stream$?.next({ data: { type: 'error', error: { message } } });
-          reject(new HttpException(message, HttpStatus.INTERNAL_SERVER_ERROR));
-        },
-      });
-    }).finally(() => {
-      this.isExecuting = false;
-    });
+    return value;
   }
 
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)

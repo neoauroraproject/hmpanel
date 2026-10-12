@@ -28,6 +28,7 @@ export interface ModuleManifest {
   description: string;
   kind: ModuleKind;
   phase: number;
+  /** Fallback when no premiumModuleState row exists. New rows are always seeded enabled. */
   defaultEnabled: boolean;
   licenseRequirement: LicenseRequirement;
   features: string[];

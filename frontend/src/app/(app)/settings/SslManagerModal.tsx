@@ -29,6 +29,19 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
   const isSuccessRef = React.useRef(false);
   const isExecutingRef = React.useRef(false);
 
+  // Host ports nginx is published on; switching scheme must switch port too.
+  const { data: panelPorts } = useQuery({
+    queryKey: ["settings-ports"],
+    queryFn: async () => (await api.get<{ httpPort: number; httpsPort: number }>("/settings/ports")).data,
+    enabled: isOpen,
+  });
+
+  const originFor = (protocol: string, host: string) => {
+    const port = protocol === "https:" ? panelPorts?.httpsPort ?? 443 : panelPorts?.httpPort ?? 80;
+    const isDefault = (protocol === "https:" && port === 443) || (protocol === "http:" && port === 80);
+    return `${protocol}//${host}${isDefault ? "" : `:${port}`}`;
+  };
+
   const { data: sslInfo, isLoading, refetch } = useQuery({
     queryKey: ["sslStatus"],
     queryFn: async () => (await api.get<SslStatus>("/settings/ssl")).data,
@@ -51,34 +64,40 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
     }
   }, [isOpen]);
 
-  const startStream = () => {
+  const completeWorkflow = (result: { domain?: string; https?: boolean } | undefined, eventSource?: EventSource) => {
+    if (isSuccessRef.current) return;
+    isSuccessRef.current = true;
+    setWorkflowState("success");
+    eventSource?.close();
+
+    const currentProtocol = window.location.protocol;
+    const currentHost = window.location.hostname;
+    let newProtocol = currentProtocol;
+    let newHost = currentHost;
+
+    if (result?.domain) newHost = result.domain;
+    if (result?.https !== undefined) newProtocol = result.https ? "https:" : "http:";
+    else if (result?.domain) newProtocol = "https:"; // Issue/change domain always results in HTTPS
+
+    if (newProtocol !== currentProtocol || newHost !== currentHost) {
+      setTimeout(() => {
+        window.location.href = `${originFor(newProtocol, newHost)}${window.location.pathname}`;
+      }, 2500);
+    }
+  };
+
+  const startStream = (opId: string) => {
     const url = new URL(api.defaults.baseURL + "/settings/ssl/stream", window.location.origin);
     if (token) url.searchParams.append("token", token);
+    url.searchParams.append("op", opId);
     const eventSource = new EventSource(url.toString());
     eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
         if (data.type === "progress") {
-          setLogs((prev) => [...prev, data.message]);
+          setLogs((prev) => (prev.includes(data.message) ? prev : [...prev, data.message]));
         } else if (data.type === "complete") {
-          isSuccessRef.current = true;
-          setWorkflowState("success");
-          eventSource.close();
-
-          const currentProtocol = window.location.protocol;
-          const currentHost = window.location.hostname;
-          let newProtocol = currentProtocol;
-          let newHost = currentHost;
-
-          if (data.data?.domain) newHost = data.data.domain;
-          if (data.data?.https !== undefined) newProtocol = data.data.https ? "https:" : "http:";
-          else if (data.data?.domain) newProtocol = "https:"; // Issue/change domain always results in HTTPS
-
-          if (newProtocol !== currentProtocol || newHost !== currentHost) {
-            setTimeout(() => {
-              window.location.href = `${newProtocol}//${newHost}${window.location.pathname}`;
-            }, 2500);
-          }
+          completeWorkflow(data.data, eventSource);
         } else if (data.type === "error") {
           setWorkflowState("error");
           setWorkflowError(data.error?.message || data.error?.reason || t("settings.sslUnknownError"));
@@ -98,7 +117,7 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
   };
 
   const executeAction = async (
-    actionFn: () => Promise<unknown>,
+    actionFn: (opId: string) => Promise<{ data?: unknown }>,
     redirectDomain?: string,
   ) => {
     if (isExecutingRef.current) return;
@@ -107,9 +126,15 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
     setWorkflowState("running");
     setLogs([t("settings.sslStartingWorkflow")]);
     isSuccessRef.current = false;
-    const es = startStream();
+    // Ties this run's progress stream to its request; crypto.randomUUID is
+    // unavailable on plain-HTTP panels, which is exactly when SSL gets set up.
+    const opId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    const es = startStream(opId);
     try {
-      await actionFn();
+      const res = await actionFn(opId);
+      // The request only returns once the host command finished; finish here
+      // too in case the stream was cut by the nginx restart.
+      completeWorkflow(res?.data as { domain?: string; https?: boolean } | undefined, es);
       refetch();
     } catch (err: unknown) {
       if (isSuccessRef.current) return;
@@ -121,7 +146,7 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
           if (redirectDomain) {
             setLogs(prev => [...prev, t("settings.sslConnectionLostRedirect"), t("settings.sslRedirectingIn", { domain: redirectDomain })]);
             setTimeout(() => {
-              window.location.href = `https://${redirectDomain}${window.location.pathname}`;
+              window.location.href = `${originFor("https:", redirectDomain)}${window.location.pathname}`;
             }, 10000);
           }
           return;
@@ -142,21 +167,21 @@ export function SslManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose:
     }
   };
 
-  const handleIssue = () => executeAction(() => api.post("/settings/ssl/issue", form), form.domain);
+  const handleIssue = () => executeAction((opId) => api.post("/settings/ssl/issue", { ...form, opId }), form.domain);
   // change-domain always goes through ACME, so a self-signed choice must use the
   // issue endpoint (which now adopts the domain too).
   const handleChangeDomain = () =>
     executeAction(
-      () =>
+      (opId) =>
         form.selfSigned
-          ? api.post("/settings/ssl/issue", form)
-          : api.post("/settings/ssl/change-domain", form),
+          ? api.post("/settings/ssl/issue", { ...form, opId })
+          : api.post("/settings/ssl/change-domain", { ...form, opId }),
       form.domain,
     );
-  const handleRenew = () => executeAction(() => api.post("/settings/ssl/renew"));
-  const handleEnable = () => executeAction(() => api.post("/settings/ssl/switch", { enableHttps: true }));
-  const handleDisable = () => executeAction(() => api.post("/settings/ssl/switch", { enableHttps: false }));
-  const handleRepair = () => executeAction(() => api.post("/settings/ssl/repair"));
+  const handleRenew = () => executeAction((opId) => api.post("/settings/ssl/renew", { opId }));
+  const handleEnable = () => executeAction((opId) => api.post("/settings/ssl/switch", { enableHttps: true, opId }));
+  const handleDisable = () => executeAction((opId) => api.post("/settings/ssl/switch", { enableHttps: false, opId }));
+  const handleRepair = () => executeAction((opId) => api.post("/settings/ssl/repair", { opId }));
 
   if (!isOpen) return null;
 

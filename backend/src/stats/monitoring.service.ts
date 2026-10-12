@@ -30,6 +30,11 @@ export interface PanelSpeedData {
   hasDisk?: boolean;
 }
 
+/** Live dashboard cadence while at least one socket is connected. */
+const ACTIVE_POLL_MS = 5_000;
+/** Background cadence that keeps the monitoring hub reasonably fresh. */
+const IDLE_POLL_MS = 60_000;
+
 @Injectable()
 export class MonitoringService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(MonitoringService.name);
@@ -37,8 +42,10 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
   // Caches
   private serverStatusCache: PanelSpeedData[] = [];
 
-  // Polling loops
-  private serverStatusTimer: NodeJS.Timeout;
+  private pollTimer: ReturnType<typeof setTimeout> | null = null;
+  private polling = false;
+  private stopped = false;
+  private viewers = 0;
 
   // Track previous traffic for speed calculation
   private previousTraffic: Record<
@@ -53,19 +60,50 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit() {
     this.logger.log('Starting Monitoring Cache Loops...');
-
-    // Server Status every 5 seconds (was 3s × 2 initial calls)
-    this.serverStatusTimer = setInterval(() => this.pollServerStatus(), 5000);
-    this.pollServerStatus();
+    this.schedulePoll(0);
   }
 
   onModuleDestroy() {
-    if (this.serverStatusTimer) clearInterval(this.serverStatusTimer);
+    this.stopped = true;
+    if (this.pollTimer) clearTimeout(this.pollTimer);
   }
 
   // Getters for WebSocket/Gateway
   public getLatestServerStatus(): PanelSpeedData[] {
     return this.serverStatusCache;
+  }
+
+  public hasViewers(): boolean {
+    return this.viewers > 0;
+  }
+
+  public viewerConnected(): void {
+    this.viewers++;
+    // Leave idle cadence right away instead of waiting up to a minute.
+    if (this.viewers === 1) this.schedulePoll(0);
+  }
+
+  public viewerDisconnected(): void {
+    this.viewers = Math.max(0, this.viewers - 1);
+  }
+
+  private schedulePoll(delayMs: number): void {
+    if (this.stopped) return;
+    if (this.pollTimer) clearTimeout(this.pollTimer);
+    this.pollTimer = setTimeout(() => void this.runPoll(), delayMs);
+  }
+
+  private async runPoll(): Promise<void> {
+    this.pollTimer = null;
+    // An in-flight poll reschedules itself when it finishes.
+    if (this.polling) return;
+    this.polling = true;
+    try {
+      await this.pollServerStatus();
+    } finally {
+      this.polling = false;
+      this.schedulePoll(this.viewers > 0 ? ACTIVE_POLL_MS : IDLE_POLL_MS);
+    }
   }
 
   private async pollServerStatus() {

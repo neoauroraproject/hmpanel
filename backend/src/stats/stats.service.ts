@@ -1,4 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { calculateAdminTrafficSummary } from '../common/utils/traffic.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { PanelsService } from '../panels/panels.service';
@@ -11,9 +12,13 @@ const XUI_PANEL_WHERE = { panelType: { notIn: [...EXTERNAL_PANEL_TYPES] } };
 
 const DAY = 24 * 60 * 60 * 1000;
 const HOUR = 60 * 60 * 1000;
+/** Dashboard reads at most the current month / last 30 days. */
+const SYSTEM_STATS_RETENTION_DAYS = 90;
 
 @Injectable()
 export class StatsService {
+  private readonly logger = new Logger(StatsService.name);
+
   constructor(
     private prisma: PrismaService,
     private panelsService: PanelsService,
@@ -196,24 +201,22 @@ export class StatsService {
     const trafficUsed =
       trafficSoldTotal > remaining ? trafficSoldTotal - remaining : 0n;
 
-    let todayUsage = 0n;
-    let monthlyUsage = 0n;
-
-    // Analyze SystemStats to compute true network usage
-    const systemStats = await this.prisma.systemStats.findMany({
-      where: { recordedAt: { gte: startMonth } },
-      orderBy: { recordedAt: 'asc' },
-      select: { serverId: true, netUp: true, netDown: true, recordedAt: true },
-    });
-
-    for (const stat of systemStats) {
-      const delta = stat.netUp + stat.netDown;
-
-      monthlyUsage += delta;
-      if (stat.recordedAt >= startToday) {
-        todayUsage += delta;
-      }
-    }
+    // SystemStats gains a row per panel per minute; sum in the database rather
+    // than loading the whole month into memory.
+    const [monthNet, todayNet] = await Promise.all([
+      this.prisma.systemStats.aggregate({
+        where: { recordedAt: { gte: startMonth } },
+        _sum: { netUp: true, netDown: true },
+      }),
+      this.prisma.systemStats.aggregate({
+        where: { recordedAt: { gte: startToday } },
+        _sum: { netUp: true, netDown: true },
+      }),
+    ]);
+    const monthlyUsage =
+      (monthNet._sum.netUp ?? 0n) + (monthNet._sum.netDown ?? 0n);
+    const todayUsage =
+      (todayNet._sum.netUp ?? 0n) + (todayNet._sum.netDown ?? 0n);
 
     const revenue = await this.aggregateRevenue();
 
@@ -462,6 +465,24 @@ export class StatsService {
     };
   }
 
+  /** Each panel adds a SystemStats row per minute; nothing else ever deletes them. */
+  @Cron(CronExpression.EVERY_DAY_AT_4AM)
+  async pruneSystemStats() {
+    const cutoff = new Date(Date.now() - SYSTEM_STATS_RETENTION_DAYS * DAY);
+    try {
+      const { count } = await this.prisma.systemStats.deleteMany({
+        where: { recordedAt: { lt: cutoff } },
+      });
+      if (count > 0) {
+        this.logger.log(
+          `Pruned ${count} SystemStats row(s) older than ${SYSTEM_STATS_RETENTION_DAYS} days`,
+        );
+      }
+    } catch (err: any) {
+      this.logger.warn(`SystemStats prune failed: ${err?.message || err}`);
+    }
+  }
+
   /** Traffic volume time-series over a window, bucketed for charting. */
   async trafficSeries(range: '24h' | '7d' | '30d') {
     const now = Date.now();
@@ -488,21 +509,23 @@ export class StatsService {
       fmt: (d: Date) => `${d.getHours()}:00`,
     };
 
-    const rows = await this.prisma.systemStats.findMany({
-      where: { recordedAt: { gte: new Date(cfg.since) } },
-      select: { netUp: true, netDown: true, recordedAt: true },
-      orderBy: { recordedAt: 'asc' },
-    });
+    // Same epoch-aligned buckets as before, grouped by Postgres. recordedAt is
+    // stored as UTC without a zone, so its epoch equals Date.getTime().
+    const bucket = cfg.bucket;
+    const rows = await this.prisma.$queryRaw<
+      Array<{ bucket: bigint; bytes: bigint | null }>
+    >`
+      SELECT (floor(extract(epoch FROM "recordedAt") * 1000 / ${bucket}::numeric) * ${bucket}::numeric)::bigint AS bucket,
+             SUM("netUp" + "netDown")::bigint AS bytes
+      FROM "SystemStats"
+      WHERE "recordedAt" >= (${new Date(cfg.since).toISOString()}::timestamptz AT TIME ZONE 'UTC')
+      GROUP BY 1
+      ORDER BY 1`;
 
-    const buckets = new Map<number, number>();
-    for (const r of rows) {
-      const key = Math.floor(r.recordedAt.getTime() / cfg.bucket) * cfg.bucket;
-      const bytes = Number(r.netUp) + Number(r.netDown);
-      buckets.set(key, (buckets.get(key) ?? 0) + bytes);
-    }
-    return [...buckets.entries()]
-      .sort((a, b) => a[0] - b[0])
-      .map(([k, bytes]) => ({ label: cfg.fmt(new Date(k)), bytes }));
+    return rows.map((r) => ({
+      label: cfg.fmt(new Date(Number(r.bucket))),
+      bytes: Number(r.bytes ?? 0n),
+    }));
   }
 
   /** Trend datasets for the dashboard charts. */

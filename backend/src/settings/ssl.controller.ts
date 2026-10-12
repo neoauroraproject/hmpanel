@@ -1,4 +1,12 @@
-import { Controller, Get, Post, Body, UseGuards, Sse } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  UseGuards,
+  Sse,
+  Query,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { RolesGuard, Roles } from '../common/roles.guard';
@@ -21,24 +29,30 @@ export class SslController {
   @Post('renew')
   @Roles('SUPER_ADMIN')
   @ApiOperation({ summary: 'Force renew the ACME certificate' })
-  async renew() {
-    return this.sslService.renew();
+  async renew(@Body() body: { opId?: string } = {}) {
+    return this.sslService.renew(body?.opId);
   }
 
   @Post('switch')
   @Roles('SUPER_ADMIN')
   @ApiOperation({ summary: 'Switch between HTTP and HTTPS mode' })
-  async switchMode(@Body() body: { enableHttps: boolean }) {
-    return this.sslService.switchMode(body.enableHttps);
+  async switchMode(@Body() body: { enableHttps: boolean; opId?: string }) {
+    return this.sslService.switchMode(body.enableHttps, body.opId);
   }
 
   @Post('issue')
   @Roles('SUPER_ADMIN')
   @ApiOperation({ summary: 'Issue a new SSL certificate' })
   async issue(
-    @Body() body: { domain: string; email: string; selfSigned?: boolean },
+    @Body()
+    body: { domain: string; email: string; selfSigned?: boolean; opId?: string },
   ) {
-    return this.sslService.issue(body.domain, body.email, body.selfSigned);
+    return this.sslService.issue(
+      body.domain,
+      body.email,
+      body.selfSigned,
+      body.opId,
+    );
   }
 
   @Post('change-domain')
@@ -46,21 +60,23 @@ export class SslController {
   @ApiOperation({
     summary: 'Change the domain and issue a new certificate with rollback',
   })
-  async changeDomain(@Body() body: { domain: string; email: string }) {
-    return this.sslService.changeDomain(body.domain, body.email);
+  async changeDomain(
+    @Body() body: { domain: string; email: string; opId?: string },
+  ) {
+    return this.sslService.changeDomain(body.domain, body.email, body.opId);
   }
 
   @Post('repair')
   @Roles('SUPER_ADMIN')
   @ApiOperation({ summary: 'Repair the system SSL configuration' })
-  async repair() {
-    return this.sslService.repair();
+  async repair(@Body() body: { opId?: string } = {}) {
+    return this.sslService.repair(body?.opId);
   }
 
   @Sse('stream')
   @Roles('SUPER_ADMIN')
   @ApiOperation({ summary: 'Stream HMCTL execution progress via SSE' })
-  stream() {
-    return this.sslService.getStream();
+  stream(@Query('op') op?: string) {
+    return this.sslService.getStream(op);
   }
 }

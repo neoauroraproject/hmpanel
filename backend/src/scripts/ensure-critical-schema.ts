@@ -357,12 +357,24 @@ export async function ensureCriticalSchema(prisma: PrismaClient): Promise<void> 
       "rewardId" TEXT NOT NULL,
       "customerId" TEXT NOT NULL,
       "couponId" TEXT NOT NULL,
+      "batchIndex" INTEGER NOT NULL DEFAULT 1,
       "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
       CONSTRAINT "StoreReferralRewardGrant_pkey" PRIMARY KEY ("id")
     )`,
-    `CREATE UNIQUE INDEX IF NOT EXISTS "StoreReferralRewardGrant_rewardId_customerId_key"
-      ON "StoreReferralRewardGrant"("rewardId", "customerId")`,
+    `ALTER TABLE "StoreReferralRewardGrant" ADD COLUMN IF NOT EXISTS "batchIndex" INTEGER NOT NULL DEFAULT 1`,
+    `DROP INDEX IF EXISTS "StoreReferralRewardGrant_rewardId_customerId_key"`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS "StoreReferralRewardGrant_rewardId_customerId_batchIndex_key"
+      ON "StoreReferralRewardGrant"("rewardId", "customerId", "batchIndex")`,
     `CREATE INDEX IF NOT EXISTS "StoreReferralRewardGrant_customerId_idx" ON "StoreReferralRewardGrant"("customerId")`,
+    `ALTER TABLE "StoreProfile" ADD COLUMN IF NOT EXISTS "loyaltyEnabled" BOOLEAN NOT NULL DEFAULT false`,
+    `ALTER TABLE "StoreProfile" ADD COLUMN IF NOT EXISTS "loyaltyMinRenewals" INTEGER NOT NULL DEFAULT 2`,
+    `ALTER TABLE "StoreProfile" ADD COLUMN IF NOT EXISTS "loyaltyDiscountPercent" DOUBLE PRECISION NOT NULL DEFAULT 0`,
+    `ALTER TABLE "StoreProfile" ADD COLUMN IF NOT EXISTS "loyaltyApplyRenewals" BOOLEAN NOT NULL DEFAULT true`,
+    `ALTER TABLE "StoreProfile" ADD COLUMN IF NOT EXISTS "loyaltyApplyNewPurchases" BOOLEAN NOT NULL DEFAULT false`,
+    `ALTER TABLE "StoreCustomer" ADD COLUMN IF NOT EXISTS "loyalManual" BOOLEAN NOT NULL DEFAULT false`,
+    `ALTER TABLE "StoreCustomer" ADD COLUMN IF NOT EXISTS "loyalDiscountPercent" DOUBLE PRECISION`,
+    `ALTER TABLE "StoreCustomer" ADD COLUMN IF NOT EXISTS "loyalApplyRenewals" BOOLEAN NOT NULL DEFAULT true`,
+    `ALTER TABLE "StoreCustomer" ADD COLUMN IF NOT EXISTS "loyalApplyNewPurchases" BOOLEAN NOT NULL DEFAULT true`,
 
     // Agency & credit system expansion
     `DO $$ BEGIN CREATE TYPE "AgencyPlanKind" AS ENUM ('TOP_UP', 'NEW_AGENCY', 'BOTH'); EXCEPTION WHEN duplicate_object THEN NULL; END $$`,

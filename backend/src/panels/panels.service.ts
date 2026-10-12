@@ -14,6 +14,7 @@ import { ClientsService } from '../clients/clients.service';
 import { AdminQuotaService } from '../traffic/admin-quota.service';
 import {
   classifyPanelDisableReason,
+  isExpiryReached,
   isUsageManualHold,
   syncXuiTrafficMirror,
 } from '../traffic/usage-mode-xui.util';
@@ -46,7 +47,9 @@ import {
 import { buildConnectionExtrasEnvelope, connectionExtrasContentEqual } from '../clients/output/connection-extras';
 import {
   chunkArray,
+  inboundFingerprint,
   inboundSyncFieldsChanged,
+  parseInboundJson,
 } from './panel-sync.util';
 
 // ─── Provisioning Error Classification ───────────────────────────────────────
@@ -114,6 +117,20 @@ const PANEL_UPDATE_FAIL_COOLDOWN_MS = 5 * 60 * 1000;
 const SYNC_DB_BATCH_SIZE = 50;
 /** Panel writes during one sync. The rest wait for the next cycle. */
 const SYNC_QUOTA_RESTORE_LIMIT = 200;
+/** One log/audit entry per client per hour when the panel keeps disabling it. */
+const PANEL_SIDE_DISABLE_NOTE_INTERVAL_MS = 60 * 60 * 1000;
+
+/**
+ * One pooled agent for every panel call that skips certificate checks.
+ * A new Agent per request meant a fresh TCP + TLS handshake every time;
+ * the 5s idle timeout matches Node's default so stale-socket risk is unchanged.
+ */
+const PANEL_HTTPS_AGENT = new https.Agent({
+  rejectUnauthorized: false,
+  keepAlive: true,
+  timeout: 5_000,
+  maxFreeSockets: 8,
+});
 
 function positiveByteCount(value: unknown): number {
   const n = Number(value ?? 0);
@@ -131,6 +148,7 @@ function liveClientQuota(source: any): {
   down: number;
   total: number;
   enable: boolean;
+  expiryTime: number;
 } {
   const traffic = source?.traffic;
   const up = positiveByteCount(traffic?.up) || positiveByteCount(source?.up);
@@ -145,7 +163,13 @@ function liveClientQuota(source: any): {
     typeof traffic?.enable === 'boolean'
       ? traffic.enable
       : source?.enable !== false;
-  return { up, down, total, enable };
+  // The traffic row is what 3x-ui enforces, and it gets the absolute deadline
+  // of a "start after first use" expiry first.
+  const expiryTime =
+    typeof traffic?.expiryTime === 'number'
+      ? traffic.expiryTime
+      : Number(source?.expiryTime || 0) || 0;
+  return { up, down, total, enable, expiryTime };
 }
 
 export type PanelSyncMode = 'full' | 'traffic';
@@ -172,6 +196,10 @@ export class PanelsService implements OnModuleInit {
   private readonly lastFullSyncAt = new Map<string, number>();
   /** Cooldown after failed updateClientOnPanel (panelId:email → untilMs). */
   private readonly panelUpdateFailUntil = new Map<string, number>();
+  /** Inbound row id → API fingerprint the row was last verified against. */
+  private readonly inboundFingerprints = new Map<string, string>();
+  /** panelId:email → last time a panel-side USAGE disable was recorded. */
+  private readonly panelSideDisableNotedAt = new Map<string, number>();
 
   constructor(
     private prisma: PrismaService,
@@ -468,7 +496,7 @@ export class PanelsService implements OnModuleInit {
       return { skipped: true };
     }
     this.globalSyncRunning = true;
-    this.logger.log('Starting global panel sync...');
+    this.logger.debug('Starting global panel sync...');
     try {
       const panels = await this.prisma.panel.findMany({
         select: { id: true, name: true, panelType: true },
@@ -511,7 +539,7 @@ export class PanelsService implements OnModuleInit {
         }
       }
       await this.processSuspensions();
-      this.logger.log('Global panel sync completed.');
+      this.logger.debug('Global panel sync completed.');
       return { skipped: false };
     } catch (error: any) {
       this.logger.error(`Global sync failed: ${error.message}`);
@@ -1210,11 +1238,13 @@ export class PanelsService implements OnModuleInit {
         this.panelCapabilitiesService.resolveCapabilities(version);
 
       // Auto-Rescan: Trigger a capability scan if the panel version changed, or if the spec file changed (hash mismatch)
+      // Older 3x-ui builds persist clientsApi=false; only a missing key means the
+      // scan never ran. Rescanning them every minute rewrote the panel row.
       if (
         panel.apiVersion !== version ||
         panel.capabilityHash !== currentHash ||
         !caps ||
-        !caps.clientsApi
+        typeof caps.clientsApi !== 'boolean'
       ) {
         this.logger.log(
           `[SYNC] Version/Hash change detected or caps missing. Triggering capability rescan.`,
@@ -1269,6 +1299,7 @@ export class PanelsService implements OnModuleInit {
 
       let apiInbounds = [];
       const unifiedClients: any[] = [];
+      const parsedInboundSettings = new WeakMap<object, any>();
 
       const headers = {
         Authorization: panel.apiToken ? `Bearer ${panel.apiToken}` : undefined,
@@ -1306,13 +1337,14 @@ export class PanelsService implements OnModuleInit {
           `[DIAGNOSTIC] Parsing ${apiClientsList.length} clients from /clients/list`,
         );
 
+        const apiInboundById = new Map<unknown, any>(
+          apiInbounds.map((ib: any) => [ib.id, ib] as const),
+        );
         for (const c of apiClientsList) {
           const primaryInboundId = Array.isArray(c.inboundIds)
             ? c.inboundIds[0]
             : null;
-          const primaryInbound = apiInbounds.find(
-            (ib: any) => ib.id === primaryInboundId,
-          );
+          const primaryInbound = apiInboundById.get(primaryInboundId);
           const live = liveClientQuota(c);
           unifiedClients.push({
             uuid: c.uuid || c.id,
@@ -1324,7 +1356,7 @@ export class PanelsService implements OnModuleInit {
             up: live.up,
             down: live.down,
             total: live.total,
-            expiryTime: c.expiryTime || 0,
+            expiryTime: live.expiryTime,
             limitIp: allowedUsersFromXuiClient(c),
             inboundIds: c.inboundIds || [],
             // Protocol extras for connectionExtras envelope (WireGuard etc.)
@@ -1367,8 +1399,9 @@ export class PanelsService implements OnModuleInit {
         for (const apiInbound of apiInbounds) {
           const settings =
             typeof apiInbound.settings === 'string'
-              ? JSON.parse(apiInbound.settings)
-              : apiInbound.settings;
+              ? JSON.parse(apiInbound.settings || '{}')
+              : apiInbound.settings || {};
+          parsedInboundSettings.set(apiInbound, settings);
           const clientsList = settings?.clients || [];
           const clientStats = apiInbound.clientStats || [];
           const statsMap = new Map();
@@ -1509,14 +1542,6 @@ export class PanelsService implements OnModuleInit {
       );
       for (const apiInbound of apiInbounds) {
         totalSyncedInbounds++;
-        const settings =
-          typeof apiInbound.settings === 'string'
-            ? JSON.parse(apiInbound.settings || '{}')
-            : apiInbound.settings || {};
-        const streamSettings =
-          typeof apiInbound.streamSettings === 'string'
-            ? JSON.parse(apiInbound.streamSettings || '{}')
-            : apiInbound.streamSettings || {};
 
         const remoteId =
           apiInbound.id !== undefined && apiInbound.id !== null
@@ -1590,6 +1615,35 @@ export class PanelsService implements OnModuleInit {
         const persistedNodeName =
           nodeName ?? (isNodeHosted ? (dbInbound?.nodeName ?? null) : null);
 
+        // Unchanged since the last sync that verified this row: skip parsing
+        // and deep-comparing settings, which on non-slim panels hold every
+        // client of the inbound. Full syncs always re-verify.
+        const fingerprint = inboundFingerprint(apiInbound, [
+          remoteId,
+          apiInbound.remark,
+          apiInbound.port,
+          apiInbound.protocol,
+          nodeId,
+          persistedNodeName,
+          originNodeGuid,
+        ]);
+        if (
+          !isFull &&
+          dbInbound &&
+          remoteId != null &&
+          dbInbound.panelInboundId === remoteId &&
+          this.inboundFingerprints.get(dbInbound.id) === fingerprint
+        ) {
+          apiInboundIdToDbId.set(remoteId, dbInbound.id);
+          syncedLocalInboundIds.add(dbInbound.id);
+          continue;
+        }
+
+        const settings =
+          parsedInboundSettings.get(apiInbound) ??
+          parseInboundJson(apiInbound.settings);
+        const streamSettings = parseInboundJson(apiInbound.streamSettings);
+
         const inboundData = {
           panelInboundId: remoteId,
           tag: apiInbound.remark || `inbound-${apiInbound.port}`,
@@ -1655,6 +1709,7 @@ export class PanelsService implements OnModuleInit {
           apiInboundIdToDbId.set(remoteId, dbInbound.id);
         }
         syncedLocalInboundIds.add(dbInbound.id);
+        this.inboundFingerprints.set(dbInbound.id, fingerprint);
       }
 
       // Drop local inbounds no longer present on the remote panel
@@ -1686,6 +1741,7 @@ export class PanelsService implements OnModuleInit {
           await this.prisma.inbound.deleteMany({
             where: { id: { in: staleIds } },
           });
+          for (const staleId of staleIds) this.inboundFingerprints.delete(staleId);
           this.logger.log(
             `[SYNC] Panel ${panel.name}: pruned ${staleInboundsFinal.length} stale inbound(s): ${staleInboundsFinal
               .map((i) => `${i.tag}:${i.port}`)
@@ -1728,7 +1784,7 @@ export class PanelsService implements OnModuleInit {
           delta: bigint;
         }>
       >();
-      const quotaRepairs: Array<{ email: string }> = [];
+      const quotaRepairs: Array<{ email: string; expiryTime: bigint }> = [];
       const usageOpenCache = new Map<string, Promise<boolean>>();
       const usagePoolOpen = (adminId: string) => {
         let pending = usageOpenCache.get(adminId);
@@ -1743,10 +1799,37 @@ export class PanelsService implements OnModuleInit {
         `[DIAGNOSTIC] Syncing ${unifiedClients.length} clients into Database (${mode})`,
       );
 
+      // Only the columns the sync reads. `include: { admin: true }` used to load
+      // a full Admin row (password hash, portal JSON) per client every minute.
+      const syncClientSelect = {
+        id: true,
+        uuid: true,
+        email: true,
+        adminId: true,
+        panelId: true,
+        enable: true,
+        disableReason: true,
+        total: true,
+        up: true,
+        down: true,
+        expiryTime: true,
+        createdWithTrafficMode: true,
+        balanceDeducted: true,
+        provisioningStatus: true,
+        subId: true,
+        limitIp: true,
+        flow: true,
+        lastSyncedAt: true,
+        // Read only by the full-sync comparison below.
+        connectionExtras: isFull,
+        admin: { select: { gracePeriodStart: true } },
+        inbounds: { select: { inboundId: true } },
+      } satisfies Prisma.ClientSelect;
+
       // One query for the whole panel instead of findUnique per email.
       const existingClients = await this.prisma.client.findMany({
         where: { panelId: panel.id },
-        include: { admin: true, inbounds: true },
+        select: syncClientSelect,
       });
       const dbClientByEmail = new Map(
         existingClients.map((c) => [c.email, c] as const),
@@ -1814,11 +1897,13 @@ export class PanelsService implements OnModuleInit {
             (id: number) => !apiInboundIdToDbId.has(id),
           );
 
-          const connectionExtras = buildConnectionExtrasEnvelope({
-            protocol: unifiedClient._protocol,
-            client: unifiedClient._raw || unifiedClient,
-            inbound: unifiedClient._inboundMeta,
-          }) as unknown as Prisma.InputJsonValue;
+          // Needed only to create a row or for the full-sync comparison.
+          const buildConnectionExtras = () =>
+            buildConnectionExtrasEnvelope({
+              protocol: unifiedClient._protocol,
+              client: unifiedClient._raw || unifiedClient,
+              inbound: unifiedClient._inboundMeta,
+            }) as unknown as Prisma.InputJsonValue;
 
           // If client doesn't exist locally at all:
           if (!dbClient) {
@@ -1840,14 +1925,14 @@ export class PanelsService implements OnModuleInit {
                 expiryTime,
                 limitIp: Number(unifiedClient.limitIp || 0) || 0,
                 flow: unifiedClient.flow || null,
-                connectionExtras,
+                connectionExtras: buildConnectionExtras(),
                 inbounds: {
                   create: localInboundIds.map((inboundId: string) => ({
                     inboundId,
                   })),
                 },
               },
-              include: { admin: true, inbounds: true },
+              select: syncClientSelect,
             });
             dbClientByEmail.set(trimmedEmail, created);
             syncReport.created++;
@@ -1936,20 +2021,21 @@ export class PanelsService implements OnModuleInit {
             if (!missingSample && dbClient.enable !== enable) {
               changedData.enable = enable;
               if (!enable) {
-                const usedNew = up + down;
-                const ownerForReason = dbClient.adminId;
-                const poolOpenForReason = ownerForReason
-                  ? await usagePoolOpen(ownerForReason)
-                  : false;
                 const reason = classifyPanelDisableReason({
                   panelTotal: total,
-                  used: usedNew,
+                  used: up + down,
                   expiryTime,
                   existingReason: dbClient.disableReason,
                   gracePeriod: !!dbClient.admin?.gracePeriodStart,
-                  usagePoolOpen: poolOpenForReason,
                 });
-                if (reason) changedData.disableReason = reason;
+                changedData.disableReason = reason;
+                if (
+                  (reason === 'PANEL' || reason === 'TRAFFIC_LIMIT') &&
+                  dbClient.adminId &&
+                  (await usagePoolOpen(dbClient.adminId))
+                ) {
+                  await this.notePanelSideUsageDisable(panel, dbClient.id, trimmedEmail, reason, unifiedClient);
+                }
               } else {
                 changedData.disableReason = null;
               }
@@ -1992,11 +2078,8 @@ export class PanelsService implements OnModuleInit {
             // 3x-ui turns a client off when up+down >= total. In USAGE mode that
             // cap is not the limit — the admin pool is. While the pool still
             // has traffic, clear the panel cap (totalGB 0 = unlimited) and
-            // turn the client back on. A manual disable of a client that has
-            // not used its own package stays off.
-            const usedNow = up + down;
-            const notExpired =
-              expiryTime === 0n || expiryTime > BigInt(Date.now());
+            // turn the client back on. A client a person disabled here stays off.
+            const notExpired = !isExpiryReached(expiryTime);
             const ownerId = dbClient.adminId;
             const poolOpen = ownerId ? await usagePoolOpen(ownerId) : false;
             const effectiveReason =
@@ -2004,9 +2087,6 @@ export class PanelsService implements OnModuleInit {
               dbClient.disableReason;
             const manualHold = isUsageManualHold({
               disableReason: effectiveReason,
-              dbTotal: dbClient.total,
-              usedNow,
-              panelTotal: total,
             });
             const wouldRepair =
               !missingSample &&
@@ -2016,7 +2096,7 @@ export class PanelsService implements OnModuleInit {
               poolOpen &&
               (!enable || total > 0n);
             if (wouldRepair) {
-              quotaRepairs.push({ email: trimmedEmail });
+              quotaRepairs.push({ email: trimmedEmail, expiryTime });
               if (!enable) {
                 delete changedData.enable;
                 delete changedData.disableReason;
@@ -2032,14 +2112,16 @@ export class PanelsService implements OnModuleInit {
               changedData.flow = unifiedClient.flow;
             // Only refresh protocol extras when content actually changed.
             // generatedAt alone must NOT dirty every client every poll.
-            if (
-              isFull &&
-              !connectionExtrasContentEqual(
-                dbClient.connectionExtras,
-                connectionExtras,
-              )
-            ) {
-              changedData.connectionExtras = connectionExtras;
+            if (isFull) {
+              const connectionExtras = buildConnectionExtras();
+              if (
+                !connectionExtrasContentEqual(
+                  dbClient.connectionExtras,
+                  connectionExtras,
+                )
+              ) {
+                changedData.connectionExtras = connectionExtras;
+              }
             }
 
             if (Object.keys(changedData).length > 0) {
@@ -2166,6 +2248,12 @@ export class PanelsService implements OnModuleInit {
         const result = await this.updateClientOnPanel(panel.id, repair.email, {
           enable: true,
           totalGB: 0,
+          // The update merges the stored client record, which can still hold the
+          // negative "start after first use" value after 3x-ui fixed the deadline
+          // on the traffic row; sending that back would restart the time window.
+          ...(repair.expiryTime > 0n
+            ? { expiryTime: Number(repair.expiryTime) }
+            : {}),
         });
         if (!result.success) {
           this.markPanelUpdateFailure(panel.id, repair.email);
@@ -2181,7 +2269,16 @@ export class PanelsService implements OnModuleInit {
         syncReport.repaired++;
       }
 
-      this.logger.log(
+      // Traffic polls update usage counters every minute; only surface the
+      // ones that did something unusual.
+      const reportLevel: 'log' | 'debug' =
+        isFull ||
+        syncReport.created > 0 ||
+        syncReport.repaired > 0 ||
+        syncReport.failed > 0
+          ? 'log'
+          : 'debug';
+      this.logger[reportLevel](
         `[SYNC] Panel ${panel.name} Sync Report (${mode}): Created=${syncReport.created}, Updated=${syncReport.updated}, Repaired=${syncReport.repaired}, Skipped=${syncReport.skipped}, Failed=${syncReport.failed}`,
       );
 
@@ -2255,7 +2352,7 @@ export class PanelsService implements OnModuleInit {
           ? 'Perfect Match'
           : `Found ${Math.abs(discrepancies)} ${discrepancies > 0 ? 'extra DB clients' : 'missing DB clients'}`;
 
-      this.logger.log(
+      this.logger[reportLevel](
         `Sync complete for Panel ${id} (${mode}). API: ${totalSyncedClients}, DB: ${dbClientCount}. ${discrepancyMsg}`,
       );
 
@@ -2387,7 +2484,7 @@ export class PanelsService implements OnModuleInit {
   }
 
   private getHttpsAgent() {
-    return new https.Agent({ rejectUnauthorized: false });
+    return PANEL_HTTPS_AGENT;
   }
 
   private updateQueues = new Map<string, Promise<any>>();
@@ -4262,6 +4359,53 @@ export class PanelsService implements OnModuleInit {
 
   private clearPanelUpdateFailure(panelId: string, email: string) {
     this.panelUpdateFailUntil.delete(this.panelUpdateFailKey(panelId, email));
+  }
+
+  /**
+   * A USAGE client switched off on 3x-ui while its owner still has traffic was
+   * not turned off by this app. Record what the panel reported so the cause
+   * can be traced; sync re-enables it in the same cycle.
+   */
+  private async notePanelSideUsageDisable(
+    panel: { id: string; name: string },
+    clientId: string,
+    email: string,
+    reason: string,
+    remote: { inboundIds?: unknown; expiryTime?: unknown; _raw?: any },
+  ) {
+    const key = this.panelUpdateFailKey(panel.id, email);
+    const last = this.panelSideDisableNotedAt.get(key) || 0;
+    if (Date.now() - last < PANEL_SIDE_DISABLE_NOTE_INTERVAL_MS) return;
+    this.panelSideDisableNotedAt.set(key, Date.now());
+
+    const raw = remote._raw || {};
+    const traffic = raw.traffic && typeof raw.traffic === 'object' ? raw.traffic : {};
+    const details = {
+      panel: panel.name,
+      reason,
+      recordEnable: raw.enable ?? null,
+      trafficEnable: traffic.enable ?? null,
+      recordTotalGB: raw.totalGB ?? null,
+      trafficTotal: traffic.total ?? null,
+      used: Number(traffic.up ?? raw.up ?? 0) + Number(traffic.down ?? raw.down ?? 0),
+      expiryTime: Number(remote.expiryTime ?? 0),
+      inboundIds: Array.isArray(remote.inboundIds) ? remote.inboundIds : [],
+    };
+    this.logger.warn(
+      `[USAGE] ${email} on ${panel.name} was turned off by the panel while its owner still has traffic; re-enabling. ${JSON.stringify(details)}`,
+    );
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          action: 'CLIENT_PANEL_DISABLED',
+          entity: 'Client',
+          entityId: clientId,
+          details,
+        },
+      });
+    } catch (err: any) {
+      this.logger.warn(`[USAGE] Could not record panel-side disable for ${email}: ${err?.message || err}`);
+    }
   }
 
   /**

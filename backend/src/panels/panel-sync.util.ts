@@ -1,3 +1,34 @@
+import { createHash } from 'crypto';
+
+/** 3x-ui returns inbound settings as a JSON string (older builds: object). */
+export function parseInboundJson(raw: unknown): any {
+  if (typeof raw === 'string') return JSON.parse(raw || '{}');
+  return raw || {};
+}
+
+/**
+ * Cheap identity of an inbound as the panel reported it. Hashes the raw
+ * settings strings instead of parsing them, so an unchanged inbound costs one
+ * native hash rather than a parse plus a normalized deep compare.
+ */
+export function inboundFingerprint(
+  apiInbound: { settings?: unknown; streamSettings?: unknown },
+  fields: unknown[],
+): string {
+  return createHash('sha1')
+    .update(rawJsonText(apiInbound.settings))
+    .update('\u0000')
+    .update(rawJsonText(apiInbound.streamSettings))
+    .update('\u0000')
+    .update(JSON.stringify(fields))
+    .digest('base64');
+}
+
+function rawJsonText(value: unknown): string {
+  if (typeof value === 'string') return value;
+  return value == null ? '' : JSON.stringify(value);
+}
+
 /** Split an array into fixed-size chunks for batched DB work. */
 export function chunkArray<T>(items: T[], size: number): T[][] {
   if (size <= 0) return [items];

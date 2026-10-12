@@ -66,6 +66,20 @@ read_running_app_version() {
   read_app_version "."
 }
 
+# Read one key from .env without sourcing it: under `set -euo pipefail` a
+# password containing $, &, ; or spaces made `source .env` abort the update.
+env_get() {
+  local key="$1" file="${INSTALL_DIR}/.env" line=""
+  [[ -f "$file" ]] || return 0
+  line=$(grep -E "^${key}=" "$file" | tail -n 1 || true)
+  line="${line#*=}"
+  line="${line%$'\r'}"
+  if [[ ${#line} -ge 2 && ( "$line" == \"*\" || "$line" == \'*\' ) ]]; then
+    line="${line:1:${#line}-2}"
+  fi
+  printf '%s' "$line"
+}
+
 check_root() {
   if [[ $EUID -ne 0 ]]; then
     die "This updater must be run as root."
@@ -151,23 +165,29 @@ main() {
   step "[4/8] Pulling Latest Docker Images"
   info "Downloading prebuilt images..."
   
+  # Only the panel image carries the update. postgres/redis/nginx/alpine come
+  # from Docker Hub, whose rate limits or blocks used to abort the whole update.
   local max_pull=5
   local pull_attempt=1
   local pull_success=false
   while [[ $pull_attempt -le $max_pull ]]; do
-    if compose pull; then
+    if compose pull panel-app; then
       pull_success=true
       break
     else
-      warn "Docker pull failed (Attempt $pull_attempt/$max_pull). Retrying in 5 seconds..."
+      warn "Panel image pull failed (Attempt $pull_attempt/$max_pull). Retrying in 5 seconds..."
       sleep 5
       pull_attempt=$((pull_attempt + 1))
     fi
   done
 
   if [[ "$pull_success" == false ]]; then
-    die "Failed to pull Docker images after $max_pull attempts."
+    die "Failed to pull the panel image after $max_pull attempts."
   fi
+
+  info "Refreshing supporting images (optional)..."
+  compose pull --ignore-pull-failures postgres redis nginx host-agent >/dev/null 2>&1 \
+    || warn "Some supporting images could not be refreshed; keeping the local copies."
 
   step "[5/8] Checking Permissions"
   if [ -f "${INSTALL_DIR}/.env" ]; then
@@ -195,22 +215,15 @@ main() {
       ' || warn "Failed to migrate legacy certificates."
     fi
   fi
-  if [[ ! -f "${SSL_DIR}/fullchain.pem" || ! -f "${SSL_DIR}/privkey.pem" ]]; then
-    info "Generating self-signed SSL certificates to prevent Nginx crash..."
-    openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
-      -keyout "${SSL_DIR}/privkey.pem" -out "${SSL_DIR}/fullchain.pem" \
-      -subj "/C=US/ST=State/L=City/O=Organization/CN=localhost" 2>/dev/null || true
-    log "Self-signed SSL certificates generated."
-  fi
+  # No certificate is fine: generate_config.sh serves HTTP until one is issued.
 
   step "[6/8] Executing Database Migrations"
   info "Starting database + redis for migrations..."
-  if [[ -f "${INSTALL_DIR}/.env" ]]; then
-    set -a
-    # shellcheck disable=SC1091
-    source "${INSTALL_DIR}/.env"
-    set +a
-  fi
+  # Compose reads .env itself; the script only needs these values.
+  POSTGRES_USER=$(env_get POSTGRES_USER)
+  POSTGRES_DB=$(env_get POSTGRES_DB)
+  POSTGRES_PASSWORD=$(env_get POSTGRES_PASSWORD)
+  REDIS_PASSWORD=$(env_get REDIS_PASSWORD)
   compose up -d postgres redis
 
   info "Waiting for database to be ready..."
@@ -406,22 +419,36 @@ END \$\$;
   # Post-Update Seamless SSL Auto-Repair & Renewal
   # -------------------------------------------------------------
   if [[ -f "${INSTALL_DIR}/.env" ]]; then
-    source "${INSTALL_DIR}/.env"
-    if [[ -n "${PANEL_DOMAIN:-}" && "${PANEL_DOMAIN}" != "localhost" && ! "${PANEL_DOMAIN}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    PANEL_DOMAIN=$(env_get PANEL_DOMAIN)
+    SSL_PROVIDER=$(env_get SSL_PROVIDER)
+    if [[ -f "${INSTALL_DIR}/nginx/ssl/.ssl_disabled" ]]; then
+      info "HTTPS is switched off for this panel (hm ssl disable) — leaving SSL untouched."
+    elif [[ -n "${PANEL_DOMAIN:-}" && "${PANEL_DOMAIN}" != "localhost" && ! "${PANEL_DOMAIN}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
       info "Running post-update SSL maintenance for domain ${PANEL_DOMAIN}..."
-      
+
       local needs_renewal=false
       local cert_file="${INSTALL_DIR}/nginx/ssl/fullchain.pem"
-      
+      local cert_subject="" cert_issuer=""
+
       if [[ ! -f "$cert_file" ]]; then
         needs_renewal=true
       elif ! openssl x509 -checkend 86400 -noout -in "$cert_file" >/dev/null 2>&1; then
         # Certificate is expired or expires in < 1 day
         needs_renewal=true
+      elif ! openssl x509 -noout -checkhost "${PANEL_DOMAIN}" -in "$cert_file" 2>/dev/null | grep -q "does match"; then
+        # Left over from an older domain or a CN=localhost placeholder.
+        needs_renewal=true
+      elif [[ "${SSL_PROVIDER:-none}" != "self-signed" ]]; then
+        cert_subject=$(openssl x509 -noout -subject -nameopt RFC2253 -in "$cert_file" 2>/dev/null | sed 's/^subject= *//' || true)
+        cert_issuer=$(openssl x509 -noout -issuer -nameopt RFC2253 -in "$cert_file" 2>/dev/null | sed 's/^issuer= *//' || true)
+        if [[ -n "$cert_subject" && "$cert_subject" == "$cert_issuer" ]]; then
+          # A placeholder self-signed cert the admin never chose.
+          needs_renewal=true
+        fi
       fi
-      
+
       if [[ "$needs_renewal" == "true" ]]; then
-        info "SSL certificate is missing or expiring. Attempting automatic issuance..."
+        info "SSL certificate is missing, expiring, or not issued for ${PANEL_DOMAIN}. Attempting automatic issuance..."
         HEADLESS=true hm ssl issue "${PANEL_DOMAIN}" "admin@${PANEL_DOMAIN}" >/dev/null 2>&1 || warn "Auto SSL issue failed. You can run 'hm ssl issue' later."
       else
         info "Valid SSL certificate detected. Re-applying Nginx configuration..."
@@ -456,4 +483,6 @@ END \$\$;
   docker builder prune -f || true
 }
 
-main "$@"
+# Same line on purpose: step 1 overwrites this file while it runs, and bash
+# would otherwise read whatever sits at the old offset after main returns.
+main "$@"; exit $?

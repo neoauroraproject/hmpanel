@@ -32,28 +32,35 @@ export function syncXuiTrafficMirror(body: Record<string, unknown>): Record<stri
 }
 
 /**
- * Sync must not treat a panel-unlimited (total=0) disable as a permanent
- * manual hold — that is how USAGE clients get stuck after create/repair.
- * True API MANUAL disables still hold when the panel still has a per-client cap.
+ * 3x-ui expiry: 0 = none, negative = "start after first use" (a duration that
+ * becomes a deadline on the first traffic tick), positive = deadline in ms.
+ * Treating the negative form as already expired kept every client created
+ * from the panel form (which always uses it) out of the USAGE repair.
  */
-export function isUsageManualHold(opts: {
-  disableReason: string | null | undefined;
-  dbTotal: bigint | number;
-  usedNow: bigint | number;
-  panelTotal: bigint | number;
-}): boolean {
-  if (opts.disableReason !== 'MANUAL') return false;
-  const panelTotal = BigInt(opts.panelTotal || 0);
-  // Panel already unlimited (USAGE shape): never hold — allow pool repair.
-  if (panelTotal === 0n) return false;
-  const dbTotal = BigInt(opts.dbTotal || 0);
-  const usedNow = BigInt(opts.usedNow || 0);
-  return dbTotal === 0n || usedNow < dbTotal;
+export function isExpiryReached(
+  expiryTime: bigint | number | null | undefined,
+  nowMs: number = Date.now(),
+): boolean {
+  const expiry = BigInt(expiryTime || 0);
+  return expiry > 0n && BigInt(nowMs) >= expiry;
 }
 
 /**
- * When classifying a panel disable, do not invent MANUAL for unlimited
- * panel totals while the USAGE pool is open — that blocks repair forever.
+ * MANUAL is written only when a person turns the client off in this panel
+ * (client edit or bulk disable), and that must stick even though USAGE
+ * clients always sit at total=0 on 3x-ui. Disables that sync merely observes
+ * on the panel are tagged PANEL and stay repairable while the pool is open.
+ */
+export function isUsageManualHold(opts: {
+  disableReason: string | null | undefined;
+}): boolean {
+  return opts.disableReason === 'MANUAL';
+}
+
+/**
+ * Reason for a client sync found disabled on the panel while the DB still had
+ * it enabled. Never MANUAL: nobody disabled it here, and MANUAL would block
+ * the USAGE repair for good.
  */
 export function classifyPanelDisableReason(opts: {
   panelTotal: bigint | number;
@@ -62,17 +69,12 @@ export function classifyPanelDisableReason(opts: {
   nowMs?: number;
   existingReason?: string | null;
   gracePeriod?: boolean;
-  usagePoolOpen?: boolean;
-}): 'TRAFFIC_LIMIT' | 'EXPIRED' | 'BALANCE_EXHAUSTED' | 'MANUAL' | null {
+}): 'TRAFFIC_LIMIT' | 'EXPIRED' | 'BALANCE_EXHAUSTED' | 'PANEL' {
   if (opts.existingReason === 'BALANCE_EXHAUSTED') return 'BALANCE_EXHAUSTED';
   const total = BigInt(opts.panelTotal || 0);
   const used = BigInt(opts.used || 0);
-  const expiry = BigInt(opts.expiryTime || 0);
-  const now = BigInt(opts.nowMs ?? Date.now());
   if (total > 0n && used >= total) return 'TRAFFIC_LIMIT';
-  if (expiry > 0n && now >= expiry) return 'EXPIRED';
+  if (isExpiryReached(opts.expiryTime, opts.nowMs)) return 'EXPIRED';
   if (opts.gracePeriod) return 'BALANCE_EXHAUSTED';
-  // USAGE: panel total is 0; a disable with open pool is a stale cap, not MANUAL.
-  if (total === 0n && opts.usagePoolOpen) return 'TRAFFIC_LIMIT';
-  return 'MANUAL';
+  return 'PANEL';
 }

@@ -77,6 +77,7 @@ import {
   supports3xUiBulkHwid,
 } from '../common/utils/panel-version.util';
 import { AdminQuotaService } from '../traffic/admin-quota.service';
+import { isExpiryReached } from '../traffic/usage-mode-xui.util';
 import {
   resolve3xUiLimit,
   normalizeAllowedUsers,
@@ -1484,16 +1485,18 @@ export class ClientsService {
 
         createdOnPanels.push(panelId);
 
-        // USAGE owners: force panel unlimited + enable after create. A leftover
-        // per-client totalGB makes 3x-ui disable the client while the pool still
-        // has traffic (and sync used to mis-tag that as MANUAL).
+        // USAGE owners: the panel must hold the client unlimited and enabled,
+        // because the admin pool is the only cap. Only rewrite it when the
+        // panel did not keep what create sent.
         const ownerMode = await this.adminQuota.resolveTrafficMode(
           targetAdminId,
           undefined,
           undefined,
           targetAdmin.quotaMode === 'PER_PANEL' ? panelId : undefined,
         );
-        if (ownerMode === 'USAGE') {
+        const remoteClient = verifyResult.data?.client || verifyResult.data || {};
+        const remoteTotal = Number(remoteClient.totalGB ?? remoteClient.total ?? 0) || 0;
+        if (ownerMode === 'USAGE' && (remoteTotal !== 0 || remoteClient.enable !== true)) {
           const forced = await this.panelsService.updateClientOnPanel(
             panelId,
             data.email,
@@ -2236,7 +2239,7 @@ export class ClientsService {
 
     let autoEnable = false;
     if (data.enable === undefined && !existing.enable) {
-      const isNotExpired = newExpiry === 0n || newExpiry > now;
+      const isNotExpired = !isExpiryReached(newExpiry, Number(now));
       const isNotExhausted = newTotal === 0n || newTotal > usedTraffic;
 
       if (

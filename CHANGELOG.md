@@ -8,6 +8,26 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [2.5.1] - 2026-10-12
+
+### Added
+- **Panel HTTP/HTTPS ports:** Settings UI and API to change published ports; nginx/`PUBLIC_HTTPS_PORT` wiring; install/update/`cli.sh` support.
+- **Store loyalty / referral schema:** Prisma + critical-schema foundation for loyalty discounts and referral reward `batchIndex` (runtime UI remains Premium).
+- **3x-ui api390 reference:** `docs/api390.json` for panel API parity notes.
+
+### Fixed
+- **USAGE / 3x-ui sync:** stronger panel sync and usage-mode helpers so clients stay enabled and quotas heal correctly.
+- **Subscription feed / browser navigation:** more reliable config sourcing and host/transport handling.
+- **PWA / SSL settings:** install-shell and SSL manager polish for production installs.
+
+### Notes
+- Full Store loyalty checkout, admin-confirmed referral rewards, and Telegram broadcast dedupe ship in Premium bundle.
+
+## [2.5.0] - 2026-09-27
+
+### Added
+- Installable PWA, storefront/portal overhaul, and mobile app chrome for all themes (version bump release).
+
 ## [2.4.0] - 2026-09-27
 
 ### Added

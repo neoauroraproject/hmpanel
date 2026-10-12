@@ -214,6 +214,22 @@ export class SettingsService {
     }
   }
 
+  private async isUpdaterRunning(): Promise<boolean> {
+    const { promisify } = require('util');
+    const { execFile } = require('child_process');
+    try {
+      const { stdout } = await promisify(execFile)('docker', [
+        'inspect',
+        '--format',
+        '{{.State.Running}}',
+        'hmpanel-updater',
+      ]);
+      return String(stdout).trim() === 'true';
+    } catch {
+      return false;
+    }
+  }
+
   /** Force next checkUpdate to hit the network (e.g. before starting update). */
   clearUpdateCache() {
     this.cachedUpdateResult = null;
@@ -228,6 +244,15 @@ export class SettingsService {
     const { HttpException, HttpStatus } = require('@nestjs/common');
 
     try {
+      // A second click (or a reload that lost the progress view) must not kill
+      // an update that is mid-migration with `docker rm -f`.
+      if (await this.isUpdaterRunning()) {
+        throw new HttpException(
+          'An update is already running. Wait for it to finish.',
+          HttpStatus.CONFLICT,
+        );
+      }
+
       // 1. Check if update is actually needed to prevent abuse
       this.clearUpdateCache();
       const updateStatus = await this.checkUpdate();
@@ -358,52 +383,49 @@ export class SettingsService {
         '[1/7] Checking Versions (Passed)\n[2/7] Creating Backup (Passed)\n[3/7] Initializing Detached Updater...\n',
       );
 
-      // Drop any leftover updater container so docker run --name does not fail silently.
+      // A finished updater with --rm is already gone; this only clears one
+      // that exited without removal so `docker run --name` does not collide.
       try {
-        await execAsync('docker rm -f hmpanel-updater');
-        appendLog('[updater] removed stale hmpanel-updater container');
+        await execAsync('docker rm hmpanel-updater');
+        appendLog('[updater] removed stopped hmpanel-updater container');
       } catch {
-        /* none running */
+        /* none left over */
       }
 
-      // Best-effort image pull so apk/network issues surface before detach.
-      try {
-        appendLog('[updater] pulling docker:latest (may take a minute)...');
-        await execAsync('docker pull docker:latest', { timeout: 120_000 });
-        appendLog('[updater] docker:latest ready');
-      } catch (pullErr: any) {
-        appendLog(
-          `[updater] warn: docker pull failed (${pullErr?.message || pullErr}) — continuing with local image`,
-        );
-      }
-
-      // 8. Run updater on the HOST (nsenter) so docker compose / hm / openssl
-      // are available. The previous approach ran update.sh inside docker:latest,
-      // which often lacks Compose — UI could still show "success" while the
-      // stack never recovered.
+      // 8. Run update.sh on the HOST. The updater reuses this panel's own image
+      // (already local: sh, curl, chroot) instead of pulling docker:latest and
+      // running `apk add`, which failed whenever Docker Hub or the Alpine
+      // mirror was slow or blocked. nsenter comes from the host via chroot.
       const updateScriptPath = `${installDir}/.update-run.sh`;
+      const hostScript = `/host${updateScriptPath}`;
       const updaterShell = [
         'LOG=/updater-logs/updater.log',
         'fail() { echo "[UPDATE_FAILED] $1" >> "$LOG"; exit 1; }',
         'echo "[3/7] Detached updater started" >> "$LOG"',
-        'echo "[updater] installing apk packages: bash curl util-linux..." >> "$LOG"',
-        'apk add --no-cache bash curl util-linux >> "$LOG" 2>&1 || fail "apk add failed (network/mirror?)"',
-        'echo "[updater] apk packages OK" >> "$LOG"',
-        'echo "[4/7] Running master update.sh on host via nsenter..." >> "$LOG"',
-        `if [ -f "${installDir}/update.sh" ]; then`,
-        `  cp "${installDir}/update.sh" "${updateScriptPath}" >> "$LOG" 2>&1 || fail "copy local update.sh failed"`,
-        `  echo "[updater] using bundled update.sh from install dir" >> "$LOG"`,
+        // Latest update.sh first so fixes to the updater apply to this run too;
+        // a captive page or error body must not be executed, hence the #! check.
+        `if curl -fsSL --max-time 60 https://raw.githubusercontent.com/neoauroraproject/hmpanel/main/update.sh -o "${hostScript}.tmp" >> "$LOG" 2>&1 && head -n 1 "${hostScript}.tmp" | grep -q '^#!'; then`,
+        `  mv "${hostScript}.tmp" "${hostScript}"`,
+        '  echo "[updater] using latest update.sh from GitHub" >> "$LOG"',
+        `elif [ -f "/host${installDir}/update.sh" ]; then`,
+        `  rm -f "${hostScript}.tmp"`,
+        `  cp "/host${installDir}/update.sh" "${hostScript}" || fail "copy local update.sh failed"`,
+        '  echo "[updater] GitHub unreachable — using update.sh from the install dir" >> "$LOG"',
         'else',
-        `  echo "[updater] downloading update.sh from GitHub..." >> "$LOG"`,
-        `  curl -fsSL https://raw.githubusercontent.com/neoauroraproject/hmpanel/main/update.sh -o "${updateScriptPath}" >> "$LOG" 2>&1 || fail "curl update.sh failed (GitHub unreachable?)"`,
+        `  rm -f "${hostScript}.tmp"`,
+        '  fail "update.sh unavailable (GitHub unreachable and no local copy)"',
         'fi',
-        `chmod +x "${updateScriptPath}"`,
-        'echo "[updater] launching update.sh via nsenter..." >> "$LOG"',
-        `nsenter -t 1 -m -u -i -n -- bash "${updateScriptPath}" >> "$LOG" 2>&1`,
+        `chmod +x "${hostScript}"`,
+        'echo "[4/7] Running update.sh on the host..." >> "$LOG"',
+        "if chroot /host sh -c 'command -v nsenter' >/dev/null 2>&1; then",
+        `  chroot /host nsenter -t 1 -m -u -i -n -- bash "${updateScriptPath}" >> "$LOG" 2>&1`,
+        'else',
+        `  chroot /host bash "${updateScriptPath}" >> "$LOG" 2>&1`,
+        'fi',
         'EC=$?',
         'echo "[updater] exit=$EC" >> "$LOG"',
         'if [ "$EC" -ne 0 ]; then echo "[UPDATE_FAILED] update.sh exited $EC" >> "$LOG"; fi',
-        `rm -f "${updateScriptPath}"`,
+        `rm -f "${hostScript}"`,
         'exit $EC',
       ].join('\n');
 
@@ -417,12 +439,18 @@ export class SettingsService {
           '--rm',
           '--privileged',
           '--pid=host',
+          // Host DNS (e.g. systemd-resolved on 127.0.0.53) only works on the host network.
+          '--network',
+          'host',
+          '--user',
+          '0',
+          '--entrypoint',
+          '/bin/sh',
           '-v',
-          `${installDir}:${installDir}`,
+          '/:/host',
           '-v',
           `${logVolumeName}:/updater-logs`,
-          'docker:latest',
-          '/bin/sh',
+          inspectData[0].Image,
           '-c',
           updaterShell,
         ]);
@@ -539,14 +567,28 @@ export class SettingsService {
         /\[updater\] exit=[1-9]/.test(logs) ||
         (logs.includes('Health check timeout') && !healthy);
 
-      let updaterRunning = false;
-      try {
-        const { stdout } = await execAsync(
-          'docker inspect hmpanel-updater --format="{{.State.Status}}"',
-        );
-        updaterRunning = stdout.trim() === 'running';
-      } catch {
-        updaterRunning = false;
+      const updaterRunning = await this.isUpdaterRunning();
+
+      // The updater died (daemon restart, OOM, host reboot) without writing its
+      // exit line: stop the UI from polling forever once the log goes quiet.
+      if (
+        !updaterRunning &&
+        !healthy &&
+        !failedMarkers &&
+        logs.includes('[4/7]') &&
+        !logs.includes('[updater] exit=')
+      ) {
+        let quietMs = 0;
+        try {
+          quietMs = Date.now() - fs.statSync(logPath).mtimeMs;
+        } catch {
+          /* no log */
+        }
+        if (quietMs > 120_000) {
+          failedMarkers = true;
+          logs +=
+            '\n[UPDATE_FAILED] The updater stopped without finishing. Run `hm update` on the server to complete it.';
+        }
       }
 
       // Stuck at step 3: container died before [4/7] with no success → treat as failed
@@ -570,6 +612,7 @@ export class SettingsService {
         completed,
         updateSuccess,
         failed: completed && !updateSuccess,
+        updaterRunning,
       };
     } catch (error) {
       return {

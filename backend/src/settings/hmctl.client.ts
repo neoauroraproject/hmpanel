@@ -22,6 +22,35 @@ interface HmctlResponse {
   [key: string]: unknown;
 }
 
+/**
+ * host-agent shares the host PID namespace but not its network, so `hm` run
+ * there would see the container's loopback: port checks, 127.0.0.1 health
+ * probes and acme.sh --standalone listeners would all miss the host. Enter
+ * PID 1's network namespace when the host has nsenter.
+ */
+const HOST_NET_WRAPPER =
+  'if command -v nsenter >/dev/null 2>&1 && nsenter -t 1 -n true 2>/dev/null; then exec nsenter -t 1 -n -- "$@"; fi; exec "$@"';
+
+export function buildHmArgs(
+  module: string,
+  action: string,
+  args: string[] = [],
+  opId?: string,
+  detached = false,
+): string[] {
+  const childArgs = ['exec'];
+  if (detached) childArgs.push('-d');
+  if (opId) {
+    childArgs.push('-e', `OPERATION_ID=${opId}`);
+  }
+  childArgs.push('hmpanel-host-agent', 'chroot', '/host', 'sh', '-c', HOST_NET_WRAPPER, 'hm');
+  if (opId) {
+    childArgs.push('env', `OPERATION_ID=${opId}`);
+  }
+  childArgs.push('/usr/local/bin/hm', module, action, ...args, '--json');
+  return childArgs;
+}
+
 @Injectable()
 export class HmctlClient {
   private readonly logger = new Logger(HmctlClient.name);
@@ -41,15 +70,7 @@ export class HmctlClient {
     const timeoutMs = opts?.timeoutMs ?? 600_000;
     this.logger.log(`Executing HMCTL: hm ${module} ${action} --json`);
 
-    const childArgs = ['exec'];
-    if (opId) {
-      childArgs.push('-e', `OPERATION_ID=${opId}`);
-    }
-    childArgs.push('hmpanel-host-agent', 'chroot', '/host');
-    if (opId) {
-      childArgs.push('env', `OPERATION_ID=${opId}`);
-    }
-    childArgs.push('/usr/local/bin/hm', module, action, ...args, '--json');
+    const childArgs = buildHmArgs(module, action, args, opId);
 
     return new Promise((resolve, reject) => {
       const child = spawn('docker', childArgs);
@@ -123,6 +144,30 @@ export class HmctlClient {
     });
   }
 
+  /**
+   * Starts a host command that must outlive this request (e.g. one that
+   * recreates nginx while the caller's response is still in flight).
+   */
+  async executeDetached(
+    module: string,
+    action: string,
+    args: string[] = [],
+  ): Promise<void> {
+    this.logger.log(`Launching HMCTL (detached): hm ${module} ${action} --json`);
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn('docker', buildHmArgs(module, action, args, undefined, true));
+      let stderr = '';
+      child.stderr.on('data', (d: Buffer) => {
+        stderr += d.toString();
+      });
+      child.on('error', (err: Error) => reject(new Error(`Host command failed: ${err.message}`)));
+      child.on('close', (code: number | null) => {
+        if (code === 0) resolve();
+        else reject(new Error(`Host command failed: exit ${code}${stderr ? ` — ${stderr.trim().slice(-400)}` : ''}`));
+      });
+    });
+  }
+
   /** Last JSON object in stdout (PROGRESS goes to stderr). */
   private parseJsonOutput(stdout: string): HmctlResponse | null {
     const trimmed = stdout.trim();
@@ -149,75 +194,93 @@ export class HmctlClient {
     action: string,
     args: string[] = [],
     opId?: string,
+    opts?: { timeoutMs?: number },
   ): Observable<HmctlEvent> {
     return new Observable<HmctlEvent>((subscriber) => {
       const logPrefix = opId ? `[SSL][${opId}] ` : '';
+      const timeoutMs = opts?.timeoutMs ?? 900_000;
       this.logger.log(
         `${logPrefix}Executing HMCTL (Stream): hm ${module} ${action} --json`,
       );
 
-      const childArgs = ['exec'];
-      if (opId) {
-        childArgs.push('-e', `OPERATION_ID=${opId}`);
-      }
-      childArgs.push('hmpanel-host-agent', 'chroot', '/host');
-      if (opId) {
-        childArgs.push('env', `OPERATION_ID=${opId}`);
-      }
-      childArgs.push('/usr/local/bin/hm', module, action, ...args, '--json');
+      const childArgs = buildHmArgs(module, action, args, opId);
 
       const child = spawn('docker', childArgs);
 
       let stdoutData = '';
+      let stderrTail = '';
+      let settled = false;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+
+      const finish = (event: HmctlEvent) => {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
+        subscriber.next(event);
+        subscriber.complete();
+      };
+
+      const emitProgress = (line: string) => {
+        const idx = line.indexOf('PROGRESS:');
+        if (idx < 0 || settled) return;
+        subscriber.next({
+          type: 'progress',
+          message: line.slice(idx + 'PROGRESS:'.length).trim(),
+        });
+      };
+
+      // A hung host command must not hold the SSL lock forever.
+      timer = setTimeout(() => {
+        child.kill('SIGKILL');
+        finish({
+          type: 'error',
+          error: {
+            message: `Host command timed out after ${Math.round(timeoutMs / 60_000)} min (hm ${module} ${action})`,
+          },
+        });
+      }, timeoutMs);
 
       child.stdout.on('data', (data: Buffer) => {
         stdoutData += data.toString();
       });
 
+      // Chunks can split a PROGRESS line; only emit complete lines.
       child.stderr.on('data', (data: Buffer) => {
-        const text = data.toString();
-        const lines = text.split('\n');
-        for (const line of lines) {
-          if (line.includes('PROGRESS:')) {
-            const progressMsg = line.split('PROGRESS:')[1].trim();
-            subscriber.next({ type: 'progress', message: progressMsg });
-          }
-        }
+        stderrTail += data.toString();
+        const lines = stderrTail.split('\n');
+        stderrTail = lines.pop() ?? '';
+        for (const line of lines) emitProgress(line);
       });
 
-      child.on('close', (code: number) => {
-        try {
-          if (stdoutData.trim()) {
-            const jsonOutput =
-              this.parseJsonOutput(stdoutData) ||
-              (JSON.parse(stdoutData) as HmctlResponse);
-            if (!jsonOutput.success && jsonOutput.code) {
-              subscriber.next({ type: 'error', error: jsonOutput });
-            } else {
-              subscriber.next({ type: 'complete', data: jsonOutput });
-            }
-          } else {
-            subscriber.next({
-              type: 'error',
-              error: { message: 'No output from HMCTL', code },
-            });
-          }
-        } catch (e: any) {
-          const parseMsg = e instanceof Error ? e.message : String(e);
-          subscriber.next({
+      child.on('close', (code: number | null) => {
+        if (stderrTail) emitProgress(stderrTail);
+        if (!stdoutData.trim()) {
+          finish({
+            type: 'error',
+            error: { message: 'No output from HMCTL', code: code ?? undefined },
+          });
+          return;
+        }
+        const jsonOutput = this.parseJsonOutput(stdoutData);
+        if (!jsonOutput) {
+          finish({
             type: 'error',
             error: {
-              message: `Failed to parse JSON: ${parseMsg}`,
-              stdout: stdoutData,
+              message: 'Failed to parse HMCTL output',
+              stdout: stdoutData.slice(-2000),
             },
           });
+          return;
         }
-        subscriber.complete();
+        if (!jsonOutput.success && jsonOutput.code) {
+          finish({ type: 'error', error: jsonOutput });
+        } else {
+          finish({ type: 'complete', data: jsonOutput });
+        }
       });
 
       child.on('error', (err: Error) => {
-        subscriber.next({ type: 'error', error: { message: err.message } });
-        subscriber.complete();
+        finish({ type: 'error', error: { message: err.message } });
       });
     });
   }

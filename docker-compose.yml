@@ -76,6 +76,7 @@ services:
       - APP_PORT=${APP_PORT:-3000}
       - BACKEND_PORT=${BACKEND_PORT:-4000}
       - PANEL_DOMAIN=${DOMAIN:-${PANEL_DOMAIN:-localhost}}
+      - PUBLIC_HTTPS_PORT=${HTTPS_PORT:-443}
     volumes:
       - ./nginx/nginx.conf.http.template:/etc/nginx/nginx.conf.http.template:ro
       - ./nginx/nginx.conf.ssl.template:/etc/nginx/nginx.conf.ssl.template:ro

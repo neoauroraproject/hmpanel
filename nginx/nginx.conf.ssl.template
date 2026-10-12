@@ -43,6 +43,13 @@ http {
     limit_req_zone $binary_remote_addr zone=api_limit:10m rate=30r/s;
     limit_req_zone $binary_remote_addr zone=login_limit:10m rate=5r/m;
 
+    # Public HTTPS port suffix (":8443" or empty for 443), set by
+    # generate_config.sh. conf.d vhosts read it too, so a port change
+    # never needs their files rewritten.
+    map $host $hm_https_suffix {
+        default "${HTTPS_PORT_SUFFIX}";
+    }
+
     upstream backend {
         server panel-app:${BACKEND_PORT};
         keepalive 32;
@@ -66,7 +73,7 @@ http {
 
         # Redirect all other HTTP traffic to HTTPS
         location / {
-            return 301 https://$host$request_uri;
+            return 301 https://$host$hm_https_suffix$request_uri;
         }
     }
 
@@ -75,6 +82,9 @@ http {
         listen 443 ssl;
         http2 on;
         server_name ${PANEL_DOMAIN};
+
+        # Plain HTTP sent to the HTTPS port (e.g. http://domain:8443).
+        error_page 497 =301 https://$host$hm_https_suffix$request_uri;
 
         # SSL certificates
         ssl_certificate     /etc/nginx/ssl/fullchain.pem;
@@ -98,7 +108,7 @@ http {
             proxy_http_version 1.1;
             proxy_set_header Upgrade $http_upgrade;
             proxy_set_header Connection 'upgrade';
-            proxy_set_header Host $host;
+            proxy_set_header Host $http_host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
@@ -116,7 +126,7 @@ http {
             proxy_http_version 1.1;
             proxy_set_header Upgrade $http_upgrade;
             proxy_set_header Connection 'upgrade';
-            proxy_set_header Host $host;
+            proxy_set_header Host $http_host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
@@ -129,7 +139,7 @@ http {
         location = /api/auth/login {
             limit_req zone=login_limit burst=5 nodelay;
             proxy_pass http://backend/auth/login;
-            proxy_set_header Host $host;
+            proxy_set_header Host $http_host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
@@ -140,7 +150,7 @@ http {
             gzip off;
             proxy_set_header Accept-Encoding "";
             proxy_pass http://backend/s/;
-            proxy_set_header Host $host;
+            proxy_set_header Host $http_host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
@@ -151,7 +161,7 @@ http {
             gzip off;
             proxy_set_header Accept-Encoding "";
             proxy_pass http://backend/sub/;
-            proxy_set_header Host $host;
+            proxy_set_header Host $http_host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
@@ -163,7 +173,7 @@ http {
             proxy_http_version 1.1;
             proxy_set_header Upgrade $http_upgrade;
             proxy_set_header Connection 'upgrade';
-            proxy_set_header Host $host;
+            proxy_set_header Host $http_host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
@@ -180,7 +190,7 @@ http {
         # ── PWA service worker (must never be cached) ────────────
         location = /sw.js {
             proxy_pass http://frontend/sw.js;
-            proxy_set_header Host $host;
+            proxy_set_header Host $http_host;
             proxy_hide_header Cache-Control;
             add_header Cache-Control "no-cache, no-store, must-revalidate" always;
             add_header Service-Worker-Allowed "/" always;

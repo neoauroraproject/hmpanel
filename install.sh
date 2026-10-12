@@ -333,8 +333,7 @@ collect_user_input() {
     fi
   done
 
-  HTTP_PORT=80
-  HTTPS_PORT=443
+  collect_ports
 
   echo ""
   echo -e "${BOLD}  Configuration Summary:${NC}"
@@ -343,12 +342,104 @@ collect_user_input() {
   echo -e "  │  Username:  ${CYAN}${ADMIN_USERNAME}${NC}"
   echo -e "  │  Email:     ${CYAN}${ADMIN_EMAIL}${NC}"
   echo -e "  │  SSL:       ${CYAN}$(ssl_label $SSL_CHOICE)${NC}"
+  echo -e "  │  Ports:     ${CYAN}HTTP ${HTTP_PORT} / HTTPS ${HTTPS_PORT}${NC}"
   echo -e "  └─────────────────────────────────────────"
   echo ""
   read -rp "  Proceed with installation? [Y/n]: " CONFIRM || true
   [[ "${CONFIRM,,}" == "n" ]] && die "Installation cancelled by user."
   
   return 0
+}
+
+# ── Panel ports ──────────────────────────────────────────────────
+# True when something other than our own nginx listens on TCP port $1.
+port_busy() {
+  local port="$1" listening=false
+  if command -v ss &>/dev/null; then
+    ss -Htln 2>/dev/null | awk '{print $4}' | grep -Eq "[:.]${port}\$" && listening=true
+  elif command -v netstat &>/dev/null; then
+    netstat -tln 2>/dev/null | awk 'NR>2 {print $4}' | grep -Eq "[:.]${port}\$" && listening=true
+  fi
+  [[ "$listening" == true ]] || return 1
+  # A reinstall finds the previous hmpanel-nginx still publishing it.
+  if docker port hmpanel-nginx 2>/dev/null | grep -Eq ":${port}\$"; then
+    return 1
+  fi
+  return 0
+}
+
+valid_port() {
+  [[ "$1" =~ ^[0-9]{1,5}$ ]] && (( 10#$1 >= 1 && 10#$1 <= 65535 ))
+}
+
+existing_env_port() {
+  grep -E "^${1}=" "${INSTALL_DIR}/.env" 2>/dev/null | tail -n1 | cut -d= -f2- | tr -d '"'"'"'' || true
+}
+
+# Defaults: HTTP_PORT/HTTPS_PORT from the environment, then the existing
+# .env (reinstall), then 80/443.
+collect_ports() {
+  local def_h def_s in_h in_s
+  def_h="${HTTP_PORT:-$(existing_env_port HTTP_PORT)}"
+  def_s="${HTTPS_PORT:-$(existing_env_port HTTPS_PORT)}"
+  valid_port "$def_h" || def_h=80
+  valid_port "$def_s" || def_s=443
+
+  echo ""
+  echo -e "  ${CYAN}Panel ports${NC} (press Enter to keep the defaults)"
+  while true; do
+    read -rp "  HTTP port [${def_h}]: " in_h || true
+    read -rp "  HTTPS port [${def_s}]: " in_s || true
+    in_h="${in_h:-$def_h}"
+    in_s="${in_s:-$def_s}"
+    if ! valid_port "$in_h" || ! valid_port "$in_s"; then
+      warn "Ports must be numbers between 1 and 65535."
+      continue
+    fi
+    in_h=$((10#$in_h)); in_s=$((10#$in_s))
+    if [[ "$in_h" == "$in_s" ]]; then
+      warn "HTTP and HTTPS ports must be different."
+      continue
+    fi
+    if port_busy "$in_h"; then
+      warn "Port ${in_h} is already used by another service. Choose another HTTP port."
+      continue
+    fi
+    if port_busy "$in_s"; then
+      warn "Port ${in_s} is already used by another service. Choose another HTTPS port."
+      continue
+    fi
+    break
+  done
+  HTTP_PORT="$in_h"
+  HTTPS_PORT="$in_s"
+  export HTTP_PORT HTTPS_PORT
+
+  if [[ "$HTTP_PORT" != "80" && "${SSL_CHOICE:-3}" == "1" ]]; then
+    if port_busy 80; then
+      echo -e "  ${YELLOW}ℹ Port 80 is used by another service, so automatic SSL will likely fail.${NC}"
+      echo -e "  ${YELLOW}  Certificate validation always connects to port 80. Free it and run 'hm ssl issue' later.${NC}"
+    else
+      echo -e "  ${YELLOW}ℹ The panel uses HTTP port ${HTTP_PORT}; port 80 will be used only briefly while issuing SSL.${NC}"
+    fi
+  fi
+}
+
+# Docker-published ports usually bypass host firewalls, but ufw-docker or
+# firewalld zone setups do filter them.
+open_firewall_ports() {
+  local p
+  for p in "$@"; do
+    if command -v ufw &>/dev/null && ufw status 2>/dev/null | grep -q "Status: active"; then
+      ufw allow "${p}/tcp" >/dev/null 2>&1 || true
+    fi
+    if command -v firewall-cmd &>/dev/null && firewall-cmd --state >/dev/null 2>&1; then
+      firewall-cmd --permanent --add-port="${p}/tcp" >/dev/null 2>&1 || true
+    fi
+  done
+  if command -v firewall-cmd &>/dev/null && firewall-cmd --state >/dev/null 2>&1; then
+    firewall-cmd --reload >/dev/null 2>&1 || true
+  fi
 }
 
 ssl_label() {
@@ -374,6 +465,17 @@ verify_dns() {
   fi
   log "DNS verification passed"
   return 0
+}
+
+# A CA-issued (not self-signed) certificate for $2, valid for at least a day.
+cert_trusted_for_domain() {
+  local cert="$1" domain="$2" subject issuer
+  [[ -f "$cert" && -f "$(dirname "$cert")/privkey.pem" ]] || return 1
+  openssl x509 -checkend 86400 -noout -in "$cert" >/dev/null 2>&1 || return 1
+  openssl x509 -noout -checkhost "$domain" -in "$cert" 2>/dev/null | grep -q "does match" || return 1
+  subject=$(openssl x509 -noout -subject -nameopt RFC2253 -in "$cert" 2>/dev/null | sed 's/^subject= *//')
+  issuer=$(openssl x509 -noout -issuer -nameopt RFC2253 -in "$cert" 2>/dev/null | sed 's/^issuer= *//')
+  [[ -n "$issuer" && "$subject" != "$issuer" ]]
 }
 
 verify_port_80() {
@@ -434,8 +536,8 @@ verify_nginx_status() {
   local curl_success=false
   for i in {1..15}; do
     local code_https code_http
-    code_https=$(curl -s -o /dev/null -w "%{http_code}" -k "https://127.0.0.1/api/health" || echo "000")
-    code_http=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1/api/health" || echo "000")
+    code_https=$(curl -s -o /dev/null -w "%{http_code}" -k --max-time 4       --resolve "${DOMAIN:-localhost}:${HTTPS_PORT:-443}:127.0.0.1"       "https://${DOMAIN:-localhost}:${HTTPS_PORT:-443}/api/health" || echo "000")
+    code_http=$(curl -s -o /dev/null -w "%{http_code}" --max-time 4       --resolve "${DOMAIN:-localhost}:${HTTP_PORT:-80}:127.0.0.1"       "http://${DOMAIN:-localhost}:${HTTP_PORT:-80}/api/health" || echo "000")
     
     if [[ "$code_https" == "200" || "$code_http" == "200" ]]; then
       curl_success=true
@@ -471,14 +573,14 @@ ssl_fallback_to_http() {
   SSL_CHOICE=3
   SSL_STATUS="disabled"
 
-  # Remove all SSL cert files to prevent stale/broken certs from causing future issues
-  rm -f "${INSTALL_DIR}/nginx/ssl/fullchain.pem" "${INSTALL_DIR}/nginx/ssl/privkey.pem" 2>/dev/null || true
+  # Keep the certificate files (re-issuing hits CA rate limits); the marker
+  # makes generate_config.sh serve HTTP, also across restarts.
+  mkdir -p "${INSTALL_DIR}/nginx/ssl"
+  : > "${INSTALL_DIR}/nginx/ssl/.ssl_disabled"
 
-  # Update .env explicitly to HTTP state
   update_env "PANEL_PROTOCOL" "http"
   update_env "SSL_ENABLED" "false"
   update_env "SSL_PROVIDER" "none"
-  update_env "NEXT_PUBLIC_API_URL" "http://${DOMAIN}/api"
 
   # Restart/Recreate nginx container to pick up the patched config
   compose -f "${INSTALL_DIR}/docker-compose.yml" down nginx >/dev/null 2>&1 || true
@@ -563,7 +665,13 @@ step_2_environment() {
     info "Existing database detected."
     log "Reusing existing PostgreSQL credentials."
     ensure_env_variables
+    local chosen_http="$HTTP_PORT" chosen_https="$HTTPS_PORT"
     source "${INSTALL_DIR}/.env"
+    HTTP_PORT="$chosen_http"
+    HTTPS_PORT="$chosen_https"
+    update_env "HTTP_PORT" "$HTTP_PORT"
+    update_env "HTTPS_PORT" "$HTTPS_PORT"
+    export HTTP_PORT HTTPS_PORT
     export POSTGRES_PASSWORD
     export POSTGRES_USER
     export POSTGRES_DB
@@ -573,13 +681,6 @@ step_2_environment() {
     POSTGRES_PASSWORD=$(openssl rand -hex 24)
     REDIS_PASSWORD=$(openssl rand -hex 24)
     log "Security secrets generated"
-
-    local init_protocol="http"
-    local init_ssl_enabled="false"
-    if [[ "$SSL_CHOICE" == 1 || "$SSL_CHOICE" == 2 ]]; then
-      init_protocol="https"
-      init_ssl_enabled="true"
-    fi
 
     cat > "${INSTALL_DIR}/.env" <<EOF
 # HMPanel — Auto-generated by installer on $(date)
@@ -615,14 +716,14 @@ BACKEND_PORT=4000
 HTTP_PORT=${HTTP_PORT}
 HTTPS_PORT=${HTTPS_PORT}
 
-# Installer & CLI State
-PANEL_PROTOCOL=${init_protocol}
-SSL_ENABLED=${init_ssl_enabled}
+# Installer & CLI State (switched to https by `hm ssl issue` once a cert is live)
+PANEL_PROTOCOL=http
+SSL_ENABLED=false
 SSL_PROVIDER=none
 PANEL_DOMAIN=${DOMAIN}
 
 DOMAIN=${DOMAIN}
-NEXT_PUBLIC_API_URL=${init_protocol}://${DOMAIN}/api
+NEXT_PUBLIC_API_URL=/api
 NEXT_PUBLIC_RELEASE_MODE=COMMUNITY
 
 # Initial Admin
@@ -636,26 +737,21 @@ EOF
     log ".env file generated successfully"
   fi
 
-  # Always create dummy certs so Nginx can start if SSL is enabled
+  # Nginx starts on HTTP (generate_config.sh needs no certificate for that) and
+  # serves the ACME webroot. `hm ssl issue` removes this marker once a real
+  # certificate is installed, so no throwaway self-signed cert is ever served.
   SSL_DIR="${INSTALL_DIR}/nginx/ssl"
-  # A marker left behind by a previous `hm ssl disable` would keep nginx on HTTP.
-  rm -f "${SSL_DIR}/.ssl_disabled" 2>/dev/null || true
-  if [[ ! -f "${SSL_DIR}/fullchain.pem" ]]; then
-    info "Generating temporary self-signed certificate for initial startup..."
-    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-      -keyout "${SSL_DIR}/privkey.pem" \
-      -out "${SSL_DIR}/fullchain.pem" \
-      -subj "/CN=${DOMAIN}/O=HMPanel/C=US" >/dev/null 2>&1 || true
-    chmod 600 "${SSL_DIR}/privkey.pem" 2>/dev/null || true
-  fi
-
-  # NOTE: nginx.conf.template sed for HTTP-only is handled in step_1 after files are copied
+  mkdir -p "${SSL_DIR}"
+  : > "${SSL_DIR}/.ssl_disabled"
+  update_env "PANEL_PROTOCOL" "http"
+  update_env "SSL_ENABLED" "false"
 }
 
 step_3_docker() {
   step "[3/10] Docker"
   install_docker
   install_docker_compose
+  open_firewall_ports "$HTTP_PORT" "$HTTPS_PORT"
 }
 
 step_4_database() {
@@ -828,14 +924,30 @@ step_8_ssl() {
       return 0
     fi
 
-    info "Delegating SSL issuance to HMCTL..."
-    hm ssl issue "$DOMAIN" "$ADMIN_EMAIL" || {
-      warn "SSL issuance failed. Falling back to HTTP."
-    }
-    
-    if [[ -f "${SSL_DIR}/fullchain.pem" ]] && [[ -f "${SSL_DIR}/privkey.pem" ]]; then
-      SSL_STATUS="active"
+    # Checked before issuing: a failed attempt can leave fresh files behind
+    # that nginx already refused to serve.
+    local had_trusted_cert=false
+    if cert_trusted_for_domain "${SSL_DIR}/fullchain.pem" "$DOMAIN"; then
+      had_trusted_cert=true
+    fi
+
+    info "Requesting an SSL certificate for ${DOMAIN}..."
+    if hm ssl issue "$DOMAIN" "$ADMIN_EMAIL"; then
+      SSL_STATUS=$(grep -E '^SSL_PROVIDER=' "${INSTALL_DIR}/.env" 2>/dev/null | head -n1 | cut -d= -f2- | tr -d '"\r' || true)
+      if [[ -z "$SSL_STATUS" || "$SSL_STATUS" == "none" ]]; then
+        SSL_STATUS="active"
+      fi
+      log "SSL certificate installed (${SSL_STATUS})"
+    elif [[ "$had_trusted_cert" == true ]]; then
+      warn "Could not get a new certificate, but the existing one for ${DOMAIN} is still valid — keeping HTTPS."
+      rm -f "${SSL_DIR}/.ssl_disabled"
+      update_env "PANEL_PROTOCOL" "https"
+      update_env "SSL_ENABLED" "true"
+      compose -f "${INSTALL_DIR}/docker-compose.yml" up -d --force-recreate --no-deps nginx >/dev/null 2>&1 || true
+      SSL_STATUS="existing certificate"
+      verify_nginx_status
     else
+      warn "SSL issuance failed. The panel stays on HTTP — run 'hm ssl issue' once DNS and port 80 are fixed."
       SSL_STATUS="disabled"
     fi
   fi
@@ -1004,7 +1116,8 @@ print_success() {
   
   # Reality-check: verify SSL_STATUS matches the actual nginx configuration
   if [[ "${SSL_STATUS:-disabled}" != "disabled" ]]; then
-    if [[ ! -f "${INSTALL_DIR}/nginx/ssl/fullchain.pem" || ! -f "${INSTALL_DIR}/nginx/ssl/privkey.pem" ]]; then
+    if [[ ! -f "${INSTALL_DIR}/nginx/ssl/fullchain.pem" || ! -f "${INSTALL_DIR}/nginx/ssl/privkey.pem" \
+      || -f "${INSTALL_DIR}/nginx/ssl/.ssl_disabled" ]]; then
       SSL_STATUS="disabled"
     fi
   fi
@@ -1016,7 +1129,7 @@ print_success() {
     display_domain="${server_ip:-localhost}"
   fi
 
-  if [[ "$SSL_STATUS" == acme* || "$SSL_STATUS" == "self-signed" || "$SSL_STATUS" == "certbot" ]]; then
+  if [[ "${SSL_STATUS:-disabled}" != "disabled" ]]; then
     local https_suffix=""
     if [[ "$HTTPS_PORT" != "443" ]]; then
       https_suffix=":${HTTPS_PORT}"

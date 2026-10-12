@@ -6,6 +6,8 @@ import { SslService } from './ssl.service';
 import { SslController } from './ssl.controller';
 import { DiagnosticService } from './diagnostic.service';
 import { HmctlClient } from './hmctl.client';
+import { PortsService } from './ports.service';
+import { PortsController } from './ports.controller';
 import { PrismaModule } from '../prisma/prisma.module';
 
 @Module({
@@ -16,8 +18,9 @@ import { PrismaModule } from '../prisma/prisma.module';
     SslService,
     DiagnosticService,
     HmctlClient,
+    PortsService,
   ],
-  controllers: [SettingsController, SslController],
+  controllers: [SettingsController, SslController, PortsController],
   exports: [
     SettingsService,
     LicenseService,

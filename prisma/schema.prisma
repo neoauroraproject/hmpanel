@@ -470,6 +470,10 @@ model SystemStats {
   recordedAt DateTime @default(now())
 
   server Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  /// Dashboard range sums and the latest-sample-per-server lookup.
+  @@index([recordedAt])
+  @@index([serverId, recordedAt])
 }
 
 model SyncState {
@@ -662,6 +666,13 @@ model StoreProfile {
   cancelRefundEnabled Boolean @default(false)
   /// When true, customers may request wallet settlement (payout to card).
   walletSettlementEnabled Boolean @default(false)
+  /// Store-wide loyalty: auto checkout discount after N completed renewals.
+  loyaltyEnabled          Boolean @default(false)
+  /// Completed renewals required before auto loyalty applies (2 → discount from 3rd renewal).
+  loyaltyMinRenewals      Int     @default(2)
+  loyaltyDiscountPercent  Float   @default(0)
+  loyaltyApplyRenewals    Boolean @default(true)
+  loyaltyApplyNewPurchases Boolean @default(false)
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
@@ -980,6 +991,11 @@ model StoreCustomer {
   /// Unique invite code for referral deep-links (t.me/bot?start=ref_CODE)
   referralCode      String?   @unique
   referredById      String?
+  /// Admin-marked loyal customer (overrides store auto-loyalty rules).
+  loyalManual           Boolean @default(false)
+  loyalDiscountPercent  Float?
+  loyalApplyRenewals    Boolean @default(true)
+  loyalApplyNewPurchases Boolean @default(true)
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
@@ -1317,13 +1333,15 @@ model StoreReferralRewardGrant {
   rewardId   String
   customerId String
   couponId   String
+  /// 1-based batch: floor(confirmedCount / minCount); allows every-N re-grants.
+  batchIndex Int      @default(1)
   createdAt  DateTime @default(now())
 
   reward   StoreReferralReward @relation(fields: [rewardId], references: [id], onDelete: Cascade)
   customer StoreCustomer       @relation(fields: [customerId], references: [id], onDelete: Cascade)
   coupon   StoreCoupon         @relation(fields: [couponId], references: [id], onDelete: Restrict)
 
-  @@unique([rewardId, customerId])
+  @@unique([rewardId, customerId, batchIndex])
   @@index([customerId])
 }
 

@@ -9,6 +9,7 @@ import { ErrorBox, PageHeader, Spinner, Card } from "@/components/ui";
 import { useToast } from "@/components/toast";
 import { motion } from "framer-motion";
 import { SslManagerModal } from "./SslManagerModal";
+import { PanelPortsCard } from "./PanelPortsCard";
 import { LicenseSettingsCard } from "@/components/LicenseSettingsCard";
 import { LocaleSwitcher } from "@/components/LocaleSwitcher";
 import { useT } from "@/i18n";
@@ -303,6 +304,9 @@ export default function GlobalSettingsPage() {
               {t("settings.openSslManager")}
             </button>
           </Card>
+          <div className="mt-6">
+            <PanelPortsCard />
+          </div>
         </div>
       )}
 
@@ -661,9 +665,23 @@ function UpdateCard() {
       }
     } catch (e) {
       // Panel is likely offline and restarting!
-      setUpdateLogs((prev) => prev + '\n[' + t("settings.waitingForRestart") + ']');
+      const marker = '[' + t("settings.waitingForRestart") + ']';
+      setUpdateLogs((prev) => (prev.endsWith(marker) ? prev : prev + '\n' + marker));
     }
   };
+
+  // A reload mid-update must keep showing progress, not offer to start again.
+  useEffect(() => {
+    api
+      .get("/settings/update-logs")
+      .then((res) => {
+        if (res.data?.updaterRunning) {
+          setIsUpdating(true);
+          setUpdateLogs(res.data.logs || "");
+        }
+      })
+      .catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     let interval: any;
