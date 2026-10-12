@@ -8,6 +8,11 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [2.5.6] - 2026-10-13
+
+### Added
+- **3x-ui node health in volume diagnostics:** each sync reads the panel's node list and flags nodes that are offline, report a last error, or run a different 3x-ui version than the master. These are named in the "volume reverted" warning and shown in the Panels → volume conflicts window. A node older than the master (or enrolled with an admin API token before 3x-ui 3.10) accepts master pushes without applying them, and its snapshot then sets volumes back to unlimited (MHSanaei/3x-ui#6786).
+
 ## [2.5.5] - 2026-10-13
 
 ### Fixed

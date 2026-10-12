@@ -268,7 +268,7 @@ function VolumeConflictsModal({ panel, onClose }: { panel: any; onClose: () => v
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ["panel-volume-conflicts", panel.id],
     queryFn: async () =>
-      (await api.get<{ checkedAt: number | null; items: VolumeConflict[] }>(`/panels/${panel.id}/volume-conflicts`, { timeout: 120_000 })).data,
+      (await api.get<{ checkedAt: number | null; items: VolumeConflict[]; nodeIssues?: string[] }>(`/panels/${panel.id}/volume-conflicts`, { timeout: 120_000 })).data,
   });
   const items = data?.items ?? [];
   const allSelected = items.length > 0 && items.every((c) => selected.has(c.email));
@@ -302,6 +302,15 @@ function VolumeConflictsModal({ panel, onClose }: { panel: any; onClose: () => v
           <button onClick={onClose} className="text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300"><X size={18} /></button>
         </div>
         <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-3">{t("panels.volumeConflictsHint")}</p>
+        {(data?.nodeIssues?.length ?? 0) > 0 && (
+          <div className="mb-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-300">
+            <div className="font-semibold mb-1">{t("panels.volumeNodeIssuesTitle")}</div>
+            <ul className="list-disc ps-4 space-y-0.5" dir="ltr">
+              {data!.nodeIssues!.map((n) => <li key={n}>{n}</li>)}
+            </ul>
+            <div className="mt-1">{t("panels.volumeNodeIssuesHint")}</div>
+          </div>
+        )}
 
         <div className="flex-1 overflow-y-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
           {isLoading || isFetching ? (

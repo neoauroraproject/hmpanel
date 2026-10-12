@@ -236,6 +236,8 @@ export class PanelsService implements OnModuleInit {
   /** `${panelId}:${email}` -> restore pushes that did not stick. */
   private readonly capRestoreTries = new Map<string, { count: number; lastAt: number }>();
   private readonly capRevertWarnedAt = new Map<string, number>();
+  /** Per panel: 3x-ui nodes that look unable to apply master pushes. */
+  private readonly nodeIssues = new Map<string, string[]>();
 
   constructor(
     private prisma: PrismaService,
@@ -1493,6 +1495,10 @@ export class PanelsService implements OnModuleInit {
       // Only true when the panel actually answered; a failed call must not be
       // read as "this panel has no nodes".
       let nodeRegistryKnown = false;
+      // Nodes that cannot be applying the master's pushes. A 3x-ui node older
+      // than the master (or enrolled with an admin token before 3.10) acks a
+      // push without applying it, and its snapshot then overwrites the master.
+      const nodeIssues: string[] = [];
       try {
         const nodesRes = await axios.get(`${apiBaseUrl}/panel/api/nodes/list`, {
           headers,
@@ -1510,7 +1516,17 @@ export class PanelsService implements OnModuleInit {
             if (id && label) nodeNameById.set(id, label);
             const guid = String(n?.guid || '').trim();
             if (guid) nodeByGuid.set(guid, { id, name: label });
+            if (n?.enable === false) continue;
+            const nodeVer = String(n?.panelVersion || '').replace(/^v/i, '').trim();
+            const masterVer = String(version || '').replace(/^v/i, '').trim();
+            const problems: string[] = [];
+            if (n?.status && n.status !== 'online') problems.push(`status ${n.status}`);
+            if (nodeVer && masterVer && nodeVer !== masterVer)
+              problems.push(`version v${nodeVer}, master v${masterVer}`);
+            if (n?.lastError) problems.push(`last error: ${String(n.lastError).slice(0, 160)}`);
+            if (problems.length) nodeIssues.push(`${label || `node ${id}`} (${problems.join('; ')})`);
           }
+          this.nodeIssues.set(panel.id, nodeIssues);
           this.logger.debug(
             `[DIAGNOSTIC] Loaded ${nodeNameById.size} node name(s) / ${nodeByGuid.size} node guid(s) for inbound attribution`,
           );
@@ -2381,7 +2397,10 @@ export class PanelsService implements OnModuleInit {
           this.logger.warn(
             `[SYNC] ${panel.name}: 3x-ui set ${capRevertedSeen} restored volume(s) back to unlimited right after they were written. ` +
               `HMPanel's update was accepted, so 3x-ui itself is overwriting it — usually a node whose snapshot still carries the old value. ` +
-              `Check the node in 3x-ui (Nodes page: online, same version, config pushed). Retrying every ${CAP_RESTORE_RETRY_MS / 60_000} min.`,
+              `Check the node in 3x-ui (Nodes page: online, same version, config pushed). Retrying every ${CAP_RESTORE_RETRY_MS / 60_000} min.` +
+              ((this.nodeIssues.get(panel.id) ?? []).length
+                ? ` Suspect node(s): ${(this.nodeIssues.get(panel.id) ?? []).join(' | ')}`
+                : ''),
           );
         }
       }
@@ -4495,7 +4514,11 @@ export class PanelsService implements OnModuleInit {
       await this.sync(panelId, { mode: 'traffic' });
       snap = this.volumeConflicts.get(panelId);
     }
-    return { checkedAt: snap?.at ?? null, items: snap?.items ?? [] };
+    return {
+      checkedAt: snap?.at ?? null,
+      items: snap?.items ?? [],
+      nodeIssues: this.nodeIssues.get(panelId) ?? [],
+    };
   }
 
   /**

@@ -762,6 +762,8 @@
     "volumePushConfirm": "Write HMPanel's volume to 3x-ui for {count} client(s)? Their current 3x-ui volume will be replaced.",
     "volumePushDone": "{pushed} of {total} client volume(s) written to 3x-ui.",
     "volumePushFailed": "Writing volumes to 3x-ui failed.",
+    "volumeNodeIssuesTitle": "3x-ui nodes that may be overwriting volumes",
+    "volumeNodeIssuesHint": "A node older than the master (or enrolled with an admin API token) accepts the master's changes without applying them, and its report then sets volumes back. Update the node to the master's 3x-ui version, or re-enroll it with a node-sync token, then write the volumes again.",
     "viewLogs": "View Logs",
     "deleteConfirm": "Delete panel \"{name}\"? This removes its inbounds and clients.",
     "syncStarted": "Started",
