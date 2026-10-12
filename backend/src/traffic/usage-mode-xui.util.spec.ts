@@ -2,17 +2,65 @@ import {
   classifyPanelDisableReason,
   isExpiryReached,
   isUsageManualHold,
+  planSyncQuotaAction,
   syncXuiTrafficMirror,
-  xuiTotalBytesForMode,
 } from './usage-mode-xui.util';
 
 const GB = 1024 ** 3;
 const NOW = Date.UTC(2026, 9, 12);
 
 describe('usage-mode-xui.util', () => {
-  it('zeros 3x-ui totalGB in USAGE mode (regression: new clients kept a package cap)', () => {
-    expect(xuiTotalBytesForMode('USAGE', 50 * GB)).toBe(0);
-    expect(xuiTotalBytesForMode('ALLOCATION', 50 * GB)).toBe(50 * GB);
+  describe('planSyncQuotaAction', () => {
+    const base = {
+      missingSample: false,
+      panelEnable: true,
+      panelTotal: BigInt(50 * GB),
+      dbTotal: BigInt(50 * GB),
+      used: BigInt(GB),
+      expiryTime: 0,
+      disableReason: null as string | null,
+      hasOwner: true,
+      poolOpen: true,
+      nowMs: NOW,
+    };
+    const plan = (o: Partial<typeof base> & Record<string, unknown> = {}) =>
+      planSyncQuotaAction({ ...base, ...o } as any).kind;
+
+    it('leaves a client alone when the panel holds its own volume', () => {
+      expect(plan()).toBe('none');
+      expect(plan({ poolOpen: false })).toBe('none');
+    });
+
+    it('restores a cap zeroed on 3x-ui (regression: v2.5.1 made USAGE clients unlimited)', () => {
+      expect(plan({ panelTotal: 0n })).toBe('restoreCap');
+      expect(plan({ panelTotal: 0n, poolOpen: false, hasOwner: false })).toBe('restoreCap');
+      expect(plan({ panelTotal: BigInt(10 * GB) })).toBe('restoreCap');
+    });
+
+    it('never pushes 0 for a client that has a volume, even with an open USAGE pool', () => {
+      expect(plan({ panelEnable: false, panelTotal: 0n })).toBe('reenable');
+      // reenable also sends totalGB = dbTotal (see panels.service repair loop)
+    });
+
+    it('switches off a client that already used its volume', () => {
+      expect(plan({ panelTotal: 0n, used: BigInt(50 * GB) })).toBe('disableOverLimit');
+      expect(plan({ used: BigInt(60 * GB) })).toBe('disableOverLimit');
+      // Already off on its real cap: nothing to do, and the pool must not revive it.
+      expect(plan({ panelEnable: false, used: BigInt(50 * GB) })).toBe('none');
+    });
+
+    it('re-enables only USAGE-pool suspensions with volume left', () => {
+      expect(plan({ panelEnable: false, disableReason: 'BALANCE_EXHAUSTED' })).toBe('reenable');
+      expect(plan({ panelEnable: false, poolOpen: false })).toBe('none');
+      expect(plan({ panelEnable: false, disableReason: 'MANUAL' })).toBe('none');
+      expect(plan({ panelEnable: false, expiryTime: NOW - 1 })).toBe('none');
+      expect(plan({ panelEnable: false, hasOwner: false })).toBe('none');
+    });
+
+    it('keeps unlimited clients unlimited and ignores missing samples', () => {
+      expect(plan({ dbTotal: 0n, panelTotal: 0n, used: BigInt(500 * GB) })).toBe('none');
+      expect(plan({ missingSample: true, panelTotal: 0n })).toBe('none');
+    });
   });
 
   describe('isExpiryReached', () => {

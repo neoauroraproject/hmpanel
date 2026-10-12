@@ -1355,11 +1355,9 @@ export class ClientsService {
         );
         const clientUuid = randomUUID();
         const clientSubToken = require('crypto').randomBytes(5).toString('hex');
-        const totalGB = await this.adminQuota.panelTotalBytesForXui(
-          targetAdminId,
-          panelId,
-          Number(data.total) || 0,
-        );
+        // The client's own volume is always the 3x-ui cap, in USAGE mode too:
+        // nothing else stops a client at its limit.
+        const totalGB = Math.max(0, Number(data.total) || 0);
         const payload: Record<string, unknown> = {
           id: clientUuid,
           email: data.email,
@@ -1485,26 +1483,25 @@ export class ClientsService {
 
         createdOnPanels.push(panelId);
 
-        // USAGE owners: the panel must hold the client unlimited and enabled,
-        // because the admin pool is the only cap. Only rewrite it when the
-        // panel did not keep what create sent.
-        const ownerMode = await this.adminQuota.resolveTrafficMode(
-          targetAdminId,
-          undefined,
-          undefined,
-          targetAdmin.quotaMode === 'PER_PANEL' ? panelId : undefined,
-        );
+        // Some 3x-ui builds drop totalGB or leave a new client disabled. Put
+        // back exactly what was sent, only when the panel did not keep it.
         const remoteClient = verifyResult.data?.client || verifyResult.data || {};
-        const remoteTotal = Number(remoteClient.totalGB ?? remoteClient.total ?? 0) || 0;
-        if (ownerMode === 'USAGE' && (remoteTotal !== 0 || remoteClient.enable !== true)) {
+        const rawRemoteTotal =
+          remoteClient.totalGB ?? remoteClient.total ?? remoteClient.traffic?.total;
+        const sentTotal = Math.max(0, Number(pData.totalGB) || 0);
+        const totalMismatch =
+          rawRemoteTotal != null && (Number(rawRemoteTotal) || 0) !== sentTotal;
+        const remoteDisabled =
+          remoteClient.enable === false || remoteClient.traffic?.enable === false;
+        if (totalMismatch || remoteDisabled) {
           const forced = await this.panelsService.updateClientOnPanel(
             panelId,
             data.email,
-            { enable: true, totalGB: 0 },
+            { enable: true, totalGB: sentTotal },
           );
           if (!forced?.success) {
             this.logger.warn(
-              `[USAGE-XUI] post-create force failed for ${data.email} on ${panelId}: ${forced?.error?.message || 'unknown'}`,
+              `[XUI] post-create correction failed for ${data.email} on ${panelId}: ${forced?.error?.message || 'unknown'}`,
             );
           }
         }
@@ -2260,13 +2257,7 @@ export class ClientsService {
           ? true
           : existing.enable;
 
-    const panelTotalGb = existing.adminId
-      ? await this.adminQuota.panelTotalBytesForXui(
-          existing.adminId,
-          (existing as any).panelId,
-          Number(newTotal),
-        )
-      : Number(newTotal);
+    const panelTotalGb = Math.max(0, Number(newTotal) || 0);
     const baseClientPayload: any = {
       id: existing.uuid,
       subId: nextSubId,
@@ -3077,11 +3068,7 @@ export class ClientsService {
           subId: clientSubId,
           email: email,
           enable: dto.enable !== false,
-          totalGB: await this.adminQuota.panelTotalBytesForXui(
-            targetAdminId,
-            panelId,
-            Number(dto.total) || 0,
-          ),
+          totalGB: Math.max(0, Number(dto.total) || 0),
           expiryTime: dto.expiryTime || 0,
           limitIp: limits.limitIp,
           limitHwid: limits.limitHwid,

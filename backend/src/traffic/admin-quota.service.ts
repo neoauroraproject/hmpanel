@@ -13,7 +13,6 @@ import { GLOBAL_POOL_TX_DESCRIPTION, nextQuotaLedger } from './quota-balance-pat
 import { PolicyEngine } from '../authz/policy.engine';
 import { FeatureFlagsService } from '../platform/architecture/feature-flags.service';
 import { PLATFORM_FLAGS } from '../platform/architecture/feature-flags';
-import { xuiTotalBytesForMode } from './usage-mode-xui.util';
 
 export type AdminQuotaAdmin = {
   id: string;
@@ -87,7 +86,6 @@ export function panelMatchesQuotaFilter(
 export class AdminQuotaService implements OnModuleInit {
   private readonly logger = new Logger(AdminQuotaService.name);
   private pastDeductionRepair: Promise<void> | null = null;
-  private usageQuotaModeHeal: Promise<void> | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -98,46 +96,6 @@ export class AdminQuotaService implements OnModuleInit {
 
   onModuleInit() {
     void this.ensurePastDeductionRepair();
-    void this.ensureUsagePanelQuotaModeHeal();
-  }
-
-  /**
-   * One-shot: PER_PANEL quota rows created via topUp/templates defaulted to
-   * ALLOCATION even when Admin.trafficMode is USAGE — new clients then got a
-   * real 3x-ui cap and stayed disabled. Stamp USAGE onto those rows once.
-   */
-  private ensureUsagePanelQuotaModeHeal(): Promise<void> {
-    if (!this.usageQuotaModeHeal) {
-      this.usageQuotaModeHeal = this.healUsagePanelQuotaModes().catch((err) => {
-        this.logger.warn(
-          `[USAGE-XUI] panel quota trafficMode heal failed: ${err?.message || err}`,
-        );
-        this.usageQuotaModeHeal = null;
-      });
-    }
-    return this.usageQuotaModeHeal;
-  }
-
-  private async healUsagePanelQuotaModes() {
-    const key = 'traffic.usagePanelQuotaModeHeal.v1';
-    try {
-      await this.prisma.systemSetting.create({
-        data: { key, value: JSON.stringify(Date.now()) },
-      });
-    } catch {
-      return;
-    }
-    const result = await this.prisma.$executeRaw`
-      UPDATE "AdminPanelQuota" AS q
-      SET "trafficMode" = 'USAGE'
-      FROM "Admin" AS a
-      WHERE q."adminId" = a.id
-        AND a."trafficMode" = 'USAGE'
-        AND q."trafficMode" = 'ALLOCATION'
-    `;
-    this.logger.warn(
-      `[USAGE-XUI] Healed ${Number(result) || 0} AdminPanelQuota row(s) ALLOCATION→USAGE`,
-    );
   }
 
   /**
@@ -253,17 +211,10 @@ export class AdminQuotaService implements OnModuleInit {
         where: { adminId_panelId: { adminId, panelId } },
         select: { trafficMode: true },
       });
-      if (quota?.trafficMode === 'USAGE') return 'USAGE';
-      if (quota?.trafficMode === 'ALLOCATION') {
-        // topUp/buildPanelQuotas historically omitted trafficMode, so PER_PANEL
-        // rows defaulted to ALLOCATION even when Admin.trafficMode is USAGE.
-        // Prefer the account mode so new clients get totalGB=0 and sync repairs.
-        const adminRow = await db.admin.findUnique({
-          where: { id: adminId },
-          select: { trafficMode: true },
-        });
-        if (adminRow?.trafficMode === 'USAGE') return 'USAGE';
-        return 'ALLOCATION';
+      // A per-panel row is set explicitly in the admin form. Admin.trafficMode
+      // turns USAGE as soon as any panel is USAGE, so it must not override it.
+      if (quota?.trafficMode === 'USAGE' || quota?.trafficMode === 'ALLOCATION') {
+        return quota.trafficMode;
       }
     }
 
@@ -814,8 +765,6 @@ export class AdminQuotaService implements OnModuleInit {
           update: {
             balance: after,
             totalAssigned: { increment: Number(amountBytes) },
-            // Heal stale ALLOCATION defaults when the admin is USAGE-billed.
-            ...(admin.trafficMode === 'USAGE' ? { trafficMode: 'USAGE' } : {}),
           },
         });
         await tx.trafficTransaction.create({
@@ -1247,29 +1196,8 @@ export class AdminQuotaService implements OnModuleInit {
   }
 
   /**
-   * Bytes to send as 3x-ui totalGB.
-   * In USAGE mode the admin pool is the only cap. A per-client total makes
-   * 3x-ui turn the client off while the reseller still has traffic left.
-   */
-  async panelTotalBytesForXui(
-    adminId: string,
-    panelId: string,
-    requestedBytes: number,
-  ): Promise<number> {
-    const admin = await this.loadAdmin(adminId);
-    if (this.skipTrafficAccounting(admin)) return requestedBytes;
-    const mode = await this.resolveTrafficMode(
-      adminId,
-      undefined,
-      undefined,
-      this.isPerPanel(admin) ? panelId : undefined,
-    );
-    return xuiTotalBytesForMode(mode, requestedBytes);
-  }
-
-  /**
-   * True when this admin is billed by usage and the pool still has bytes.
-   * 3x-ui must not keep those clients disabled for their own package cap.
+   * True when this admin is billed by usage and the pool still has bytes,
+   * so a client the pool suspended may be switched back on.
    */
   async usagePoolStillOpen(adminId: string, panelId: string): Promise<boolean> {
     const admin = await this.loadAdmin(adminId);

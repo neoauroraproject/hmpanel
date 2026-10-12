@@ -14,8 +14,7 @@ import { ClientsService } from '../clients/clients.service';
 import { AdminQuotaService } from '../traffic/admin-quota.service';
 import {
   classifyPanelDisableReason,
-  isExpiryReached,
-  isUsageManualHold,
+  planSyncQuotaAction,
   syncXuiTrafficMirror,
 } from '../traffic/usage-mode-xui.util';
 import {
@@ -1784,7 +1783,12 @@ export class PanelsService implements OnModuleInit {
           delta: bigint;
         }>
       >();
-      const quotaRepairs: Array<{ email: string; expiryTime: bigint }> = [];
+      const quotaRepairs: Array<{
+        email: string;
+        expiryTime: bigint;
+        totalBytes: bigint;
+        action: 'restoreCap' | 'disableOverLimit' | 'reenable';
+      }> = [];
       const usageOpenCache = new Map<string, Promise<boolean>>();
       const usagePoolOpen = (adminId: string) => {
         let pending = usageOpenCache.get(adminId);
@@ -2022,7 +2026,8 @@ export class PanelsService implements OnModuleInit {
               changedData.enable = enable;
               if (!enable) {
                 const reason = classifyPanelDisableReason({
-                  panelTotal: total,
+                  // The client's own volume, even if the panel cap was zeroed.
+                  panelTotal: dbClient.total > 0n ? dbClient.total : total,
                   used: up + down,
                   expiryTime,
                   existingReason: dbClient.disableReason,
@@ -2075,29 +2080,34 @@ export class PanelsService implements OnModuleInit {
                 changedData.total = total;
               }
             }
-            // 3x-ui turns a client off when up+down >= total. In USAGE mode that
-            // cap is not the limit — the admin pool is. While the pool still
-            // has traffic, clear the panel cap (totalGB 0 = unlimited) and
-            // turn the client back on. A client a person disabled here stays off.
-            const notExpired = !isExpiryReached(expiryTime);
+            // The DB volume is the client's limit and 3x-ui's cap is the only
+            // thing enforcing it, so keep the panel on it (v2.5.1 zeroed it for
+            // USAGE owners). The USAGE pool only decides when a client the pool
+            // suspended may come back on. A client a person disabled stays off.
             const ownerId = dbClient.adminId;
-            const poolOpen = ownerId ? await usagePoolOpen(ownerId) : false;
             const effectiveReason =
               (changedData.disableReason as string | undefined) ??
               dbClient.disableReason;
-            const manualHold = isUsageManualHold({
+            const needsPoolCheck = !enable && !!ownerId;
+            const quotaAction = planSyncQuotaAction({
+              missingSample,
+              panelEnable: enable,
+              panelTotal: total,
+              dbTotal: dbClient.total,
+              used: up + down,
+              expiryTime,
               disableReason: effectiveReason,
+              hasOwner: !!ownerId,
+              poolOpen: needsPoolCheck ? await usagePoolOpen(ownerId!) : false,
             });
-            const wouldRepair =
-              !missingSample &&
-              notExpired &&
-              !manualHold &&
-              !!ownerId &&
-              poolOpen &&
-              (!enable || total > 0n);
-            if (wouldRepair) {
-              quotaRepairs.push({ email: trimmedEmail, expiryTime });
-              if (!enable) {
+            if (quotaAction.kind !== 'none') {
+              quotaRepairs.push({
+                email: trimmedEmail,
+                expiryTime,
+                totalBytes: dbClient.total,
+                action: quotaAction.kind,
+              });
+              if (quotaAction.kind === 'reenable') {
                 delete changedData.enable;
                 delete changedData.disableReason;
               }
@@ -2235,37 +2245,46 @@ export class PanelsService implements OnModuleInit {
       const repairBatch = quotaRepairs.slice(0, SYNC_QUOTA_RESTORE_LIMIT);
       if (quotaRepairs.length > repairBatch.length) {
         this.logger.warn(
-          `[SYNC] Deferred ${quotaRepairs.length - repairBatch.length} usage-pool restores on ${panel.name} to the next cycle`,
+          `[SYNC] Deferred ${quotaRepairs.length - repairBatch.length} client quota corrections on ${panel.name} to the next cycle`,
         );
       }
       if (repairBatch.length) {
         this.logger.warn(
-          `[SYNC] USAGE pool still has traffic on ${panel.name}; clearing 3x-ui per-client caps for ${repairBatch.length} client(s)`,
+          `[SYNC] Correcting 3x-ui quota for ${repairBatch.length} client(s) on ${panel.name}`,
         );
       }
       for (const repair of repairBatch) {
         if (this.isPanelUpdateInCooldown(panel.id, repair.email)) continue;
-        const result = await this.updateClientOnPanel(panel.id, repair.email, {
-          enable: true,
-          totalGB: 0,
+        const update: Record<string, unknown> = {
+          totalGB: Number(repair.totalBytes),
           // The update merges the stored client record, which can still hold the
           // negative "start after first use" value after 3x-ui fixed the deadline
           // on the traffic row; sending that back would restart the time window.
           ...(repair.expiryTime > 0n
             ? { expiryTime: Number(repair.expiryTime) }
             : {}),
-        });
+        };
+        if (repair.action === 'reenable') update.enable = true;
+        if (repair.action === 'disableOverLimit') update.enable = false;
+        const result = await this.updateClientOnPanel(panel.id, repair.email, update);
         if (!result.success) {
           this.markPanelUpdateFailure(panel.id, repair.email);
           this.logger.warn(
-            `[SYNC] Usage restore failed for ${repair.email}: ${result.error?.message || 'panel rejected the update'}`,
+            `[SYNC] Quota correction (${repair.action}) failed for ${repair.email}: ${result.error?.message || 'panel rejected the update'}`,
           );
           continue;
         }
-        await this.prisma.client.updateMany({
-          where: { panelId: panel.id, email: repair.email },
-          data: { enable: true, disableReason: null },
-        });
+        if (repair.action === 'reenable') {
+          await this.prisma.client.updateMany({
+            where: { panelId: panel.id, email: repair.email },
+            data: { enable: true, disableReason: null },
+          });
+        } else if (repair.action === 'disableOverLimit') {
+          await this.prisma.client.updateMany({
+            where: { panelId: panel.id, email: repair.email },
+            data: { enable: false, disableReason: 'TRAFFIC_LIMIT' },
+          });
+        }
         syncReport.repaired++;
       }
 

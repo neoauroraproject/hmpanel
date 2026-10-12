@@ -8,6 +8,16 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [2.5.2] - 2026-10-13
+
+### Fixed
+- **USAGE-mode clients became unlimited on 3x-ui (regression in 2.5.1):** creates, edits and the sync "repair" sent `totalGB=0` for clients of usage-billed admins, so nothing enforced each client's own volume. The client's volume is now always the 3x-ui cap; the USAGE pool only decides when a pool-suspended client may come back on.
+- **Automatic recovery:** sync now restores the real cap on 3x-ui from the panel database for clients whose cap was zeroed (up to 200 per panel per cycle), and switches off clients that already used their volume (`TRAFFIC_LIMIT`).
+- **Per-panel ALLOCATION panels treated as USAGE:** a panel quota set to ALLOCATION is no longer overridden by the account-level USAGE mode; removed the boot-time ALLOCATION→USAGE rewrite of `AdminPanelQuota` and the top-up re-stamping.
+
+### Notes
+- Panel quota rows already rewritten to USAGE by 2.5.1 cannot be told apart automatically. Review mixed PER_PANEL admins in **Admins** and set ALLOCATION panels back by hand.
+
 ## [2.5.1] - 2026-10-12
 
 ### Added
