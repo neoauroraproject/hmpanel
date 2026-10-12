@@ -124,6 +124,10 @@ const PANEL_SIDE_DISABLE_NOTE_INTERVAL_MS = 60 * 60 * 1000;
 const ZERO_CAP_HEAL_KEY_PREFIX = 'traffic.zeroCapHeal.v253:';
 const ZERO_CAP_HEAL_WINDOW_MS = 24 * 60 * 60 * 1000;
 const VOLUME_PUSH_LIMIT = 500;
+// A restored cap that 3x-ui resets again (e.g. a node whose snapshot still
+// carries 0 and overwrites the master) is retried at this pace, not every poll.
+const CAP_RESTORE_FREE_TRIES = 2;
+const CAP_RESTORE_RETRY_MS = 30 * 60_000;
 
 export interface PanelVolumeConflict {
   clientId: string;
@@ -229,6 +233,9 @@ export class PanelsService implements OnModuleInit {
   >();
   /** Panels whose one-time zero-cap heal is finished (cached setting). */
   private readonly zeroCapHealDone = new Set<string>();
+  /** `${panelId}:${email}` -> restore pushes that did not stick. */
+  private readonly capRestoreTries = new Map<string, { count: number; lastAt: number }>();
+  private readonly capRevertWarnedAt = new Map<string, number>();
 
   constructor(
     private prisma: PrismaService,
@@ -1821,6 +1828,7 @@ export class PanelsService implements OnModuleInit {
       }> = [];
       const healZeroedCaps = await this.isZeroCapHealActive(panel.id);
       let zeroedCapsSeen = 0;
+      let capRevertedSeen = 0;
       const volumeConflicts = new Map<string, PanelVolumeConflict>();
       const usageOpenCache = new Map<string, Promise<boolean>>();
       const usagePoolOpen = (adminId: string) => {
@@ -2156,8 +2164,21 @@ export class PanelsService implements OnModuleInit {
               poolOpen: !enable && !!ownerId ? await usagePoolOpen(ownerId) : false,
               healZeroedCaps: zeroCapEligible,
             });
-            if (zeroedByBug) zeroedCapsSeen++;
-            if (quotaAction.kind !== 'none') {
+            const restoreKey = `${panel.id}:${trimmedEmail}`;
+            let skipRestore = false;
+            if (zeroedByBug) {
+              zeroedCapsSeen++;
+              const tries = this.capRestoreTries.get(restoreKey);
+              if (tries && tries.count > 0) capRevertedSeen++;
+              skipRestore =
+                quotaAction.kind === 'restoreCap' &&
+                !!tries &&
+                tries.count >= CAP_RESTORE_FREE_TRIES &&
+                Date.now() - tries.lastAt < CAP_RESTORE_RETRY_MS;
+            } else {
+              this.capRestoreTries.delete(restoreKey);
+            }
+            if (quotaAction.kind !== 'none' && !skipRestore) {
               quotaRepairs.push({
                 email: trimmedEmail,
                 expiryTime,
@@ -2343,7 +2364,26 @@ export class PanelsService implements OnModuleInit {
             data: { enable: true, disableReason: null },
           });
         }
+        if (repair.action === 'restoreCap') {
+          const key = `${panel.id}:${repair.email}`;
+          const prev = this.capRestoreTries.get(key);
+          this.capRestoreTries.set(key, {
+            count: (prev?.count ?? 0) + 1,
+            lastAt: Date.now(),
+          });
+        }
         syncReport.repaired++;
+      }
+      if (capRevertedSeen > 0) {
+        const last = this.capRevertWarnedAt.get(panel.id) ?? 0;
+        if (Date.now() - last > CAP_RESTORE_RETRY_MS) {
+          this.capRevertWarnedAt.set(panel.id, Date.now());
+          this.logger.warn(
+            `[SYNC] ${panel.name}: 3x-ui set ${capRevertedSeen} restored volume(s) back to unlimited right after they were written. ` +
+              `HMPanel's update was accepted, so 3x-ui itself is overwriting it — usually a node whose snapshot still carries the old value. ` +
+              `Check the node in 3x-ui (Nodes page: online, same version, config pushed). Retrying every ${CAP_RESTORE_RETRY_MS / 60_000} min.`,
+          );
+        }
       }
       // Restored caps read back from 3x-ui on the next poll; once a poll
       // finds none left, the panel is healed and 3x-ui's value always wins.
@@ -4445,11 +4485,6 @@ export class PanelsService implements OnModuleInit {
   }
 
   /**
-   * A USAGE client switched off on 3x-ui while its owner still has traffic was
-   * not turned off by this app. Record what the panel reported so the cause
-   * can be traced; sync re-enables it in the same cycle.
-   */
-  /**
    * Clients whose 3x-ui volume is below the one HMPanel recorded. Read from
    * the last sync; refreshed with a traffic sync when missing or stale.
    */
@@ -4558,6 +4593,11 @@ export class PanelsService implements OnModuleInit {
     this.zeroCapHealDone.add(panelId);
   }
 
+  /**
+   * A USAGE client switched off on 3x-ui while its owner still has traffic was
+   * not turned off by this app. Record what the panel reported so the cause
+   * can be traced; sync re-enables it if it still has volume left.
+   */
   private async notePanelSideUsageDisable(
     panel: { id: string; name: string },
     clientId: string,
@@ -4584,7 +4624,7 @@ export class PanelsService implements OnModuleInit {
       inboundIds: Array.isArray(remote.inboundIds) ? remote.inboundIds : [],
     };
     this.logger.warn(
-      `[USAGE] ${email} on ${panel.name} was turned off by the panel while its owner still has traffic; re-enabling. ${JSON.stringify(details)}`,
+      `[USAGE] ${email} on ${panel.name} was turned off by the panel while its owner still has traffic. ${JSON.stringify(details)}`,
     );
     try {
       await this.prisma.auditLog.create({

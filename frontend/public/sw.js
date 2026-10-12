@@ -6,7 +6,6 @@ const PAGE_CACHE = `hm-pages-${VERSION}`;
 const RUNTIME_CACHE = `hm-runtime-${VERSION}`;
 const OWN_CACHES = [STATIC_CACHE, PAGE_CACHE, RUNTIME_CACHE];
 const OFFLINE_URL = '/offline.html';
-const NAV_TIMEOUT_MS = 3000;
 
 const PRECACHE = [
   OFFLINE_URL,
@@ -106,28 +105,19 @@ async function staleWhileRevalidate(request, cacheName) {
   return hit || network;
 }
 
+// Pages always come from the network while it answers: a slow connection
+// used to get the cached HTML after 3s, i.e. the previous build's UI (and its
+// old JS chunks) right after an update. The cache is only an offline fallback.
 async function networkFirstPage(event) {
   const { request } = event;
   const cache = await caches.open(PAGE_CACHE);
   const cacheKey = new URL(request.url);
   cacheKey.search = '';
-  const network = (async () => {
+  try {
     const preloaded = await event.preloadResponse;
     const response = preloaded || (await fetch(request));
     if (response.ok && response.type === 'basic') cache.put(cacheKey.href, response.clone());
     return response;
-  })();
-
-  const timeout = new Promise((resolve) => setTimeout(() => resolve(null), NAV_TIMEOUT_MS));
-  try {
-    const fast = await Promise.race([network, timeout]);
-    if (fast) return fast;
-    const cached = await cache.match(cacheKey.href);
-    if (cached) {
-      event.waitUntil(network.catch(() => undefined));
-      return cached;
-    }
-    return await network;
   } catch {
     const cached = await cache.match(cacheKey.href);
     if (cached) return cached;

@@ -8,6 +8,13 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [2.5.4] - 2026-10-13
+
+### Fixed
+- **Volume restore no longer hammers 3x-ui every minute.** When 3x-ui sets a restored volume back to unlimited (3x-ui 3.10 merges a node's snapshot over the master, so a node that still carries 0 overwrites it), HMPanel tries twice, logs one clear warning naming the cause, then retries every 30 minutes.
+- **Stale UI after updates:** the service worker no longer serves the cached page of the previous build when the network is slower than 3s; cached pages are used only when offline.
+- Misleading `re-enabling` wording removed from the panel-side disable diagnostic.
+
 ## [2.5.3] - 2026-10-13
 
 ### Fixed
