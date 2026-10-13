@@ -1,10 +1,11 @@
 import { Controller, Get, Header, Res } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
 import { FeatureEntitlementService } from './feature-entitlement.service';
 import { PremiumBundleService } from './premium-bundle.service';
 import { getAppVersion } from '../common/utils/app-version';
+import { fetchPanelAds } from './panel-ads.util';
 
 /** SystemSetting key written by the premium reseller-shell module. */
 export const PANEL_APP_BRAND_KEY = 'panel_app_brand';
@@ -120,6 +121,14 @@ export class PublicAppController {
       app: getAppVersion(),
       premium: this.bundle.getInstalledVersion(),
     };
+  }
+
+  /** Community dashboard ads — no license key; proxied to avoid browser CORS. */
+  @Get('ads')
+  @Header('Cache-Control', 'public, max-age=120')
+  @ApiOperation({ summary: 'Community edition promotional ads for the dashboard' })
+  async ads() {
+    return fetchPanelAds();
   }
 
   @Get('manifest.webmanifest')

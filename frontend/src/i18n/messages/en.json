@@ -228,6 +228,7 @@
     "revenueToman": "{n} Toman",
     "revenueUsd": "${n}",
     "revenueHint": "Wallet-paid orders and PAYG usage are excluded; they are already counted as wallet top-ups.",
+    "adDismiss": "Dismiss ad",
     "todaysUsage": "Today's Usage",
     "monthlyUsage": "Monthly Usage",
     "unknown": "Unknown",

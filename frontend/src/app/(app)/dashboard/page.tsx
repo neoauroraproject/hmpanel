@@ -20,8 +20,10 @@ import type { Overview, SeriesPoint, Trends, Monitoring } from "@/lib/types";
 import { formatBytes, formatDateTime } from "@/lib/format";
 import { Card, Spinner, ErrorBox, Badge } from "@/components/ui";
 import { PluginSlot } from "@/components/PluginSlot";
+import { CommunityAdsCard } from "@/components/CommunityAdsCard";
 import { useToast } from "@/components/toast";
 import { useAuth } from "@/store/auth";
+import { useLicenseActivation } from "@/hooks/useLicenseActivation";
 import { useT } from "@/i18n";
 import { io } from "socket.io-client";
 
@@ -105,6 +107,27 @@ function RevenueCard({ revenue }: { revenue?: RevenueSummary }) {
       <p className="mt-2 text-[11px] text-zinc-400">{t("dashboard.revenueHint")}</p>
     </Card>
   );
+}
+
+/** Premium → aggregate revenue; Community → sponsored ad strip (no revenue module). */
+function RevenueOrAdsSlot({ revenue }: { revenue?: RevenueSummary }) {
+  const { licenseQuery } = useLicenseActivation();
+  const isPremium =
+    licenseQuery.data?.edition === "PREMIUM" &&
+    licenseQuery.data?.status !== "community" &&
+    licenseQuery.data?.mode !== "disabled";
+
+  if (!licenseQuery.data && (licenseQuery.isLoading || licenseQuery.isFetching)) {
+    return (
+      <div
+        className="sm:col-span-2 h-[7.5rem] animate-pulse rounded-2xl border border-zinc-200/80 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/40"
+        aria-hidden
+      />
+    );
+  }
+
+  if (isPremium) return <RevenueCard revenue={revenue} />;
+  return <CommunityAdsCard />;
 }
 
 function MetricBar({ label, pct }: { label: string; pct: number }) {
@@ -297,7 +320,7 @@ function SuperDashboard() {
 
         <Kpi icon={Activity} tone="text-cyan-400" label={t("dashboard.todaysUsage")} value={o.usage?.today != null ? formatBytes(Number(o.usage.today)) : t("dashboard.unknown")} />
         <Kpi icon={CalendarDays} tone="text-purple-400" label={t("dashboard.monthlyUsage")} value={o.usage?.monthly != null ? formatBytes(Number(o.usage.monthly)) : t("dashboard.unknown")} />
-        <RevenueCard revenue={o.revenue} />
+        <RevenueOrAdsSlot revenue={o.revenue} />
       </div>
 
       {/* Traffic chart with range toggle */}
