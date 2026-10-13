@@ -378,11 +378,50 @@ install_docker_compose() {
 # ─────────────────────────────────────────────────────────────────
 # User input collection
 # ─────────────────────────────────────────────────────────────────
-collect_user_input() {
+# `curl … | bash` leaves stdin as the script pipe — prompts must use the TTY.
+ensure_interactive_tty() {
+  if [[ -t 0 ]]; then
+    return 0
+  fi
+  if [[ -r /dev/tty ]]; then
+    exec </dev/tty
+    return 0
+  fi
+  die "Interactive install needs a terminal.
+
+  Run this instead (do not pipe into bash):
+    curl -fsSL https://raw.githubusercontent.com/neoauroraproject/hmpanel/main/install.sh -o /tmp/hmpanel-install.sh
+    bash /tmp/hmpanel-install.sh"
+}
+
+prompt() {
+  # usage: prompt VAR "message" [default]
+  local __var="$1" __msg="$2" __def="${3:-}" __val=""
+  if [[ -n "$__def" ]]; then
+    read -rp "$__msg" __val || true
+    [[ -z "$__val" ]] && __val="$__def"
+  else
+    read -rp "$__msg" __val || true
+  fi
+  printf -v "$__var" '%s' "$__val"
+}
+
+prompt_secret() {
+  local __var="$1" __msg="$2" __val=""
+  read -rsp "$__msg" __val || true
   echo ""
-  read -rp "  Enter Domain or Server IP: " DOMAIN || true
+  printf -v "$__var" '%s' "$__val"
+}
+
+collect_user_input() {
+  ensure_interactive_tty
+  # step_1 sets this too; needed early so reinstall can read existing .env
+  INSTALL_DIR="${INSTALL_DIR:-/opt/hmpanel}"
+
+  echo ""
+  prompt DOMAIN "  Enter Domain or Server IP: " "localhost"
   [[ -z "$DOMAIN" ]] && DOMAIN="localhost"
-  
+
   if [[ "$DOMAIN" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ || "$DOMAIN" == "localhost" ]]; then
     echo -e "  ${YELLOW}ℹ IP address or localhost detected. Installations will skip SSL setup (HTTP only).${NC}"
     SSL_CHOICE=3 # Disabled
@@ -392,20 +431,38 @@ collect_user_input() {
   fi
 
   echo ""
-  read -rp "  Admin username [admin]: " ADMIN_USERNAME || true
+  local existing_user existing_pass keep_pass="n" env_file="${INSTALL_DIR}/.env"
+  existing_user="$(env_get INITIAL_ADMIN_USERNAME "$env_file" 2>/dev/null || true)"
+  existing_pass="$(env_get INITIAL_ADMIN_PASSWORD "$env_file" 2>/dev/null || true)"
+
+  prompt ADMIN_USERNAME "  Admin username [${existing_user:-admin}]: " "${existing_user:-admin}"
   [[ -z "$ADMIN_USERNAME" ]] && ADMIN_USERNAME="admin"
-  
+
   ADMIN_EMAIL="admin@${DOMAIN:-localhost}"
-  
-  while true; do
-    read -rsp "  Admin password (min 8 chars): " ADMIN_PASSWORD || true
-    echo ""
-    if [[ -z "$ADMIN_PASSWORD" ]] || [[ ${#ADMIN_PASSWORD} -lt 8 ]]; then
-      warn "Password must be at least 8 characters"
-    else
-      break
+
+  if [[ -n "$existing_pass" && ${#existing_pass} -ge 8 ]]; then
+    prompt keep_pass "  Keep existing admin password? [Y/n]: " "Y"
+    if [[ "${keep_pass,,}" != "n" ]]; then
+      ADMIN_PASSWORD="$existing_pass"
+      log "Keeping existing admin password."
     fi
-  done
+  fi
+
+  if [[ -z "${ADMIN_PASSWORD:-}" ]]; then
+    local attempts=0
+    while (( attempts < 5 )); do
+      prompt_secret ADMIN_PASSWORD "  Admin password (min 8 chars): "
+      if [[ -n "$ADMIN_PASSWORD" && ${#ADMIN_PASSWORD} -ge 8 ]]; then
+        break
+      fi
+      attempts=$((attempts + 1))
+      warn "Password must be at least 8 characters (${attempts}/5)"
+      ADMIN_PASSWORD=""
+    done
+    if [[ -z "${ADMIN_PASSWORD:-}" || ${#ADMIN_PASSWORD} -lt 8 ]]; then
+      die "Admin password required (min 8 characters). Re-run the installer and enter a valid password."
+    fi
+  fi
 
   collect_ports
 
@@ -419,9 +476,10 @@ collect_user_input() {
   echo -e "  │  Ports:     ${CYAN}HTTP ${HTTP_PORT} / HTTPS ${HTTPS_PORT}${NC}"
   echo -e "  └─────────────────────────────────────────"
   echo ""
-  read -rp "  Proceed with installation? [Y/n]: " CONFIRM || true
+  local CONFIRM=""
+  prompt CONFIRM "  Proceed with installation? [Y/n]: " "Y"
   [[ "${CONFIRM,,}" == "n" ]] && die "Installation cancelled by user."
-  
+
   return 0
 }
 
