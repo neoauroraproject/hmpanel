@@ -42,7 +42,15 @@ compose() {
   if [[ ${#COMPOSE_BIN[@]} -eq 0 ]]; then
     resolve_compose || die "Docker Compose is not available (need 'docker compose' or 'docker-compose')"
   fi
-  "${COMPOSE_BIN[@]}" "$@"
+  # Always pass project .env explicitly so ${VAR} interpolation works even when
+  # the shell environment is empty (fixes blank DATABASE_URL during install).
+  local env_args=()
+  if [[ -f .env ]]; then
+    env_args+=(--env-file .env)
+  elif [[ -n "${INSTALL_DIR:-}" && -f "${INSTALL_DIR}/.env" ]]; then
+    env_args+=(--env-file "${INSTALL_DIR}/.env")
+  fi
+  "${COMPOSE_BIN[@]}" "${env_args[@]}" "$@"
 }
 compose_cmd_str() {
   if [[ ${#COMPOSE_BIN[@]} -eq 0 ]]; then
@@ -74,9 +82,38 @@ update_env() {
   fi
 }
 
+# Read one key from .env without `source` (passwords/URLs may contain &$` etc).
+env_get() {
+  local key="$1" file="${2:-${INSTALL_DIR:-/opt/hmpanel}/.env}" line=""
+  [[ -f "$file" ]] || return 0
+  line=$(grep -E "^${key}=" "$file" | tail -n 1 || true)
+  line="${line#*=}"
+  line="${line%$'\r'}"
+  if [[ ${#line} -ge 2 && ( "$line" == \"*\" || "$line" == \'*\' ) ]]; then
+    line="${line:1:${#line}-2}"
+  fi
+  printf '%s' "$line"
+}
+
 ensure_env_variables() {
   local env_file="/opt/hmpanel/.env"
   if [[ -f "$env_file" ]]; then
+    # Quote legacy unquoted DATABASE_URL so &query params are kept intact.
+    local raw_db db_val
+    raw_db=$(grep -E '^DATABASE_URL=' "$env_file" | tail -n 1 || true)
+    if [[ -n "$raw_db" && "$raw_db" != DATABASE_URL=\"*\" && "$raw_db" != DATABASE_URL=\'*\' ]]; then
+      db_val="${raw_db#DATABASE_URL=}"
+      db_val="${db_val%$'\r'}"
+      if [[ "$db_val" == *"&"* ]]; then
+        awk -v v="$db_val" '$0 ~ /^DATABASE_URL=/ { print "DATABASE_URL=\"" v "\""; next } { print }' \
+          "$env_file" > "${env_file}.tmp" && mv "${env_file}.tmp" "$env_file"
+        chmod 600 "$env_file" 2>/dev/null || true
+        chown 1001:1001 "$env_file" 2>/dev/null || true
+      fi
+    fi
+    if ! grep -qE '^DATABASE_URL=.+' "$env_file"; then
+      die "DATABASE_URL is missing from ${env_file}. Re-run the installer or restore .env."
+    fi
     if ! grep -q "^PANEL_PROTOCOL=" "$env_file"; then update_env "PANEL_PROTOCOL" "http"; fi
     if ! grep -q "^SSL_ENABLED=" "$env_file"; then update_env "SSL_ENABLED" "false"; fi
     if ! grep -q "^SSL_PROVIDER=" "$env_file"; then update_env "SSL_PROVIDER" "none"; fi
@@ -666,7 +703,10 @@ step_2_environment() {
     log "Reusing existing PostgreSQL credentials."
     ensure_env_variables
     local chosen_http="$HTTP_PORT" chosen_https="$HTTPS_PORT"
-    source "${INSTALL_DIR}/.env"
+    # Never `source .env` — DATABASE_URL contains & and aborts under set -e.
+    POSTGRES_PASSWORD="$(env_get POSTGRES_PASSWORD)"
+    POSTGRES_USER="$(env_get POSTGRES_USER)"
+    POSTGRES_DB="$(env_get POSTGRES_DB)"
     HTTP_PORT="$chosen_http"
     HTTPS_PORT="$chosen_https"
     update_env "HTTP_PORT" "$HTTP_PORT"
@@ -694,8 +734,8 @@ LICENSE_SERVER_URL_FALLBACK=https://license.hmrayserver.com
 LICENSE_PRODUCT_ID=hmpanel
 PREMIUM_PLUGIN_PATH=/opt/hmpanel/premium/backend/index.js
 
-# Database
-DATABASE_URL=postgresql://panel_user:${POSTGRES_PASSWORD}@postgres:5432/panel_db?schema=public&connection_limit=5&connect_timeout=30
+# Database (quote URL — unquoted & breaks `source .env` and some parsers)
+DATABASE_URL="postgresql://panel_user:${POSTGRES_PASSWORD}@postgres:5432/panel_db?schema=public&connection_limit=5&connect_timeout=30"
 POSTGRES_USER=panel_user
 POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
 POSTGRES_DB=panel_db
@@ -793,14 +833,17 @@ step_4_database() {
     die "Database failed to initialize in time."
   fi
 
-  # Source .env to get POSTGRES_PASSWORD if we just created/sourced it
-  source "${INSTALL_DIR}/.env"
+  POSTGRES_PASSWORD="$(env_get POSTGRES_PASSWORD)"
+  POSTGRES_USER="$(env_get POSTGRES_USER)"
+  POSTGRES_DB="$(env_get POSTGRES_DB)"
+  export POSTGRES_PASSWORD POSTGRES_USER POSTGRES_DB
+  [[ -n "$POSTGRES_PASSWORD" ]] || die "POSTGRES_PASSWORD missing from ${INSTALL_DIR}/.env"
 
   info "Synchronizing database credentials..."
   local psql_retries=10
   local psql_success=false
   while [ $psql_retries -gt 0 ]; do
-    if docker exec -u postgres hmpanel-postgres psql -U panel_user -d panel_db -c "ALTER USER panel_user WITH PASSWORD '${POSTGRES_PASSWORD}';" &>/dev/null; then
+    if docker exec -u postgres hmpanel-postgres psql -U "${POSTGRES_USER:-panel_user}" -d "${POSTGRES_DB:-panel_db}" -c "ALTER USER \"${POSTGRES_USER:-panel_user}\" WITH PASSWORD '${POSTGRES_PASSWORD}';" &>/dev/null; then
       psql_success=true
       break
     fi
@@ -826,6 +869,12 @@ step_5_redis() {
 step_6_application() {
   step "[6/10] Application"
   cd "$INSTALL_DIR"
+  ensure_env_variables
+  local db_url
+  db_url="$(env_get DATABASE_URL)"
+  if [[ -z "$db_url" ]]; then
+    die "DATABASE_URL is empty in ${INSTALL_DIR}/.env — cannot run migrations."
+  fi
   info "Pulling Docker images (this may take a minute)..."
   local max_pull=5
   local pull_attempt=1

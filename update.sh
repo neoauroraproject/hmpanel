@@ -38,7 +38,13 @@ compose() {
   if [[ ${#COMPOSE_BIN[@]} -eq 0 ]]; then
     resolve_compose || die "Docker Compose is not available (need 'docker compose' or 'docker-compose')"
   fi
-  "${COMPOSE_BIN[@]}" "$@"
+  local env_args=()
+  if [[ -f .env ]]; then
+    env_args+=(--env-file .env)
+  elif [[ -n "${INSTALL_DIR:-}" && -f "${INSTALL_DIR}/.env" ]]; then
+    env_args+=(--env-file "${INSTALL_DIR}/.env")
+  fi
+  "${COMPOSE_BIN[@]}" "${env_args[@]}" "$@"
 }
 
 read_app_version() {

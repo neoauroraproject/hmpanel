@@ -13,14 +13,17 @@ services:
     expose:
       - "3000"  # Frontend (served via nginx)
       - "4000"  # Backend API (served via nginx)
+    # Secrets (DATABASE_URL, JWT_SECRET, INITIAL_ADMIN_*) come from .env via
+    # env_file — do not set them with bare ${VAR} below. Empty host
+    # interpolation becomes VAR="" and overrides env_file, breaking Prisma.
+    env_file:
+      - .env
     environment:
       - NODE_ENV=production
       - TZ=${TZ:-Asia/Tehran}
-      - DATABASE_URL=${DATABASE_URL}
       - REDIS_HOST=${REDIS_HOST:-redis}
       - REDIS_PORT=${REDIS_PORT:-6379}
       - REDIS_PASSWORD=${REDIS_PASSWORD:-redis_secret}
-      - JWT_SECRET=${JWT_SECRET}
       - PORT=${BACKEND_PORT:-4000}
       - APP_PORT=${APP_PORT:-3000}
       - RELEASE_MODE=${RELEASE_MODE:-COMMUNITY}
@@ -32,9 +35,6 @@ services:
       - NODE_PATH=/app/backend/node_modules:/app/node_modules
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-/api-proxy}
       - NEXT_PUBLIC_RELEASE_MODE=${RELEASE_MODE:-COMMUNITY}
-      - INITIAL_ADMIN_USERNAME=${INITIAL_ADMIN_USERNAME}
-      - INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD}
-      - INITIAL_ADMIN_EMAIL=${INITIAL_ADMIN_EMAIL}
     depends_on:
       postgres:
         condition: service_healthy
