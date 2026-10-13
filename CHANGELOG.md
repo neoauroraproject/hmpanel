@@ -8,6 +8,14 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [2.5.8] - 2026-10-13
+
+### Fixed
+- **USAGE-billed admins' clients are cut at their own volume even when 3x-ui shows them unlimited.** If a client of a usage-billed admin has a volume recorded in HMPanel (e.g. 10 GB), 3x-ui reads it as unlimited (0) and it has used its whole volume, HMPanel switches it off (reason: volume reached). Nothing is written to its volume, a manual disable is never overridden, and it is not turned back on while it is over its volume. The pool still only gates creating clients and the 24h grace period.
+
+### Added
+- Diagnostics: every client update now logs the `totalGB`/`enable` HMPanel sends, and the "volume reverted by 3x-ui" warning lists example clients, so it is visible whether a 0 comes from HMPanel or from 3x-ui.
+
 ## [2.5.7] - 2026-10-13
 
 ### Fixed

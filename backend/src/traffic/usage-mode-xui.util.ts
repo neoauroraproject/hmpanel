@@ -57,12 +57,19 @@ export type SyncQuotaAction =
    */
   | { kind: 'restoreCap'; capBytes: bigint }
   /** USAGE pool reopened and the client still has volume: turn it back on. */
-  | { kind: 'reenable'; capBytes: bigint };
+  | { kind: 'reenable'; capBytes: bigint }
+  /**
+   * The client used up its own volume while 3x-ui shows it unlimited (3x-ui
+   * cannot cut it). Switch it off here; the volume itself is not touched.
+   */
+  | { kind: 'disableOverLimit'; capBytes: bigint };
 
 /**
  * What sync must push to 3x-ui for one client. 3x-ui is the source of a
- * client's volume and enforces it; the only exception is a cap zeroed by the
- * v2.5.1 bug, restored from the DB while `healZeroedCaps` is on for the panel.
+ * client's volume and enforces it; the exceptions are caps zeroed by the
+ * v2.5.1 bug (restored from the DB while `healZeroedCaps` is on) and clients
+ * of USAGE owners whose 3x-ui cap reads unlimited although they have a volume
+ * (`enforceDbVolume`): those are cut at that volume by HMPanel itself.
  * The USAGE pool only decides when a pool-suspended client may come back on.
  */
 export function planSyncQuotaAction(opts: {
@@ -76,17 +83,30 @@ export function planSyncQuotaAction(opts: {
   hasOwner: boolean;
   poolOpen: boolean;
   healZeroedCaps: boolean;
+  enforceDbVolume?: boolean;
   nowMs?: number;
 }): SyncQuotaAction {
-  const zeroed =
-    opts.healZeroedCaps &&
-    opts.hasOwner &&
-    opts.panelTotal === 0n &&
-    opts.dbTotal > 0n;
+  const zeroedInPanel = opts.panelTotal === 0n && opts.dbTotal > 0n;
+  const zeroed = opts.healZeroedCaps && opts.hasOwner && zeroedInPanel;
   const capBytes = zeroed ? opts.dbTotal : opts.panelTotal;
   if (opts.missingSample) return { kind: 'none', capBytes };
 
-  const hasVolumeLeft = capBytes === 0n || opts.used < capBytes;
+  // The volume that actually limits the client: 3x-ui's cap, or HMPanel's own
+  // record while 3x-ui reads unlimited for a USAGE owner's client.
+  const limit =
+    opts.enforceDbVolume && zeroedInPanel ? opts.dbTotal : capBytes;
+  const hasVolumeLeft = limit === 0n || opts.used < limit;
+
+  if (
+    opts.panelEnable &&
+    opts.enforceDbVolume &&
+    zeroedInPanel &&
+    !hasVolumeLeft &&
+    !isUsageManualHold({ disableReason: opts.disableReason })
+  ) {
+    return { kind: 'disableOverLimit', capBytes };
+  }
+
   if (
     !opts.panelEnable &&
     hasVolumeLeft &&

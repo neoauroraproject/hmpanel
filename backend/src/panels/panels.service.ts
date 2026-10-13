@@ -1844,11 +1844,12 @@ export class PanelsService implements OnModuleInit {
         email: string;
         expiryTime: bigint;
         totalBytes: bigint;
-        action: 'restoreCap' | 'reenable';
+        action: 'restoreCap' | 'reenable' | 'disableOverLimit';
       }> = [];
       const healZeroedCaps = await this.isZeroCapHealActive(panel.id);
       let zeroedCapsSeen = 0;
       let capRevertedSeen = 0;
+      const capRevertedSample: string[] = [];
       const volumeConflicts = new Map<string, PanelVolumeConflict>();
       const usageOpenCache = new Map<string, Promise<boolean>>();
       const usagePoolOpen = (adminId: string) => {
@@ -2136,12 +2137,12 @@ export class PanelsService implements OnModuleInit {
             // keeps the DB value and is listed as a conflict that the panel
             // page can push from HMPanel on request. Only caps the v2.5.1 bug
             // zeroed are pushed back automatically, once (heal below).
-            const zeroCapEligible =
-              healZeroedCaps &&
+            const usageOwner =
               !!dbClient.adminId &&
               dbClient.admin?.trafficMode === 'USAGE' &&
               dbClient.admin?.role !== 'SUPER_ADMIN' &&
               dbClient.admin?.unlimitedTraffic !== true;
+            const zeroCapEligible = healZeroedCaps && usageOwner;
             const zeroedByBug =
               zeroCapEligible && total === 0n && dbClient.total > 0n;
             if (!missingSample && dbClient.total !== total) {
@@ -2183,13 +2184,17 @@ export class PanelsService implements OnModuleInit {
               hasOwner: !!ownerId,
               poolOpen: !enable && !!ownerId ? await usagePoolOpen(ownerId) : false,
               healZeroedCaps: zeroCapEligible,
+              enforceDbVolume: usageOwner,
             });
             const restoreKey = `${panel.id}:${trimmedEmail}`;
             let skipRestore = false;
             if (zeroedByBug) {
               zeroedCapsSeen++;
               const tries = this.capRestoreTries.get(restoreKey);
-              if (tries && tries.count > 0) capRevertedSeen++;
+              if (tries && tries.count > 0) {
+                capRevertedSeen++;
+                if (capRevertedSample.length < 5) capRevertedSample.push(trimmedEmail);
+              }
               skipRestore =
                 quotaAction.kind === 'restoreCap' &&
                 !!tries &&
@@ -2376,6 +2381,11 @@ export class PanelsService implements OnModuleInit {
             : {}),
         };
         if (repair.action === 'reenable') update.enable = true;
+        if (repair.action === 'disableOverLimit') {
+          // Only switch it off; the volume is left exactly as it is.
+          delete update.totalGB;
+          update.enable = false;
+        }
         const result = await this.updateClientOnPanel(panel.id, repair.email, update);
         if (!result.success) {
           this.markPanelUpdateFailure(panel.id, repair.email);
@@ -2389,6 +2399,15 @@ export class PanelsService implements OnModuleInit {
             where: { panelId: panel.id, email: repair.email },
             data: { enable: true, disableReason: null },
           });
+        }
+        if (repair.action === 'disableOverLimit') {
+          await this.prisma.client.updateMany({
+            where: { panelId: panel.id, email: repair.email },
+            data: { enable: false, disableReason: 'TRAFFIC_LIMIT' },
+          });
+          this.logger.warn(
+            `[SYNC] ${repair.email} on ${panel.name} used its whole volume while 3x-ui shows it unlimited — switched off by HMPanel.`,
+          );
         }
         if (repair.action === 'restoreCap') {
           const key = `${panel.id}:${repair.email}`;
@@ -2405,7 +2424,7 @@ export class PanelsService implements OnModuleInit {
         if (Date.now() - last > CAP_RESTORE_RETRY_MS) {
           this.capRevertWarnedAt.set(panel.id, Date.now());
           this.logger.warn(
-            `[SYNC] ${panel.name}: 3x-ui set ${capRevertedSeen} restored volume(s) back to unlimited right after they were written. ` +
+            `[SYNC] ${panel.name}: 3x-ui set ${capRevertedSeen} restored volume(s) back to unlimited right after they were written (e.g. ${capRevertedSample.join(', ')}). ` +
               `HMPanel's update was accepted, so 3x-ui itself is overwriting it — usually a node whose snapshot still carries the old value. ` +
               `Check the node in 3x-ui (Nodes page: online, same version, config pushed). Retrying every ${CAP_RESTORE_RETRY_MS / 60_000} min.` +
               ((this.nodeIssues.get(panel.id) ?? []).length
@@ -3367,6 +3386,7 @@ export class PanelsService implements OnModuleInit {
     this.logger.log(
       `[UPDATE_CLIENT] PANEL_BASE=${base} METHOD=POST URL=${endpoint} ` +
         `IDENTIFIER=email:"${email}" ` +
+        `totalGB=${body.totalGB} enable=${body.enable} ` +
         `PAYLOAD_SIZE=${JSON.stringify(body).length}B`,
     );
 

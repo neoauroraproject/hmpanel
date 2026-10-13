@@ -22,6 +22,7 @@ describe('usage-mode-xui.util', () => {
       hasOwner: true,
       poolOpen: true,
       healZeroedCaps: false,
+      enforceDbVolume: false,
       nowMs: NOW,
     };
     const plan = (o: Partial<typeof base> = {}) => planSyncQuotaAction({ ...base, ...o });
@@ -63,6 +64,34 @@ describe('usage-mode-xui.util', () => {
         kind: 'reenable',
         capBytes: BigInt(50 * GB),
       });
+    });
+
+    it('cuts a USAGE owner client at its own volume when 3x-ui shows it unlimited', () => {
+      const over = { panelTotal: 0n, used: BigInt(51 * GB), enforceDbVolume: true };
+      // heal off (after the first day) and heal on: over its volume => switched off
+      expect(plan(over).kind).toBe('disableOverLimit');
+      expect(plan({ ...over, healZeroedCaps: true }).kind).toBe('disableOverLimit');
+      // volume left: nothing to cut (heal on restores the cap, off leaves it)
+      expect(plan({ panelTotal: 0n, used: BigInt(GB), enforceDbVolume: true }).kind).toBe('none');
+      expect(
+        plan({ panelTotal: 0n, used: BigInt(GB), enforceDbVolume: true, healZeroedCaps: true }).kind,
+      ).toBe('restoreCap');
+      // a person's manual disable and non-USAGE owners are never touched
+      expect(plan({ ...over, disableReason: 'MANUAL' }).kind).toBe('none');
+      expect(plan({ ...over, enforceDbVolume: false }).kind).toBe('none');
+      // genuinely unlimited (no volume recorded) is never cut
+      expect(plan({ ...over, dbTotal: 0n }).kind).toBe('none');
+      // 3x-ui holds its own cap: it enforces it, HMPanel does not step in
+      expect(plan({ panelTotal: BigInt(50 * GB), used: BigInt(51 * GB), enforceDbVolume: true }).kind).toBe('none');
+    });
+
+    it('does not turn a cut client back on while it is over its volume', () => {
+      expect(
+        plan({ panelEnable: false, panelTotal: 0n, used: BigInt(51 * GB), enforceDbVolume: true, disableReason: 'TRAFFIC_LIMIT' }).kind,
+      ).toBe('none');
+      expect(
+        plan({ panelEnable: false, panelTotal: 0n, used: BigInt(GB), enforceDbVolume: true, disableReason: 'BALANCE_EXHAUSTED' }).kind,
+      ).toBe('reenable');
     });
 
     it('ignores missing samples', () => {
