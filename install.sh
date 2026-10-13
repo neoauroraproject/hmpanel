@@ -95,31 +95,68 @@ env_get() {
   printf '%s' "$line"
 }
 
+# Write/replace a .env key with a fully quoted value (safe for & ? = in URLs).
+env_set_quoted() {
+  local key="$1" val="$2" env_file="${3:-${INSTALL_DIR:-/opt/hmpanel}/.env}"
+  [[ -f "$env_file" ]] || return 1
+  awk -v k="$key" -v v="$val" '
+    BEGIN { done=0 }
+    index($0, k "=") == 1 {
+      print k "=\"" v "\""
+      done=1
+      next
+    }
+    { print }
+    END { if (!done) print k "=\"" v "\"" }
+  ' "$env_file" > "${env_file}.tmp" && mv "${env_file}.tmp" "$env_file"
+  chmod 600 "$env_file" 2>/dev/null || true
+  chown 1001:1001 "$env_file" 2>/dev/null || true
+}
+
 ensure_env_variables() {
   local env_file="/opt/hmpanel/.env"
   if [[ -f "$env_file" ]]; then
-    # Quote legacy unquoted DATABASE_URL so &query params are kept intact.
-    local raw_db db_val
+    local pg_user pg_pass pg_db raw_db db_val
+    pg_user="$(env_get POSTGRES_USER "$env_file")"
+    pg_pass="$(env_get POSTGRES_PASSWORD "$env_file")"
+    pg_db="$(env_get POSTGRES_DB "$env_file")"
+    [[ -n "$pg_user" ]] || pg_user="panel_user"
+    [[ -n "$pg_db" ]] || pg_db="panel_db"
+
+    # Heal / rebuild DATABASE_URL so install never stops on a partial .env.
     raw_db=$(grep -E '^DATABASE_URL=' "$env_file" | tail -n 1 || true)
-    if [[ -n "$raw_db" && "$raw_db" != DATABASE_URL=\"*\" && "$raw_db" != DATABASE_URL=\'*\' ]]; then
-      db_val="${raw_db#DATABASE_URL=}"
-      db_val="${db_val%$'\r'}"
-      if [[ "$db_val" == *"&"* ]]; then
-        awk -v v="$db_val" '$0 ~ /^DATABASE_URL=/ { print "DATABASE_URL=\"" v "\""; next } { print }' \
-          "$env_file" > "${env_file}.tmp" && mv "${env_file}.tmp" "$env_file"
-        chmod 600 "$env_file" 2>/dev/null || true
-        chown 1001:1001 "$env_file" 2>/dev/null || true
+    db_val="$(env_get DATABASE_URL "$env_file")"
+    if [[ -z "$db_val" ]]; then
+      if [[ -z "$pg_pass" ]]; then
+        pg_pass="$(openssl rand -hex 24)"
+        env_set_quoted "POSTGRES_PASSWORD" "$pg_pass" "$env_file"
+        warn "POSTGRES_PASSWORD was missing — generated a new one and will sync Postgres."
       fi
+      db_val="postgresql://${pg_user}:${pg_pass}@postgres:5432/${pg_db}?schema=public&connection_limit=5&connect_timeout=30"
+      env_set_quoted "DATABASE_URL" "$db_val" "$env_file"
+      log "DATABASE_URL was missing — rebuilt from PostgreSQL credentials."
+    elif [[ -n "$raw_db" && "$raw_db" != DATABASE_URL=\"*\" && "$raw_db" != DATABASE_URL=\'*\' && "$db_val" == *"&"* ]]; then
+      env_set_quoted "DATABASE_URL" "$db_val" "$env_file"
+      log "Quoted DATABASE_URL in .env for safe parsing."
     fi
-    if ! grep -qE '^DATABASE_URL=.+' "$env_file"; then
-      die "DATABASE_URL is missing from ${env_file}. Re-run the installer or restore .env."
+
+    if ! grep -q "^POSTGRES_USER=" "$env_file"; then update_env "POSTGRES_USER" "$pg_user"; fi
+    if ! grep -q "^POSTGRES_DB=" "$env_file"; then update_env "POSTGRES_DB" "$pg_db"; fi
+    if ! grep -qE '^JWT_SECRET=.+' "$env_file"; then
+      env_set_quoted "JWT_SECRET" "$(openssl rand -hex 64)" "$env_file"
+      log "JWT_SECRET was missing — generated a new one."
+    fi
+    if ! grep -qE '^REDIS_PASSWORD=.+' "$env_file"; then
+      env_set_quoted "REDIS_PASSWORD" "$(openssl rand -hex 24)" "$env_file"
+      log "REDIS_PASSWORD was missing — generated a new one."
     fi
     if ! grep -q "^PANEL_PROTOCOL=" "$env_file"; then update_env "PANEL_PROTOCOL" "http"; fi
     if ! grep -q "^SSL_ENABLED=" "$env_file"; then update_env "SSL_ENABLED" "false"; fi
     if ! grep -q "^SSL_PROVIDER=" "$env_file"; then update_env "SSL_PROVIDER" "none"; fi
     if ! grep -q "^PANEL_DOMAIN=" "$env_file"; then
       local current_domain
-      current_domain=$(grep "^DOMAIN=" "$env_file" | cut -d= -f2 || echo "localhost")
+      current_domain=$(grep "^DOMAIN=" "$env_file" | cut -d= -f2- | tr -d '\r' | tr -d '"' || echo "localhost")
+      [[ -n "$current_domain" ]] || current_domain="localhost"
       update_env "PANEL_DOMAIN" "$current_domain"
     fi
   fi
