@@ -3667,10 +3667,129 @@ cmd_ports() {
   read -rp "Press Enter to return to the menu..."
 }
 
+# ── Reset owner / SUPER_ADMIN password ───────────────────────────
+# Usage (headless): hm admin reset-password [new-password]
+# Interactive menu also calls this.
+admin_reset_password() {
+  local new_pass="${1:-}"
+  local confirm_pass=""
+
+  if ! docker inspect hmpanel-panel &>/dev/null; then
+    echo -e "${RED}✘ Panel container (hmpanel-panel) not found. Is HMPanel installed?${NC}" >&2
+    return 1
+  fi
+  if ! docker inspect -f '{{.State.Running}}' hmpanel-panel 2>/dev/null | grep -qi true; then
+    echo -e "${RED}✘ Panel container is not running. Start it first: cd ${INSTALL_DIR} && docker compose up -d${NC}" >&2
+    return 1
+  fi
+  if ! docker inspect hmpanel-postgres &>/dev/null; then
+    echo -e "${RED}✘ Postgres container not found.${NC}" >&2
+    return 1
+  fi
+
+  if [[ -z "$new_pass" || "$new_pass" == "--json" || "$new_pass" == "--debug" ]]; then
+    new_pass=""
+    if [[ -r /dev/tty ]]; then
+      read -rsp "  New admin password (min 8 chars): " new_pass </dev/tty || true
+      echo ""
+      read -rsp "  Confirm password: " confirm_pass </dev/tty || true
+      echo ""
+    else
+      read -rsp "  New admin password (min 8 chars): " new_pass || true
+      echo ""
+      read -rsp "  Confirm password: " confirm_pass || true
+      echo ""
+    fi
+    if [[ "$new_pass" != "${confirm_pass:-}" ]]; then
+      echo -e "${RED}✘ Passwords do not match.${NC}" >&2
+      return 1
+    fi
+  fi
+
+  if [[ -z "$new_pass" || ${#new_pass} -lt 8 ]]; then
+    echo -e "${RED}✘ Password must be at least 8 characters.${NC}" >&2
+    return 1
+  fi
+
+  local owner_id owner_user
+  owner_id=$(pg_exec -d panel_db -tAc \
+    "SELECT id FROM \"Admin\" WHERE \"isOwner\" = true OR role = 'SUPER_ADMIN' ORDER BY \"isOwner\" DESC, \"createdAt\" ASC LIMIT 1" \
+    2>/dev/null | tr -d '[:space:]' || true)
+  if [[ -z "$owner_id" || ! "$owner_id" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+    echo -e "${RED}✘ No SUPER_ADMIN / owner account found in the database.${NC}" >&2
+    return 1
+  fi
+  owner_user=$(pg_exec -d panel_db -tAc \
+    "SELECT username FROM \"Admin\" WHERE id = '${owner_id}'" \
+    2>/dev/null | tr -d '[:space:]' || true)
+
+  if [[ -z "$owner_user" ]]; then
+    echo -e "${RED}✘ No SUPER_ADMIN / owner account found in the database.${NC}" >&2
+    return 1
+  fi
+
+  local hash
+  hash=$(
+    docker exec -e NEW_PASS="$new_pass" hmpanel-panel node -e \
+      'require("bcryptjs").hash(process.env.NEW_PASS,10).then(h=>process.stdout.write(h))' \
+      2>/dev/null
+  ) || true
+
+  if [[ -z "$hash" || "$hash" != \$2* ]]; then
+    echo -e "${RED}✘ Failed to hash password (bcryptjs inside panel container).${NC}" >&2
+    return 1
+  fi
+
+  # Dollar-quote the hash so $2a$... is not interpolated by the shell/psql.
+  if ! pg_exec -d panel_db -v ON_ERROR_STOP=1 \
+    -c "UPDATE \"Admin\" SET \"passwordHash\" = \$hm\$${hash}\$hm\$, \"tokenVersion\" = \"tokenVersion\" + 1, status = 'active' WHERE id = '${owner_id}';" \
+    >/dev/null; then
+    echo -e "${RED}✘ Failed to update password in the database.${NC}" >&2
+    return 1
+  fi
+
+  # Keep installer .env in sync (quoted — passwords may contain special chars).
+  if [[ -f "${INSTALL_DIR}/.env" ]]; then
+    local esc_pass
+    esc_pass=$(printf '%s' "$new_pass" | sed 's/\\/\\\\/g; s/"/\\"/g')
+    awk -v v="$esc_pass" '
+      BEGIN { done=0 }
+      index($0, "INITIAL_ADMIN_PASSWORD=") == 1 {
+        print "INITIAL_ADMIN_PASSWORD=\"" v "\""
+        done=1
+        next
+      }
+      { print }
+      END { if (!done) print "INITIAL_ADMIN_PASSWORD=\"" v "\"" }
+    ' "${INSTALL_DIR}/.env" > "${INSTALL_DIR}/.env.tmp" \
+      && mv "${INSTALL_DIR}/.env.tmp" "${INSTALL_DIR}/.env"
+    chmod 600 "${INSTALL_DIR}/.env" 2>/dev/null || true
+    chown 1001:1001 "${INSTALL_DIR}/.env" 2>/dev/null || true
+  fi
+
+  if [[ "${JSON_OUTPUT:-false}" == "true" ]]; then
+    output_json true "PASSWORD_RESET_OK" "\"username\":\"${owner_user//\"/\\\"}\""
+  else
+    echo -e "${GREEN}✔${NC}  Password updated for admin ${CYAN}${owner_user}${NC}"
+    echo -e "  Existing sessions were invalidated — log in again with the new password."
+  fi
+  return 0
+}
+
+cmd_reset_admin_password() {
+  echo -e "${BOLD}--- Reset Main Admin Password ---${NC}\n"
+  if admin_reset_password; then
+    pause
+    return 0
+  fi
+  pause
+  return 1
+}
+
 # ─────────────────────────────────────────────────────────────────
 # Headless Command Parser (for API/Backend integration)
 # ─────────────────────────────────────────────────────────────────
-if [[ "$JSON_OUTPUT" == "true" || "${1:-}" == "ssl" || "${1:-}" == "doctor" || "${1:-}" == "version" || "${1:-}" == "backup" || "${1:-}" == "restore" || "${1:-}" == "heal" || "${1:-}" == "update" || "${1:-}" == "ports" ]]; then
+if [[ "$JSON_OUTPUT" == "true" || "${1:-}" == "ssl" || "${1:-}" == "doctor" || "${1:-}" == "version" || "${1:-}" == "backup" || "${1:-}" == "restore" || "${1:-}" == "heal" || "${1:-}" == "update" || "${1:-}" == "ports" || "${1:-}" == "admin" || "${1:-}" == "passwd" ]]; then
   HEADLESS=true
   MODULE="${1:-}"
   ACTION="${2:-}"
@@ -3794,6 +3913,27 @@ if [[ "$JSON_OUTPUT" == "true" || "${1:-}" == "ssl" || "${1:-}" == "doctor" || "
   elif [[ "$MODULE" == "update" ]]; then
     curl -fsSL https://raw.githubusercontent.com/neoauroraproject/hmpanel/main/update.sh | bash
     exit $?
+  elif [[ "$MODULE" == "admin" ]]; then
+    case "$ACTION" in
+      reset-password|passwd|password)
+        # hm admin reset-password [new-password]
+        if admin_reset_password "${3:-}"; then
+          exit 0
+        fi
+        exit 1
+        ;;
+      *)
+        if [[ "$JSON_OUTPUT" == "true" ]]; then output_json false "UNKNOWN_COMMAND"; exit 1; fi
+        echo "Usage: hm admin reset-password [new-password]"
+        exit 1
+        ;;
+    esac
+  elif [[ "$MODULE" == "passwd" ]]; then
+    # Shorthand: hm passwd [new-password]
+    if admin_reset_password "${ACTION:-}"; then
+      exit 0
+    fi
+    exit 1
   fi
   exit 0
 fi
@@ -3816,6 +3956,7 @@ while true; do
   echo -e "  10. Uninstall HMPanel"
   echo -e "  11. Heal Panel (fix 502 / auth drift)"
   echo -e "  12. Change Panel Ports"
+  echo -e "  13. Reset Main Admin Password"
   echo -e "  0. Exit"
   echo ""
   
@@ -3835,6 +3976,7 @@ while true; do
     10) cmd_uninstall ;;
     11) cmd_heal ;;
     12) cmd_ports ;;
+    13) cmd_reset_admin_password ;;
     0) echo "Goodbye!"; exit 0 ;;
     *) echo -e "  ${RED}Invalid option!${NC}"; sleep 1 ;;
   esac

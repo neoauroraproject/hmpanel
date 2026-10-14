@@ -53,6 +53,13 @@ bash <(curl -fsSL https://raw.githubusercontent.com/neoauroraproject/hmpanel/mai
 - **Web UI (New!):** Go to *Settings > System Maintenance* to download, upload, or restore backups with one click.
 - **CLI Manager:** Run `sudo hm` to create or restore backups safely via the terminal.
 
+### 🔑 Reset Main Admin Password
+Forgot the owner / SUPER_ADMIN password? Reset it from the server (interactive prompt):
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/neoauroraproject/hmpanel/main/scripts/reset-admin-password.sh)
+```
+Or via CLI after install/update: `sudo hm admin reset-password` · `sudo hm passwd` · menu option **13**.
+
 ---
 
 <h2 id="فارسی">🇮🇷 فارسی</h2>
@@ -97,6 +104,13 @@ bash <(curl -fsSL https://raw.githubusercontent.com/neoauroraproject/hmpanel/mai
 ### 💾 بکاپ و بازگردانی
 - **از طریق پنل کاربری (جدید):** با مراجعه به بخش *تنظیمات > نگهداری سیستم* به راحتی بکاپ‌ها را دانلود، آپلود یا بازگردانی کنید.
 - **از طریق ترمینال (CLI):** دستور `sudo hm` را وارد کنید تا به منوی مدیریت سرور و بخش بکاپ دسترسی داشته باشید.
+
+### 🔑 ریست رمز ادمین اصلی
+اگر رمز ادمین اصلی (owner / SUPER_ADMIN) را فراموش کردید، روی سرور این دستور تک‌خطی را بزنید:
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/neoauroraproject/hmpanel/main/scripts/reset-admin-password.sh)
+```
+یا بعد از نصب/آپدیت: `sudo hm admin reset-password` · `sudo hm passwd` · گزینه **۱۳** منوی `hm`.
 
 ---
 

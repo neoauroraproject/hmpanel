@@ -8,6 +8,12 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [2.5.9] - 2026-10-14
+
+### Added
+- **Reset main admin password from the server:** `sudo hm admin reset-password` (also `sudo hm passwd` and menu option 13). Updates the owner / SUPER_ADMIN hash, bumps `tokenVersion` to invalidate sessions, and syncs `INITIAL_ADMIN_PASSWORD` in `.env`.
+- **One-liner for locked-out installs:** `bash <(curl -fsSL https://raw.githubusercontent.com/neoauroraproject/hmpanel/main/scripts/reset-admin-password.sh)` — documented in the README (EN/FA).
+
 ## [2.5.8] - 2026-10-13
 
 ### Fixed
