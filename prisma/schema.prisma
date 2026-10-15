@@ -829,6 +829,9 @@ model StoreAddonGrant {
   trafficQuotaBytes  BigInt   @default(0)
   maxClients         Int      @default(0)
   allowedScope       Json?
+  /// Per-grantee Pasarguard API key/URL (Pasarguard requires a key per admin; Eylan uses the shared connection).
+  overrideApiBaseUrl String   @default("")
+  overrideApiKeyEnc  String   @default("")
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
