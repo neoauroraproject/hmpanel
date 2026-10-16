@@ -31,6 +31,8 @@ import { ThemesController } from '../themes/themes.controller';
 import { BotApiService } from '../bots/bot-api.service';
 import { BotApiKeyGuard } from '../bots/bot-api.guard';
 import { BotApiV1Controller } from '../bots/bot-api.controller';
+import { AdminApiV1Controller } from '../bots/admin-api.controller';
+import { AdminApiService } from '../bots/admin-api.service';
 import { TelegramCoreService } from '../bots/telegram-core.service';
 import { ProvisioningEngine } from '../provisioning/provisioning.engine';
 import { WebhookDispatcher } from '../events/webhook-dispatcher.service';
@@ -57,6 +59,7 @@ import {
     ArchitectureController,
     ThemesController,
     BotApiV1Controller,
+    AdminApiV1Controller,
     JobCenterController,
     PaymentManagementController,
     WalletPayWebhookController,
@@ -79,6 +82,7 @@ import {
     PaymentManagementService,
     ThemesService,
     BotApiService,
+    AdminApiService,
     BotApiKeyGuard,
     TelegramCoreService,
     ProvisioningEngine,

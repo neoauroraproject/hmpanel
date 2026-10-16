@@ -68,7 +68,8 @@
     "sectionTools": "ابزارها",
     "sectionAppearance": "ظاهر",
     "sectionAdministration": "مدیریت",
-    "sectionSettings": "تنظیمات"
+    "sectionSettings": "تنظیمات",
+    "apiKeys": "دسترسی API"
   },
   "common": {
     "save": "ذخیره",
@@ -1477,5 +1478,39 @@
     "errors": {
       "save": "ذخیره ناموفق بود"
     }
+  },
+  "apiKeys": {
+    "title": "دسترسی API",
+    "subtitle": "کلید بساز تا ربات، سایت یا اپ دیگری (مثل NeoConfig) با همان دسترسی‌های شما به کاربران و اشتراک‌ها وصل شود.",
+    "name": "نام کلید",
+    "namePlaceholder": "مثلاً NeoConfig",
+    "owner": "این کلید به جای چه ادمینی کار کند",
+    "ownerSelf": "خودم",
+    "access": "دسترسی",
+    "full": "دسترسی کامل (هرچه این ادمین می‌تواند)",
+    "custom": "انتخابی",
+    "create": "ساخت کلید",
+    "created": "کلید ساخته شد",
+    "failed": "ساخت کلید انجام نشد",
+    "copyOnce": "این کلید فقط همین یک بار نمایش داده می‌شود. همین حالا کپی‌اش کن.",
+    "copy": "کپی",
+    "copied": "کپی شد",
+    "keys": "کلیدها",
+    "empty": "هنوز کلیدی نساخته‌ای.",
+    "revoke": "لغو کلید",
+    "revoked": "کلید لغو شد",
+    "disabled": "لغوشده",
+    "lastUsed": "آخرین استفاده",
+    "never": "هرگز",
+    "docs": "راهنمای API",
+    "docsHint": "همهٔ درخواست‌ها با هدر Authorization: Bearer hmp_... ارسال می‌شوند.",
+    "scope_account.read": "مشخصات حساب",
+    "scope_clients.read": "دیدن کاربران و مصرف",
+    "scope_clients.write": "ساخت، ویرایش و حذف کاربر",
+    "scope_clients.renew": "تمدید و صفر کردن مصرف",
+    "scope_traffic.read": "دفتر تراکنش‌های ترافیک",
+    "scope_inbounds.read": "لیست اینباندها",
+    "scope_stats.read": "آمار",
+    "scope_webhooks.manage": "وبهوک"
   }
 }

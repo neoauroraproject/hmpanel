@@ -13,6 +13,8 @@ Base path: `/v1`. Authenticate with header `Authorization: Bearer hmp_...` (API 
 
 Super-admin JWT manages keys at `GET/POST /v1/api-clients` and `DELETE /v1/api-clients/:id`.
 
+Every admin can also create keys that act as themselves (full scope list, lookup and renew endpoints): see [admin-api.md](admin-api.md).
+
 ## Webhook payload
 
 When `outbound_webhooks_v1` is enabled, signed POSTs go to the client's `webhookUrl`.

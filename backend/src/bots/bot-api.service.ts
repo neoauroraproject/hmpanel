@@ -7,7 +7,14 @@ import {
 } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import { PrismaService } from '../prisma/prisma.service';
-import { generateApiKey, hashApiKey, parseScopes } from './bot-api.types';
+import { assertAdminSessionActive } from '../auth/admin-session.util';
+import {
+  FULL_ACCESS_SCOPE,
+  generateApiKey,
+  hasScope,
+  hashApiKey,
+  parseScopes,
+} from './bot-api.types';
 import { ClientsService } from '../clients/clients.service';
 import { TrafficService } from '../traffic/traffic.service';
 
@@ -18,19 +25,71 @@ export class BotApiService {
     private moduleRef: ModuleRef,
   ) {}
 
-  async createClient(adminId: string, name: string, scopes: unknown) {
+  async createClient(adminId: string, name: string, scopes: unknown, rateLimitPerMin?: number) {
+    const parsed = parseScopes(scopes);
+    if (!parsed.length) throw new BadRequestException('Choose at least one scope');
     const key = generateApiKey();
     const row = await this.model().create({
       data: {
-        name,
+        name: String(name || 'API key').trim().slice(0, 80),
         adminId,
         keyPrefix: key.prefix,
         keyHash: key.hash,
-        scopes: parseScopes(scopes),
+        scopes: parsed,
+        rateLimitPerMin: Math.min(Math.max(Number(rateLimitPerMin) || 60, 10), 600),
         enabled: true,
       },
     });
-    return { ...row, apiKey: key.plain };
+    const { keyHash: _hash, ...safe } = row;
+    return { ...safe, apiKey: key.plain };
+  }
+
+  /**
+   * Issue a key that acts as `targetAdminId`. Admins issue keys for themselves;
+   * a super admin may issue one for any admin.
+   */
+  async createForAdmin(
+    actor: { id: string; role: string },
+    body: { name?: string; scopes?: unknown; adminId?: string; rateLimitPerMin?: number },
+  ) {
+    const targetId = body.adminId && actor.role === 'SUPER_ADMIN' ? body.adminId : actor.id;
+    if (body.adminId && body.adminId !== actor.id && actor.role !== 'SUPER_ADMIN') {
+      throw new ForbiddenException('Only a super admin can issue keys for other admins');
+    }
+    const target = await this.prisma.admin.findUnique({ where: { id: targetId }, select: { id: true } });
+    if (!target) throw new NotFoundException('Admin not found');
+    return this.createClient(targetId, body.name || 'API key', body.scopes ?? [FULL_ACCESS_SCOPE], body.rateLimitPerMin);
+  }
+
+  /** Keys the actor may manage: their own, or everyone's for a super admin. */
+  async listForActor(actor: { id: string; role: string }) {
+    const rows = await this.model().findMany({
+      where: actor.role === 'SUPER_ADMIN' ? undefined : { adminId: actor.id },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        name: true,
+        adminId: true,
+        keyPrefix: true,
+        scopes: true,
+        rateLimitPerMin: true,
+        webhookUrl: true,
+        enabled: true,
+        lastUsedAt: true,
+        createdAt: true,
+        admin: { select: { username: true, role: true } },
+      },
+    });
+    return rows;
+  }
+
+  async revokeForActor(actor: { id: string; role: string }, id: string) {
+    const row = await this.getOrThrow(id);
+    if (actor.role !== 'SUPER_ADMIN' && row.adminId !== actor.id) {
+      throw new NotFoundException('API client not found');
+    }
+    await this.model().update({ where: { id }, data: { enabled: false } });
+    return { ok: true };
   }
 
   async list(adminId?: string) {
@@ -88,10 +147,16 @@ export class BotApiService {
       throw new UnauthorizedException('Invalid API key');
     }
     const hash = hashApiKey(plainKey);
-    const row = await this.model().findFirst({ where: { keyHash: hash } });
+    const row = await this.model().findFirst({
+      where: { keyHash: hash },
+      include: { admin: { select: { id: true, role: true, status: true, expiryTime: true } } },
+    });
     if (!row || !row.enabled) {
       throw new UnauthorizedException('Invalid API key');
     }
+    // A key is only as alive as its admin: disabled or expired admins lose API access too.
+    assertAdminSessionActive(row.admin);
+    row.adminRole = row.admin.role;
     await this.model()
       .update({ where: { id: row.id }, data: { lastUsedAt: new Date() } })
       .catch(() => undefined);
@@ -99,8 +164,7 @@ export class BotApiService {
   }
 
   assertScope(row: { scopes: unknown }, scope: string) {
-    const scopes = Array.isArray(row.scopes) ? row.scopes.map(String) : [];
-    if (!scopes.includes(scope)) {
+    if (!hasScope(row.scopes, scope)) {
       throw new ForbiddenException(`Missing scope: ${scope}`);
     }
   }

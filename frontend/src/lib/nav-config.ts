@@ -17,6 +17,7 @@ import {
   CreditCard,
   Gift,
   Gauge,
+  KeyRound,
 } from "lucide-react";
 import type { Role } from "@/lib/types";
 
@@ -97,7 +98,10 @@ export const CORE_NAV_SECTIONS: CoreNavSection[] = [
   {
     id: "settings",
     labelKey: "nav.sectionSettings",
-    items: [{ href: "/settings", icon: Settings, labelKey: "nav.settings", roles: ["SUPER_ADMIN"] }],
+    items: [
+      { href: "/api-keys", icon: KeyRound, labelKey: "nav.apiKeys" },
+      { href: "/settings", icon: Settings, labelKey: "nav.settings", roles: ["SUPER_ADMIN"] },
+    ],
   },
 ];
 

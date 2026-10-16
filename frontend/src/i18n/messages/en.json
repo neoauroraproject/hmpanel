@@ -68,7 +68,8 @@
     "sectionTools": "Tools",
     "sectionAppearance": "Appearance",
     "sectionAdministration": "Administration",
-    "sectionSettings": "Settings"
+    "sectionSettings": "Settings",
+    "apiKeys": "API access"
   },
   "common": {
     "save": "Save",
@@ -1477,5 +1478,39 @@
     "errors": {
       "save": "Could not save"
     }
+  },
+  "apiKeys": {
+    "title": "API access",
+    "subtitle": "Create a key so a bot, website or another app (such as NeoConfig) can reach your clients and subscriptions with exactly your permissions.",
+    "name": "Key name",
+    "namePlaceholder": "e.g. NeoConfig",
+    "owner": "Acts as admin",
+    "ownerSelf": "Me",
+    "access": "Access",
+    "full": "Full access (everything this admin can do)",
+    "custom": "Choose",
+    "create": "Create key",
+    "created": "Key created",
+    "failed": "Could not create the key",
+    "copyOnce": "This key is shown only once. Copy it now.",
+    "copy": "Copy",
+    "copied": "Copied",
+    "keys": "Keys",
+    "empty": "You have no keys yet.",
+    "revoke": "Revoke key",
+    "revoked": "Key revoked",
+    "disabled": "Revoked",
+    "lastUsed": "Last used",
+    "never": "Never",
+    "docs": "API guide",
+    "docsHint": "Every request sends the header Authorization: Bearer hmp_...",
+    "scope_account.read": "Account details",
+    "scope_clients.read": "View clients and usage",
+    "scope_clients.write": "Create, edit and delete clients",
+    "scope_clients.renew": "Renew and reset usage",
+    "scope_traffic.read": "Traffic ledger",
+    "scope_inbounds.read": "List inbounds",
+    "scope_stats.read": "Statistics",
+    "scope_webhooks.manage": "Webhooks"
   }
 }
