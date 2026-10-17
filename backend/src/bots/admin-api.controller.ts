@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, NotFoundException, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
@@ -7,7 +7,9 @@ import { getRequestOrigin } from '../common/utils/request-origin';
 import { AdminApiService, ApiActor } from './admin-api.service';
 import { BotApiKeyGuard } from './bot-api.guard';
 import { BotApiService } from './bot-api.service';
-import { BOT_API_SCOPES, FULL_ACCESS_SCOPE } from './bot-api.types';
+import { BOT_API_SCOPES, FULL_ACCESS_SCOPE, PREMIUM_API_SCOPES } from './bot-api.types';
+import { hasPremiumApiRoutes, v1OpenApiDocument } from './openapi-holder';
+import { FeatureEntitlementService } from '../platform/feature-entitlement.service';
 
 type KeyRequest = Request & { botApiClient: { id: string; adminId: string; adminRole: string; scopes: unknown } };
 
@@ -25,7 +27,40 @@ export class AdminApiV1Controller {
   constructor(
     private bots: BotApiService,
     private data: AdminApiService,
+    private entitlement: FeatureEntitlementService,
   ) {}
+
+  /** Premium routes answer only when the bundle registered them and the license is active. */
+  private async premiumAvailable(): Promise<boolean> {
+    return hasPremiumApiRoutes() && (await this.entitlement.can('premium').catch(() => false));
+  }
+
+  // ---------- documentation (public: describes routes, holds no data) ----------
+
+  @Get('docs')
+  @ApiOperation({ summary: 'Where the API documentation lives' })
+  async docs() {
+    return {
+      guide: 'https://github.com/neoauroraproject/hmpanel/blob/main/docs/admin-api.md',
+      swaggerUi: '/api/api',
+      openapi: { v1: '/api/v1/openapi.json', full: '/api/api-json' },
+      auth: 'Authorization: Bearer hmp_…',
+      scopes: [...BOT_API_SCOPES, FULL_ACCESS_SCOPE],
+      premium: {
+        available: await this.premiumAvailable(),
+        basePath: '/api/v1/premium',
+        scopes: PREMIUM_API_SCOPES,
+      },
+    };
+  }
+
+  @Get('openapi.json')
+  @ApiOperation({ summary: 'OpenAPI document for the /v1 key API' })
+  openapi() {
+    const doc = v1OpenApiDocument();
+    if (!doc) throw new NotFoundException('Documentation is not ready yet');
+    return doc;
+  }
 
   // ---------- key management (signed-in admin, any role) ----------
 
@@ -33,8 +68,13 @@ export class AdminApiV1Controller {
   @UseGuards(AuthGuard('jwt'))
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Scopes a key can be granted' })
-  keyScopes() {
-    return { scopes: BOT_API_SCOPES, fullAccess: FULL_ACCESS_SCOPE };
+  async keyScopes() {
+    return {
+      scopes: BOT_API_SCOPES,
+      premiumScopes: PREMIUM_API_SCOPES,
+      premiumAvailable: await this.premiumAvailable(),
+      fullAccess: FULL_ACCESS_SCOPE,
+    };
   }
 
   @Get('keys')

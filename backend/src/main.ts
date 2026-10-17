@@ -4,6 +4,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { json, urlencoded } from 'express';
 import { AppModule } from './app.module';
 import { PrismaService } from './prisma/prisma.service';
+import { setOpenApiDocument } from './bots/openapi-holder';
 import { loadPremiumModulesForBootstrap, markPremiumBootstrapFailed } from './plugins/premium-bootstrap';
 import axios from 'axios';
 import * as https from 'https';
@@ -63,10 +64,15 @@ async function bootstrap() {
     .setTitle('Panel API')
     .setDescription('Multi-server 3x-ui reseller management panel API')
     .setVersion('1.0')
-    .addBearerAuth()
+    .addBearerAuth({
+      type: 'http',
+      scheme: 'bearer',
+      description: 'Admin login token. API keys (hmp_…) from Settings → API work on the /v1 routes.',
+    })
     .build();
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api', app, document);
+  setOpenApiDocument(document);
 
   // ── Raw Express middleware for /sub/* asset proxy ──────────────
   // NestJS v11 @Get('*') doesn't match multi-segment paths,

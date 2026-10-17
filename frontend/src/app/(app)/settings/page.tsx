@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Save, Settings, Activity, ArchiveX, ChevronRight, Info, ExternalLink, Database, Download, Upload, Shield, RefreshCw, Clock, KeyRound, Bot } from "lucide-react";
+import { Save, Settings, Activity, ArchiveX, ChevronRight, Info, ExternalLink, Database, Download, Upload, Shield, RefreshCw, Clock, KeyRound, Bot, Braces } from "lucide-react";
 import { api } from "@/lib/api";
 import { useRouter } from "next/navigation";
 import { ErrorBox, PageHeader, Spinner, Card } from "@/components/ui";
@@ -15,6 +15,7 @@ import { LocaleSwitcher } from "@/components/LocaleSwitcher";
 import { useT } from "@/i18n";
 import { setDisplayTimezone, applyDisplayCalendar } from "@/lib/format";
 import { BotsApiSettings } from "./BotsApiSettings";
+import { ApiKeysPanel } from "@/components/ApiKeysPanel";
 import {
   COMMON_TIMEZONES,
   DEFAULT_DISPLAY_TIMEZONE,
@@ -28,7 +29,7 @@ export default function GlobalSettingsPage() {
   const toast = useToast((s) => s.push);
   const router = useRouter();
 
-  type SettingsTab = "general" | "license" | "ssl" | "backup" | "bots" | "about";
+  type SettingsTab = "general" | "license" | "ssl" | "backup" | "api" | "bots" | "about";
   const [tab, setTab] = useState<SettingsTab>("general");
 
   const { data: settings, isLoading, error } = useQuery({
@@ -79,6 +80,7 @@ export default function GlobalSettingsPage() {
     { id: "license", label: t("settings.tabLicense"), icon: KeyRound },
     { id: "ssl", label: t("settings.tabSsl"), icon: Shield },
     { id: "backup", label: t("settings.tabBackup"), icon: Database },
+    { id: "api", label: t("settings.tabApi"), icon: Braces },
     { id: "bots", label: t("settings.tabBots"), icon: Bot },
     { id: "about", label: t("settings.tabAbout"), icon: Info },
   ];
@@ -312,6 +314,13 @@ export default function GlobalSettingsPage() {
       {tab === "backup" && (
         <div className="max-w-4xl">
           <BackupRestoreCard />
+        </div>
+      )}
+
+      {tab === "api" && (
+        <div className="space-y-4">
+          <p className="text-sm text-zinc-500">{t("apiKeys.subtitle")}</p>
+          <ApiKeysPanel />
         </div>
       )}
 

@@ -14,4 +14,9 @@ describe('Bot API key helpers', () => {
     expect(hasScope(['clients.read'], 'clients.write')).toBe(false);
     expect(hasScope(null, 'clients.read')).toBe(false);
   });
+
+  it('accepts premium scopes alongside the core ones', () => {
+    expect(parseScopes(['store.read', 'agency.write', 'store.nope'])).toEqual(['store.read', 'agency.write']);
+    expect(hasScope(['*'], 'external.write')).toBe(true);
+  });
 });
