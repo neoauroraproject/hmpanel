@@ -222,7 +222,7 @@ export class ClientOutputService {
 
   private async buildExternalPanelOutput(
     client: any,
-    panel: { id?: string; subUrl?: string | null } | null,
+    panel: { id?: string; url?: string | null; subUrl?: string | null } | null,
     panelType: string,
   ): Promise<ClientOutputModel> {
     const username = String(client.remoteUsername || client.email || '').trim();
@@ -239,14 +239,21 @@ export class ClientOutputService {
       void this.rememberSubscriptionUrl(client.id, client.providerMeta, nativeSubUrl);
     }
 
+    // Delivery domain lives on panel.subUrl. Fall back to the panel API host so a
+    // relative `/sub/{token}` from Pasarguard still becomes an absolute link.
+    const deliveryBase = String(panel?.subUrl || panel?.url || '').trim();
     const systemSubUrl = nativeSubUrl
-      ? rewriteSubscriptionDeliveryHost(nativeSubUrl, panel?.subUrl)
+      ? rewriteSubscriptionDeliveryHost(nativeSubUrl, deliveryBase)
       : '';
+    const absoluteNative =
+      nativeSubUrl && !/^https?:\/\//i.test(String(nativeSubUrl))
+        ? systemSubUrl || nativeSubUrl
+        : nativeSubUrl;
 
     return buildExternalPanelSubscriptionOutput({
       clientId: client.id,
       protocol: panelType,
-      nativeSubUrl,
+      nativeSubUrl: absoluteNative,
       systemSubUrl,
     });
   }

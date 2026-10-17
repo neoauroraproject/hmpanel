@@ -155,12 +155,22 @@ export function rewriteSubscriptionDeliveryHost(
   if (!src) return src;
   const base = String(deliveryBase || '').trim();
   if (!base) return src;
+  let dest: URL;
   try {
-    const dest = new URL(base.includes('://') ? base : `https://${base}`);
-    const parsed = new URL(src);
-    parsed.hostname = dest.hostname;
-    parsed.port = dest.port;
-    return parsed.toString();
+    dest = new URL(base.includes('://') ? base : `https://${base}`);
+  } catch {
+    return src;
+  }
+  try {
+    if (/^https?:\/\//i.test(src)) {
+      const parsed = new URL(src);
+      parsed.hostname = dest.hostname;
+      parsed.port = dest.port;
+      return parsed.toString();
+    }
+    // Pasarguard (and some panels) return a hostless path such as `/sub/{token}`.
+    const path = src.startsWith('/') ? src : `/${src}`;
+    return `${dest.origin}${path}`;
   } catch {
     return src;
   }

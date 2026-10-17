@@ -27,6 +27,18 @@ describe('native-sub-url extras', () => {
     ).toBe('https://cdn.vpn.test/sub/TOKEN/alice');
   });
 
+  it('joins a hostless /sub path onto the delivery domain', () => {
+    expect(
+      rewriteSubscriptionDeliveryHost(
+        '/sub/djMsMzYsMTc5MjI0',
+        'https://sub.example.com/',
+      ),
+    ).toBe('https://sub.example.com/sub/djMsMzYsMTc5MjI0');
+    expect(
+      rewriteSubscriptionDeliveryHost('/sub/tok', 'panel.example.com'),
+    ).toBe('https://panel.example.com/sub/tok');
+  });
+
   it('prefers native provider URL over store /s/ link', () => {
     expect(
       customerFacingSubscriptionUrl({
