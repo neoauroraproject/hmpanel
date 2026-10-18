@@ -55,6 +55,30 @@ export function assertDeviceLimitAllowed(
 }
 
 /**
+ * Validates a store-plan / product duration in whole days.
+ * A cap > 0 forbids unlimited (0) and anything longer than the cap.
+ */
+export function assertDurationDaysAllowed(
+  cap: number,
+  durationDays: number | undefined | null,
+): number {
+  const normalizedCap = toCount(cap);
+  const days = toCount(durationDays);
+  if (normalizedCap <= 0) return days;
+  if (!(days > 0)) {
+    throw new BadRequestException(
+      `Unlimited duration is not allowed. Your maximum is ${normalizedCap} day(s).`,
+    );
+  }
+  if (days > normalizedCap) {
+    throw new BadRequestException(
+      `Duration of ${days} day(s) exceeds your maximum of ${normalizedCap} day(s).`,
+    );
+  }
+  return days;
+}
+
+/**
  * Validates the client expiry a reseller wants to set.
  * A cap > 0 forbids "never expires" (0) and any duration longer than the cap.
  * Negative values are 3x-ui "start on first use" durations and are measured directly.

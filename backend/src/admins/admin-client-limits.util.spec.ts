@@ -2,6 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import {
   assertClientTrafficAllowed,
   assertDeviceLimitAllowed,
+  assertDurationDaysAllowed,
   assertExpireDaysAllowed,
   resolveClientLimitCaps,
 } from './admin-client-limits.util';
@@ -60,6 +61,20 @@ describe('assertExpireDaysAllowed', () => {
     expect(() => assertExpireDaysAllowed(30, -60 * DAY_MS, NOW)).toThrow(
       BadRequestException,
     );
+  });
+});
+
+describe('assertDurationDaysAllowed', () => {
+  it('is a no-op when the cap is unlimited', () => {
+    expect(assertDurationDaysAllowed(0, 0)).toBe(0);
+    expect(assertDurationDaysAllowed(0, 365)).toBe(365);
+  });
+
+  it('rejects unlimited and over-cap durations', () => {
+    expect(() => assertDurationDaysAllowed(31, 0)).toThrow(BadRequestException);
+    expect(() => assertDurationDaysAllowed(31, 32)).toThrow(BadRequestException);
+    expect(assertDurationDaysAllowed(31, 31)).toBe(31);
+    expect(assertDurationDaysAllowed(31, 7)).toBe(7);
   });
 });
 
