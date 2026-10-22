@@ -8,6 +8,11 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [2.5.10] - 2026-10-22
+
+### Fixed
+- **Telegram Stars payments now use the Telegram proxy.** Invoice creation and pre-checkout answers went straight to `api.telegram.org`, so Stars payments failed on servers where Telegram is only reachable through the proxy set in Premium settings. Premium (2.5.18+) now routes these calls through the same SOCKS5 / HTTP proxy; without Premium they stay direct.
+
 ## [2.5.9] - 2026-10-14
 
 ### Added
