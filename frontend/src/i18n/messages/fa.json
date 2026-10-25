@@ -400,6 +400,7 @@
     "sharedPoolHint": "همان مخزن مشترک روی همه پنل‌ها",
     "perPanelTrafficBreakdown": "ترافیک به تفکیک پنل",
     "insufficientPanelBalance": "ترافیک این پنل کافی نیست",
+    "removeExceedsVolume": "نمی‌توان کل حجم را کم کرد — حجم ۰ یعنی نامحدود. به‌جایش کلاینت را حذف یا غیرفعال کنید.",
     "insufficientSharedBalance": "ترافیک حجم کلی کافی نیست",
     "bulkResultTitle": "خلاصه عملیات گروهی",
     "bulkResultAction": "عملیات: {action}",

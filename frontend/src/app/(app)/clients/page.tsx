@@ -2710,6 +2710,9 @@ export function EditClientModal({
   }
 
   const isTrafficDecrease = previewDiffBytes < 0;
+  // Removing the whole volume would leave 0, which 3x-ui reads as unlimited.
+  const removeTooMuch =
+    trafficMode === "remove" && !!trafficInput && totalTraffic > 0 && inputBytes >= totalTraffic;
   const adminPanelInsufficient = trafficMode === "add"
     && !!trafficInput
     && previewDiffBytes > 0
@@ -2906,6 +2909,9 @@ export function EditClientModal({
               {adminPanelInsufficient && (
                 <p className="text-[11px] text-red-400 font-medium">{t(adminSharedPool ? "clients.insufficientSharedBalance" : "clients.insufficientPanelBalance")}</p>
               )}
+              {removeTooMuch && (
+                <p className="text-[11px] text-red-400 font-medium">{t("clients.removeExceedsVolume")}</p>
+              )}
 
               <div className="mt-4">
                 <label className="mb-1 block text-xs text-zinc-500">{t(useHwidLabel ? "clients.hwidLimit" : "clients.ipLimit")}</label>
@@ -3078,6 +3084,7 @@ export function EditClientModal({
                 update.isPending ||
                 form.inboundIds.length === 0 ||
                 adminPanelInsufficient ||
+                removeTooMuch ||
                 (canRenameOnPanel && emailInvalid)
               }
               className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"

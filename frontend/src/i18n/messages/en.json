@@ -400,6 +400,7 @@
     "sharedPoolHint": "Same shared pool on every panel",
     "perPanelTrafficBreakdown": "Per-panel traffic",
     "insufficientPanelBalance": "Insufficient traffic on this panel",
+    "removeExceedsVolume": "Cannot remove the whole volume — 0 means unlimited. Delete or disable the client instead.",
     "insufficientSharedBalance": "Insufficient traffic in the shared pool",
     "bulkResultTitle": "Bulk Operation Summary",
     "bulkResultAction": "Action: {action}",

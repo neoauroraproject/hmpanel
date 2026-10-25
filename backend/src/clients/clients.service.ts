@@ -77,6 +77,12 @@ import {
   supports3xUiBulkHwid,
 } from '../common/utils/panel-version.util';
 import { AdminQuotaService } from '../traffic/admin-quota.service';
+import {
+  computeDeletionRefund,
+  computeEditRefund,
+  freshestUsage,
+  type ClientUsage,
+} from './client-quota-refund.util';
 import { isExpiryReached } from '../traffic/usage-mode-xui.util';
 import {
   resolve3xUiLimit,
@@ -384,6 +390,7 @@ export class ClientsService {
       provisioningStatus?: string | null;
     },
     skipRefund: boolean,
+    liveUsage?: ClientUsage | null,
   ): Promise<{
     refundGranted: boolean;
     refundedAmount: bigint;
@@ -501,9 +508,8 @@ export class ClientsService {
       };
     }
 
-    const used = existing.up + existing.down;
-    const remaining = existing.total - used;
-    if (remaining <= 0n) {
+    const used = freshestUsage(existing, liveUsage);
+    if (existing.total - used <= 0n) {
       return {
         refundGranted,
         refundedAmount,
@@ -516,7 +522,11 @@ export class ClientsService {
       existing.id,
       admin.id,
     );
-    const refundAmount = remaining < netCharged ? remaining : netCharged;
+    const refundAmount = computeDeletionRefund({
+      total: existing.total,
+      used,
+      netCharged,
+    });
     if (refundAmount <= 0n) {
       return {
         refundGranted,
@@ -1027,18 +1037,29 @@ export class ClientsService {
               description: 'Client Traffic Increase',
             });
           } else if (diff < 0n && owner.refundOnEdit) {
-            await this.adminQuota.credit(
-              tx,
-              owner as any,
-              quotaPanelId,
-              -diff,
-              {
-                clientId: id,
-                targetClientUuid: existing.uuid,
-                action: `CLIENT_TRAFFIC_DECREASE_${Date.now()}`,
-                description: 'Client Traffic Decrease',
-              },
-            );
+            const refund = computeEditRefund({
+              oldTotal: previousAllocation,
+              newTotal: newAllocation,
+              used: freshestUsage(
+                { up: BigInt(existing.up || 0), down: BigInt(existing.down || 0) },
+                remote ? { up: BigInt(remote.up ?? 0), down: BigInt(remote.down ?? 0) } : null,
+              ),
+              netCharged: await this.getNetChargedForClient(tx, id, owner.id),
+            });
+            if (refund > 0n) {
+              await this.adminQuota.credit(
+                tx,
+                owner as any,
+                quotaPanelId,
+                refund,
+                {
+                  clientId: id,
+                  targetClientUuid: existing.uuid,
+                  action: `CLIENT_TRAFFIC_DECREASE_${Date.now()}`,
+                  description: 'Client Traffic Decrease',
+                },
+              );
+            }
           }
         }
       }
@@ -1086,6 +1107,9 @@ export class ClientsService {
       throw new BadRequestException('Premium unavailable — this panel is frozen.');
     }
     const username = existing.remoteUsername || existing.email;
+    const liveUsage = skipRefund
+      ? null
+      : await this.panelsService.getClientTrafficBytes(panel.id, username);
     try {
       await driver.deleteClient(panel.id, username);
     } catch (err: any) {
@@ -1095,26 +1119,34 @@ export class ClientsService {
       }
     }
 
-    const remainingRaw =
-      BigInt(existing.total || 0) -
-      BigInt(existing.up || 0) -
-      BigInt(existing.down || 0);
-    const remaining = remainingRaw > 0n ? remainingRaw : 0n;
     const refund =
       !skipRefund &&
-      remaining > 0n &&
       existing.balanceDeducted &&
       this.shouldRefundDeletedClient(existing);
 
     await this.prisma.$transaction(async (tx) => {
       if (refund && existing.adminId) {
         const owner = await this.adminQuota.loadAdmin(existing.adminId, tx);
-        await this.adminQuota.credit(tx, owner, existing.panelId, remaining, {
-          clientId: existing.id,
-          targetClientUuid: existing.uuid,
-          action: `CLIENT_DELETE_REFUND_${Date.now()}`,
-          description: 'Client deletion refund',
+        const amount = computeDeletionRefund({
+          total: BigInt(existing.total || 0),
+          used: freshestUsage(
+            { up: BigInt(existing.up || 0), down: BigInt(existing.down || 0) },
+            liveUsage,
+          ),
+          netCharged: await this.getNetChargedForClient(
+            tx,
+            existing.id,
+            existing.adminId,
+          ),
         });
+        if (amount > 0n) {
+          await this.adminQuota.credit(tx, owner, existing.panelId, amount, {
+            clientId: existing.id,
+            targetClientUuid: existing.uuid,
+            action: `CLIENT_DELETE_REFUND_${Date.now()}`,
+            description: 'Client deletion refund',
+          });
+        }
       }
       await tx.clientInbound.deleteMany({ where: { clientId: id } });
       await tx.client.delete({ where: { id } });
@@ -2341,6 +2373,15 @@ export class ClientsService {
     // The panelId for this client (all inbounds must be on the same panel)
     const clientPanelId = (existing as any).panelId;
 
+    // A decrease refunds only unused bytes, so read the panel's live counters.
+    const liveUsage =
+      data.total !== undefined && newTotal > 0n && newTotal < existing.total
+        ? await this.panelsService.getClientTrafficBytes(
+            clientPanelId,
+            currentEmail,
+          )
+        : null;
+
     const lockKey = `client:update:${id}`;
     const locked = await this.lockService.acquireLock(lockKey, 30000);
     if (!locked) {
@@ -2449,18 +2490,30 @@ export class ClientsService {
                   description: 'Client Traffic Increase',
                 });
               } else if (diff < 0n && admin.refundOnEdit) {
-                await this.adminQuota.credit(
-                  tx,
-                  admin as any,
-                  existing.panelId,
-                  -diff,
-                  {
-                    clientId: id,
-                    targetClientUuid: existing.uuid,
-                    action: `CLIENT_TRAFFIC_DECREASE_${Date.now()}`,
-                    description: 'Client Traffic Decrease',
-                  },
-                );
+                const refund = computeEditRefund({
+                  oldTotal: existing.total,
+                  newTotal: newAllocation,
+                  used: freshestUsage(existing, liveUsage),
+                  netCharged: await this.getNetChargedForClient(
+                    tx,
+                    id,
+                    admin.id,
+                  ),
+                });
+                if (refund > 0n) {
+                  await this.adminQuota.credit(
+                    tx,
+                    admin as any,
+                    existing.panelId,
+                    refund,
+                    {
+                      clientId: id,
+                      targetClientUuid: existing.uuid,
+                      action: `CLIENT_TRAFFIC_DECREASE_${Date.now()}`,
+                      description: 'Client Traffic Decrease',
+                    },
+                  );
+                }
               }
             }
           }
@@ -2622,6 +2675,15 @@ export class ClientsService {
         data: { isDeleting: true },
       });
 
+      // Read usage before the panel row disappears — the DB counters trail it.
+      const liveUsage =
+        (existing as any).provisioningStatus === 'FAILED'
+          ? null
+          : await this.panelsService.getClientTrafficBytes(
+              existing.panelId,
+              existing.email,
+            );
+
       let deletedSuccessfully = false;
 
       try {
@@ -2700,6 +2762,7 @@ export class ClientsService {
                 provisioningStatus: (existing as any).provisioningStatus,
               },
               skipRefund,
+              liveUsage,
             );
 
             await tx.client.delete({ where: { id } });
@@ -3649,6 +3712,7 @@ export class ClientsService {
     skipRefund: boolean,
   ): Promise<{ success: number; failed: number; errors: string[] }> {
     const results = { success: 0, failed: 0, errors: [] as string[] };
+    const liveUsageById = new Map<string, ClientUsage | null>();
 
     const clients = await this.prisma.client.findMany({
       where: { id: { in: targets.map((t) => t.id) }, isDeleting: false },
@@ -3707,6 +3771,19 @@ export class ClientsService {
           where: { id: { in: onPanel.map((c) => c.id) } },
           data: { isDeleting: true },
         });
+
+        // Usage is unreadable once the panel rows are gone — refunds need it.
+        if (!skipRefund) {
+          for (let i = 0; i < onPanel.length; i += 10) {
+            const chunk = onPanel.slice(i, i + 10);
+            const live = await Promise.all(
+              chunk.map((c) =>
+                this.panelsService.getClientTrafficBytes(panelId, c.email),
+              ),
+            );
+            chunk.forEach((c, j) => liveUsageById.set(c.id, live[j]));
+          }
+        }
 
         const res = await this.panelsService.bulkDeleteClientsOnPanel(
           panelId,
@@ -3768,7 +3845,12 @@ export class ClientsService {
 
       for (const c of deletable) {
         try {
-          await this.applyClientDeletionLocal(adminId, c.id, skipRefund);
+          await this.applyClientDeletionLocal(
+            adminId,
+            c.id,
+            skipRefund,
+            liveUsageById.get(c.id),
+          );
           results.success++;
         } catch (err: any) {
           // Panel side is already done; the row stays flagged isDeleting so a
@@ -3790,6 +3872,7 @@ export class ClientsService {
     adminId: string,
     clientId: string,
     skipRefund: boolean,
+    liveUsage?: ClientUsage | null,
   ) {
     const existing = await this.prisma.client.findUnique({
       where: { id: clientId },
@@ -3817,6 +3900,7 @@ export class ClientsService {
           provisioningStatus: existing.provisioningStatus,
         },
         skipRefund,
+        liveUsage,
       );
 
       await tx.client.delete({ where: { id: existing.id } });

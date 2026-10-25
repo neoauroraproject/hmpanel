@@ -8,6 +8,14 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [2.5.11] - 2026-10-25
+
+### Fixed
+- **Reseller allocation was refunded for traffic the client had already used.** Lowering a client's volume credited the full difference back to the owning admin, and deleting a client refunded based on stale counters. Refunds now cover only the unused part (usage read live from the panel, falling back to the last synced value) and never exceed what was actually charged for that client, so imported/synced clients or repeated edits can no longer add quota to the admin.
+- Switching a limited client to unlimited no longer refunds its whole volume.
+- External panels (Pasarguard / Eylan): the delete refund is now capped the same way.
+- Client edit form: "remove" can no longer take away the whole volume (0 = unlimited in 3x-ui).
+
 ## [2.5.10] - 2026-10-22
 
 ### Fixed
