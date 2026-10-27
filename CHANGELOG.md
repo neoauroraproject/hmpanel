@@ -11,7 +11,7 @@ All notable changes to this project will be documented in this file.
 ## [2.5.12] - 2026-10-27
 
 ### Fixed
-- **Links and webhooks follow the panel's custom ports and current domain.** Public URLs (store bot webhook, mini app, storefront, portal and subscription links, admin login links, custom subscription domains) now include the HTTPS port chosen at install or in Settings → SSL → Panel ports, and use the domain from the live `.env`. Previously they kept the default port and could show the install-time server IP after SSL was issued for a domain (the container env is only read at create time). Requires Premium 2.5.19 for the store / bot links.
+- **Links and webhooks follow the panel's custom ports and current domain.** Public URLs (store bot webhook, mini app, storefront, portal and subscription links, admin login links, custom subscription domains) now include the HTTPS port chosen at install or in Settings → SSL → Panel ports, and use the domain from the live `.env`. Previously they kept the default port and could show the install-time server IP after SSL was issued for a domain (the container env is only read at create time). Requires Premium 2.5.21 for the store / bot links.
 
 ### Added
 - Settings → SSL → Panel ports warns when the HTTPS port is not one Telegram accepts for webhooks (443, 80, 88, 8443).
