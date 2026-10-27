@@ -15,6 +15,7 @@ import { buildSubscriptionOutput } from './builders/subscription-output.builder'
 import { buildGenericOutput } from './builders/generic-output.builder';
 import { buildExternalPanelSubscriptionOutput } from './builders/external-panel-subscription.builder';
 import type { ClientOutputModel } from './client-output.types';
+import { panelPublicOrigin } from '../../common/utils/panel-port.util';
 
 const PANEL_SELECT = {
   id: true,
@@ -334,8 +335,8 @@ export class ClientOutputService {
       }
     }
     if (host) {
-      const proto = process.env.FORCE_HTTP === 'true' ? 'http' : 'https';
-      return `${proto}://${host.split(':')[0].toLowerCase()}`;
+      // Custom domains are served by the same nginx, so they share its port.
+      return panelPublicOrigin(host) || undefined;
     }
     return fallback || undefined;
   }

@@ -1074,6 +1074,7 @@
     "portsInvalid": "Ports must be numbers between 1 and 65535.",
     "portsSame": "HTTP and HTTPS ports must be different.",
     "portsSslNote": "With HTTP off port 80, issuing or renewing a Let's Encrypt certificate needs port 80 to be free on this server (it is used only during validation).",
+    "portsTelegramNote": "Telegram bot webhooks (store bot) only work on HTTPS ports 443, 80, 88 or 8443. On any other port the store bot cannot receive messages — 8443 is a safe alternative.",
     "portsReloginNote": "The panel address changes with the port, so you will need to log in again at the new address. Subscription links that include the old port must be updated.",
     "portsConfirm": "Move the panel to HTTP {http} / HTTPS {https}? The panel will be unavailable for a few seconds.",
     "portsSwitching": "Switching ports… you will be redirected to {url} automatically.",

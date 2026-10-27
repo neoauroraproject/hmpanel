@@ -187,6 +187,12 @@ export function PanelPortsCard() {
           {t("settings.portsSslNote")}
         </p>
       )}
+      {s !== null && ![443, 80, 88, 8443].includes(s) && (
+        <p className="mt-3 flex items-start gap-2 text-xs text-amber-600 dark:text-amber-400">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+          {t("settings.portsTelegramNote")}
+        </p>
+      )}
       <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">{t("settings.portsReloginNote")}</p>
 
       {phase === "switching" && (
