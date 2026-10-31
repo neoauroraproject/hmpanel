@@ -24,17 +24,18 @@ export function freshestUsage(
 }
 
 /**
- * Net charge from the ledger. A sibling of a bulk batch has no creation row of
- * its own (the batch row sits on the first client), so its charge is its volume.
+ * Net charge from the ledger. A client charged outside its own rows (a bulk
+ * sibling, whose batch row sits on the first client, or a row older than the
+ * ledger) counts as charged for its volume.
  */
 export function netChargedForClient(input: {
   debits: bigint;
   credits: bigint;
   total: bigint;
-  sharedBulkCharge: boolean;
+  chargeOutsideLedger: boolean;
 }): bigint {
   const net = input.debits - input.credits;
-  const floor = input.sharedBulkCharge ? input.total : 0n;
+  const floor = input.chargeOutsideLedger ? input.total : 0n;
   return net > floor ? net : floor;
 }
 

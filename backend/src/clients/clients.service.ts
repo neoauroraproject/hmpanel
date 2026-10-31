@@ -361,7 +361,8 @@ export class ClientsService {
   /**
    * Net bytes charged to the owner for this client (DEBIT − CREDIT). Bulk
    * creation keeps one ledger row on the first client of the batch, so its
-   * siblings count as charged for their volume when that row exists.
+   * siblings count as charged for their volume when that row exists. So do
+   * clients flagged balanceDeducted that have no ledger rows at all.
    */
   private async getNetChargedForClient(
     tx: Prisma.TransactionClient,
@@ -404,8 +405,10 @@ export class ClientsService {
       }),
     ]);
 
-    let sharedBulkCharge = false;
-    if (client?.balanceDeducted && !creationRow) {
+    const debitSum = debits._sum.amount ?? 0n;
+    // Flagged as charged with no ledger trace: rows from before the ledger.
+    let chargeOutsideLedger = !!client?.balanceDeducted && debitSum === 0n;
+    if (!chargeOutsideLedger && client?.balanceDeducted && !creationRow) {
       const bornAt = client.createdAt.getTime();
       const batchRow = await tx.trafficTransaction.findFirst({
         where: {
@@ -419,14 +422,14 @@ export class ClientsService {
         },
         select: { id: true },
       });
-      sharedBulkCharge = !!batchRow;
+      chargeOutsideLedger = !!batchRow;
     }
 
     return netChargedForClient({
-      debits: debits._sum.amount ?? 0n,
+      debits: debitSum,
       credits: credits._sum.amount ?? 0n,
       total: client?.total ?? 0n,
-      sharedBulkCharge,
+      chargeOutsideLedger,
     });
   }
 
@@ -1066,6 +1069,7 @@ export class ClientsService {
     const quotaPanelId = existing.panelId || panel.id;
 
     await this.prisma.$transaction(async (tx) => {
+      let charged = false;
       if (data.total !== undefined && diff !== 0n && existing.adminId) {
         const owner = await tx.admin.findUnique({
           where: { id: existing.adminId },
@@ -1103,6 +1107,7 @@ export class ClientsService {
               action: `CLIENT_TRAFFIC_INCREASE_${Date.now()}`,
               description: 'Client Traffic Increase',
             });
+            charged = true;
           } else if (diff < 0n && owner.refundOnEdit) {
             const refund = computeEditRefund({
               oldTotal: previousAllocation,
@@ -1145,7 +1150,7 @@ export class ClientsService {
           providerMeta: mapSnapshotMeta(remote),
           lastSyncedAt: new Date(),
           syncStale: false,
-          ...(diff > 0n ? { balanceDeducted: true } : {}),
+          ...(charged ? { balanceDeducted: true } : {}),
           ...(data.inboundIds
             ? {
                 inbounds: {
@@ -2502,6 +2507,8 @@ export class ClientsService {
         if (data.subId !== undefined) updateData.subId = nextSubId;
 
         let diff = 0n;
+        // Refunded bytes, or why nothing came back; shown in the action log.
+        let refundOutcome: string | null = null;
         const previousAllocation = existing.total;
         const newAllocation = newTotal;
 
@@ -2519,9 +2526,6 @@ export class ClientsService {
         if (data.total !== undefined && newAllocation !== existing.total) {
           diff = newAllocation - existing.total;
           updateData.total = newAllocation;
-          if (diff > 0n) {
-            updateData.balanceDeducted = true;
-          }
 
           if (existing.adminId) {
             const admin = await tx.admin.findUnique({
@@ -2549,6 +2553,17 @@ export class ClientsService {
                     existing.panelId,
                   )
                 : null;
+            if (admin && diff < 0n) {
+              refundOutcome = skipOwnerAccounting
+                ? role === 'SUPER_ADMIN'
+                  ? 'reason:SUPER_ADMIN'
+                  : 'reason:UNLIMITED'
+                : ownerMode !== 'ALLOCATION'
+                  ? 'reason:USAGE_MODE'
+                  : !admin.refundOnEdit
+                    ? 'reason:REFUND_OFF'
+                    : null;
+            }
             if (admin && ownerMode === 'ALLOCATION') {
               if (diff > 0n) {
                 await this.adminQuota.assertCanAllocate(
@@ -2562,17 +2577,25 @@ export class ClientsService {
                   action: `CLIENT_TRAFFIC_INCREASE_${Date.now()}`,
                   description: 'Client Traffic Increase',
                 });
+                updateData.balanceDeducted = true;
               } else if (diff < 0n && admin.refundOnEdit) {
+                const netCharged = await this.getNetChargedForClient(
+                  tx,
+                  id,
+                  admin.id,
+                );
                 const refund = computeEditRefund({
                   oldTotal: existing.total,
                   newTotal: newAllocation,
                   used: freshestUsage(existing, liveUsage),
-                  netCharged: await this.getNetChargedForClient(
-                    tx,
-                    id,
-                    admin.id,
-                  ),
+                  netCharged,
                 });
+                refundOutcome =
+                  refund > 0n
+                    ? refund.toString()
+                    : netCharged <= 0n
+                      ? 'reason:NOT_CHARGED'
+                      : 'reason:ALREADY_USED';
                 if (refund > 0n) {
                   await this.adminQuota.credit(
                     tx,
@@ -2638,6 +2661,9 @@ export class ClientsService {
             from: previousAllocation.toString(),
             to: newAllocation.toString(),
           });
+        }
+        if (refundOutcome) {
+          changes.push({ field: 'quotaRefund', from: '', to: refundOutcome });
         }
         if (
           data.expiryTime !== undefined &&

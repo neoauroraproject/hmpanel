@@ -134,6 +134,7 @@ function fieldLabel(
     flow: "traffic.fieldFlow",
     subId: "traffic.fieldSubId",
     inbounds: "traffic.fieldInbounds",
+    quotaRefund: "traffic.fieldQuotaRefund",
   };
   return map[field] ? t(map[field]) : field;
 }
@@ -147,7 +148,10 @@ function formatChangeValue(
   if (field === "enable") {
     return value ? t("traffic.enabled") : t("traffic.disabled");
   }
-  if (field === "total") {
+  if (field === "quotaRefund" && String(value).startsWith("reason:")) {
+    return t(`traffic.refundReason${String(value).slice("reason:".length)}`);
+  }
+  if (field === "total" || field === "quotaRefund") {
     const n = Number(value);
     return Number.isFinite(n) ? formatBytes(n) : String(value);
   }

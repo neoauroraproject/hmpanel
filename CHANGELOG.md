@@ -8,6 +8,14 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [2.5.15] - 2026-10-31
+
+### Fixed
+- **Clients marked as charged but with no ledger rows get their refund.** Lowering or deleting them returned nothing because the cap read 0. Raising a client's volume now marks it as charged only when something was actually deducted, so a super-admin increase does not make a client refundable.
+
+### Added
+- **The action log says what came back.** Lowering a client's volume adds a "Returned to balance" line with the amount, or the reason nothing was returned.
+
 ## [2.5.14] - 2026-10-31
 
 ### Added
