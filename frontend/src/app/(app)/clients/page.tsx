@@ -1053,7 +1053,7 @@ export default function ClientsPage() {
                                 <Square size={18} className="text-zinc-400" />
                               )}
                             </div>
-                            <div className="font-semibold text-zinc-800 dark:text-zinc-100">{c.remark || c.email}</div>
+                            <div className="font-semibold text-zinc-800 dark:text-zinc-100">{c.email}</div>
                             {isOnline && (
                               <div className="flex items-center gap-1">
                                 <span className="relative flex h-2.5 w-2.5" title={t("common.online")}>
@@ -1100,7 +1100,7 @@ export default function ClientsPage() {
                           </div>
                         </div>
                         {c.remark && (
-                          <div className="text-xs text-zinc-500 mt-1 md:mt-0">{c.email}</div>
+                          <div className="text-xs text-zinc-500 mt-1 md:mt-0 line-clamp-2 break-words" dir="auto" title={c.remark}>{c.remark}</div>
                         )}
                         {!panelId && accessiblePanels.length > 1 && (c.inbound?.panel?.name || (c as any).panel?.name) && (
                           <div className="mt-1 inline-flex items-center gap-1 rounded bg-zinc-100 dark:bg-zinc-800/60 px-1.5 py-0.5 text-[10px] font-medium text-zinc-500 dark:text-zinc-400">
@@ -2387,7 +2387,19 @@ function AddClientModal({
                 className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors"
               />
             </div>
-            
+            <div>
+              <label className="mb-1 block text-xs text-zinc-500">{t("clients.note")}</label>
+              <textarea
+                rows={2}
+                maxLength={500}
+                dir="auto"
+                placeholder={t("clients.notePlaceholder")}
+                value={form.remark}
+                onChange={(e) => setForm({ ...form, remark: e.target.value })}
+                className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors"
+              />
+            </div>
+
             {derivedPanels.length > 1 && (
               <div>
                 <label className="mb-1 block text-xs text-zinc-500">{t("clients.panelServer")}</label>
@@ -2831,6 +2843,24 @@ export function EditClientModal({
               {canRenameOnPanel && emailInvalid && (
                 <p className="mt-1 text-[11px] text-red-400 font-medium">{t("clients.invalidUsername")}</p>
               )}
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-zinc-500">{t("clients.note")}</label>
+              <textarea
+                rows={2}
+                maxLength={500}
+                dir="auto"
+                placeholder={t("clients.notePlaceholder")}
+                value={form.remark}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    remark: e.target.value,
+                    providerExtras: { ...form.providerExtras, note: e.target.value },
+                  })
+                }
+                className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors"
+              />
             </div>
           </div>
 

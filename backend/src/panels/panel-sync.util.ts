@@ -6,6 +6,20 @@ export function parseInboundJson(raw: unknown): any {
   return raw || {};
 }
 
+/** Email for a 3x-ui update body: a payload email renames the client. */
+export function clientUpdateEmail(
+  currentEmail: string,
+  payloadEmail: unknown,
+): string {
+  return String(payloadEmail ?? '').trim() || currentEmail;
+}
+
+/** The note 3x-ui holds for a client (its comment), or null when empty. */
+export function syncedClientNote(rawClient: unknown): string | null {
+  const comment = (rawClient as { comment?: unknown } | null | undefined)?.comment;
+  return typeof comment === 'string' && comment.trim() ? comment.trim() : null;
+}
+
 /**
  * Cheap identity of an inbound as the panel reported it. Hashes the raw
  * settings strings instead of parsing them, so an unchanged inbound costs one

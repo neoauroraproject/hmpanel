@@ -420,6 +420,8 @@
     "basicInfo": "Basic Info",
     "usernameIdentifier": "Username / Identifier",
     "usernamePlaceholder": "e.g. client_123",
+    "note": "Note (optional)",
+    "notePlaceholder": "e.g. customer's phone number or renewal date",
     "renameHint": "The name is also updated on 3x-ui. Duplicate names are rejected.",
     "renameUnsupported": "Renaming is not supported on this panel type.",
     "invalidUsername": "Name must be 2–64 characters with no spaces.",

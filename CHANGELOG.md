@@ -8,6 +8,15 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [2.5.14] - 2026-10-31
+
+### Added
+- **Client notes.** The create and edit client forms have a note field. It is saved on the client, sent to the panel (the 3x-ui comment) and shown under the username in the client list. Notes set directly in 3x-ui are picked up on sync.
+
+### Fixed
+- **Renaming a client works on 3x-ui.** The new name never reached the panel, so the edit failed with a "disappeared from the panel" error.
+- **A client renamed directly in 3x-ui stays the same client.** Sync used to add it as a new client and delete the old one, losing its ledger link and refunding it.
+
 ## [2.5.13] - 2026-10-31
 
 ### Fixed

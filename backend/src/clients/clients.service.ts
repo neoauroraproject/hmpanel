@@ -1468,7 +1468,7 @@ export class ClientsService {
           enable: true,
           flow: data.flow || '',
           subId: clientSubId,
-          comment: '',
+          comment: data.remark || '',
           reset: data.reset ?? 0,
         };
         if (data.trafficReset && data.trafficReset !== 'never') {

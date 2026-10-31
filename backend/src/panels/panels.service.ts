@@ -48,7 +48,9 @@ import {
   chunkArray,
   inboundFingerprint,
   inboundSyncFieldsChanged,
+  clientUpdateEmail,
   parseInboundJson,
+  syncedClientNote,
 } from './panel-sync.util';
 import {
   counterGrowth,
@@ -1914,6 +1916,7 @@ export class PanelsService implements OnModuleInit {
         createdWithTrafficMode: true,
         balanceDeducted: true,
         provisioningStatus: true,
+        remark: true,
         subId: true,
         limitIp: true,
         flow: true,
@@ -1939,6 +1942,16 @@ export class PanelsService implements OnModuleInit {
       });
       const dbClientByEmail = new Map(
         existingClients.map((c) => [c.email, c] as const),
+      );
+      // A client renamed on the panel keeps its uuid: same client, not a new one.
+      const dbClientByUuid = new Map(
+        existingClients.map((c) => [c.uuid, c] as const),
+      );
+      const liveEmails = new Set(
+        unifiedClients.map((c) => String(c.email || '').trim()),
+      );
+      const liveUuids = new Set(
+        unifiedClients.map((c) => String(c.uuid || '')).filter(Boolean),
       );
 
       const processedEmails = new Set<string>();
@@ -1979,7 +1992,13 @@ export class PanelsService implements OnModuleInit {
         apiEmails.add(trimmedEmail);
 
         try {
-          const dbClient = dbClientByEmail.get(trimmedEmail) || null;
+          const renamedFrom = dbClientByUuid.get(String(unifiedClient.uuid || ''));
+          const dbClient =
+            dbClientByEmail.get(trimmedEmail) ||
+            (renamedFrom && !liveEmails.has(renamedFrom.email)
+              ? renamedFrom
+              : null);
+          const panelNote = syncedClientNote(unifiedClient._raw);
 
           const up = BigInt(unifiedClient.up || 0);
           const down = BigInt(unifiedClient.down || 0);
@@ -2023,6 +2042,7 @@ export class PanelsService implements OnModuleInit {
                 subId: unifiedClient.subId || null,
                 subToken: crypto.randomBytes(5).toString('hex'),
                 email: trimmedEmail,
+                remark: panelNote,
                 adminId: resolvedAdminId,
                 enable,
                 up,
@@ -2120,6 +2140,9 @@ export class PanelsService implements OnModuleInit {
             }
             if (dbClient.email !== trimmedEmail)
               changedData.email = trimmedEmail;
+            // A note set in 3x-ui is kept; an edit here sends ours back to it.
+            if (panelNote && (dbClient.remark || '').trim() !== panelNote)
+              changedData.remark = panelNote;
             if (unifiedClient.subId && dbClient.subId !== unifiedClient.subId)
               changedData.subId = unifiedClient.subId;
             if (dbClient.adminId !== resolvedAdminId)
@@ -2505,7 +2528,7 @@ export class PanelsService implements OnModuleInit {
       // Orphan Cleanup — full sync only (avoids delete thrash on traffic polls)
       if (isFull) {
         for (const dbC of existingClients) {
-          if (!apiEmails.has(dbC.email)) {
+          if (!apiEmails.has(dbC.email) && !liveUuids.has(dbC.uuid)) {
             try {
               await this.clientsService.deleteOrphanFromSync(dbC);
             } catch (orphanErr: any) {
@@ -3417,10 +3440,11 @@ export class PanelsService implements OnModuleInit {
     const endpoint = `${base}/panel/api/clients/update/${encodeURIComponent(email)}`;
     // Build the update body: merge existing client fields with new payload.
     // Ensure we do NOT send inboundIds to this endpoint as per 3.3.1 API.
+    // The URL names the current client; an email in the payload renames it.
     const body = this.normalizeClientUpdateBody({
       ...existingClientObj,
       ...clientPayload,
-      email,
+      email: clientUpdateEmail(email, clientPayload.email),
     });
     delete body.inboundIds;
 

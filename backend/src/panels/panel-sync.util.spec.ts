@@ -1,12 +1,31 @@
 import {
   chunkArray,
+  clientUpdateEmail,
   inboundFingerprint,
   inboundSyncFieldsChanged,
   parseInboundJson,
+  syncedClientNote,
   syncJsonEqual,
 } from './panel-sync.util';
 
 describe('panel-sync.util', () => {
+  it('sends the new name when a client is renamed', () => {
+    expect(clientUpdateEmail('old', 'new')).toBe('new');
+    expect(clientUpdateEmail('old', ' new ')).toBe('new');
+  });
+
+  it('keeps the current name when the payload has none', () => {
+    expect(clientUpdateEmail('old', undefined)).toBe('old');
+    expect(clientUpdateEmail('old', '  ')).toBe('old');
+  });
+
+  it('reads the 3x-ui comment as the client note', () => {
+    expect(syncedClientNote({ comment: ' vip ' })).toBe('vip');
+    expect(syncedClientNote({ comment: '' })).toBeNull();
+    expect(syncedClientNote({})).toBeNull();
+    expect(syncedClientNote(undefined)).toBeNull();
+  });
+
   it('chunks arrays', () => {
     expect(chunkArray([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]]);
   });
