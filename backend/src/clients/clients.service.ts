@@ -33,6 +33,8 @@ const CREATION_CHARGE_ACTION_PREFIXES = [
 ];
 /** A bulk batch's clients and its one ledger row are written in one transaction. */
 const BULK_BATCH_WINDOW_MS = 5 * 60 * 1000;
+/** A migration import writes the admin's credit row, then their clients. */
+const MIGRATION_IMPORT_WINDOW_MS = 5 * 60 * 1000;
 
 export interface ClientFilters {
   search?: string;
@@ -362,7 +364,8 @@ export class ClientsService {
    * Net bytes charged to the owner for this client (DEBIT − CREDIT). Bulk
    * creation keeps one ledger row on the first client of the batch, so its
    * siblings count as charged for their volume when that row exists. So do
-   * clients flagged balanceDeducted that have no ledger rows at all.
+   * clients flagged balanceDeducted that have no ledger rows at all, and
+   * clients brought in by a migration import, paid for on the old panel.
    */
   private async getNetChargedForClient(
     tx: Prisma.TransactionClient,
@@ -407,7 +410,9 @@ export class ClientsService {
 
     const debitSum = debits._sum.amount ?? 0n;
     // Flagged as charged with no ledger trace: rows from before the ledger.
-    let chargeOutsideLedger = !!client?.balanceDeducted && debitSum === 0n;
+    let chargeOutsideLedger =
+      (!!client?.balanceDeducted && debitSum === 0n) ||
+      (!!client && (await this.isMigratedClient(tx, adminId, client.createdAt)));
     if (!chargeOutsideLedger && client?.balanceDeducted && !creationRow) {
       const bornAt = client.createdAt.getTime();
       const batchRow = await tx.trafficTransaction.findFirst({
@@ -719,6 +724,27 @@ export class ClientsService {
     );
   }
 
+  /** True when this client arrived with the admin's migration import. */
+  private async isMigratedClient(
+    tx: Prisma.TransactionClient,
+    adminId: string,
+    createdAt: Date,
+  ): Promise<boolean> {
+    const importRow = await tx.trafficTransaction.findFirst({
+      where: {
+        adminId,
+        type: 'CREDIT',
+        description: { startsWith: 'Migration Import' },
+        createdAt: {
+          gte: new Date(createdAt.getTime() - MIGRATION_IMPORT_WINDOW_MS),
+          lte: createdAt,
+        },
+      },
+      select: { id: true },
+    });
+    return !!importRow;
+  }
+
   /** True when traffic was deducted from the owning admin for this client. */
   private async hadTrafficDeducted(
     tx: Prisma.TransactionClient,
@@ -731,6 +757,14 @@ export class ClientsService {
   ): Promise<boolean> {
     if (client.balanceDeducted) return true;
     if (!client.adminId) return false;
+
+    const row = await tx.client.findUnique({
+      where: { id: client.id },
+      select: { createdAt: true },
+    });
+    if (row && (await this.isMigratedClient(tx, client.adminId, row.createdAt))) {
+      return true;
+    }
 
     const debit = await tx.trafficTransaction.findFirst({
       where: {

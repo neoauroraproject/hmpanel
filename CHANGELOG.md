@@ -8,6 +8,11 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [2.5.16] - 2026-10-31
+
+### Fixed
+- **Clients from a migration import get their unused volume back.** They were paid for on the old panel, so they have no charge in this ledger and lowering or deleting them returned nothing. Clients that arrived at the moment of a "Migration Import" now count as charged for their volume, on edit and on delete.
+
 ## [2.5.15] - 2026-10-31
 
 ### Fixed
