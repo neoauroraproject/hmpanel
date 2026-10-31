@@ -50,6 +50,13 @@ import {
   inboundSyncFieldsChanged,
   parseInboundJson,
 } from './panel-sync.util';
+import {
+  counterGrowth,
+  hostCounterDelta,
+  parseHostCounters,
+  pickTrafficSample,
+  type HostCounters,
+} from './host-traffic.util';
 
 // ─── Provisioning Error Classification ───────────────────────────────────────
 export type ProvisioningErrorCode =
@@ -221,6 +228,8 @@ export class PanelsService implements OnModuleInit {
   private globalSyncRunning = false;
   /** Per-panel in-flight sync promises (manual + scheduled share this). */
   private readonly panelSyncInFlight = new Map<string, Promise<any>>();
+  /** Last NIC counters per panel; every panel usually shares one Server row. */
+  private readonly lastHostCounters = new Map<string, HostCounters>();
   /** Last successful full structural sync per panel. */
   private readonly lastFullSyncAt = new Map<string, number>();
   /** Cooldown after failed updateClientOnPanel (panelId:email → untilMs). */
@@ -1222,10 +1231,33 @@ export class PanelsService implements OnModuleInit {
     return run;
   }
 
+  private async sumPanelClientCounters(panelId: string) {
+    const { _sum } = await this.prisma.client.aggregate({
+      where: { panelId },
+      _sum: { up: true, down: true },
+    });
+    return { up: _sum.up ?? 0n, down: _sum.down ?? 0n };
+  }
+
   private async executeSync(id: string, mode: PanelSyncMode) {
     const panel = await this.findOne(id);
     if (isExternalPanelType(panel.panelType)) {
-      return this.nativeOrchestrator.sync(id);
+      const before = await this.sumPanelClientCounters(id);
+      const result = await this.nativeOrchestrator.sync(id);
+      const growth = counterGrowth(before, await this.sumPanelClientCounters(id));
+      if (growth.up > 0n || growth.down > 0n) {
+        await this.prisma.systemStats.create({
+          data: {
+            serverId: panel.serverId,
+            cpuUsage: 0,
+            ramUsage: 0,
+            diskUsage: 0,
+            netUp: growth.up,
+            netDown: growth.down,
+          },
+        });
+      }
+      return result;
     }
     const startTime = Date.now();
     const apiBaseUrl = resolvePanelApiBaseUrl(panel);
@@ -2485,8 +2517,17 @@ export class PanelsService implements OnModuleInit {
         }
       }
 
+      // Dashboard volume comes from the host NIC, not only client counters.
+      const hostCounters = parseHostCounters(obj.netTraffic);
+      const trafficSample = pickTrafficSample(
+        hostCounterDelta(this.lastHostCounters.get(panel.id), hostCounters),
+        { up: panelUpDelta, down: panelDownDelta },
+      );
+      if (hostCounters) this.lastHostCounters.set(panel.id, hostCounters);
+      else this.lastHostCounters.delete(panel.id);
+
       // Record host/traffic samples only when useful (delta or full cadence).
-      if (isFull || panelUpDelta > 0n || panelDownDelta > 0n) {
+      if (isFull || trafficSample.up > 0n || trafficSample.down > 0n) {
         this.logger.debug(`[DIAGNOSTIC] Committing panel stats to DB`);
         await this.prisma.systemStats.create({
           data: {
@@ -2494,8 +2535,8 @@ export class PanelsService implements OnModuleInit {
             cpuUsage,
             ramUsage,
             diskUsage,
-            netUp: panelUpDelta,
-            netDown: panelDownDelta,
+            netUp: trafficSample.up,
+            netDown: trafficSample.down,
           },
         });
       }

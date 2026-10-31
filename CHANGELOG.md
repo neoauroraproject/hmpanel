@@ -8,6 +8,12 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [2.5.13] - 2026-10-31
+
+### Fixed
+- **Unused volume comes back again when a reseller lowers or deletes a client.** The cap added in 2.5.11 read 0 for clients made in bulk (the charge is recorded on the first client of the batch) and for older ledger rows linked only by UUID, so nothing was refunded. Resellers whose account is marked USAGE because of another panel also got no refund on their ALLOCATION panels: the panel's own mode now decides, including when a client's volume is raised.
+- **The dashboard traffic chart shows what the server really moved.** It only summed client counter changes between syncs, so it missed traffic the counters did not catch and everything on Eylan / Pasarguard panels. 3x-ui panels now use the server's network counters, and Eylan / Pasarguard panels record their client usage. Applies to new data only; earlier days keep their old values.
+
 ## [2.5.12] - 2026-10-27
 
 ### Fixed

@@ -23,6 +23,21 @@ export function freshestUsage(
   return up + down;
 }
 
+/**
+ * Net charge from the ledger. A sibling of a bulk batch has no creation row of
+ * its own (the batch row sits on the first client), so its charge is its volume.
+ */
+export function netChargedForClient(input: {
+  debits: bigint;
+  credits: bigint;
+  total: bigint;
+  sharedBulkCharge: boolean;
+}): bigint {
+  const net = input.debits - input.credits;
+  const floor = input.sharedBulkCharge ? input.total : 0n;
+  return net > floor ? net : floor;
+}
+
 function clampRefund(refundable: bigint, netCharged: bigint): bigint {
   if (refundable <= 0n || netCharged <= 0n) return 0n;
   return refundable < netCharged ? refundable : netCharged;

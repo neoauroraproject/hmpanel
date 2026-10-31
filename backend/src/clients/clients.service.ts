@@ -25,6 +25,15 @@ import {
 
 const GB = 1024 ** 3;
 
+/** Ledger actions that charge a client's initial volume. */
+const CREATION_CHARGE_ACTION_PREFIXES = [
+  'CLIENT_CREATION_ALLOCATION_',
+  'BULK_CLIENT_CREATION_',
+  'CLIENT_PROVISIONING',
+];
+/** A bulk batch's clients and its one ledger row are written in one transaction. */
+const BULK_BATCH_WINDOW_MS = 5 * 60 * 1000;
+
 export interface ClientFilters {
   search?: string;
   status?: string; // active | disabled | expired
@@ -81,6 +90,7 @@ import {
   computeDeletionRefund,
   computeEditRefund,
   freshestUsage,
+  netChargedForClient,
   type ClientUsage,
 } from './client-quota-refund.util';
 import { isExpiryReached } from '../traffic/usage-mode-xui.util';
@@ -348,26 +358,76 @@ export class ClientsService {
     }
   }
 
-  /** Net bytes charged to the owner for this client (DEBIT − CREDIT). */
+  /**
+   * Net bytes charged to the owner for this client (DEBIT − CREDIT). Bulk
+   * creation keeps one ledger row on the first client of the batch, so its
+   * siblings count as charged for their volume when that row exists.
+   */
   private async getNetChargedForClient(
     tx: Prisma.TransactionClient,
     clientId: string,
     adminId: string,
   ): Promise<bigint> {
-    const [debits, credits] = await Promise.all([
+    const client = await tx.client.findUnique({
+      where: { id: clientId },
+      select: { uuid: true, total: true, balanceDeducted: true, createdAt: true },
+    });
+    // Older rows carry only targetClientUuid.
+    const clientRows: Prisma.TrafficTransactionWhereInput = {
+      adminId,
+      OR: [
+        { clientId },
+        { targetClientUuid: clientId },
+        ...(client?.uuid ? [{ targetClientUuid: client.uuid }] : []),
+      ],
+    };
+    const [debits, credits, creationRow] = await Promise.all([
       tx.trafficTransaction.aggregate({
-        where: { clientId, adminId, type: 'DEBIT' },
+        where: { ...clientRows, type: 'DEBIT' },
         _sum: { amount: true },
       }),
       tx.trafficTransaction.aggregate({
-        where: { clientId, adminId, type: 'CREDIT' },
+        where: { ...clientRows, type: 'CREDIT' },
         _sum: { amount: true },
+      }),
+      tx.trafficTransaction.findFirst({
+        where: {
+          ...clientRows,
+          type: 'DEBIT',
+          AND: {
+            OR: CREATION_CHARGE_ACTION_PREFIXES.map((prefix) => ({
+              action: { startsWith: prefix },
+            })),
+          },
+        },
+        select: { id: true },
       }),
     ]);
-    const debitSum = debits._sum.amount ?? 0n;
-    const creditSum = credits._sum.amount ?? 0n;
-    const net = debitSum - creditSum;
-    return net > 0n ? net : 0n;
+
+    let sharedBulkCharge = false;
+    if (client?.balanceDeducted && !creationRow) {
+      const bornAt = client.createdAt.getTime();
+      const batchRow = await tx.trafficTransaction.findFirst({
+        where: {
+          adminId,
+          type: 'DEBIT',
+          action: { startsWith: 'BULK_CLIENT_CREATION_' },
+          createdAt: {
+            gte: new Date(bornAt - BULK_BATCH_WINDOW_MS),
+            lte: new Date(bornAt + BULK_BATCH_WINDOW_MS),
+          },
+        },
+        select: { id: true },
+      });
+      sharedBulkCharge = !!batchRow;
+    }
+
+    return netChargedForClient({
+      debits: debits._sum.amount ?? 0n,
+      credits: credits._sum.amount ?? 0n,
+      total: client?.total ?? 0n,
+      sharedBulkCharge,
+    });
   }
 
   /** Shared refund path for remove() and sync orphan cleanup. */
@@ -482,7 +542,14 @@ export class ClientsService {
         refundSkippedReason: 'admin has unlimited traffic',
       };
     }
-    if (admin.trafficMode !== 'ALLOCATION') {
+    // Per-panel mode decides: Admin.trafficMode turns USAGE when any panel is.
+    const ownerMode = await this.adminQuota.resolveTrafficMode(
+      admin.id,
+      undefined,
+      tx,
+      existing.panelId,
+    );
+    if (ownerMode !== 'ALLOCATION') {
       return {
         refundGranted,
         refundedAmount,
@@ -2472,11 +2539,17 @@ export class ClientsService {
             });
             const skipOwnerAccounting =
               role === 'SUPER_ADMIN' || this.skipTrafficAccounting(admin ?? {});
-            if (
-              admin &&
-              !skipOwnerAccounting &&
-              admin.trafficMode === 'ALLOCATION'
-            ) {
+            // Per-panel mode decides: Admin.trafficMode turns USAGE when any panel is.
+            const ownerMode =
+              admin && !skipOwnerAccounting
+                ? await this.adminQuota.resolveTrafficMode(
+                    admin.id,
+                    undefined,
+                    tx,
+                    existing.panelId,
+                  )
+                : null;
+            if (admin && ownerMode === 'ALLOCATION') {
               if (diff > 0n) {
                 await this.adminQuota.assertCanAllocate(
                   admin as any,

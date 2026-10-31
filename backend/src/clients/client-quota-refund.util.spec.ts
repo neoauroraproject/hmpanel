@@ -2,6 +2,7 @@ import {
   computeDeletionRefund,
   computeEditRefund,
   freshestUsage,
+  netChargedForClient,
 } from './client-quota-refund.util';
 
 const GB = 1024n ** 3n;
@@ -61,6 +62,41 @@ describe('computeDeletionRefund', () => {
   it('is capped by the net charge and ignores unlimited clients', () => {
     expect(computeDeletionRefund({ total: 30n * GB, used: 0n, netCharged: 10n * GB })).toBe(10n * GB);
     expect(computeDeletionRefund({ total: 0n, used: 0n, netCharged: 10n * GB })).toBe(0n);
+  });
+});
+
+describe('netChargedForClient', () => {
+  it('is the ledger net for a client with its own charge', () => {
+    expect(
+      netChargedForClient({ debits: 30n * GB, credits: 10n * GB, total: 20n * GB, sharedBulkCharge: false }),
+    ).toBe(20n * GB);
+    expect(
+      netChargedForClient({ debits: 10n * GB, credits: 30n * GB, total: 0n, sharedBulkCharge: false }),
+    ).toBe(0n);
+  });
+
+  it('gives a bulk sibling without a ledger row its volume', () => {
+    const net = netChargedForClient({ debits: 0n, credits: 0n, total: 30n * GB, sharedBulkCharge: true });
+    expect(net).toBe(30n * GB);
+    expect(computeDeletionRefund({ total: 30n * GB, used: 5n * GB, netCharged: net })).toBe(25n * GB);
+    expect(computeEditRefund({ oldTotal: 30n * GB, newTotal: 20n * GB, used: 0n, netCharged: net })).toBe(10n * GB);
+  });
+
+  it('keeps later increases and earlier refunds of a bulk sibling correct', () => {
+    // created 30, raised by 10 → total 40
+    expect(
+      netChargedForClient({ debits: 10n * GB, credits: 0n, total: 40n * GB, sharedBulkCharge: true }),
+    ).toBe(40n * GB);
+    // created 30, lowered to 20 with 10 back
+    expect(
+      netChargedForClient({ debits: 0n, credits: 10n * GB, total: 20n * GB, sharedBulkCharge: true }),
+    ).toBe(20n * GB);
+  });
+
+  it('never invents a charge for a client outside a batch', () => {
+    expect(
+      netChargedForClient({ debits: 0n, credits: 0n, total: 30n * GB, sharedBulkCharge: false }),
+    ).toBe(0n);
   });
 });
 
