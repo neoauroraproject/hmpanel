@@ -3,6 +3,7 @@ import {
   clientUpdateEmail,
   inboundFingerprint,
   inboundSyncFieldsChanged,
+  isSyncOrphan,
   parseInboundJson,
   syncedClientNote,
   syncJsonEqual,
