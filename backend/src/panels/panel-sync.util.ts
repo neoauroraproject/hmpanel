@@ -14,6 +14,21 @@ export function clientUpdateEmail(
   return String(payloadEmail ?? '').trim() || currentEmail;
 }
 
+/**
+ * A DB client the panel no longer has. A client created after this sync began
+ * cannot be in the list it fetched, so its absence means nothing: deleting it
+ * would refund a live client, which the next sync re-adds as never charged.
+ */
+export function isSyncOrphan(
+  client: { email: string; uuid: string; createdAt: Date },
+  panelEmails: Set<string>,
+  panelUuids: Set<string>,
+  syncStartedAt: number,
+): boolean {
+  if (client.createdAt.getTime() >= syncStartedAt) return false;
+  return !panelEmails.has(client.email) && !panelUuids.has(client.uuid);
+}
+
 /** The note 3x-ui holds for a client (its comment), or null when empty. */
 export function syncedClientNote(rawClient: unknown): string | null {
   const comment = (rawClient as { comment?: unknown } | null | undefined)?.comment;

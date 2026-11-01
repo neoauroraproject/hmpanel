@@ -49,6 +49,7 @@ import {
   inboundFingerprint,
   inboundSyncFieldsChanged,
   clientUpdateEmail,
+  isSyncOrphan,
   parseInboundJson,
   syncedClientNote,
 } from './panel-sync.util';
@@ -1917,6 +1918,7 @@ export class PanelsService implements OnModuleInit {
         balanceDeducted: true,
         provisioningStatus: true,
         remark: true,
+        createdAt: true,
         subId: true,
         limitIp: true,
         flow: true,
@@ -2528,7 +2530,7 @@ export class PanelsService implements OnModuleInit {
       // Orphan Cleanup — full sync only (avoids delete thrash on traffic polls)
       if (isFull) {
         for (const dbC of existingClients) {
-          if (!apiEmails.has(dbC.email) && !liveUuids.has(dbC.uuid)) {
+          if (isSyncOrphan(dbC, apiEmails, liveUuids, startTime)) {
             try {
               await this.clientsService.deleteOrphanFromSync(dbC);
             } catch (orphanErr: any) {

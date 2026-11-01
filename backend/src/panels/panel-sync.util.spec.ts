@@ -8,6 +8,29 @@ import {
   syncJsonEqual,
 } from './panel-sync.util';
 
+describe('isSyncOrphan', () => {
+  const started = 1_000_000;
+  const row = (createdAt: number) => ({
+    email: 'a',
+    uuid: 'u',
+    createdAt: new Date(createdAt),
+  });
+
+  it('flags an older client the panel no longer lists', () => {
+    expect(isSyncOrphan(row(started - 1), new Set(), new Set(), started)).toBe(true);
+  });
+
+  it('keeps a client created after the sync began', () => {
+    expect(isSyncOrphan(row(started), new Set(), new Set(), started)).toBe(false);
+    expect(isSyncOrphan(row(started + 9000), new Set(), new Set(), started)).toBe(false);
+  });
+
+  it('keeps a client the panel lists by email or uuid', () => {
+    expect(isSyncOrphan(row(started - 1), new Set(['a']), new Set(), started)).toBe(false);
+    expect(isSyncOrphan(row(started - 1), new Set(), new Set(['u']), started)).toBe(false);
+  });
+});
+
 describe('panel-sync.util', () => {
   it('sends the new name when a client is renamed', () => {
     expect(clientUpdateEmail('old', 'new')).toBe('new');

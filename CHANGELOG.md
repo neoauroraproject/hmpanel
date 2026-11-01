@@ -8,6 +8,11 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [2.5.17] - 2026-11-01
+
+### Fixed
+- **A client created while a sync is running is no longer treated as deleted.** The sync removed it as an orphan and refunded its volume, then re-added it from the panel as a client that was never charged. The reseller got a free client, and lowering its volume later returned nothing.
+
 ## [2.5.16] - 2026-10-31
 
 ### Fixed
