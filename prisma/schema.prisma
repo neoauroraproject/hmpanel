@@ -673,6 +673,7 @@ model StoreProfile {
   loyaltyDiscountPercent  Float   @default(0)
   loyaltyApplyRenewals    Boolean @default(true)
   loyaltyApplyNewPurchases Boolean @default(false)
+  telegramBotMenu     Json?
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
@@ -692,6 +693,8 @@ model ProductCategory {
   sortOrder   Int      @default(0)
   visible     Boolean  @default(true)
   enabled     Boolean  @default(true)
+  /// VPN or DIGITAL
+  kind        String   @default("VPN")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -699,6 +702,7 @@ model ProductCategory {
   products StoreProduct[]
 
   @@index([adminId])
+  @@index([adminId, kind])
 }
 
 model ProvisioningProfile {
@@ -899,6 +903,8 @@ model StoreProduct {
   ipLimitOptions Json? @default("[]")
   /// Selected StoreIpLimit ids for this product
   ipLimitIds     Json? @default("[]")
+  /// Users allowed by the plan itself, before add-ons
+  baseLimitIp    Int   @default(0)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -1132,6 +1138,8 @@ model StoreOrder {
   @@index([status])
   @@index([createdAt])
   @@index([couponId])
+  @@index([autoDeliverAt])
+  @@index([pendingReview])
 }
 
 model StorePayment {
@@ -1352,6 +1360,9 @@ model StoreReferralRewardGrant {
 model StoreIpLimit {
   id              String   @id @default(uuid())
   adminId         String
+  /// IP_LIMIT (uses limitIp) or EXTRA_DAYS (uses days)
+  type            String   @default("IP_LIMIT")
+  days            Int      @default(0)
   limitIp         Int
   label           String
   priceExtraUsd   Float    @default(0)
@@ -1363,7 +1374,6 @@ model StoreIpLimit {
 
   admin Admin @relation(fields: [adminId], references: [id], onDelete: Cascade)
 
-  @@unique([adminId, limitIp])
   @@index([adminId])
 }
 
@@ -1731,6 +1741,8 @@ model AdminRechargePlan {
   expiryDays      Int             @default(0)
   maxClientsDelta Int             @default(0)
   adminTemplate   Json?
+  /// Reseller ids this plan is limited to; empty means everyone
+  allowedAdminIds Json            @default("[]")
   sortOrder       Int             @default(0)
   enabled         Boolean         @default(true)
   createdAt       DateTime        @default(now())

@@ -177,7 +177,6 @@ export async function ensureCriticalSchema(prisma: PrismaClient): Promise<void> 
       "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
       "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
     )`,
-    `CREATE UNIQUE INDEX IF NOT EXISTS "StoreIpLimit_adminId_limitIp_key" ON "StoreIpLimit"("adminId", "limitIp")`,
     `CREATE INDEX IF NOT EXISTS "StoreIpLimit_adminId_idx" ON "StoreIpLimit"("adminId")`,
 
     // 3x-ui node-hosted inbounds (same port as master is allowed; distinct panelInboundId)

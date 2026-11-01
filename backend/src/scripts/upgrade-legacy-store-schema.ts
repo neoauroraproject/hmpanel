@@ -106,12 +106,36 @@ async function dedupeBrand(): Promise<void> {
   void result;
 }
 
+/**
+ * Boot's schema push used to drop StoreIpLimit.type/days, turning time add-ons
+ * into IP add-ons with limitIp 0, which is never valid. Their label still says
+ * how many days they were, so they can be restored.
+ */
+async function healTimeAddons(): Promise<void> {
+  if (
+    !(await columnExists('StoreIpLimit', 'type')) ||
+    !(await columnExists('StoreIpLimit', 'days'))
+  ) {
+    return;
+  }
+  const digits = `translate("label", '۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩', '01234567890123456789')`;
+  const healed = await prisma.$executeRawUnsafe(`
+    UPDATE "StoreIpLimit"
+    SET "type" = 'EXTRA_DAYS',
+        "days" = substring(${digits} FROM '[0-9]+')::int
+    WHERE "type" = 'IP_LIMIT' AND "limitIp" = 0 AND "days" = 0
+      AND ${digits} ~ '[1-9]'
+  `);
+  if (healed) console.log(`[HMPanel] Restored ${healed} time add-on(s)`);
+}
+
 async function main() {
   console.log('[HMPanel] Preparing premium schema upgrade…');
   try {
     await upgradeLegacyStore();
     await dedupeBrand();
     await ensureCriticalSchema(prisma);
+    await healTimeAddons();
     console.log('[HMPanel] Premium schema prep complete');
   } catch (err: any) {
     console.warn(`[HMPanel] Schema prep warning: ${err?.message || err}`);

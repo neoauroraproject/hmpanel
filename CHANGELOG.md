@@ -8,6 +8,13 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [2.5.18] - 2026-11-01
+
+### Fixed
+- **Store and Premium settings survive restarts and updates.** Every boot's schema push dropped columns missing from the Prisma schema, resetting them to defaults: the type and days of store add-ons, a plan's base user limit, the store bot's menu layout, and which resellers an admin recharge plan is limited to. They are now part of the schema.
+- **Time add-ons are restored.** Add-ons the reset turned into 0-user IP add-ons get their days back from their label on the next boot. Time add-ons with no number in the label must be edited by hand.
+- **An admin can have more than one time add-on.** A leftover unique index blocked a second one.
+
 ## [2.5.17] - 2026-11-01
 
 ### Fixed
