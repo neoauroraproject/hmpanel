@@ -1470,7 +1470,7 @@ export default function ClientsPage() {
             initial={{ y: 50, x: "-50%", opacity: 0 }}
             animate={{ y: 0, x: "-50%", opacity: 1 }}
             exit={{ y: 50, x: "-50%", opacity: 0 }}
-            className="fixed bottom-6 left-1/2 z-40 w-max max-w-[95vw] px-4"
+            className="fixed bottom-6 left-1/2 z-40 w-max max-w-[95vw] px-4 max-md:[html[data-standalone]_&]:bottom-[calc(78px+max(8px,env(safe-area-inset-bottom,0px)-12px))]"
           >
             <div className="flex items-center justify-between gap-4 rounded-full border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/90 px-6 py-3 shadow-2xl backdrop-blur-md">
               <button 
