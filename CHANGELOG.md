@@ -8,6 +8,17 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [2.5.19] - 2026-11-03
+
+### امنیت لایسنس Premium
+- لایسنس Premium حالا با امضای دیجیتال سرور لایسنس (Ed25519) چک می‌شود. تغییر تاریخ انقضا یا ماژول‌ها در دیتابیس دیگر Premium را فعال یا تمدید نمی‌کند.
+- پنل هنگام روشن شدن و هر روز، لایسنس امضاشده را از سرور لایسنس تازه می‌کند.
+- لایسنس جعلی یا دست‌کاری‌شده فقط Premium را خاموش می‌کند و هیچ داده‌ای پاک نمی‌شود. با فعال‌سازی دوبارهٔ یک لایسنس معتبر همه‌چیز برمی‌گردد.
+- لایسنس‌های معتبر فعلی بعد از آپدیت خودکار کار می‌کنند و نیازی به فعال‌سازی دوباره ندارند.
+
+### Premium license security
+- Premium is unlocked only by an Ed25519 lease signed by the license server. Editing the expiry or modules in the database no longer grants or extends Premium.
+
 ## [2.5.18] - 2026-11-01
 
 ### Fixed
