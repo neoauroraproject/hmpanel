@@ -1,20 +1,32 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { LicenseManagerService } from './license-manager.service';
+import { LicenseActivationService } from './license-activation.service';
 import { PluginsService } from '../plugins/plugins.service';
 
 @Injectable()
-export class LicenseHeartbeatScheduler {
+export class LicenseHeartbeatScheduler implements OnApplicationBootstrap {
   private readonly logger = new Logger(LicenseHeartbeatScheduler.name);
 
   constructor(
     private licenseManager: LicenseManagerService,
+    private licenseActivation: LicenseActivationService,
     private pluginsService: PluginsService,
   ) {}
+
+  /** A panel upgraded from a build without signed leases fetches one right away. */
+  onApplicationBootstrap(): void {
+    setTimeout(() => {
+      this.licenseActivation
+        .recoverEntitlementLease()
+        .catch((err) => this.logger.warn(`Entitlement lease recovery failed: ${err?.message || err}`));
+    }, 5_000).unref?.();
+  }
 
   @Cron(CronExpression.EVERY_DAY_AT_1AM)
   async dailyHeartbeat(): Promise<void> {
     await this.runHeartbeatWithRetry();
+    await this.licenseActivation.recoverEntitlementLease();
   }
 
   async runHeartbeatWithRetry(): Promise<void> {

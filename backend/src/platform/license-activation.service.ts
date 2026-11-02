@@ -10,7 +10,8 @@ import * as fs from 'fs';
 import { SettingsService } from '../settings/settings.service';
 import { InstanceFingerprintService } from './instance-fingerprint.service';
 import { PremiumBundleService } from './premium-bundle.service';
-import { LicenseManagerService } from './license-manager.service';
+import { LICENSE_LEASE_KEY, LicenseManagerService } from './license-manager.service';
+import { verifyEntitlementLease } from './license-lease.util';
 import { PluginsService } from '../plugins/plugins.service';
 import type { LicenseState } from './types/module-manifest.types';
 import {
@@ -144,9 +145,15 @@ export class LicenseActivationService {
         HttpStatus.BAD_GATEWAY,
       );
     }
+    if (!verifyEntitlementLease(data.entitlementLease)) {
+      throw new HttpException(
+        'License server did not return a valid signed entitlement — Premium stays off.',
+        HttpStatus.BAD_GATEWAY,
+      );
+    }
 
     await this.settingsService.setSetting(LICENSE_KEY_KEY, licenseKey.trim());
-    await this.settingsService.setSetting(LICENSE_ENTITLEMENT_KEY, data.entitlementJwt as string);
+    await this.licenseManager.storeServerTokens(data);
     if (data.activationId) {
       await this.settingsService.setSetting(LICENSE_ACTIVATION_ID_KEY, String(data.activationId));
     }
@@ -442,9 +449,7 @@ export class LicenseActivationService {
       throw new HttpException(message, HttpStatus.BAD_GATEWAY);
     }
 
-    if (typeof data.entitlementJwt === 'string') {
-      await this.settingsService.setSetting(LICENSE_ENTITLEMENT_KEY, data.entitlementJwt);
-    }
+    await this.licenseManager.storeServerTokens(data);
     if (data.activationId) {
       await this.settingsService.setSetting(LICENSE_ACTIVATION_ID_KEY, String(data.activationId));
     }
@@ -501,6 +506,7 @@ export class LicenseActivationService {
 
     await this.settingsService.setSetting(LICENSE_KEY_KEY, '');
     await this.settingsService.setSetting(LICENSE_ENTITLEMENT_KEY, '');
+    await this.settingsService.setSetting(LICENSE_LEASE_KEY, '');
     await this.settingsService.setSetting(LICENSE_ACTIVATION_ID_KEY, '');
     await this.licenseManager.setLicenseState({
       status: 'community',
@@ -677,6 +683,30 @@ export class LicenseActivationService {
     });
 
     return { ok: steps.every((s) => s.ok !== false), steps };
+  }
+
+  /**
+   * Fetches a signed entitlement lease when a license key is set but none is stored —
+   * panels upgrading from builds that only kept the HS256 JWT, or after the instance id
+   * changed. Heartbeat first; re-register if the server no longer knows this instance.
+   */
+  async recoverEntitlementLease(): Promise<void> {
+    const licenseKey = await this.settingsService.getSetting(LICENSE_KEY_KEY);
+    if (!licenseKey || (await this.licenseManager.hasVerifiedLease())) return;
+
+    try {
+      await this.licenseManager.refreshFromServer();
+    } catch (err: any) {
+      this.logger.warn(`Entitlement lease heartbeat failed: ${err?.message || err}`);
+    }
+    if (!(await this.licenseManager.hasVerifiedLease())) {
+      try {
+        await this.reregisterWithLicenseServer(licenseKey);
+      } catch (err: any) {
+        this.logger.warn(`Entitlement lease re-register failed: ${err?.message || err}`);
+      }
+    }
+    await this.pluginsService.syncWithLicenseState();
   }
 
   async recheckNow(): Promise<LicenseState> {

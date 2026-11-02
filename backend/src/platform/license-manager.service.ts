@@ -6,19 +6,29 @@ import { PremiumBundleService } from './premium-bundle.service';
 import { InstanceFingerprintService } from './instance-fingerprint.service';
 import { requestLicenseServer } from './license-server.client';
 import {
-  decodeJwtPayload,
-  entitlementSourceFromResponse,
   hydrateLicensedModules,
   licensedModuleSet,
   normalizeToModuleIds,
   resolveEntitlement,
 } from './license-entitlement.util';
+import {
+  UNLIMITED_LEASE_EXP,
+  leaseExpiresAtIso,
+  verifyEntitlementLease,
+  type PanelEntitlementLease,
+} from './license-lease.util';
 
 const GRACE_DAYS = 7;
 const LICENSE_STATE_KEY = 'LICENSE_STATE';
 const LICENSE_KEY_KEY = 'LICENSE_KEY';
 const LICENSE_ENTITLEMENT_KEY = 'LICENSE_ENTITLEMENT_JWT';
+export const LICENSE_LEASE_KEY = 'LICENSE_ENTITLEMENT_LEASE';
 
+/**
+ * Premium is decided by the Ed25519 entitlement lease from the license server, verified
+ * with the embedded public key on every read. Expiry, modules and plan come only from that
+ * lease; `LICENSE_STATE` can only narrow it (a server-side disable), never widen it.
+ */
 @Injectable()
 export class LicenseManagerService {
   private readonly logger = new Logger(LicenseManagerService.name);
@@ -36,32 +46,38 @@ export class LicenseManagerService {
         : 'PREMIUM';
 
     const storedState = await this.getStoredState();
-    if (storedState) {
-      const base = await this.clampExpiresToJwtEntitlement({
-        ...storedState,
-        edition: storedState.edition || 'PREMIUM',
-      });
-      const applied = this.applyExpiry(base);
-      await this.persistExpiryTransition(storedState, applied);
-      return applied;
-    }
+    if (storedState?.status === 'community') return storedState;
 
     const licenseKey = await this.settingsService.getSetting(LICENSE_KEY_KEY);
-    const jwt = await this.settingsService.getSetting(LICENSE_ENTITLEMENT_KEY);
-
-    if (licenseKey && jwt) {
-      return this.validateFromJwt(jwt, licenseKey);
-    }
-
-    if (edition === 'COMMUNITY' && !this.bundleService.isBundleInstalled()) {
-      return this.communityDisabled();
-    }
-
-    if (!licenseKey || !jwt) {
+    if (!storedState && !licenseKey) {
       return edition === 'COMMUNITY' ? this.communityDisabled() : this.invalidState();
     }
 
-    return this.validateFromJwt(jwt, licenseKey);
+    const lease = await this.getVerifiedLease();
+    if (!lease) return this.unsignedState(storedState);
+
+    const applied = this.applyLeaseExpiry(this.stateFromLease(lease, storedState), lease);
+    if (storedState) await this.persistExpiryTransition(storedState, applied);
+    return applied;
+  }
+
+  /** True when a lease signed by the license server for this instance is stored. */
+  async hasVerifiedLease(): Promise<boolean> {
+    return (await this.getVerifiedLease()) !== null;
+  }
+
+  /** Persists the tokens of an activate/heartbeat reply. A reply without a lease keeps the stored one. */
+  async storeServerTokens(data: Record<string, unknown>): Promise<void> {
+    if (typeof data.entitlementJwt === 'string' && data.entitlementJwt) {
+      await this.settingsService.setSetting(LICENSE_ENTITLEMENT_KEY, data.entitlementJwt);
+    }
+    if (typeof data.entitlementLease === 'string' && data.entitlementLease) {
+      if (!verifyEntitlementLease(data.entitlementLease)) {
+        this.logger.warn('License server sent an entitlement lease that does not verify — ignored');
+        return;
+      }
+      await this.settingsService.setSetting(LICENSE_LEASE_KEY, data.entitlementLease);
+    }
   }
 
   /** Licensed module ids for the current state — empty when nothing is licensed. */
@@ -133,14 +149,16 @@ export class LicenseManagerService {
       const stored = await this.getStoredState();
       const next: LicenseState = {
         ...(stored || this.invalidState()),
-        status: data.mode === 'disabled' ? 'invalid' : stored?.status || 'active',
-        mode: data.mode === 'disabled' ? 'disabled' : stored?.mode || 'full',
         lastServerCheckAt: now,
         edition: 'PREMIUM',
       };
       if (data.mode === 'disabled') {
+        // Revoked, expired or outdated: drop the lease too, so restoring an old
+        // LICENSE_STATE cannot bring Premium back.
+        await this.settingsService.setSetting(LICENSE_LEASE_KEY, '');
         next.status = 'invalid';
         next.mode = 'disabled';
+        next.invalidReason = typeof data.reason === 'string' ? data.reason : 'disabled';
         next.licensedFeatures = [];
         next.licensedModules = [];
         next.legacyFull = false;
@@ -149,25 +167,26 @@ export class LicenseManagerService {
       return this.getLicenseState();
     }
 
-    // Heartbeat may hand out a refreshed token; keep it so offline restarts see new modules.
-    if (typeof data.entitlementJwt === 'string' && data.entitlementJwt) {
-      await this.settingsService.setSetting(LICENSE_ENTITLEMENT_KEY, data.entitlementJwt);
-    }
+    await this.storeServerTokens(data);
 
-    const stored = (await this.getStoredState()) ?? (await this.getLicenseState());
-    const expiresAt =
-      typeof data.expiresAt === 'string' ? data.expiresAt : stored?.expiresAt ?? null;
-    const entitlement = resolveEntitlement(entitlementSourceFromResponse(data));
+    const stored = (await this.getStoredState()) ?? this.invalidState();
+    const entitlement = resolveEntitlement({
+      features: data.features,
+      entitlements: data.entitlements,
+      entitlementMode: data.entitlementMode,
+      legacyFull: data.legacyFull,
+    });
 
-    const next: LicenseState = {
+    await this.setLicenseState({
       ...stored,
       status: 'active',
-      mode: data.mode === 'read_only' ? 'read_only' : 'full',
-      expiresAt,
+      mode: 'full',
+      invalidReason: null,
+      expiresAt: typeof data.expiresAt === 'string' ? data.expiresAt : null,
       lastHeartbeatAt: now,
       lastServerCheckAt: now,
       edition: 'PREMIUM',
-      // A thin heartbeat carries no entitlement data — never downgrade or expand on it.
+      // Informational only — getLicenseState takes modules from the signed lease.
       ...(entitlement.present
         ? {
             licensedModules: entitlement.licensedModules,
@@ -176,16 +195,15 @@ export class LicenseManagerService {
             licensePlan: entitlement.plan,
           }
         : {}),
-    };
-    await this.setLicenseState(next);
-    return this.applyExpiry(next);
+    });
+    return this.getLicenseState();
   }
 
   async markServerUnreachable(): Promise<void> {
     const stored = await this.getStoredState();
     if (!stored) return;
     const now = new Date().toISOString();
-    // Offline license server must not disable premium — bundle runs locally; only record last check.
+    // Offline license server must not disable premium — the signed lease keeps working.
     await this.setLicenseState({
       ...stored,
       lastServerCheckAt: now,
@@ -212,6 +230,65 @@ export class LicenseManagerService {
     } catch {
       return null;
     }
+  }
+
+  private async getVerifiedLease(): Promise<PanelEntitlementLease | null> {
+    const raw = await this.settingsService.getSetting(LICENSE_LEASE_KEY);
+    if (!raw) return null;
+    const lease = verifyEntitlementLease(raw);
+    if (!lease) {
+      this.logger.warn('Stored entitlement lease failed signature verification');
+      return null;
+    }
+    if (lease.inst !== this.instanceFingerprint.getInstanceId()) {
+      this.logger.warn('Entitlement lease was issued to another panel instance');
+      return null;
+    }
+    return lease;
+  }
+
+  /**
+   * Builds the state the lease grants. The stored state contributes only bookkeeping
+   * (bundle version, timestamps) and a server-side disable.
+   */
+  private stateFromLease(lease: PanelEntitlementLease, stored: LicenseState | null): LicenseState {
+    const entitlement = resolveEntitlement({
+      features: lease.features,
+      legacyFull: lease.legacyFull,
+      plan: lease.planSlug,
+    });
+    const state: LicenseState = {
+      ...(stored ?? {}),
+      status: 'active',
+      mode: 'full',
+      expiresAt: leaseExpiresAtIso(lease),
+      graceEndsAt: null,
+      licensedFeatures: entitlement.licensedModules,
+      licensedModules: entitlement.licensedModules,
+      legacyFull: entitlement.legacyFull,
+      licensePlan: entitlement.plan,
+      edition: 'PREMIUM',
+      activationId: lease.act || stored?.activationId || null,
+      instanceId: lease.inst,
+      invalidReason: null,
+    };
+
+    const serverDisabled =
+      stored?.status === 'invalid' && stored.invalidReason !== 'unsigned';
+    return serverDisabled
+      ? this.revoked(state, {
+          status: 'invalid',
+          mode: 'disabled',
+          invalidReason: stored?.invalidReason ?? null,
+        })
+      : state;
+  }
+
+  private unsignedState(stored: LicenseState | null): LicenseState {
+    return this.revoked(
+      { ...(stored ?? this.invalidState()), edition: 'PREMIUM', graceEndsAt: null },
+      { status: 'invalid', mode: 'disabled', invalidReason: 'unsigned' },
+    );
   }
 
   private communityDisabled(): LicenseState {
@@ -250,26 +327,18 @@ export class LicenseManagerService {
     };
   }
 
-  private applyExpiry(state: LicenseState): LicenseState {
-    if (state.edition === 'COMMUNITY' && state.status === 'community') {
-      return state;
-    }
-
+  /** Expiry and grace are computed from the signed `exp` alone. */
+  private applyLeaseExpiry(state: LicenseState, lease: PanelEntitlementLease): LicenseState {
     if (state.mode === 'disabled' || state.status === 'invalid') {
       return this.revoked(state, { mode: 'disabled' });
     }
-
-    // Local JWT + stored state drive premium while offline; server is only for validity checks.
-
-    if (!state.expiresAt) {
-      return { ...state, status: state.status === 'grace' ? 'grace' : 'active', mode: state.mode === 'read_only' ? 'read_only' : 'full' };
+    if (lease.exp >= UNLIMITED_LEASE_EXP) {
+      return { ...state, status: 'active', mode: 'full' };
     }
 
     const now = Date.now();
-    const expiresAt = new Date(state.expiresAt).getTime();
-    const graceEndsAt = state.graceEndsAt
-      ? new Date(state.graceEndsAt).getTime()
-      : expiresAt + GRACE_DAYS * 86_400_000;
+    const expiresAt = lease.exp * 1000;
+    const graceEndsAt = expiresAt + GRACE_DAYS * 86_400_000;
 
     if (now <= expiresAt) {
       return { ...state, status: 'active', mode: 'full' };
@@ -289,24 +358,6 @@ export class LicenseManagerService {
     });
   }
 
-  /**
-   * Cap stored expiresAt by entitlement JWT `exp` so editing LICENSE_STATE alone
-   * cannot extend past the last token the panel received from the license server.
-   */
-  private async clampExpiresToJwtEntitlement(state: LicenseState): Promise<LicenseState> {
-    const jwt = await this.settingsService.getSetting(LICENSE_ENTITLEMENT_KEY);
-    if (!jwt || typeof jwt !== 'string') return state;
-    const payload = decodeJwtPayload(jwt);
-    const expSec = payload?.exp;
-    if (typeof expSec !== 'number' || !(expSec > 0)) return state;
-    const jwtExpMs = expSec * 1000;
-    const stateExpMs = state.expiresAt ? new Date(state.expiresAt).getTime() : NaN;
-    if (!Number.isFinite(stateExpMs) || stateExpMs > jwtExpMs) {
-      return { ...state, expiresAt: new Date(jwtExpMs).toISOString() };
-    }
-    return state;
-  }
-
   /** Persist grace/expired transitions so restart still sees cut-off until online recheck. */
   private async persistExpiryTransition(
     stored: LicenseState,
@@ -315,58 +366,11 @@ export class LicenseManagerService {
     const becameTerminal =
       (applied.status === 'expired' || applied.status === 'grace') &&
       applied.status !== stored.status;
-    const modeChanged =
-      (applied.mode === 'disabled' || applied.mode === 'read_only') &&
-      applied.mode !== stored.mode;
-    if (!becameTerminal && !modeChanged) return;
+    if (!becameTerminal) return;
     try {
       await this.setLicenseState(applied);
     } catch (err: any) {
       this.logger.warn(`persistExpiryTransition failed: ${err?.message || err}`);
     }
-  }
-
-  private async validateFromJwt(jwt: string, licenseKey: string): Promise<LicenseState> {
-    const payload = decodeJwtPayload(jwt);
-    if (!payload) return this.invalidState();
-
-    const instanceId = this.instanceFingerprint.getInstanceId();
-    if (payload.instanceId && payload.instanceId !== instanceId) {
-      this.logger.warn('JWT instanceId mismatch');
-      return this.invalidState();
-    }
-
-    const exp = payload.exp as number | undefined;
-    if (exp && exp * 1000 < Date.now()) {
-      return {
-        status: 'expired',
-        mode: 'disabled',
-        expiresAt: new Date(exp * 1000).toISOString(),
-        graceEndsAt: null,
-        licensedFeatures: [],
-        licensedModules: [],
-        legacyFull: false,
-        edition: 'PREMIUM',
-      };
-    }
-
-    const stored = await this.getStoredState();
-    const entitlement = resolveEntitlement(entitlementSourceFromResponse({}, jwt));
-    return this.applyExpiry({
-      status: 'active',
-      mode: 'full',
-      expiresAt: payload.exp ? new Date((payload.exp as number) * 1000).toISOString() : stored?.expiresAt ?? null,
-      graceEndsAt: null,
-      licensedFeatures: entitlement.licensedModules,
-      licensedModules: entitlement.licensedModules,
-      legacyFull: entitlement.legacyFull,
-      licensePlan: entitlement.plan,
-      edition: 'PREMIUM',
-      activationId: (payload.activationId as string) || stored?.activationId,
-      instanceId,
-      bundleVersion: stored?.bundleVersion,
-      lastHeartbeatAt: stored?.lastHeartbeatAt,
-      lastServerCheckAt: stored?.lastServerCheckAt,
-    });
   }
 }

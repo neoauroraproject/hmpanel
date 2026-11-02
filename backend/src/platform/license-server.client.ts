@@ -1,11 +1,30 @@
 import { Logger } from '@nestjs/common';
+import { LICENSE_PROTOCOL } from './license-lease.util';
 
 const logger = new Logger('LicenseServerClient');
 
-const DEFAULT_URLS = [
-  'https://license.hmray.pro',
-  'https://license.hmrayserver.com',
+/**
+ * Master license-server URLs, embedded XOR-obfuscated rather than as plain strings so the
+ * endpoint is not a grep-able constant in the open-source build. This is only obfuscation,
+ * not a secret — the real protection is the Ed25519 lease signature, which a patched panel
+ * cannot forge whatever address it points at. Env vars still override for self-hosting.
+ */
+const OBFUSCATED_DEFAULT_URLS = [
+  'AAY6TGHE+dv4FzZVdJOy0u5QNEFlxLTe6w==',
+  'AAY6TGHE+dv4FzZVdJOy0u5QNEFlmaHe8k84AmSJoQ==',
 ];
+const URL_OBFUSCATION_KEY = Buffer.from('hmpanel-license-v2');
+
+function deobfuscate(encoded: string): string {
+  const bytes = Buffer.from(encoded, 'base64');
+  const out = Buffer.alloc(bytes.length);
+  for (let i = 0; i < bytes.length; i++) {
+    out[i] = bytes[i] ^ URL_OBFUSCATION_KEY[i % URL_OBFUSCATION_KEY.length] ^ ((i * 31) & 255);
+  }
+  return out.toString('utf8');
+}
+
+const DEFAULT_URLS = OBFUSCATED_DEFAULT_URLS.map(deobfuscate);
 
 /** Primary + fallback license server URLs from env. */
 export function getLicenseServerUrls(): string[] {
@@ -57,6 +76,9 @@ export interface LicenseServerResponse {
 /**
  * POST/GET to license API — tries primary URL, then fallback on network failure.
  * Business errors (4xx/5xx with body) from a reachable server are returned as-is.
+ *
+ * Every request carries `X-HM-License-Protocol`; the master server locks out panels below
+ * its minimum (old builds that cannot verify the signed lease), forcing an update.
  */
 export async function requestLicenseServer(
   path: string,
@@ -72,6 +94,10 @@ export async function requestLicenseServer(
     try {
       const res = await fetch(url, {
         ...init,
+        headers: {
+          ...(init.headers as Record<string, string> | undefined),
+          'X-HM-License-Protocol': String(LICENSE_PROTOCOL),
+        },
         signal: init.signal ?? AbortSignal.timeout(30_000),
       });
       const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;

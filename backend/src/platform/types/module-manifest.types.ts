@@ -70,6 +70,8 @@ export interface LicenseState {
   bundleVersion?: string | null;
   activationId?: string | null;
   instanceId?: string | null;
+  /** Why a Premium state is `invalid`, e.g. `unsigned` when no verified entitlement lease is stored. */
+  invalidReason?: string | null;
 }
 
 export interface ModuleAccess {
