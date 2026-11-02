@@ -8,6 +8,20 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [2.5.20] - 2026-11-03
+
+### رفع مشکل
+- در نسخه PWA (موبایل)، نوار عملیات گروهی کلاینت‌ها (حذف/ویرایش دسته‌ای) دیگر زیر منوی پایین نمی‌رود و بالای آن نمایش داده می‌شود.
+
+### افزوده شد
+- دستور `sudo hm admin reset-login` (یا گزینه ۱۴ منوی `hm`): نمایش نام کاربری ادمین اصلی و تغییر نام کاربری، رمز یا هر دو.
+
+### Fixed
+- **PWA clients bulk-action bar sits above the bottom tab bar.** In the installed app on mobile, the bulk delete/edit bar no longer hides behind the bottom navigation.
+
+### Added
+- `sudo hm admin reset-login` (alias `hm reset-login`, menu option 14) shows the owner username and changes the username, the password, or both.
+
 ## [2.5.19] - 2026-11-03
 
 ### امنیت لایسنس Premium
