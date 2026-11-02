@@ -3786,10 +3786,219 @@ cmd_reset_admin_password() {
   return 1
 }
 
+# ── Reset owner login (username and/or password) ─────────────────
+# Usage: hm admin reset-login   (alias: hm reset-login, menu option 13)
+# Always interactive. The new password only travels over stdin into the
+# panel container — never argv, env, logs or shell history.
+OWNER_LOGIN_NODE_SCRIPT='
+const r = (m) => require(require.resolve(m, { paths: ["/app/backend", "/app", process.cwd()] }));
+const out = (o) => process.stdout.write(JSON.stringify(o) + "\n");
+let input = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", (c) => { input += c; });
+process.stdin.on("end", async () => {
+  let prisma;
+  try {
+    const [mode, id, username, password] = input.split("\n");
+    const { PrismaClient } = r("@prisma/client");
+    prisma = new PrismaClient();
+    if (mode === "lookup") {
+      // Installation owner; fall back to the oldest SUPER_ADMIN (same rule as AdminsService).
+      const owner =
+        (await prisma.admin.findFirst({ where: { isOwner: true }, orderBy: { createdAt: "asc" }, select: { id: true, username: true } })) ||
+        (await prisma.admin.findFirst({ where: { role: "SUPER_ADMIN" }, orderBy: { createdAt: "asc" }, select: { id: true, username: true } }));
+      return out(owner ? { ok: true, id: owner.id, username: owner.username } : { ok: false, code: "OWNER_NOT_FOUND" });
+    }
+    const owner = await prisma.admin.findUnique({ where: { id }, select: { id: true, username: true } });
+    if (!owner) return out({ ok: false, code: "OWNER_NOT_FOUND" });
+    const changeName = username && username !== owner.username;
+    if (changeName) {
+      const taken = await prisma.admin.findFirst({
+        where: { id: { not: id }, username: { equals: username, mode: "insensitive" } },
+        select: { username: true },
+      });
+      if (taken) return out({ ok: false, code: "USERNAME_TAKEN", username: taken.username });
+    }
+    if (mode === "check") return out({ ok: true });
+    // tokenVersion bump revokes every outstanding access/refresh token of this admin.
+    const data = { tokenVersion: { increment: 1 }, status: "active" };
+    if (changeName) data.username = username;
+    if (password) data.passwordHash = await r("bcryptjs").hash(password, 10);
+    const updated = await prisma.admin.update({ where: { id }, data, select: { username: true } });
+    out({ ok: true, username: updated.username });
+  } catch (e) {
+    out({ ok: false, code: e && e.code === "P2002" ? "USERNAME_TAKEN" : "DB_ERROR", message: String((e && e.message) || e).split("\n").pop().slice(0, 200) });
+  } finally {
+    if (prisma) await prisma.$disconnect().catch(() => {});
+  }
+});
+'
+
+# Feed newline-separated fields to the node script over stdin (printf is a builtin: nothing hits argv).
+owner_login_node() {
+  printf '%s\n' "$@" | docker exec -i -w /app hmpanel-panel node -e "$OWNER_LOGIN_NODE_SCRIPT" 2>/dev/null
+}
+
+# Pull a string field out of the script's one-line JSON result.
+owner_login_field() {
+  printf '%s' "$1" | grep -o "\"$2\":\"[^\"]*\"" | head -n1 | cut -d'"' -f4
+}
+
+# Print the error detail of a failed script run, if it has one.
+owner_login_detail() {
+  local msg
+  msg=$(owner_login_field "$1" message)
+  [[ -z "$msg" ]] || echo -e "  ${msg}" >&2
+}
+
+# Prompt from the terminal even when stdin is a pipe.
+owner_login_read() {
+  local __var="$1" __prompt="$2" __flags="${3:--r}"
+  if [[ -r /dev/tty ]]; then
+    read $__flags -p "$__prompt" "$__var" </dev/tty || true
+  else
+    read $__flags -p "$__prompt" "$__var" || true
+  fi
+}
+
+# Rewrite KEY="value" in the installer .env; the value goes through awk's environment, not argv.
+owner_login_env_set() {
+  local key="$1" val="$2" env_file="${INSTALL_DIR}/.env"
+  [[ -f "$env_file" ]] || return 0
+  val="${val//\\/\\\\}"
+  val="${val//\"/\\\"}"
+  HM_ENV_KEY="$key" HM_ENV_VAL="$val" awk '
+    BEGIN { k = ENVIRON["HM_ENV_KEY"] "="; line = ENVIRON["HM_ENV_KEY"] "=\"" ENVIRON["HM_ENV_VAL"] "\""; done = 0 }
+    index($0, k) == 1 { print line; done = 1; next }
+    { print }
+    END { if (!done) print line }
+  ' "$env_file" > "${env_file}.tmp" && mv "${env_file}.tmp" "$env_file"
+  chmod 600 "$env_file" 2>/dev/null || true
+  chown 1001:1001 "$env_file" 2>/dev/null || true
+}
+
+admin_reset_login() {
+  if ! docker inspect hmpanel-panel &>/dev/null; then
+    echo -e "${RED}✘ Panel container (hmpanel-panel) not found. Is HMPanel installed?${NC}" >&2
+    return 1
+  fi
+  if ! docker inspect -f '{{.State.Running}}' hmpanel-panel 2>/dev/null | grep -qi true; then
+    echo -e "${RED}✘ Panel container is not running. Start it first: cd ${INSTALL_DIR} && docker compose up -d${NC}" >&2
+    return 1
+  fi
+
+  local res owner_id owner_user
+  res=$(owner_login_node lookup) || true
+  if [[ "$res" != *'"ok":true'* ]]; then
+    if [[ "$res" == *'"OWNER_NOT_FOUND"'* ]]; then
+      echo -e "${RED}✘ No owner / SUPER_ADMIN account found in the database.${NC}" >&2
+    else
+      echo -e "${RED}✘ Could not read the owner account from the database (is hmpanel-postgres running?).${NC}" >&2
+      owner_login_detail "$res"
+    fi
+    return 1
+  fi
+  owner_id=$(owner_login_field "$res" id)
+  owner_user=$(owner_login_field "$res" username)
+
+  echo -e "  Current owner username: ${CYAN}${owner_user}${NC}\n"
+
+  local new_user=""
+  owner_login_read new_user "  New username (Enter keeps '${owner_user}'): "
+  new_user="${new_user#"${new_user%%[![:space:]]*}"}"
+  new_user="${new_user%"${new_user##*[![:space:]]}"}"
+  [[ -z "$new_user" ]] && new_user="$owner_user"
+  local user_re=$'^[^[:space:][:cntrl:]"\'\\\\]{3,64}$'
+  if [[ ! "$new_user" =~ $user_re ]]; then
+    echo -e "${RED}✘ Username must be 3-64 characters with no spaces, quotes or backslashes.${NC}" >&2
+    return 1
+  fi
+  if [[ "$new_user" != "$owner_user" ]]; then
+    res=$(owner_login_node check "$owner_id" "$new_user") || true
+    if [[ "$res" == *'"USERNAME_TAKEN"'* ]]; then
+      echo -e "${RED}✘ Username '${new_user}' is already used by another admin.${NC}" >&2
+      return 1
+    fi
+  fi
+
+  local new_pass="" confirm_pass=""
+  owner_login_read new_pass "  New password (min 8 chars, Enter keeps the current one): " -rs
+  echo ""
+  if [[ -n "$new_pass" ]]; then
+    if (( ${#new_pass} < 8 )); then
+      new_pass=""
+      echo -e "${RED}✘ Password must be at least 8 characters.${NC}" >&2
+      return 1
+    fi
+    owner_login_read confirm_pass "  Confirm new password: " -rs
+    echo ""
+    if [[ "$new_pass" != "$confirm_pass" ]]; then
+      new_pass=""; confirm_pass=""
+      echo -e "${RED}✘ Passwords do not match. Nothing was changed.${NC}" >&2
+      return 1
+    fi
+    confirm_pass=""
+  fi
+
+  if [[ "$new_user" == "$owner_user" && -z "$new_pass" ]]; then
+    echo -e "${YELLOW}ℹ Nothing to change — username and password kept.${NC}"
+    return 0
+  fi
+
+  res=$(owner_login_node update "$owner_id" "$new_user" "$new_pass") || true
+  if [[ "$res" != *'"ok":true'* ]]; then
+    new_pass=""
+    case "$res" in
+      *'"OWNER_NOT_FOUND"'*) echo -e "${RED}✘ The owner account disappeared while updating. Nothing was changed.${NC}" >&2 ;;
+      *'"USERNAME_TAKEN"'*)  echo -e "${RED}✘ Username '${new_user}' is already used by another admin. Nothing was changed.${NC}" >&2 ;;
+      *) echo -e "${RED}✘ Failed to update the owner account. Nothing was changed.${NC}" >&2
+         owner_login_detail "$res" ;;
+    esac
+    return 1
+  fi
+
+  # Keep installer .env in sync (re-running install.sh offers these as defaults).
+  [[ "$new_user" != "$owner_user" ]] && owner_login_env_set INITIAL_ADMIN_USERNAME "$new_user"
+  [[ -n "$new_pass" ]] && owner_login_env_set INITIAL_ADMIN_PASSWORD "$new_pass"
+  new_pass=""
+
+  echo ""
+  echo -e "${GREEN}✔${NC}  Owner login updated. Username: ${CYAN}${new_user}${NC}"
+  echo -e "  All existing sessions of this admin were signed out — log in again with the new credentials."
+  return 0
+}
+
+cmd_reset_owner_login() {
+  echo -e "${BOLD}--- Reset Owner Login (username / password) ---${NC}\n"
+  local rc=0
+  admin_reset_login || rc=1
+  pause
+  return $rc
+}
+
+cmd_help() {
+  cat <<EOF
+HMPanel CLI — usage: sudo hm [command]
+
+  (no command)                 Interactive menu
+  update                       Update HMPanel
+  heal                         Fix 502 / auth drift
+  doctor                       Diagnose the installation
+  version                      Show installed version
+  backup create {full|database|config}
+  restore <file>
+  ports {get | check <http> <https> | set <http> <https>}
+  ssl {issue <domain> <email> | change-domain <domain> <email> | enable | disable | renew [force] | repair}
+  admin reset-login            Change the owner's username and/or password (alias: reset-login)
+  admin reset-password [pass]  Reset only the owner's password (alias: passwd)
+  help                         Show this help
+EOF
+}
+
 # ─────────────────────────────────────────────────────────────────
 # Headless Command Parser (for API/Backend integration)
 # ─────────────────────────────────────────────────────────────────
-if [[ "$JSON_OUTPUT" == "true" || "${1:-}" == "ssl" || "${1:-}" == "doctor" || "${1:-}" == "version" || "${1:-}" == "backup" || "${1:-}" == "restore" || "${1:-}" == "heal" || "${1:-}" == "update" || "${1:-}" == "ports" || "${1:-}" == "admin" || "${1:-}" == "passwd" ]]; then
+if [[ "$JSON_OUTPUT" == "true" || "${1:-}" == "ssl" || "${1:-}" == "doctor" || "${1:-}" == "version" || "${1:-}" == "backup" || "${1:-}" == "restore" || "${1:-}" == "heal" || "${1:-}" == "update" || "${1:-}" == "ports" || "${1:-}" == "admin" || "${1:-}" == "passwd" || "${1:-}" == "reset-login" || "${1:-}" == "help" || "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
   HEADLESS=true
   MODULE="${1:-}"
   ACTION="${2:-}"
@@ -3922,9 +4131,16 @@ if [[ "$JSON_OUTPUT" == "true" || "${1:-}" == "ssl" || "${1:-}" == "doctor" || "
         fi
         exit 1
         ;;
+      reset-login|login)
+        # hm admin reset-login (interactive only)
+        if admin_reset_login; then
+          exit 0
+        fi
+        exit 1
+        ;;
       *)
         if [[ "$JSON_OUTPUT" == "true" ]]; then output_json false "UNKNOWN_COMMAND"; exit 1; fi
-        echo "Usage: hm admin reset-password [new-password]"
+        echo "Usage: hm admin {reset-login | reset-password [new-password]}"
         exit 1
         ;;
     esac
@@ -3934,6 +4150,14 @@ if [[ "$JSON_OUTPUT" == "true" || "${1:-}" == "ssl" || "${1:-}" == "doctor" || "
       exit 0
     fi
     exit 1
+  elif [[ "$MODULE" == "reset-login" ]]; then
+    # Shorthand: hm reset-login
+    if admin_reset_login; then
+      exit 0
+    fi
+    exit 1
+  elif [[ "$MODULE" == "help" || "$MODULE" == "--help" || "$MODULE" == "-h" ]]; then
+    cmd_help
   fi
   exit 0
 fi
@@ -3957,6 +4181,7 @@ while true; do
   echo -e "  11. Heal Panel (fix 502 / auth drift)"
   echo -e "  12. Change Panel Ports"
   echo -e "  13. Reset Main Admin Password"
+  echo -e "  14. Reset Owner Login (username / password)"
   echo -e "  0. Exit"
   echo ""
   
@@ -3977,6 +4202,7 @@ while true; do
     11) cmd_heal ;;
     12) cmd_ports ;;
     13) cmd_reset_admin_password ;;
+    14) cmd_reset_owner_login ;;
     0) echo "Goodbye!"; exit 0 ;;
     *) echo -e "  ${RED}Invalid option!${NC}"; sleep 1 ;;
   esac
