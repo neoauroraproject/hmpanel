@@ -120,16 +120,69 @@ bash <(curl -fsSL https://raw.githubusercontent.com/neoauroraproject/hmpanel/mai
 
 <div align="center">
 
-### 💖 Donation / حمایت مالی
+---
 
-**USDT (BEP20):** `0xacA935a5955a756BedaE4738304274EdeE0223D5`
+### 🌌 NEO AURORA
 
-</div>
+<p>
+  <a href="https://t.me/neoaurora">Telegram</a> &nbsp;·&nbsp;
+  <a href="https://t.me/hmraysupport">Support</a> &nbsp;·&nbsp;
+  <a href="https://t.me/neolicensebot">License Bot</a> &nbsp;·&nbsp;
+  <a href="https://github.com/neoauroraproject">GitHub</a>
+</p>
+
+<p>
+  <a href="https://t.me/hmpanel">HMPanel Community</a>
+  &nbsp;·&nbsp;
+  <a href="https://t.me/neotunnels">NeoTunnel Community</a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/neoauroraproject?tab=repositories">All Projects</a>
+</p>
+
+<br>
+
+### 💖 Support Our Development
+
+<p>
+  Your support helps us maintain and improve our open-source projects.
+</p>
+
+<p>
+  <a href="https://bscscan.com/address/0x94efb6642b8fcc591c28a8c04db2279908f66e18">
+    <img src="https://img.shields.io/badge/USDT-BEP20-26A17B?style=for-the-badge&logo=tether&logoColor=white" alt="USDT BEP20"/>
+  </a>
+  <br>
+  <code>0x94efb6642b8fcc591c28a8c04db2279908f66e18</code>
+</p>
+
+<p>
+  <a href="https://tonscan.org/address/UQD6NpICg2Q7nF_yFRrKW2_ZgB5LPI1X2KDK0JDjlivwhCJ5">
+    <img src="https://img.shields.io/badge/TON-Network-0098EA?style=for-the-badge&logo=ton&logoColor=white" alt="TON"/>
+  </a>
+  <br>
+  <code>UQD6NpICg2Q7nF_yFRrKW2_ZgB5LPI1X2KDK0JDjlivwhCJ5</code>
+</p>
+
+<p>
+  <a href="https://tronscan.org/#/address/TJsBskCPtbVk6gKxTkcocjJX2qNa62Mo1X">
+    <img src="https://img.shields.io/badge/TRON-Network-FF0000?style=for-the-badge&logo=tron&logoColor=white" alt="TRON"/>
+  </a>
+  <br>
+  <code>TJsBskCPtbVk6gKxTkcocjJX2qNa62Mo1X</code>
+</p>
+
+<br>
+
+⭐ **Enjoying this project? Give it a star!**
+
+<p>
+  Every star helps us grow and reach more developers.
+</p>
+
+**Crafted with ❤️ by the NeoAurora Team**
+
+<sub>Open Source · Built with Passion</sub>
 
 ---
 
-<div align="center">
-  <p>Released under the MIT License</p>
-  <p><strong>Crafted with ♥ by the HMPanel Team</strong></p>
-  <p>Official Telegram: <a href="https://t.me/hmpanel">@hmpanel</a> | GitHub: <a href="https://github.com/neoauroraproject/hmpanel">neoauroraproject/hmpanel</a></p>
 </div>
