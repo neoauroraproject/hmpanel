@@ -1024,6 +1024,9 @@ model StoreCustomer {
   paygSubscriptions PaygSubscription[]
   marketingTouches  MarketingTouch[]
   marketingEvents   MarketingEvent[]
+  marketingRuns     MarketingJourneyRun[]
+  marketingMessages MarketingMessage[]
+  marketingAnswers  MarketingSurveyAnswer[]
 
   @@unique([adminId, telegramUserId])
   @@index([adminId])
@@ -2056,3 +2059,87 @@ model MarketingEvent {
   @@index([adminId, type, createdAt])
 }
 
+/// An automated message sequence: trigger events, then timed steps (see marketing-journey.defaults.ts).
+model MarketingJourney {
+  id        String   @id @default(uuid())
+  adminId   String
+  /// welcome | trial_to_purchase | renewal | winback | post_purchase
+  key       String
+  enabled   Boolean  @default(true)
+  /// Event types that start a run, e.g. ["trial.ended"]
+  triggers  Json     @default("[]")
+  /// Ordered steps: delay, condition, message variants, optional coupon or survey
+  steps     Json     @default("[]")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  runs MarketingJourneyRun[]
+
+  @@unique([adminId, key])
+}
+
+/// One customer going through one journey, started by one event.
+model MarketingJourneyRun {
+  id         String    @id @default(uuid())
+  adminId    String
+  journeyId  String
+  customerId String
+  /// The MarketingEvent that started it
+  eventId    String
+  /// Order or client the event was about, for buttons like one-tap renew
+  clientId   String?
+  stepIndex  Int       @default(0)
+  /// When the current step was meant to go out; quiet hours and the promo cap move only nextAt
+  dueAt      DateTime?
+  nextAt     DateTime?
+  /// active | done | converted | stopped
+  status     String    @default("active")
+  startedAt  DateTime
+  updatedAt  DateTime  @updatedAt
+
+  journey  MarketingJourney @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  customer StoreCustomer    @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([journeyId, eventId])
+  @@index([status, nextAt])
+  @@index([adminId, customerId])
+}
+
+/// Every message a journey sent or held back, for the promo cap and A/B results.
+model MarketingMessage {
+  id         String   @id @default(uuid())
+  adminId    String
+  customerId String
+  runId      String?
+  journeyKey String
+  stepId     String
+  variantId  String
+  promo      Boolean  @default(false)
+  couponCode String?
+  /// sent | skipped | failed
+  status     String
+  reason     String?
+  createdAt  DateTime @default(now())
+
+  customer StoreCustomer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([adminId, customerId, createdAt])
+  @@index([adminId, journeyKey, stepId])
+}
+
+/// Answers to bot surveys (satisfaction 1-5, why a trial did not buy).
+model MarketingSurveyAnswer {
+  id         String   @id @default(uuid())
+  adminId    String
+  customerId String
+  runId      String?
+  /// satisfaction | why_not_buy
+  kind       String
+  value      String
+  createdAt  DateTime @default(now())
+
+  customer StoreCustomer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, kind])
+  @@index([adminId, kind, createdAt])
+}
