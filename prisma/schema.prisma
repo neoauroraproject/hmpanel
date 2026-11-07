@@ -1022,6 +1022,8 @@ model StoreCustomer {
   cancelRequests StoreServiceCancelRequest[]
   referralRewardGrants StoreReferralRewardGrant[]
   paygSubscriptions PaygSubscription[]
+  marketingTouches  MarketingTouch[]
+  marketingEvents   MarketingEvent[]
 
   @@unique([adminId, telegramUserId])
   @@index([adminId])
@@ -2009,3 +2011,48 @@ model PolicyReservation {
   @@index([adminId, status])
   @@index([createdAt])
 }
+
+// ---------------------------------------------------------
+// Marketing (Premium module "marketing")
+// ---------------------------------------------------------
+
+/// One arrival through a tagged link (t.me/bot?start=<source>).
+model MarketingTouch {
+  id         String   @id @default(uuid())
+  adminId    String
+  customerId String
+  /// Normalized source, e.g. insta, site, ch_post123, abroad, ref
+  source     String
+  /// Raw start argument as Telegram delivered it
+  raw        String?
+  /// True when this touch created the customer (first contact)
+  firstTouch Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  customer StoreCustomer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([adminId, createdAt])
+  @@index([customerId, createdAt])
+  @@index([adminId, source])
+}
+
+/// Lifecycle moments the store does not record itself (trial ended, expiring, expired, usage 80%).
+model MarketingEvent {
+  id         String   @id @default(uuid())
+  adminId    String
+  customerId String
+  /// trial.ended | subscription.expiring | subscription.expired | usage.high
+  type       String
+  /// What the event is about (order or client id plus the threshold), so a moment is recorded once
+  refKey     String
+  orderId    String?
+  clientId   String?
+  metadata   Json?    @default("{}")
+  createdAt  DateTime @default(now())
+
+  customer StoreCustomer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, type, refKey])
+  @@index([adminId, type, createdAt])
+}
+

@@ -8,6 +8,11 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [2.5.21] - 2026-11-07
+
+### Added
+- **Marketing module groundwork.** Database tables for tracked link arrivals and customer lifecycle events, and the `marketing` module definition (depends on Store). The module itself ships with Premium 2.5.24 and needs a license plan that includes it.
+
 ## [2.5.20] - 2026-11-03
 
 ### رفع مشکل
