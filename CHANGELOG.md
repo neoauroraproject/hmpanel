@@ -8,6 +8,14 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [2.5.22] - 2026-11-09
+
+### بهبود
+- جستجوی کلاینت‌ها حالا علاوه بر نام و ایمیل، در یادداشت، نام کاربری پنل مقصد و UUID هم جستجو می‌کند.
+
+### Improved
+- Client search now also matches notes, the provider username and the UUID, not only the name/email.
+
 ## [2.5.21] - 2026-11-09
 
 ### افزوده شد

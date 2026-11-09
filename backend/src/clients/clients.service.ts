@@ -1821,8 +1821,22 @@ export class ClientsService {
       where.provisioningStatus = { not: 'FAILED' };
     }
 
-    if (filters.search)
-      where.email = { contains: filters.search, mode: 'insensitive' };
+    // Search by name, note, provider username or UUID. Kept in AND so the online and
+    // expiry filters below, which set email/OR themselves, still apply.
+    const search = filters.search?.trim();
+    if (search) {
+      where.AND = [
+        ...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []),
+        {
+          OR: [
+            { email: { contains: search, mode: 'insensitive' } },
+            { remark: { contains: search, mode: 'insensitive' } },
+            { remoteUsername: { contains: search, mode: 'insensitive' } },
+            { uuid: { contains: search, mode: 'insensitive' } },
+          ],
+        },
+      ];
+    }
     if (filters.inboundId) {
       where.inbounds = {
         some: {

@@ -327,7 +327,7 @@
     "filterNoTraffic": "بدون ترافیک",
     "hideFilters": "پنهان کردن فیلترها",
     "advancedFilters": "فیلترهای پیشرفته",
-    "searchExtendedPlaceholder": "جستجو بر اساس نام، ایمیل یا UUID…",
+    "searchExtendedPlaceholder": "جستجو بر اساس نام، یادداشت، ایمیل یا UUID…",
     "allAdmins": "همه ادمین‌ها",
     "noAdminDirect": "بدون ادمین (پنل مستقیم)",
     "allPanels": "همه پنل‌ها",

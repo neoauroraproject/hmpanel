@@ -327,7 +327,7 @@
     "filterNoTraffic": "No Traffic",
     "hideFilters": "Hide Filters",
     "advancedFilters": "Advanced Filters",
-    "searchExtendedPlaceholder": "Search clients by name, email or UUID…",
+    "searchExtendedPlaceholder": "Search clients by name, note, email or UUID…",
     "allAdmins": "All Admins",
     "noAdminDirect": "No Admin (Direct Panels)",
     "allPanels": "All Panels",
