@@ -1538,7 +1538,9 @@
     "jsonFull": "Full panel docs as JSON",
     "guide": "Full API guide",
     "premiumScopes": "Premium",
-    "docsReference": "Every route, with a copyable curl command, is listed in the reference below."
+    "docsReference": "Every route, with a copyable curl command, is listed in the reference below.",
+    "scope_marketing_read": "Marketing: view daily numbers and suggested tasks",
+    "scope_marketing_write": "Marketing: report finished tasks"
   },
   "apiDocs": {
     "title": "Endpoint reference",

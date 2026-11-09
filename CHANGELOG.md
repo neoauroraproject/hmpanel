@@ -8,10 +8,17 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
-## [2.5.21] - 2026-11-07
+## [2.5.21] - 2026-11-09
+
+### افزوده شد
+- **زیرساخت ماژول مارکتینگ.** جدول‌های ورود از لینک‌های ردیابی، رویدادهای چرخه عمر مشتری، سفرهای پیام خودکار، نظرسنجی‌ها، صف محتوا و کمپین‌ها، و تعریف ماژول `marketing` (وابسته به فروشگاه). خود ماژول همراه پریمیوم ۲.۵.۲۴ عرضه می‌شود و به پلن لایسنسی نیاز دارد که آن را شامل شود.
+- کتابخانه رسمی Claude (`@anthropic-ai/sdk`) برای پیش‌نویس محتوای هوشمند در ماژول مارکتینگ.
+- دسترسی‌های جدید کلید API: `marketing.read` و `marketing.write` برای اپ دسکتاپ.
 
 ### Added
-- **Marketing module groundwork.** Database tables for tracked link arrivals and customer lifecycle events, and the `marketing` module definition (depends on Store). The module itself ships with Premium 2.5.24 and needs a license plan that includes it.
+- **Marketing module groundwork.** Tables for tracked link arrivals, customer lifecycle events, automated message journeys, surveys, the content queue and campaigns, plus the `marketing` module definition (depends on Store). The module itself ships with Premium 2.5.24 and needs a license plan that includes it.
+- The official Claude SDK (`@anthropic-ai/sdk`) for AI content drafts in the marketing module.
+- New API key scopes `marketing.read` and `marketing.write` for the desktop app.
 
 ## [2.5.20] - 2026-11-03
 

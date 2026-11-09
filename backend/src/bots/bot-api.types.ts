@@ -27,6 +27,8 @@ export const PREMIUM_API_SCOPES = [
   'payg.read',
   'payg.write',
   'templates.read',
+  'marketing.read',
+  'marketing.write',
 ] as const;
 
 const KNOWN_SCOPES: readonly string[] = [...BOT_API_SCOPES, ...PREMIUM_API_SCOPES];

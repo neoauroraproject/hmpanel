@@ -2143,3 +2143,58 @@ model MarketingSurveyAnswer {
   @@unique([runId, kind])
   @@index([adminId, kind, createdAt])
 }
+
+/// A post or note made by hand or drafted by AI: draft -> approved -> published.
+model MarketingContentItem {
+  id                String    @id @default(uuid())
+  adminId           String
+  /// telegram (published by the panel) | instagram (manual pack) | note (calendar, review, article)
+  channel           String
+  /// post | calendar | poll | review | article | outage
+  kind              String    @default("post")
+  /// draft | approved | published | failed
+  status            String    @default("draft")
+  title             String?
+  caption           String
+  buttonText        String?
+  /// Source tag for the button's tracked link (t.me/bot?start=<source>)
+  buttonSource      String?
+  /// data: URL of an attached image, if any
+  imageDataUrl      String?
+  hashtags          String?
+  /// Structured extra output (slides, stories, poll options, review lists)
+  extra             Json?     @default("{}")
+  campaignId        String?
+  scheduledAt       DateTime?
+  publishedAt       DateTime?
+  telegramMessageId Int?
+  error             String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  campaign MarketingCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+
+  @@index([adminId, status, scheduledAt])
+  @@index([adminId, createdAt])
+}
+
+/// A named push: period, audience, coupon and a tracked link, reported together.
+model MarketingCampaign {
+  id         String   @id @default(uuid())
+  adminId    String
+  name       String
+  /// Tracked link source, e.g. yalda1405
+  source     String
+  startsAt   DateTime
+  endsAt     DateTime
+  /// Broadcast audience, e.g. all or mk:expiring_7d
+  audience   String?
+  couponCode String?
+  notes      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  content MarketingContentItem[]
+
+  @@index([adminId, startsAt])
+}
