@@ -45,6 +45,28 @@ export interface ResolvedCapabilities {
   hash: string;
 }
 
+/**
+ * Version of a bundled 3x-ui OpenAPI spec from its file name (docs/apiNNN.json).
+ *
+ * Single-digit minors keep the old `api<maj><min><patch>` form (api342 = 3.4.2,
+ * api390 = 3.9.0). Two-digit minors (3x-ui 3.10+) are written `api<maj><minor>`
+ * (api310 = 3.10, api311 = 3.11) or `api<maj><minor><patch>` (api3112 = 3.11.2).
+ * A 3-digit name whose middle digit is 0–2 is read as a two-digit minor: 3x-ui
+ * 3.0–3.2 predate every bundled spec, so api3[0-2]x never means 3.0–3.2.
+ */
+export function parseSpecFileVersion(fileName: string): [number, number, number] {
+  const digits = fileName.replace(/^api/, '').replace(/\.json$/, '');
+  const maj = parseInt(digits.charAt(0) || '0', 10);
+  const rest = digits.substring(1);
+  if (rest.length >= 3) {
+    return [maj, parseInt(rest.substring(0, 2), 10), parseInt(rest.substring(2), 10)];
+  }
+  if (rest.length === 2 && parseInt(rest.charAt(0), 10) <= 2) {
+    return [maj, parseInt(rest, 10), 0];
+  }
+  return [maj, parseInt(rest.charAt(0) || '0', 10), parseInt(rest.substring(1) || '0', 10)];
+}
+
 @Injectable()
 export class ApiCapabilityResolver {
   private readonly logger = new Logger(ApiCapabilityResolver.name);
@@ -82,10 +104,7 @@ export class ApiCapabilityResolver {
       const specs = files
         .filter((f) => /^api\d+\.json$/.test(f))
         .map((f) => {
-          const numStr = f.replace('api', '').replace('.json', '');
-          const maj = parseInt(numStr.charAt(0) || '0', 10);
-          const min = parseInt(numStr.charAt(1) || '0', 10);
-          const pat = parseInt(numStr.substring(2) || '0', 10);
+          const [maj, min, pat] = parseSpecFileVersion(f);
           return { file: f, maj, min, pat, val: maj * 10000 + min * 100 + pat };
         })
         .sort((a, b) => b.val - a.val); // Sort descending (highest first)

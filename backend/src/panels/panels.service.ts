@@ -785,10 +785,14 @@ export class PanelsService implements OnModuleInit {
           errorType = 'Unauthorized';
           exactError = 'Invalid API Token or Credentials';
         } else if (axiosErr.response.status === 404) {
+          // 3x-ui answers 404 for any route it does not serve (a wrong token
+          // gets 401 since 3.11), so this is almost always a URL problem: the
+          // panel's random web base path is missing, or the port is wrong.
           checklist.panelDetected = false;
-          errorType = 'API Version Unsupported';
-          exactError =
-            'This is not a 3x-ui panel (missing /panel/api/server/status). Edit the panel and set type to Eylan or Pasarguard.';
+          errorType = 'Panel API Not Found';
+          exactError = webBasePath
+            ? `3x-ui API not found at ${debugLog.endpoint} (HTTP 404). Check the web base path "${webBasePath}" and the port — use the panel's login URL exactly as it opens in the browser, not the subscription URL. If this is not a 3x-ui panel, set the type to Eylan or Pasarguard.`
+            : `3x-ui API not found at ${debugLog.endpoint} (HTTP 404). The URL has no web base path — 3x-ui panels usually have a random one (e.g. https://${parsedHost}:${parsedPort}/AbCd1234XyZ/). Paste the panel's login URL exactly as it opens in the browser, and use the panel port, not the subscription port.`;
         } else {
           errorType = 'API Version Unsupported';
           exactError = `HTTP ${axiosErr.response.status}`;

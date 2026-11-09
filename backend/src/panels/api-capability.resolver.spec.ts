@@ -1,7 +1,39 @@
-import { ApiCapabilityResolver } from './api-capability.resolver';
+import {
+  ApiCapabilityResolver,
+  parseSpecFileVersion,
+} from './api-capability.resolver';
+
+describe('parseSpecFileVersion', () => {
+  it.each([
+    ['api331.json', [3, 3, 1]],
+    ['api342.json', [3, 4, 2]],
+    ['api390.json', [3, 9, 0]],
+    ['api310.json', [3, 10, 0]],
+    ['api311.json', [3, 11, 0]],
+    ['api3112.json', [3, 11, 2]],
+  ])('%s -> %j', (file, expected) => {
+    expect(parseSpecFileVersion(file)).toEqual(expected);
+  });
+});
 
 describe('ApiCapabilityResolver', () => {
   const resolver = new ApiCapabilityResolver();
+
+  it('resolves 3.11.x panels from api311.json, not api390', () => {
+    const v311 = resolver.resolve('3.11.0', '1.0');
+    const v3112 = resolver.resolve('3.11.2', '1.0');
+    const v39 = resolver.resolve('3.9.0', '1.0');
+    expect(v311.hash).not.toMatch(/^fallback-/);
+    expect(v311.hash).toBe(v3112.hash);
+    expect(v311.hash).not.toBe(v39.hash);
+    expect(v311.capabilities.clientsApi).toBe(true);
+  });
+
+  it('uses the newest spec (api311) for panels newer than every bundled spec', () => {
+    expect(resolver.resolve('3.12.0', '1.0').hash).toBe(
+      resolver.resolve('3.11.0', '1.0').hash,
+    );
+  });
 
   it('resolves 3.7.x panels from api370.json when present', () => {
     const result = resolver.resolve('3.7.0', '1.0');
