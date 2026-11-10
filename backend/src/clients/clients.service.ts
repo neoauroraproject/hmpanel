@@ -25,6 +25,15 @@ import {
 
 const GB = 1024 ** 3;
 
+/**
+ * Bytes and milliseconds as BigInt. Values typed in GB or days (0.2 GB, 0.1 day)
+ * come in with decimals, and BigInt() throws on those, so round first.
+ */
+function toWholeBigInt(value: unknown): bigint {
+  const n = Number(value);
+  return BigInt(Number.isFinite(n) ? Math.round(n) : 0);
+}
+
 /** Ledger actions that charge a client's initial volume. */
 const CREATION_CHARGE_ACTION_PREFIXES = [
   'CLIENT_CREATION_ALLOCATION_',
@@ -880,7 +889,7 @@ export class ClientsService {
       targetAdmin = explicitTarget;
     }
 
-    const totalBytes = BigInt(data.total || 0);
+    const totalBytes = toWholeBigInt(data.total);
     await this.assertUnlimitedClientAllowed(targetAdmin, totalBytes, panel.id);
     if (targetAdmin.maxClients > 0 && targetAdmin._count.clients >= targetAdmin.maxClients) {
       throw new BadRequestException(
@@ -964,7 +973,7 @@ export class ClientsService {
             subToken: require('crypto').randomBytes(5).toString('hex'),
             enable: remote.enable,
             total: remote.total || totalBytes,
-            expiryTime: remote.expiryTime || BigInt(data.expiryTime || 0),
+            expiryTime: remote.expiryTime || toWholeBigInt(data.expiryTime),
             up: remote.up || 0n,
             down: remote.down || 0n,
             limitIp: remote.limitIp ?? data.limitIp ?? 0,
@@ -1088,7 +1097,7 @@ export class ClientsService {
       providerExtras = extrasForPasarguard(data.providerExtras, inboundRows, data.limitIp);
     }
     const remote = await driver.updateClient(panel.id, username, {
-      totalBytes: data.total !== undefined ? BigInt(data.total) : undefined,
+      totalBytes: data.total !== undefined ? toWholeBigInt(data.total) : undefined,
       expiryTimeMs: data.expiryTime,
       enable: data.enable,
       remark: data.remark,
@@ -1098,7 +1107,7 @@ export class ClientsService {
     });
     const previousAllocation = BigInt(existing.total || 0);
     const newAllocation =
-      data.total !== undefined ? BigInt(data.total) : previousAllocation;
+      data.total !== undefined ? toWholeBigInt(data.total) : previousAllocation;
     const diff = newAllocation - previousAllocation;
     const quotaPanelId = existing.panelId || panel.id;
 
@@ -1178,7 +1187,7 @@ export class ClientsService {
           total: data.total !== undefined ? newAllocation : existing.total,
           expiryTime:
             data.expiryTime !== undefined
-              ? BigInt(data.expiryTime)
+              ? toWholeBigInt(data.expiryTime)
               : existing.expiryTime,
           limitIp: remote.limitIp ?? data.limitIp ?? existing.limitIp,
           providerMeta: mapSnapshotMeta(remote),
@@ -1321,7 +1330,7 @@ export class ClientsService {
     },
   ) {
     if (data.email) data.email = data.email.trim();
-    const totalBytes = BigInt(data.total || 0);
+    const totalBytes = toWholeBigInt(data.total);
     const clientUuid = randomUUID();
     const lockKey = `client:create:${data.email}`;
 
@@ -1689,7 +1698,7 @@ export class ClientsService {
                 subToken: pData.subToken,
                 flow: data.flow,
                 total: totalBytes,
-                expiryTime: BigInt(data.expiryTime || 0),
+                expiryTime: toWholeBigInt(data.expiryTime),
                 limitIp: data.limitIp || 0,
                 createdWithTrafficMode: targetAdmin.trafficMode,
                 provisioningStatus: 'ACTIVE',
@@ -2324,10 +2333,10 @@ export class ClientsService {
     }
 
     const newTotal =
-      data.total !== undefined ? BigInt(data.total) : existing.total;
+      data.total !== undefined ? toWholeBigInt(data.total) : existing.total;
     const newExpiry =
       data.expiryTime !== undefined
-        ? BigInt(data.expiryTime)
+        ? toWholeBigInt(data.expiryTime)
         : existing.expiryTime;
     const newFlow = data.flow !== undefined ? data.flow : existing.flow;
     const nextSubId =
@@ -3127,6 +3136,9 @@ export class ClientsService {
   }
 
   async bulkCreate(callerId: string, role: string, dto: BulkCreateClientDto) {
+    // The page sends GB × 1024³, which has decimals for sizes like 0.2 GB.
+    if (dto.total != null) dto.total = Math.max(0, Math.round(Number(dto.total) || 0));
+    if (dto.expiryTime != null) dto.expiryTime = Math.round(Number(dto.expiryTime) || 0);
     if (!dto.inboundIds || dto.inboundIds.length === 0) {
       throw new BadRequestException(
         'At least one inbound must be selected for bulk creation',
@@ -3177,7 +3189,7 @@ export class ClientsService {
       );
     }
 
-    const totalBytesPerClient = BigInt(dto.total || 0);
+    const totalBytesPerClient = toWholeBigInt(dto.total);
     const totalBytesRequired = totalBytesPerClient * BigInt(count);
 
     await this.assertUnlimitedClientAllowed(targetAdmin, totalBytesPerClient);
@@ -3298,7 +3310,7 @@ export class ClientsService {
           subToken: clientSubToken,
           flow: dto.flow || '',
           total: totalBytesPerClient,
-          expiryTime: BigInt(dto.expiryTime || 0),
+          expiryTime: toWholeBigInt(dto.expiryTime),
           limitIp: dto.limitIp || 0,
           enable: dto.enable !== false,
           createdWithTrafficMode: targetAdmin.trafficMode,
@@ -3736,7 +3748,7 @@ export class ClientsService {
               });
             }
           } else {
-            const ms = BigInt((dto.value ?? 0) * 24 * 60 * 60 * 1000);
+            const ms = toWholeBigInt((dto.value ?? 0) * 24 * 60 * 60 * 1000);
             const now = BigInt(Date.now());
             const base = c.expiryTime > 0n ? c.expiryTime : now;
             await this.update(c.id, adminId, role, {
@@ -3826,7 +3838,7 @@ export class ClientsService {
         });
       });
     } else if (dto.action === 'addDays') {
-      const ms = BigInt((dto.value ?? 0) * 24 * 60 * 60 * 1000);
+      const ms = toWholeBigInt((dto.value ?? 0) * 24 * 60 * 60 * 1000);
       if (ms <= 0n) return;
       const now = BigInt(Date.now());
       const base = client.expiryTime > 0n ? client.expiryTime : now;
@@ -4418,7 +4430,7 @@ export class ClientsService {
                   break;
                 }
                 case 'addDays': {
-                  const ms = BigInt((dto.value ?? 0) * 24 * 60 * 60 * 1000);
+                  const ms = toWholeBigInt((dto.value ?? 0) * 24 * 60 * 60 * 1000);
                   const now = BigInt(Date.now());
                   const base = t.expiryTime > 0n ? t.expiryTime : now;
                   await this.update(t.id, adminId, role, {

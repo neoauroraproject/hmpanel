@@ -173,7 +173,7 @@ export function BulkCreateModal({ onClose, inboundsList }: BulkCreateModalProps)
       };
 
       if (form.trafficGB) {
-        payload.total = Number(form.trafficGB) * 1024 * 1024 * 1024;
+        payload.total = Math.round(Number(form.trafficGB) * 1024 * 1024 * 1024);
       }
       if (form.expiryDays) {
         // On-hold: timer starts after first connection

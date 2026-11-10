@@ -8,13 +8,15 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
-## [Unreleased]
+## [2.5.23] - 2026-11-11
 
 ### رفع اشکال
+- **خطای Internal error در ساخت عمده کلاینت.** با حجم اعشاری مثل ۰.۲ گیگ (۲۰۰ مگ)، ساخت عمده از صفحه کلاینت‌ها خطا می‌داد. حالا حجم و زمان قبل از ذخیره به عدد صحیح گرد می‌شوند؛ همین اصلاح در ساخت تکی، ویرایش و افزایش روز به‌صورت گروهی هم اعمال شد.
 - **پشتیبانی از ثنایی (3x-ui) نسخه 3.11.** مرجع API حالا `docs/api311.json` است. قبلاً نام فایل‌های `api310`/`api311` اشتباه به‌صورت 3.1.x خوانده می‌شد و پنل‌های 3.10 و 3.11 با مشخصات 3.9 شناسایی می‌شدند.
 - خطای 404 در تست اتصال دیگر «پنل 3x-ui نیست» نمی‌گوید؛ حالا توضیح می‌دهد که مسیر پایه (web base path) یا پورت پنل در آدرس اشتباه است یا جا افتاده.
 
 ### Fixed
+- **Bulk client creation no longer fails with an internal error** for fractional sizes such as 0.2 GB. Byte and time values are rounded before they are stored; the same fix covers single create, edit and bulk extend by days.
 - **3x-ui 3.11 support.** `docs/api311.json` is now the reference spec. Spec files `api310`/`api311` were parsed as 3.1.x, so 3.10/3.11 panels resolved against the 3.9 spec.
 - A 404 from the connection test no longer says "not a 3x-ui panel". 3x-ui returns 404 for unknown routes (a bad token gets 401 since 3.11), so the message now points at a missing web base path or wrong port.
 
