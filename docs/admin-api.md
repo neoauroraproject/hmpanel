@@ -295,6 +295,38 @@ Order:
 
 Prices, coupons, test-product limits, wallet charges, auto-delivery and Telegram notices behave as on the storefront. Keep `customerToken` to place later orders for the same customer.
 
+### شارژ اضطراری / Emergency recharge — module `store`
+
+When a client's service has **run out** (traffic used up or time expired), the customer can take a small top-up to stay connected. Each admin (reseller) sets the amount, extra days, uses per renewal period and billing mode in Store → Settings. These routes let apps such as NeoConfig show the same button. They follow the admin's "button on the subscription page" switch.
+
+| | Scope | |
+|---|---|---|
+| `GET /v1/premium/emergency/config` | `store.read` | The admin's settings: `enabled`, `gb`, `days`, `mode` (`FREE` · `DEDUCT_NEXT` · `WALLET`), `priceToman`, `priceUsd`, `maxPerCycle` |
+| `GET /v1/premium/emergency/clients/:ref` | `store.read` | Can this client take it now? `ref` = client id, `subId` or `subToken` |
+| `POST /v1/premium/emergency/clients/:ref` | `store.write` | Take it (only when `eligible`) |
+
+Show the button **only when `eligible` is `true`**. It is `false` while the service still has traffic and time (`reason: "not_finished"`).
+
+```json
+{
+  "clientId": "…", "enabled": true, "eligible": true, "reason": null,
+  "volumeOut": true, "timeOut": false,
+  "addBytes": 1073741824, "addDays": 0, "usesLeft": 1,
+  "mode": "DEDUCT_NEXT", "price": 0, "currency": null, "debtBytes": 0
+}
+```
+
+`reason` when not eligible: `disabled_feature`, `not_finished`, `limit_reached`, `nothing_to_add`, `not_supported` (PAYG clients; `WALLET` mode for a service with no store customer).
+
+`POST` answers `{ "ok": true, "clientId": "…", "addBytes": …, "addDays": …, "price": …, "currency": …, "mode": "…" }` or `400` with `EMERGENCY_NOT_FINISHED`, `EMERGENCY_LIMIT_REACHED`, `EMERGENCY_DISABLED_FEATURE`, `EMERGENCY_NOTHING_TO_ADD`, `EMERGENCY_NOT_SUPPORTED`, `EMERGENCY_WALLET` (not enough balance) or `EMERGENCY_BUSY`. `DEDUCT_NEXT` traffic is taken off the next renewal automatically, and every renewal resets `usesLeft`.
+
+```bash
+curl -s https://panel.example.com/api/v1/premium/emergency/clients/9f8e7d6c5b   -H "Authorization: Bearer hmp_xxxxxxxx"
+curl -s -X POST https://panel.example.com/api/v1/premium/emergency/clients/9f8e7d6c5b   -H "Authorization: Bearer hmp_xxxxxxxx"
+```
+
+The subscription page (`/p/:id`) uses the public twins `GET`/`POST /store/emergency/:subKey`.
+
 ### نمایندگی و شارژ / Agency & credit — module `admin-recharge`
 
 | | Scope | |
@@ -410,3 +442,5 @@ curl -s https://panel.example.com/api/v1/clients/lookup?key=9f8e7d6c5b \
 ## NeoConfig
 
 NeoConfig (the subscription-lookup PWA) connects with one of these keys: NeoConfig admin → **Panel connections** → **HMPanel**, panel URL + key. Users then see their HMPanel subscriptions, and approved renewals are applied through `POST /v1/clients/:id/renew`. A reseller's key shows only that reseller's customers.
+
+To offer the emergency recharge button in NeoConfig, call `GET /v1/premium/emergency/clients/:ref` with the user's sub key and show the button when `eligible` is `true`; tapping it calls `POST` on the same path (the key needs `store.read` + `store.write`).

@@ -860,6 +860,8 @@ step_1_configuration() {
     fi
   else
     info "Downloading files from GitHub..."
+    # A failed earlier run leaves this behind and git refuses to clone into it.
+    rm -rf /tmp/hmpanel_install
     run_with_spinner "Cloning repository" git clone -b main https://github.com/neoauroraproject/hmpanel.git /tmp/hmpanel_install
     run_with_spinner "Copying files to installation directory" cp -r /tmp/hmpanel_install/* "${INSTALL_DIR}/"
     rm -rf /tmp/hmpanel_install
@@ -928,10 +930,28 @@ step_2_environment() {
   update_env "SSL_ENABLED" "false"
 }
 
+# Containers left by an old install (another compose project, a removed
+# directory, a half-finished uninstall) keep our fixed container names, and
+# `compose up` then fails with "container name is already in use". Volumes
+# are untouched, so data survives.
+remove_stale_containers() {
+  local project c owner
+  project="$(basename "$INSTALL_DIR" | tr '[:upper:]' '[:lower:]')"
+  for c in hmpanel-panel hmpanel-nginx hmpanel-postgres hmpanel-redis hmpanel-host-agent; do
+    docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx "$c" || continue
+    owner="$(docker inspect -f '{{ index .Config.Labels "com.docker.compose.project" }}' "$c" 2>/dev/null || true)"
+    if [[ "$owner" != "$project" ]]; then
+      warn "Removing leftover container ${c} from a previous install (project '${owner:-none}')."
+      docker rm -f "$c" >/dev/null 2>&1 || true
+    fi
+  done
+}
+
 step_3_docker() {
   step "[3/10] Docker"
   install_docker
   install_docker_compose
+  remove_stale_containers
   open_firewall_ports "$HTTP_PORT" "$HTTPS_PORT"
 }
 

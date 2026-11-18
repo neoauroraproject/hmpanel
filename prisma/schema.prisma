@@ -674,6 +674,8 @@ model StoreProfile {
   loyaltyApplyRenewals    Boolean @default(true)
   loyaltyApplyNewPurchases Boolean @default(false)
   telegramBotMenu     Json?
+  /// Premium: Bot API 10.4 message widgets (live usage chart, order tracker).
+  telegramWidgetsEnabled Boolean @default(true)
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
@@ -1380,6 +1382,34 @@ model StoreIpLimit {
   admin Admin @relation(fields: [adminId], references: [id], onDelete: Cascade)
 
   @@index([adminId])
+}
+
+/// Premium emergency recharge settings per admin (created by ensure-premium-schema; keep in sync).
+model StoreEmergencyConfig {
+  adminId   String   @id
+  config    Json     @default("{}")
+  updatedAt DateTime @default(now())
+}
+
+/// One emergency recharge taken by a customer. DEDUCT_NEXT grants are paid back on renewal.
+model StoreEmergencyGrant {
+  id             String    @id
+  adminId        String
+  clientId       String
+  customerId     String?
+  bytes          BigInt    @default(0)
+  days           Int       @default(0)
+  mode           String
+  amount         Float     @default(0)
+  currency       String?
+  source         String    @default("bot")
+  settled        Boolean   @default(false)
+  settledOrderId String?
+  settledAt      DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([clientId, settled])
+  @@index([adminId, createdAt])
 }
 
 model StoreCouponRedemption {

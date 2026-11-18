@@ -21,6 +21,10 @@ import {
   applyExpiryDeltaMs,
   applyTrafficDeltaBytes,
 } from "./quota-adjust";
+import { useUiStyle } from "@/store/uiStyle";
+import { ModernAdminsView } from "./ModernAdminsView";
+import { QuickQuotaDialog } from "./QuickQuotaDialog";
+import { AdminPremiumAccess, postPremiumAssignment, useAssignableModules } from "./AdminPremiumAccess";
 
 interface AdminPanelQuotaRow {
   panelId: string;
@@ -75,7 +79,7 @@ const EMPTY_QUOTA_BASELINE: QuotaBaseline = {
   maxClientTrafficGb: 0,
 };
 
-interface Admin {
+export interface Admin {
   id: string;
   username: string;
   email: string;
@@ -163,11 +167,13 @@ function adminRoleLabel(admin: { role: string; isOwner?: boolean }, t: (key: str
 
 export default function AdminsPage() {
   const t = useT();
+  const { modern } = useUiStyle();
   const qc = useQueryClient();
   const toast = useToast((s) => s.push);
   const sessionAdmin = useAuth((s) => s.admin);
   const [addOpen, setAddOpen] = useState(false);
   const [editAdmin, setEditAdmin] = useState<Admin | null>(null);
+  const [quickFor, setQuickFor] = useState<Admin | null>(null);
   
   const [activeTab, setActiveTab] = useState<'active' | 'disabled'>('active');
   const [search, setSearch] = useState("");
@@ -252,6 +258,28 @@ export default function AdminsPage() {
 
   return (
     <motion.div {...MOTION_CONFIG.page}>
+      {modern ? (
+        <ModernAdminsView
+          admins={admins}
+          activeTab={activeTab}
+          onTab={setActiveTab}
+          search={search}
+          onSearch={setSearch}
+          fetching={isFetching && !!data}
+          isOwner={isOwner}
+          roleLabel={(a) => adminRoleLabel(a, t)}
+          onAdd={() => setAddOpen(true)}
+          onEdit={setEditAdmin}
+          onQuick={setQuickFor}
+          onToggle={toggleStatus}
+          onDelete={(a) => {
+            if (confirm(t("admins.deleteConfirm", { username: a.username }))) {
+              quickAction.mutate({ id: a.id, payload: { delete: true } });
+            }
+          }}
+        />
+      ) : (
+      <>
       <PageHeader
         title={t("admins.title")}
         subtitle={t("admins.subtitle")}
@@ -457,6 +485,18 @@ export default function AdminsPage() {
                       </motion.button>
                     )}
                     
+                    {canEdit && a.role !== "SUPER_ADMIN" && !a.unlimitedTraffic && (
+                    <motion.button
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={() => setQuickFor(a)}
+                      className="p-2 text-blue-500 hover:bg-blue-500/10 rounded-lg transition-colors"
+                      title={t("adminTools.quickTopUp")}
+                      aria-label={t("adminTools.quickTopUp")}
+                    >
+                      <Zap size={16} />
+                    </motion.button>
+                    )}
                     {canEdit && (
                     <motion.button
                       whileHover={{ scale: 1.05 }}
@@ -504,6 +544,8 @@ export default function AdminsPage() {
           </tbody>
         </table>
       </Card>
+      </>
+      )}
 
       <AnimatePresence>
         {addOpen && (
@@ -516,6 +558,8 @@ export default function AdminsPage() {
             }}
           />
         )}
+
+        {quickFor && <QuickQuotaDialog key={quickFor.id} adminId={quickFor.id} onClose={() => setQuickFor(null)} />}
 
         {editAdmin && (
           <EditAdminModal
@@ -1568,7 +1612,9 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
     licenseQuery.data?.status !== "community" &&
     licenseQuery.data?.mode !== "disabled";
   const providerDrafts = React.useRef<Record<string, unknown>>({});
-  const [openSection, setOpenSection] = useState("basic");
+  const [stepIndex, setStepIndex] = useState(0);
+  const [premiumModules, setPremiumModules] = useState<string[]>([]);
+  const { data: assignableModules = [] } = useAssignableModules(isPremium);
   const [showPassword, setShowPassword] = useState(false);
   const [form, setForm] = useState({
     username: "",
@@ -1636,7 +1682,7 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
         maxClientTrafficGb: form.superAdmin || accountUnlimitedTraffic(form) || perPanelQuotas ? 0 : applyCountDelta(0, form.maxClientTrafficGb),
         inboundIds: form.superAdmin ? [] : form.selectedInbounds,
         permissions: [],
-        storeEnabled: form.superAdmin ? false : form.storeEnabled,
+        storeEnabled: form.superAdmin ? false : form.storeEnabled || premiumModules.includes("store"),
         storePanelId: form.storePanelId,
         refundOnDelete: form.superAdmin || accountUnlimitedTraffic(form) ? false : form.refundOnDelete,
         refundOnEdit: form.superAdmin || accountUnlimitedTraffic(form) ? false : form.refundOnEdit,
@@ -1662,6 +1708,15 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
             accountUnlimitedTraffic(form),
           ),
         );
+        // Store access follows storeEnabled above; the rest are plain module assignments.
+        for (const moduleId of premiumModules) {
+          if (moduleId === "store") continue;
+          try {
+            await postPremiumAssignment({ adminId: created.id, moduleId, enabled: true, settings: {} });
+          } catch {
+            /* account exists; access can be granted later from the edit screen */
+          }
+        }
       }
       return created;
     },
@@ -1680,277 +1735,353 @@ function AddAdminModal({ callerIsOwner, onClose, onSaved }: { callerIsOwner: boo
     },
   });
 
+  type WizardStep = "account" | "traffic" | "panels" | "premium" | "review";
+  const steps: WizardStep[] = form.superAdmin
+    ? ["account", "review"]
+    : ["account", "traffic", "panels", ...(isPremium ? (["premium"] as WizardStep[]) : []), "review"];
+  const stepNo = Math.min(stepIndex, steps.length - 1);
+  const step = steps[stepNo];
+  const stepLabel: Record<WizardStep, string> = {
+    account: t("adminWizard.stepAccount"),
+    traffic: t("adminWizard.stepTraffic"),
+    panels: t("adminWizard.stepPanels"),
+    premium: t("adminWizard.stepPremium"),
+    review: t("adminWizard.stepReview"),
+  };
+
+  const stepError = (s: WizardStep): string | null => {
+    if (s === "account") {
+      if (!form.username || !form.password) return t("admins.usernamePasswordRequired");
+      if (form.password.length < 8) return t("admins.passwordMinLength");
+    }
+    if (s === "panels" && !hasResellerPanelAccess(form, panels)) return t("admins.inboundRequired");
+    return null;
+  };
+
+  const goNext = () => {
+    const err = stepError(step);
+    if (err) return toast(err, "error");
+    setStepIndex(Math.min(stepNo + 1, steps.length - 1));
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.username || !form.password) return toast(t("admins.usernamePasswordRequired"), "error");
-    if (form.password.length < 8) return toast(t("admins.passwordMinLength"), "error");
-    if (!hasResellerPanelAccess(form, panels)) return toast(t("admins.inboundRequired"), "error");
+    if (step !== "review") return goNext();
+    for (const s of steps) {
+      const err = stepError(s);
+      if (err) return toast(err, "error");
+    }
     create.mutate();
   };
 
-  return (
-    <motion.div {...MOTION_CONFIG.modalOverlay} className="fixed inset-0 z-[100] flex items-start sm:items-center justify-center bg-black/60 pt-[10dvh] px-4 sm:pt-0 sm:p-4 backdrop-blur-sm">
-      <motion.div {...MOTION_CONFIG.modalContent} className="w-full max-w-3xl max-h-[90vh] min-w-0 flex flex-col rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-2xl overflow-hidden">
-        <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between bg-zinc-50 dark:bg-zinc-950/30">
-          <h2 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50 flex items-center gap-2">
-            <Shield size={20} className="text-blue-500" /> {t("admins.addAdminTitle")}
-          </h2>
-          <button onClick={onClose} className="text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"><X size={20} /></button>
-        </div>
-        <div className="overflow-y-auto flex-1">
+  const panelName = (id: string) => panels?.find((p) => p.id === id)?.name || id;
+  const fieldClass =
+    "w-full rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2.5 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors";
+  const reviewRow = (label: string, value: React.ReactNode) => (
+    <div className="flex items-start justify-between gap-4 py-2.5 text-sm">
+      <span className="text-zinc-500">{label}</span>
+      <span className="text-end font-medium text-zinc-900 dark:text-zinc-50">{value}</span>
+    </div>
+  );
 
-        <form onSubmit={handleSubmit} className="p-6">
-          <motion.div layout className="space-y-4">
-            
-            {/* Section A: Basic Info */}
-            <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 overflow-hidden">
-              <button type="button" onClick={() => setOpenSection(openSection === 'basic' ? '' : 'basic')} className="w-full flex items-center justify-between p-4 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800/80 transition-colors">
-                <div className="flex items-center gap-2 font-medium text-zinc-800 dark:text-zinc-100"><Shield size={16} className="text-blue-400"/> {t("admins.basicInformation")}</div>
-                <ChevronDown size={18} className={`text-zinc-500 transition-transform ${openSection === 'basic' ? 'rotate-180' : ''}`} />
-              </button>
-              <AnimatePresence initial={false}>
-                {openSection === 'basic' && (
-                  <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                    <div className="p-4 grid grid-cols-1 gap-4 border-t border-zinc-200 dark:border-zinc-800 sm:grid-cols-2">
+  return (
+    <motion.div {...MOTION_CONFIG.modalOverlay} className="fixed inset-0 z-[100] flex items-start sm:items-center justify-center bg-black/60 pt-[6dvh] px-4 sm:pt-0 sm:p-4 backdrop-blur-sm">
+      <motion.div {...MOTION_CONFIG.modalContent} className="w-full max-w-3xl max-h-[92vh] min-w-0 flex flex-col rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-2xl overflow-hidden">
+        <div className="border-b border-zinc-200 px-6 pb-4 pt-5 dark:border-zinc-800">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="flex items-center gap-2 text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+              <Shield size={19} className="text-blue-500" /> {t("admins.addAdminTitle")}
+            </h2>
+            <button type="button" onClick={onClose} aria-label={t("common.cancel")} className="flex h-9 w-9 items-center justify-center rounded-full text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"><X size={18} /></button>
+          </div>
+          <ol className="mt-4 flex items-center gap-1.5 overflow-x-auto hide-scrollbar" aria-label={t("adminWizard.progress")}>
+            {steps.map((s, i) => {
+              const done = i < stepNo;
+              const active = i === stepNo;
+              return (
+                <li key={s} className="flex min-w-0 items-center gap-1.5">
+                  <button
+                    type="button"
+                    disabled={i > stepNo}
+                    onClick={() => setStepIndex(i)}
+                    aria-current={active ? "step" : undefined}
+                    className={`flex h-8 shrink-0 items-center gap-2 rounded-full ps-1 pe-3 text-xs font-semibold transition-colors ${
+                      active
+                        ? "bg-zinc-900 text-white dark:bg-white dark:text-zinc-900"
+                        : done
+                          ? "cursor-pointer bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/15 dark:text-emerald-300"
+                          : "bg-zinc-100 text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500"
+                    }`}
+                  >
+                    <span className={`flex h-6 w-6 items-center justify-center rounded-full text-[11px] ${active ? "bg-white/20" : done ? "bg-emerald-500 text-white" : "bg-white dark:bg-zinc-900"}`}>
+                      {done ? <Check size={12} /> : i + 1}
+                    </span>
+                    <span className="whitespace-nowrap">{stepLabel[s]}</span>
+                  </button>
+                  {i < steps.length - 1 ? <span className="h-px w-4 shrink-0 bg-zinc-200 dark:bg-zinc-700" aria-hidden /> : null}
+                </li>
+              );
+            })}
+          </ol>
+        </div>
+
+        <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1 overflow-y-auto p-6">
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div
+                key={step}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.18, ease: "easeOut" }}
+                className="space-y-5"
+              >
+                {step === "account" ? (
+                  <>
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                       <div>
-                        <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.username")}</label>
-                        <input type="text" required value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
+                        <label className="mb-1.5 block text-sm font-medium text-zinc-600 dark:text-zinc-300">{t("admins.username")}</label>
+                        <input type="text" autoFocus value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} className={fieldClass} dir="ltr" autoComplete="off" />
                       </div>
                       <div className="relative">
-                        <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.password")}</label>
-                        <input type={showPassword ? "text" : "password"} required value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 ps-3 pe-10 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors" />
-                        <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute end-3 top-[28px] text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300">
+                        <label className="mb-1.5 block text-sm font-medium text-zinc-600 dark:text-zinc-300">{t("admins.password")}</label>
+                        <input type={showPassword ? "text" : "password"} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className={`${fieldClass} pe-10`} dir="ltr" autoComplete="new-password" />
+                        <button type="button" onClick={() => setShowPassword(!showPassword)} aria-label={t("adminWizard.togglePassword")} className="absolute end-3 top-[34px] text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">
                           {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                         </button>
+                        <p className="mt-1.5 text-xs text-zinc-500">{t("adminWizard.passwordHint")}</p>
                       </div>
-                      <div className="sm:col-span-2 text-xs text-zinc-500 dark:text-zinc-400">
-                        {t("admins.panelAssignmentMovedHint")}
-                      </div>
-                      {callerIsOwner && (
-                        <label className="sm:col-span-2 flex items-start gap-3 p-3 rounded-lg border border-blue-500/30 bg-blue-500/5 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={form.superAdmin}
-                            onChange={(e) => setForm({
-                              ...form,
-                              superAdmin: e.target.checked,
-                              unlimitedTraffic: e.target.checked ? true : form.unlimitedTraffic,
-                            })}
-                            className="mt-0.5 w-4 h-4 rounded text-blue-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-blue-500"
-                          />
-                          <div className="flex flex-col">
-                            <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{t("admins.makeSuperAdmin")}</span>
-                            <span className="text-xs text-zinc-500">{t("admins.makeSuperAdminHint")}</span>
-                          </div>
-                        </label>
-                      )}
                     </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-
-            {/* Section B: Permissions */}
-            <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 overflow-hidden">
-              <button type="button" onClick={() => setOpenSection(openSection === 'permissions' ? '' : 'permissions')} className="w-full flex items-center justify-between p-4 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800/80 transition-colors">
-                <div className="flex items-center gap-2 font-medium text-zinc-800 dark:text-zinc-100"><Server size={16} className="text-purple-400"/> {t("admins.permissions")}</div>
-                <ChevronDown size={18} className={`text-zinc-500 transition-transform ${openSection === 'permissions' ? 'rotate-180' : ''}`} />
-              </button>
-              <AnimatePresence initial={false}>
-                {openSection === 'permissions' && (
-                  <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                    <div className={`p-4 border-t border-zinc-200 dark:border-zinc-800 space-y-4 ${limitsLocked ? "opacity-50 pointer-events-none" : ""}`}>
-                      {limitsLocked && (
-                        <p className="text-xs text-zinc-500">{t("admins.superAdminLimitsDisabled")}</p>
-                      )}
-                      <div>
-                        <label className="mb-2 block text-sm font-medium text-zinc-800 dark:text-zinc-100">
-                          {t("admins.allowedPanelsInbounds")}
-                          <span className="block text-xs font-normal text-zinc-500 mt-0.5">{t(perPanelQuotas ? "admins.allowedPanelsAndLimitsHint" : "admins.allowedPanelsSharedPoolHint")}</span>
-                        </label>
-                        <PanelInboundPicker
-                          panels={panels ?? []}
-                          inbounds={inbounds ?? []}
-                          isLoading={inboundsLoading}
-                          enabledPanels={form.enabledPanels}
-                          selectedInbounds={form.selectedInbounds}
-                          onChange={(next) => setForm((f) => applyPanelSelection(f, next))}
-                          disabled={limitsLocked}
-                          allowPremiumPanels={isPremium}
-                          collectOnly
-                          onProviderDraft={(items) => mergeProviderDraft(providerDrafts, items)}
-                          panelQuotas={form.panelQuotas}
-                          onQuotaChange={(panelId, patch) => setForm((f) => patchPanelQuota(f, panelId, patch))}
-                          showQuotaFields={perPanelQuotas}
-                          unlimitedTraffic={form.unlimitedTraffic}
+                    {callerIsOwner && (
+                      <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-blue-500/30 bg-blue-500/5 p-3.5">
+                        <input
+                          type="checkbox"
+                          checked={form.superAdmin}
+                          onChange={(e) => {
+                            setStepIndex(0);
+                            setForm({ ...form, superAdmin: e.target.checked, unlimitedTraffic: e.target.checked ? true : form.unlimitedTraffic });
+                          }}
+                          className="mt-0.5 h-4 w-4 rounded text-blue-600"
                         />
-                        {!limitsLocked && !hasResellerPanelAccess(form, panels) && (
-                          <div className="mt-3 p-3 rounded-lg border border-amber-500/20 bg-amber-500/10 text-sm text-amber-600 dark:text-amber-400 flex items-start gap-2">
-                            <AlertCircle size={18} className="shrink-0 mt-0.5" />
-                            <div>
-                              <strong>{t("admins.noPanelSelected")}</strong>
-                              <p className="text-xs opacity-80 mt-1">{t("admins.noPanelSelectedHint")}</p>
-                            </div>
-                          </div>
-                        )}
-                        {!limitsLocked && isPremium && (
-                          <label className="flex items-center gap-3 p-3 rounded-lg border border-zinc-200 dark:border-zinc-800 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={form.storeEnabled}
-                              onChange={(e) => setForm({ ...form, storeEnabled: e.target.checked })}
-                              className="w-4 h-4 rounded text-blue-600"
-                            />
-                            <div className="flex flex-1 flex-col">
-                              <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200 inline-flex items-center gap-1.5">
-                                {t("admins.enableStore")}
-                                <PremiumGem size={12} className="text-emerald-500" />
-                              </span>
-                              <span className="text-xs text-zinc-500">{t("admins.enableStoreHint")}</span>
-                            </div>
-                          </label>
-                        )}
-                      </div>
+                        <div className="flex flex-col">
+                          <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{t("admins.makeSuperAdmin")}</span>
+                          <span className="text-xs text-zinc-500">{t("admins.makeSuperAdminHint")}</span>
+                        </div>
+                      </label>
+                    )}
+                  </>
+                ) : null}
+
+                {step === "traffic" ? (
+                  <>
+                    <div>
+                      <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">{t("adminWizard.trafficTitle")}</h3>
+                      <p className="mt-1 text-xs leading-relaxed text-zinc-500">{t("adminWizard.trafficHint")}</p>
                     </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
+                    <QuotaModeToggle
+                      value={quotaMode === "GLOBAL" ? "GLOBAL" : "PER_PANEL"}
+                      onChange={(mode) => setForm((f) => applyQuotaModeChange(f, mode))}
+                    />
+                    {perPanelQuotas ? (
+                      <div className="flex items-start gap-2 rounded-xl border border-violet-500/25 bg-violet-500/5 p-3 text-sm text-violet-700 dark:text-violet-300">
+                        <Layers size={16} className="mt-0.5 shrink-0" />
+                        <span className="leading-relaxed">{t("adminWizard.perPanelNext")}</span>
+                      </div>
+                    ) : (
+                      <PanelLimitFields
+                        title={t("admins.globalLimitsTitle")}
+                        deviceKey="admins.maxDeviceLimit"
+                        trafficModeHint={t("admins.globalTrafficModeHint")}
+                        unlimited={form.unlimitedTraffic}
+                        onUnlimitedChange={(next) => setForm((f) => ({ ...f, unlimitedTraffic: next }))}
+                        value={{
+                          gb: form.gb,
+                          maxClients: form.maxClients,
+                          maxDeviceLimit: form.maxDeviceLimit,
+                          maxExpireDays: form.maxExpireDays,
+                          maxClientTrafficGb: form.maxClientTrafficGb,
+                          trafficMode: form.trafficMode,
+                          unlimitedTraffic: form.unlimitedTraffic,
+                        }}
+                        current={form.globalBaseline}
+                        onChange={(patch) =>
+                          setForm((f) => ({
+                            ...f,
+                            gb: patch.gb ?? f.gb,
+                            maxClients: patch.maxClients ?? f.maxClients,
+                            maxDeviceLimit: patch.maxDeviceLimit ?? f.maxDeviceLimit,
+                            maxExpireDays: patch.maxExpireDays ?? f.maxExpireDays,
+                            maxClientTrafficGb: patch.maxClientTrafficGb ?? f.maxClientTrafficGb,
+                            trafficMode: patch.trafficMode ?? f.trafficMode,
+                            unlimitedTraffic: patch.unlimitedTraffic ?? f.unlimitedTraffic,
+                          }))
+                        }
+                      />
+                    )}
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-zinc-600 dark:text-zinc-300">{t("admins.addExpiryDays")}</label>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        autoComplete="off"
+                        placeholder={t("adminWizard.expiryPlaceholder")}
+                        value={form.expiryDays}
+                        onChange={(e) => setForm({ ...form, expiryDays: e.target.value })}
+                        className={fieldClass}
+                      />
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {[30, 60, 90, 180, 365].map((d) => (
+                          <button
+                            key={d}
+                            type="button"
+                            onClick={() => setForm((f) => ({ ...f, expiryDays: String(d) }))}
+                            className={`h-7 rounded-full border px-2.5 text-[11px] font-semibold transition-colors ${form.expiryDays === String(d) ? "border-blue-500 bg-blue-500/10 text-blue-700 dark:text-blue-300" : "border-zinc-200 text-zinc-600 hover:border-blue-400 dark:border-zinc-700 dark:text-zinc-300"}`}
+                          >
+                            {t("common.days", { count: d })}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="mt-1.5 text-xs leading-relaxed text-zinc-500">{t("adminWizard.expiryHint")}</p>
+                    </div>
+                  </>
+                ) : null}
 
+                {step === "panels" ? (
+                  <>
+                    <div>
+                      <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">{t("admins.allowedPanelsInbounds")}</h3>
+                      <p className="mt-1 text-xs leading-relaxed text-zinc-500">
+                        {t(perPanelQuotas ? "admins.allowedPanelsAndLimitsHint" : "admins.allowedPanelsSharedPoolHint")}
+                      </p>
+                    </div>
+                    <PanelInboundPicker
+                      panels={panels ?? []}
+                      inbounds={inbounds ?? []}
+                      isLoading={inboundsLoading}
+                      enabledPanels={form.enabledPanels}
+                      selectedInbounds={form.selectedInbounds}
+                      onChange={(next) => setForm((f) => applyPanelSelection(f, next))}
+                      disabled={false}
+                      allowPremiumPanels={isPremium}
+                      collectOnly
+                      onProviderDraft={(items) => mergeProviderDraft(providerDrafts, items)}
+                      panelQuotas={form.panelQuotas}
+                      onQuotaChange={(panelId, patch) => setForm((f) => patchPanelQuota(f, panelId, patch))}
+                      showQuotaFields={perPanelQuotas}
+                      unlimitedTraffic={form.unlimitedTraffic}
+                    />
+                    {!hasResellerPanelAccess(form, panels) && (
+                      <div className="flex items-start gap-2 rounded-xl border border-amber-500/20 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-400">
+                        <AlertCircle size={18} className="mt-0.5 shrink-0" />
+                        <div>
+                          <strong>{t("admins.noPanelSelected")}</strong>
+                          <p className="mt-1 text-xs opacity-80">{t("admins.noPanelSelectedHint")}</p>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : null}
 
-            {/* Section C: Limits */}
-            <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 overflow-hidden">
-              <button type="button" onClick={() => setOpenSection(openSection === 'limits' ? '' : 'limits')} className="w-full flex items-center justify-between p-4 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800/80 transition-colors">
-                <div className="flex items-center gap-2 font-medium text-zinc-800 dark:text-zinc-100"><Database size={16} className="text-emerald-400"/> {t("admins.limits")}</div>
-                <ChevronDown size={18} className={`text-zinc-500 transition-transform ${openSection === 'limits' ? 'rotate-180' : ''}`} />
-              </button>
-              <AnimatePresence initial={false}>
-                {openSection === 'limits' && (
-                  <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                    <div className={`p-4 space-y-4 border-t border-zinc-200 dark:border-zinc-800 ${limitsLocked ? "opacity-50 pointer-events-none" : ""}`}>
-                      {limitsLocked && (
-                        <p className="text-xs text-zinc-500">{t("admins.superAdminLimitsDisabled")}</p>
-                      )}
-                      {!limitsLocked ? (
+                {step === "premium" ? (
+                  <AdminPremiumAccess mode="controlled" value={premiumModules} onChange={setPremiumModules} />
+                ) : null}
+
+                {step === "review" ? (
+                  <>
+                    <div className="divide-y divide-zinc-100 rounded-2xl border border-zinc-200 px-4 dark:divide-zinc-800 dark:border-zinc-800">
+                      {reviewRow(t("admins.username"), <span dir="ltr">{form.username || "—"}</span>)}
+                      {reviewRow(t("adminWizard.reviewRole"), form.superAdmin ? t("nav.superAdmin") : t("nav.reseller"))}
+                      {!form.superAdmin ? (
                         <>
-                          <QuotaModeToggle
-                            value={quotaMode === "GLOBAL" ? "GLOBAL" : "PER_PANEL"}
-                            onChange={(mode) => setForm((f) => applyQuotaModeChange(f, mode))}
-                          />
-                          {perPanelQuotas ? (
-                            <div className="rounded-lg border border-violet-500/25 bg-violet-500/5 p-3 text-sm text-violet-600 dark:text-violet-400 flex items-start gap-2">
-                              <Layers size={16} className="shrink-0 mt-0.5" />
-                              <span className="leading-relaxed">{t("admins.limitsLiveOnPanels")}</span>
-                            </div>
-                          ) : (
-                            <PanelLimitFields
-                              title={t("admins.globalLimitsTitle")}
-                              deviceKey="admins.maxDeviceLimit"
-                              trafficModeHint={t("admins.globalTrafficModeHint")}
-                              unlimited={form.unlimitedTraffic}
-                              onUnlimitedChange={(next) => setForm((f) => ({ ...f, unlimitedTraffic: next }))}
-                              value={{
-                                gb: form.gb,
-                                maxClients: form.maxClients,
-                                maxDeviceLimit: form.maxDeviceLimit,
-                                maxExpireDays: form.maxExpireDays,
-                                maxClientTrafficGb: form.maxClientTrafficGb,
-                                trafficMode: form.trafficMode,
-                                unlimitedTraffic: form.unlimitedTraffic,
-                              }}
-                              current={form.globalBaseline}
-                              onChange={(patch) =>
-                                setForm((f) => ({
-                                  ...f,
-                                  gb: patch.gb ?? f.gb,
-                                  maxClients: patch.maxClients ?? f.maxClients,
-                                  maxDeviceLimit: patch.maxDeviceLimit ?? f.maxDeviceLimit,
-                                  maxExpireDays: patch.maxExpireDays ?? f.maxExpireDays,
-                                  maxClientTrafficGb: patch.maxClientTrafficGb ?? f.maxClientTrafficGb,
-                                  trafficMode: patch.trafficMode ?? f.trafficMode,
-                                  unlimitedTraffic: patch.unlimitedTraffic ?? f.unlimitedTraffic,
-                                }))
-                              }
-                            />
+                          {reviewRow(
+                            t("adminWizard.stepTraffic"),
+                            perPanelQuotas ? t("admins.quotaModePerPanel") : form.unlimitedTraffic ? t("admins.unlimitedTrafficLabel") : form.gb ? `${form.gb} GB` : "—",
                           )}
+                          {perPanelQuotas && form.enabledPanels.length
+                            ? reviewRow(
+                                t("adminWizard.reviewPanelTraffic"),
+                                <span className="flex flex-col items-end gap-0.5">
+                                  {form.enabledPanels.map((id) => {
+                                    const q = form.panelQuotas[id];
+                                    return (
+                                      <span key={id} className="text-xs">
+                                        <span className="text-zinc-500">{panelName(id)}:</span>{" "}
+                                        {q?.unlimitedTraffic ? t("admins.stockUnlimited") : q?.gb ? `${q.gb} GB` : "—"}
+                                      </span>
+                                    );
+                                  })}
+                                </span>,
+                              )
+                            : null}
+                          {reviewRow(t("adminWizard.reviewExpiry"), form.expiryDays ? t("common.days", { count: Number(form.expiryDays) || 0 }) : t("common.never"))}
+                          {reviewRow(t("adminWizard.reviewAccess"), t("adminWizard.reviewAccessValue", { panels: form.enabledPanels.length, inbounds: form.selectedInbounds.length }))}
+                          {isPremium
+                            ? reviewRow(
+                                t("adminWizard.stepPremium"),
+                                premiumModules.length
+                                  ? assignableModules.filter((m) => premiumModules.includes(m.id)).map((m) => m.name).join("، ")
+                                  : "—",
+                              )
+                            : null}
                         </>
                       ) : null}
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-2">
                       <div>
-                        <div className="mb-1 flex min-w-0 flex-col gap-0.5">
-                          <label className="text-sm font-medium leading-snug text-zinc-500 dark:text-zinc-400">
-                            {t("admins.addExpiryDays")}
-                          </label>
-                          <span className="text-xs font-medium text-zinc-500">
-                            {t("admins.stockAvailable", { value: t("admins.stockUnlimited") })}
-                          </span>
-                        </div>
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          autoComplete="off"
-                          placeholder={t("admins.adjustTrafficPlaceholder")}
-                          disabled={limitsLocked}
-                          value={form.expiryDays}
-                          onChange={(e) => setForm({ ...form, expiryDays: e.target.value })}
-                          className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2.5 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors"
-                        />
-                        <p className="mt-1.5 text-xs leading-relaxed text-zinc-500">{t("admins.adjustAccountExpiryHint")}</p>
+                        <label className="mb-1.5 block text-sm font-medium text-zinc-600 dark:text-zinc-300">{t("admins.accountStatus")}</label>
+                        <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className={fieldClass}>
+                          <option value="active">{t("admins.statusActive")}</option>
+                          <option value="disabled">{t("admins.statusDisabled")}</option>
+                        </select>
                       </div>
                     </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-
-            {/* Section D: Status */}
-            <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 overflow-hidden">
-              <button type="button" onClick={() => setOpenSection(openSection === 'status' ? '' : 'status')} className="w-full flex items-center justify-between p-4 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800/80 transition-colors">
-                <div className="flex items-center gap-2 font-medium text-zinc-800 dark:text-zinc-100"><Activity size={16} className="text-rose-400"/> {t("admins.statusSection")}</div>
-                <ChevronDown size={18} className={`text-zinc-500 transition-transform ${openSection === 'status' ? 'rotate-180' : ''}`} />
-              </button>
-              <AnimatePresence initial={false}>
-                {openSection === 'status' && (
-                  <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                    <div className="p-4 border-t border-zinc-200 dark:border-zinc-800">
-                      <label className="mb-1 block text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("admins.accountStatus")}</label>
-                      <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950/50 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500 transition-colors mb-4">
-                        <option value="active">{t("admins.statusActive")}</option>
-                        <option value="disabled">{t("admins.statusDisabled")}</option>
-                      </select>
-                      <p className="mb-4 text-xs leading-relaxed text-zinc-500">{t("admins.trafficModeMovedHint")}</p>
-                      <div className={`mt-4 space-y-3 pt-4 border-t border-zinc-200 dark:border-zinc-800 ${limitsLocked ? "opacity-50 pointer-events-none" : ""}`}>
-                        <label className="flex items-center gap-3 p-2 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer">
-                          <input type="checkbox" checked={form.refundOnDelete} onChange={(e) => setForm({ ...form, refundOnDelete: e.target.checked })} className="w-4 h-4 rounded text-blue-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-blue-500" />
+                    {!form.superAdmin ? (
+                      <div className="space-y-2">
+                        <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-zinc-200 p-3 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800/50">
+                          <input type="checkbox" checked={form.refundOnDelete} onChange={(e) => setForm({ ...form, refundOnDelete: e.target.checked })} className="h-4 w-4 rounded text-blue-600" />
                           <div className="flex flex-col">
                             <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{t("admins.refundOnDelete")}</span>
                             <span className="text-xs text-zinc-500">{t("admins.refundOnDeleteHint")}</span>
                           </div>
                         </label>
-                        <label className="flex items-center gap-3 p-2 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer">
-                          <input type="checkbox" checked={form.refundOnEdit} onChange={(e) => setForm({ ...form, refundOnEdit: e.target.checked })} className="w-4 h-4 rounded text-blue-600 bg-zinc-100 border-zinc-300 dark:bg-zinc-700 dark:border-zinc-600 focus:ring-blue-500" />
+                        <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-zinc-200 p-3 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800/50">
+                          <input type="checkbox" checked={form.refundOnEdit} onChange={(e) => setForm({ ...form, refundOnEdit: e.target.checked })} className="h-4 w-4 rounded text-blue-600" />
                           <div className="flex flex-col">
                             <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{t("admins.refundOnEdit")}</span>
                             <span className="text-xs text-zinc-500">{t("admins.refundOnEditHint")}</span>
                           </div>
                         </label>
                       </div>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+                    ) : null}
+                  </>
+                ) : null}
+              </motion.div>
+            </AnimatePresence>
+          </div>
+
+          <div className="flex items-center justify-between gap-3 border-t border-zinc-200 px-6 py-4 dark:border-zinc-800">
+            <button
+              type="button"
+              onClick={() => (stepNo === 0 ? onClose() : setStepIndex(stepNo - 1))}
+              className="rounded-xl px-4 py-2 text-sm font-medium text-zinc-600 transition-colors hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            >
+              {stepNo === 0 ? t("common.cancel") : t("adminWizard.back")}
+            </button>
+            <div className="flex items-center gap-3">
+              <span className="hidden text-xs text-zinc-500 sm:inline">{t("adminWizard.stepOf", { n: stepNo + 1, total: steps.length })}</span>
+              {step === "review" ? (
+                <button type="submit" disabled={create.isPending} className="rounded-xl bg-blue-600 px-5 py-2 text-sm font-semibold text-white shadow-lg shadow-blue-900/20 transition-colors hover:bg-blue-500 disabled:opacity-50">
+                  {create.isPending ? t("common.creating") : t("admins.createAdmin")}
+                </button>
+              ) : (
+                <button type="submit" className="inline-flex items-center gap-1.5 rounded-xl bg-zinc-900 px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-zinc-800 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200">
+                  {t("adminWizard.next")} <ArrowRight size={15} className="rtl:-scale-x-100" />
+                </button>
+              )}
             </div>
-
-
-          </motion.div>
-
-          <div className="flex justify-end gap-3 pt-6 mt-6 border-t border-zinc-200 dark:border-zinc-800">
-            <button type="button" onClick={onClose} className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">{t("common.cancel")}</button>
-            <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} type="submit" disabled={create.isPending || !hasResellerPanelAccess(form, panels)} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50 transition-colors shadow-lg shadow-blue-900/20">
-              {create.isPending ? t("common.creating") : t("admins.createAdmin")}
-            </motion.button>
           </div>
         </form>
-        </div>
       </motion.div>
     </motion.div>
   );
@@ -2519,6 +2650,12 @@ function EditAdminModal({ adminId, callerIsOwner, onClose, onSaved }: { adminId:
                   )}
                 </AnimatePresence>
               </div>
+
+              {!form.superAdmin && admin.role !== "SUPER_ADMIN" ? (
+                <div className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+                  <AdminPremiumAccess mode="live" adminId={admin.id} />
+                </div>
+              ) : null}
 
               <div className="flex justify-end pt-4">
                 <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => {

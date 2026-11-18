@@ -1,0 +1,432 @@
+/*
+ * "Modern" panel look. Every rule is scoped to html[data-ui="modern"], which only the admin
+ * shell sets (see UiStyleScope), so the classic UI and all public pages are untouched.
+ *
+ * Three layers of change:
+ *   1. Token remap  — Tailwind's palette / radius variables are redefined, which restyles
+ *                     every existing page (and premium plugin pages) without touching them.
+ *   2. Surfaces     — low-priority structural rules (in @layer components, so any utility
+ *                     class on the element still wins) that give cards their soft elevation.
+ *   3. Shell pieces — styles for the hm-* hook classes used by the shell components.
+ */
+
+/* ───────────────────────── 1. Tokens ───────────────────────── */
+
+html[data-ui="modern"] {
+  --hm-canvas: #eceef2;
+  --hm-canvas-glow: #bcd0ff;
+  --hm-canvas-glow-2: #dccdfb;
+  --hm-surface: #ffffff;
+  --hm-surface-soft: rgb(255 255 255 / 0.66);
+  --hm-card: rgb(255 255 255 / 0.74);
+  --hm-ink: #1c1f26;
+  --hm-ink-contrast: #ffffff;
+  --hm-muted: #6c7380;
+  --hm-line: rgb(28 31 38 / 0.08);
+  --hm-accent: #2563eb;
+  --hm-accent-soft: rgb(37 99 235 / 0.12);
+  --hm-hatch: rgb(28 31 38 / 0.16);
+  --hm-shadow-card: 0 1px 0 rgb(255 255 255 / 0.7) inset, 0 18px 40px -28px rgb(28 38 64 / 0.35);
+  --hm-shadow-float: 0 1px 0 rgb(255 255 255 / 0.8) inset, 0 14px 34px -20px rgb(28 38 64 / 0.4);
+
+  /* Neutral scale: a touch cooler and softer than stock zinc. */
+  --color-zinc-50: #f7f8fa;
+  --color-zinc-100: #eff1f4;
+  --color-zinc-200: #e4e7ec;
+  --color-zinc-300: #d3d7de;
+  --color-zinc-400: #a0a6b1;
+  --color-zinc-500: #6c7380;
+  --color-zinc-600: #4d535e;
+  --color-zinc-700: #383d47;
+  --color-zinc-800: #262a32;
+  --color-zinc-900: #1c1f26;
+  --color-zinc-950: #111318;
+  --color-slate-50: #f7f8fa;
+  --color-slate-100: #eff1f4;
+  --color-slate-200: #e4e7ec;
+  --color-slate-300: #d3d7de;
+  --color-slate-400: #a0a6b1;
+  --color-slate-500: #6c7380;
+  --color-slate-600: #4d535e;
+  --color-slate-700: #383d47;
+  --color-slate-800: #262a32;
+  --color-slate-900: #1c1f26;
+  --color-slate-950: #111318;
+
+  /* Rounder geometry everywhere. */
+  --radius-md: 0.625rem;
+  --radius-lg: 0.875rem;
+  --radius-xl: 1.25rem;
+  --radius-2xl: 1.625rem;
+  --radius-3xl: 2rem;
+}
+
+/*
+ * The 300/400 status shades were picked for the dark theme and wash out on light surfaces.
+ * In the light modern look they resolve to their readable 600/700 counterparts.
+ */
+html[data-ui="modern"]:not(.dark) {
+  --color-emerald-300: #059669;
+  --color-emerald-400: #059669;
+  --color-green-400: #16a34a;
+  --color-teal-400: #0d9488;
+  --color-red-300: #dc2626;
+  --color-red-400: #dc2626;
+  --color-rose-300: #e11d48;
+  --color-rose-400: #e11d48;
+  --color-amber-300: #b45309;
+  --color-amber-400: #b45309;
+  --color-orange-400: #c2410c;
+  --color-blue-300: #2563eb;
+  --color-blue-400: #2563eb;
+  --color-sky-400: #0284c7;
+  --color-cyan-400: #0891b2;
+  --color-indigo-400: #4f46e5;
+  --color-violet-400: #7c3aed;
+  --color-purple-400: #9333ea;
+}
+
+html[data-ui="modern"].dark {
+  --hm-canvas: #0e1014;
+  --hm-canvas-glow: #14213f;
+  --hm-canvas-glow-2: #1d1633;
+  --hm-surface: #181b21;
+  --hm-surface-soft: rgb(24 27 33 / 0.72);
+  --hm-card: rgb(26 29 36 / 0.72);
+  --hm-ink: #f3f4f6;
+  --hm-ink-contrast: #14161b;
+  --hm-muted: #8d93a0;
+  --hm-line: rgb(255 255 255 / 0.08);
+  --hm-accent: #5b8cff;
+  --hm-accent-soft: rgb(91 140 255 / 0.16);
+  --hm-hatch: rgb(255 255 255 / 0.18);
+  --hm-shadow-card: 0 1px 0 rgb(255 255 255 / 0.04) inset;
+  --hm-shadow-float: 0 1px 0 rgb(255 255 255 / 0.05) inset, 0 18px 40px -22px rgb(0 0 0 / 0.8);
+
+  --color-zinc-50: #f5f6f8;
+  --color-zinc-100: #e9ebef;
+  --color-zinc-200: #d5d8de;
+  --color-zinc-300: #b6bbc5;
+  --color-zinc-400: #8d93a0;
+  --color-zinc-500: #6a707d;
+  --color-zinc-600: #4a505c;
+  --color-zinc-700: #343944;
+  --color-zinc-800: #252932;
+  --color-zinc-900: #181b21;
+  --color-zinc-950: #0e1014;
+  --color-slate-50: #f5f6f8;
+  --color-slate-100: #e9ebef;
+  --color-slate-200: #d5d8de;
+  --color-slate-300: #b6bbc5;
+  --color-slate-400: #8d93a0;
+  --color-slate-500: #6a707d;
+  --color-slate-600: #4a505c;
+  --color-slate-700: #343944;
+  --color-slate-800: #252932;
+  --color-slate-900: #181b21;
+  --color-slate-950: #0e1014;
+}
+
+html[data-ui="modern"] body {
+  background: var(--hm-canvas);
+}
+
+html[data-ui="modern"] ::-webkit-scrollbar-thumb {
+  background: rgb(28 31 38 / 0.18);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+html[data-ui="modern"].dark ::-webkit-scrollbar-thumb {
+  background: rgb(255 255 255 / 0.16);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+
+/* ───────────────────────── 2. Surfaces ───────────────────────── */
+
+@layer components {
+  /* Any existing "card" (rounded + bordered + filled) gets the soft floating elevation. */
+  html[data-ui="modern"]:not(.dark) #main-content :is(.rounded-xl, .rounded-2xl, .rounded-3xl).border.bg-white {
+    box-shadow: var(--hm-shadow-card);
+  }
+
+  html[data-ui="modern"] #main-content :is(input, select, textarea) {
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+}
+
+/* ───────────────────────── 3. Shell pieces ───────────────────────── */
+
+/* Canvas: neutral at the top, a two-hue glow rising from the bottom corners. */
+html[data-ui="modern"] .hm-shell {
+  background:
+    radial-gradient(85% 80% at 100% 100%, var(--hm-canvas-glow), transparent 72%),
+    radial-gradient(65% 60% at 0% 100%, var(--hm-canvas-glow-2), transparent 70%),
+    radial-gradient(60% 45% at 30% 0%, rgb(255 255 255 / 0.75), transparent 70%),
+    var(--hm-canvas);
+}
+html[data-ui="modern"].dark .hm-shell {
+  background:
+    radial-gradient(85% 80% at 100% 100%, var(--hm-canvas-glow), transparent 72%),
+    radial-gradient(65% 60% at 0% 100%, var(--hm-canvas-glow-2), transparent 70%),
+    var(--hm-canvas);
+}
+
+/* Page content keeps a comfortable measure under the top navigation. */
+html[data-ui="modern"][data-ui-nav="top"] .hm-page {
+  margin-inline: auto;
+  max-width: 1680px;
+}
+
+html[data-ui="modern"] .hm-page-title {
+  font-size: clamp(1.625rem, 1.2rem + 1.2vw, 2.25rem);
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+html[data-ui="modern"].locale-fa .hm-page-title {
+  letter-spacing: 0;
+  line-height: 1.35;
+}
+
+html[data-ui="modern"] .hm-card {
+  border-color: var(--hm-line);
+  border-radius: 1.625rem;
+}
+
+/* Large light numerals — the signature of the look. */
+.hm-num {
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+html.locale-fa .hm-num {
+  letter-spacing: 0;
+}
+
+.hm-hatch {
+  background-image: repeating-linear-gradient(
+    135deg,
+    var(--hm-hatch) 0 1.5px,
+    transparent 1.5px 7px
+  );
+}
+
+.hm-ink {
+  background: var(--hm-ink);
+  color: var(--hm-ink-contrast);
+}
+
+/* The single dark surface (system health). Stays dark in both themes. */
+.hm-ink-card {
+  background: #1c1f26;
+  color: #f3f4f6;
+  box-shadow: 0 24px 50px -30px rgb(20 28 50 / 0.7);
+}
+html.dark .hm-ink-card {
+  background: #1f232b;
+  border: 1px solid rgb(255 255 255 / 0.08);
+  box-shadow: none;
+}
+
+/* Sidebar variant: a floating rounded column instead of a full-height rail. */
+html[data-ui="modern"] .hm-sidebar {
+  margin: 0.75rem;
+  margin-inline-end: 0;
+  border: 1px solid var(--hm-line);
+  border-radius: 1.75rem;
+  background: var(--hm-surface-soft);
+  box-shadow: var(--hm-shadow-float);
+  overflow: hidden;
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+}
+html[data-ui="modern"] .hm-sidebar > div {
+  border-color: var(--hm-line);
+}
+
+html[data-ui="modern"] .hm-nav-link {
+  border-radius: 9999px;
+}
+html[data-ui="modern"] .hm-nav-link > .hm-nav-indicator {
+  display: none;
+}
+html[data-ui="modern"] .hm-nav-link[aria-current="page"] {
+  background: var(--hm-ink);
+  color: var(--hm-ink-contrast);
+}
+
+html[data-ui="modern"] .hm-mobile-header {
+  border-color: transparent;
+  background: transparent;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .hm-pop {
+    animation: hm-pop 0.16s cubic-bezier(0.2, 0.8, 0.2, 1);
+    transform-origin: top center;
+  }
+}
+@keyframes hm-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ───────────────────────── 4. Polish ───────────────────────── */
+
+/* Cards let the canvas glow through. Interactive cards keep their own hover fill. */
+html[data-ui="modern"]:not(.dark) #main-content :is(.rounded-xl, .rounded-2xl, .rounded-3xl).border.bg-white:not(button, a, input, select, textarea),
+html[data-ui="modern"]:not(.dark) #main-content :is(button, a):is(.rounded-xl, .rounded-2xl, .rounded-3xl).border.bg-white:not(:hover) {
+  background-color: var(--hm-card);
+}
+/* …except inside dialogs, which sit on a dimmed page and must stay solid. */
+html[data-ui="modern"]:not(.dark) #main-content .fixed.inset-0 :is(.rounded-xl, .rounded-2xl, .rounded-3xl).border.bg-white {
+  background-color: #fff;
+}
+
+/* Dialogs */
+html[data-ui="modern"] .fixed.inset-0[class*="bg-black/"] {
+  background-color: rgb(24 30 46 / 0.38);
+  -webkit-backdrop-filter: blur(12px) saturate(1.15);
+  backdrop-filter: blur(12px) saturate(1.15);
+}
+html[data-ui="modern"].dark .fixed.inset-0[class*="bg-black/"] {
+  background-color: rgb(4 6 10 / 0.6);
+}
+html[data-ui="modern"] .fixed.inset-0[class*="bg-black/"] > [class*="rounded-"],
+html[data-ui="modern"] .fixed.inset-0[class*="bg-black/"] > :not([class*="rounded-"]) > :is(.rounded-xl, .rounded-2xl, .rounded-3xl):is(.bg-white, .border) {
+  border-radius: 1.75rem;
+  border-color: var(--hm-line);
+  background-color: var(--hm-surface);
+  background-image: radial-gradient(120% 140px at 50% 0%, var(--hm-accent-soft), transparent 100%);
+  background-repeat: no-repeat;
+  box-shadow:
+    0 1px 0 rgb(255 255 255 / 0.6) inset,
+    0 40px 90px -30px rgb(16 24 48 / 0.55),
+    0 12px 28px -18px rgb(16 24 48 / 0.35);
+}
+html[data-ui="modern"].dark .fixed.inset-0[class*="bg-black/"] > [class*="rounded-"] {
+  box-shadow:
+    0 1px 0 rgb(255 255 255 / 0.06) inset,
+    0 40px 90px -30px rgb(0 0 0 / 0.9);
+}
+
+/* Icons: one lighter stroke everywhere reads calmer next to the light numerals. */
+html[data-ui="modern"] svg.lucide {
+  stroke-width: 1.75;
+}
+
+/* Persian is a joined script: letter-spacing tears words apart. */
+html[data-ui="modern"].locale-fa :is(.tracking-wide, .tracking-wider, .tracking-widest, .tracking-tight) {
+  letter-spacing: 0;
+}
+
+html[data-ui="modern"] #main-content table {
+  font-variant-numeric: tabular-nums;
+}
+html[data-ui="modern"] #main-content :is(h2, h3, h4).font-bold {
+  font-weight: 600;
+}
+
+@layer components {
+  /* Buttons become pills; card-sized buttons (rounded-xl and up) are left alone. */
+  html[data-ui="modern"] :is(button, a).rounded-lg:is(.px-3, .px-3\.5, .px-4, .px-5, .px-6) {
+    border-radius: 9999px;
+  }
+  /* Icon-only row actions and icon chips turn round. */
+  html[data-ui="modern"] #main-content button.p-2.rounded-lg,
+  html[data-ui="modern"] #main-content div.p-2.rounded-lg[class*="-500/10"] {
+    border-radius: 9999px;
+  }
+  html[data-ui="modern"] #main-content div.p-2.rounded-lg[class*="-500/10"] {
+    padding: 0.625rem;
+  }
+
+  /* Primary actions get a little depth. */
+  html[data-ui="modern"] :is(button, a).bg-blue-600 {
+    background-image: linear-gradient(180deg, rgb(255 255 255 / 0.16), rgb(255 255 255 / 0) 60%);
+    box-shadow:
+      0 1px 0 rgb(255 255 255 / 0.28) inset,
+      0 10px 22px -12px rgb(37 99 235 / 0.75);
+  }
+  html[data-ui="modern"] :is(button, a).bg-blue-600:disabled {
+    box-shadow: none;
+  }
+
+  /* Fields */
+  html[data-ui="modern"] :is(input[type="checkbox"], input[type="radio"]) {
+    accent-color: var(--hm-accent);
+  }
+  html[data-ui="modern"] #main-content :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"]), select, textarea):focus-visible {
+    border-color: var(--hm-accent);
+    box-shadow: 0 0 0 4px var(--hm-accent-soft);
+  }
+  html[data-ui="modern"] #main-content tbody tr {
+    transition: background-color 0.12s ease;
+  }
+}
+
+/* System-health card: a quiet accent glow in the corners. */
+html[data-ui="modern"] .hm-ink-card {
+  background-image:
+    radial-gradient(90% 70% at 0% 0%, rgb(72 118 255 / 0.34), transparent 62%),
+    radial-gradient(70% 60% at 100% 100%, rgb(140 96 255 / 0.2), transparent 65%);
+}
+
+/* ───────────────────────── 5. Motion ─────────────────────────
+ * One page-load sequence, a quick fade when a tab panel mounts, and a pop-in for dialogs
+ * that framer-motion does not already drive (those carry an inline style). Fill mode is
+ * `backwards` only, so no transform lingers after the animation — a lingering transform
+ * would turn sections into containing blocks for their fixed-position dialogs.
+ */
+@keyframes hm-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes hm-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes hm-dialog-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html[data-ui="modern"] .hm-page > * > :not(.fixed):not([style*="transform"]) {
+    animation: hm-rise 0.36s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+  }
+  html[data-ui="modern"] .hm-page > * > :nth-child(2) { animation-delay: 40ms; }
+  html[data-ui="modern"] .hm-page > * > :nth-child(3) { animation-delay: 80ms; }
+  html[data-ui="modern"] .hm-page > * > :nth-child(4) { animation-delay: 120ms; }
+  html[data-ui="modern"] .hm-page > * > :nth-child(n + 5) { animation-delay: 160ms; }
+
+  html[data-ui="modern"] .hm-split-body > :not(.fixed) {
+    animation: hm-fade 0.22s ease-out backwards;
+  }
+
+  html[data-ui="modern"] .fixed.inset-0[class*="bg-black/"]:not([style]) {
+    animation: hm-fade 0.18s ease-out backwards;
+  }
+  html[data-ui="modern"] .fixed.inset-0[class*="bg-black/"]:not([style]) > [class*="rounded-"]:not([style]) {
+    animation: hm-dialog-in 0.24s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+  }
+
+  /* Interactive cards answer the pointer, never on touch-only devices. */
+  @media (hover: hover) {
+    html[data-ui="modern"] #main-content :is(a, button).rounded-\[1\.625rem\],
+    html[data-ui="modern"] #main-content :is(a, button)[class*="rounded-2xl"][class*="border"] {
+      transition: transform 0.18s ease, box-shadow 0.18s ease, background-color 0.15s ease;
+    }
+    html[data-ui="modern"] #main-content :is(a, button)[class*="rounded-2xl"][class*="border"]:hover {
+      transform: translateY(-1px);
+    }
+  }
+}

@@ -12,6 +12,7 @@ import { useT } from "@/i18n";
 import { translatePremiumMenuTitle } from "@/lib/premium-nav";
 import {
   PREMIUM_MENU_ICONS,
+  PREMIUM_TEASER,
   buildAppNav,
   type NavIcon,
   type PremiumNavInput,
@@ -109,9 +110,25 @@ export function useAppNav() {
     [admin?.role, premiumItems],
   );
 
+  // Without a license the super admin still sees what Premium offers, locked.
+  const premiumTeaser = useMemo(() => {
+    if (isPremium || admin?.role !== "SUPER_ADMIN") return [];
+    const items: PremiumNavInput[] = PREMIUM_TEASER.map((m) => ({
+      title: translatePremiumMenuTitle(t, { moduleId: m.moduleId, href: m.href, fallback: m.fallback }),
+      href: m.href,
+      icon: PREMIUM_MENU_ICONS[m.moduleId] || Gem,
+      moduleId: m.moduleId,
+    }));
+    return buildAppNav(admin?.role, items)
+      .map((s) => ({ ...s, items: s.items.filter((i) => i.isPremium) }))
+      .filter((s) => s.items.length > 0);
+  }, [isPremium, admin?.role, t]);
+
   return {
     sections,
     storeHasNewOrders,
     rechargePendingCount,
+    isPremium: !!isPremium,
+    premiumTeaser,
   };
 }

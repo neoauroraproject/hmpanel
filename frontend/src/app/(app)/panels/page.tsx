@@ -15,6 +15,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { MOTION_CONFIG } from "@/lib/motion";
 import { NodeInboundBadge } from "@/components/NodeInboundBadge";
 import { PluginSlot } from "@/components/PluginSlot";
+import { useUiStyle } from "@/store/uiStyle";
+import { ModernPanelsView } from "./ModernPanelsView";
 
 interface PanelForm {
   name: string;
@@ -29,6 +31,7 @@ function isNativePanelType(type?: string | null) {
 
 export default function PanelsPage() {
   const t = useT();
+  const { modern } = useUiStyle();
   const qc = useQueryClient();
   const toast = useToast((s) => s.push);
 
@@ -98,8 +101,34 @@ export default function PanelsPage() {
   if (error) return <ErrorBox message={t("panels.loadFailed")} />;
   const panels = (data ?? []).filter((p) => !isNativePanelType(p.panelType));
 
+  const testConnection = async (p: any) => {
+    try {
+      const { data: r } = await api.post("/panels/test-connection", { url: p.url, panelId: p.id });
+      if (r.ok) toast(t("panels.testOk", { version: r.version, ping: r.pingMs ?? r.latencyMs }));
+      else toast(r.message || r.errorType || r.error || t("common.connectionFailed"), "error");
+    } catch { toast(t("common.connectionFailed"), "error"); }
+  };
+
   return (
     <motion.div {...MOTION_CONFIG.page}>
+      {modern ? (
+        <ModernPanelsView
+          panels={panels}
+          syncStatus={syncStatus}
+          onAdd={() => setWizardOpen(true)}
+          onTest={testConnection}
+          onSync={(p) => !syncStatus[p.id] && p.operable !== false && sync.mutate(p.id)}
+          onRestart={(p) => restart.mutate(p.id)}
+          onVolumes={setVolumesFor}
+          onInbounds={setInboundsFor}
+          onLogs={setLogsFor}
+          onEdit={setEditing}
+          onDelete={(p) => {
+            if (confirm(t("panels.deleteConfirm", { name: p.name }))) remove.mutate(p.id);
+          }}
+        />
+      ) : (
+      <>
       <PageHeader
         title={t("panels.title")}
         subtitle={t(panels.length === 1 ? "panels.subtitle" : "panels.subtitle_plural", { count: panels.length })}
@@ -236,6 +265,8 @@ export default function PanelsPage() {
           </tbody>
         </table>
       </Card>
+      </>
+      )}
 
       <AnimatePresence>
         {wizardOpen && <PanelWizard onClose={() => setWizardOpen(false)} onSaved={() => { invalidate(); }} />}

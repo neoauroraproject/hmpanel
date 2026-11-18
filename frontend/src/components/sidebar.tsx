@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { ExternalLink, LogOut } from "lucide-react";
 import { useAuth } from "@/store/auth";
 import { ThemeToggle } from "./ThemeToggle";
+import { AppearanceButton } from "./AppearanceMenu";
 import { LocaleSwitcher } from "./LocaleSwitcher";
 import { useT } from "@/i18n";
 import { PanelBrandName, PanelLogo } from "@/components/PanelLogo";
@@ -22,7 +23,7 @@ export function Sidebar() {
   const { sections, storeHasNewOrders, rechargePendingCount } = useAppNav();
 
   return (
-    <aside className="hidden w-64 shrink-0 flex-col border-e border-slate-200 bg-white dark:border-zinc-800 dark:bg-zinc-950 md:flex">
+    <aside className="hm-sidebar hidden w-64 shrink-0 flex-col border-e border-slate-200 bg-white dark:border-zinc-800 dark:bg-zinc-950 md:flex">
       <div className="flex h-14 shrink-0 items-center gap-2.5 border-b border-slate-200 px-4 dark:border-zinc-800">
         <PanelLogo size={26} />
         <PanelBrandName className="truncate text-sm font-semibold tracking-tight text-slate-800 dark:text-zinc-100" />
@@ -63,6 +64,7 @@ export function Sidebar() {
 
         <div className="flex items-center gap-2">
           <LocaleSwitcher className="min-w-0 flex-1 justify-stretch [&>button]:min-h-8 [&>button]:flex-1" />
+          <AppearanceButton />
           <ThemeToggle />
         </div>
 

@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./ui-modern.css";
 
 @theme inline {
   --color-background: var(--background);

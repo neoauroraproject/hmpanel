@@ -6,6 +6,7 @@ import { clsx } from "clsx";
 import { LogOut, Menu, X } from "lucide-react";
 import { useAuth } from "@/store/auth";
 import { ThemeToggle } from "./ThemeToggle";
+import { AppearanceButton } from "./AppearanceMenu";
 import { LocaleSwitcher } from "./LocaleSwitcher";
 import { useT } from "@/i18n";
 import { PanelBrandName, PanelLogo } from "@/components/PanelLogo";
@@ -121,7 +122,7 @@ export function MobileNav() {
 
   return (
     <>
-      <header className="pwa-safe-top flex h-14 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-4 dark:border-zinc-800 dark:bg-zinc-950 md:hidden">
+      <header className="hm-mobile-header pwa-safe-top flex h-14 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-4 dark:border-zinc-800 dark:bg-zinc-950 md:hidden">
         <div className="flex min-w-0 items-center gap-2.5">
           <PanelLogo size={26} />
           <PanelBrandName className="truncate text-sm font-semibold tracking-tight text-slate-800 dark:text-zinc-100" />
@@ -208,6 +209,7 @@ export function MobileNav() {
               </div>
               <div className="flex items-center gap-2">
                 <LocaleSwitcher className="min-w-0 flex-1 justify-stretch [&>button]:min-h-11 [&>button]:flex-1" />
+                <AppearanceButton />
                 <ThemeToggle />
               </div>
               <button

@@ -23,6 +23,19 @@ import { BulkCreateModal } from "./BulkCreateModal";
 import { PluginSlot } from "@/components/PluginSlot";
 import { NodeInboundBadge } from "@/components/NodeInboundBadge";
 import { isXui380Plus } from "@/lib/panel-version";
+import { useUiStyle } from "@/store/uiStyle";
+import { MIconButton, MPrimaryButton, MSelect } from "@/components/modern/kit";
+import {
+  ClientExpiry,
+  ClientIdentity,
+  ClientStatus,
+  ClientUsage,
+  ModernAccountCard,
+  ModernClientsRail,
+  ModernClientsTop,
+  OwnerChip,
+  clientStatus,
+} from "./ModernClientsParts";
 
 const GB = 1024 ** 3;
 const CLIENTS_PANEL_TAB_KEY = "hmpanel.clients.panelId";
@@ -171,6 +184,7 @@ export default function ClientsPage() {
   const toast = useToast((s) => s.push);
   const adminUser = useAuth((s) => s.admin);
   const isSuperAdmin = adminUser?.role === "SUPER_ADMIN";
+  const { modern } = useUiStyle();
 
   const onlinesQuery = useQuery({
     queryKey: ["live-onlines"],
@@ -695,199 +709,109 @@ export default function ClientsPage() {
   // Traffic Impact calculations for Delete Confirmation
   const totalAllocatedTraffic = Object.values(selectedClients).reduce((sum, c) => sum + Number(c.total), 0);
 
-  return (
-    <div className="space-y-6 pb-20">
-      <PageHeader
-        title={t("clients.title")}
-        subtitle={
-          isExternalProvider
-            ? ""
-            : t(totalItems === 1 ? "clients.subtitle" : "clients.subtitle_plural", { count: totalItems })
-        }
-        action={
-          <>
-            <PluginSlot name="clients.actions" />
-            {!isExternalProvider && (
-              <>
-                {!isNativeTypeTab && (
-                <button
-                  onClick={() => setBulkCreateOpen(true)}
-                  disabled={trafficExhausted}
-                  title={trafficExhausted ? t("clients.insufficientBalance") : undefined}
-                  className="flex items-center gap-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors disabled:opacity-50 disabled:pointer-events-none"
-                >
-                  <Users size={16} /> {t("clients.bulkCreate")}
-                </button>
-                )}
-                <button
-                  onClick={() => setAddOpen(true)}
-                  disabled={trafficExhausted}
-                  title={trafficExhausted ? t("clients.insufficientBalance") : undefined}
-                  className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 transition-colors shadow-lg shadow-blue-500/20 disabled:opacity-50 disabled:pointer-events-none disabled:shadow-none"
-                >
-                  <Plus size={16} /> {t("clients.addClient")}
-                </button>
-              </>
-            )}
-          </>
+  const ownOnlineCount = isSuperAdmin
+    ? onlineClients.length
+    : onlineClients.filter((c) => c && overviewData?.clientEmails?.map((e: string) => e.trim().toLowerCase()).includes(c.toLowerCase())).length;
+
+  const modernActions = (
+    <>
+      <PluginSlot name="clients.actions" />
+      {!isExternalProvider && (
+        <>
+          {!isNativeTypeTab && (
+            <MPrimaryButton
+              variant="ghost"
+              onClick={() => setBulkCreateOpen(true)}
+              disabled={trafficExhausted}
+              title={trafficExhausted ? t("clients.insufficientBalance") : undefined}
+            >
+              <Users size={16} /> {t("clients.bulkCreate")}
+            </MPrimaryButton>
+          )}
+          <MPrimaryButton
+            onClick={() => setAddOpen(true)}
+            disabled={trafficExhausted}
+            title={trafficExhausted ? t("clients.insufficientBalance") : undefined}
+          >
+            <Plus size={16} /> {t("clients.addClient")}
+          </MPrimaryButton>
+        </>
+      )}
+    </>
+  );
+
+  const modernSelects = (
+    <>
+      {isSuperAdmin && (
+        <MSelect
+          label={t("clients.allAdmins")}
+          value={adminId}
+          onChange={(v) => {
+            setAdminId(v);
+            setPage(1);
+          }}
+          className="min-w-40"
+        >
+          <option value="">{t("clients.allAdmins")}</option>
+          <option value="orphaned">{t("clients.noAdminDirect")}</option>
+          {adminsList?.data.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.username}
+            </option>
+          ))}
+        </MSelect>
+      )}
+      <MSelect
+        label={t("clients.allInbounds")}
+        value={inboundId}
+        onChange={(v) => {
+          setInboundId(v);
+          setPage(1);
+        }}
+        className="min-w-40 max-w-64"
+      >
+        <option value="">{t("clients.allInbounds")}</option>
+        {filterInbounds.map((i) => (
+          <option key={i.id} value={i.id}>
+            {i.remark ? `${i.remark} — ` : ''}{i.tag} ({i.protocol})
+          </option>
+        ))}
+      </MSelect>
+    </>
+  );
+
+  const modernDestinations = [
+    ...selectorPanels.map((p) => ({
+      id: p.id,
+      name: p.name,
+      note:
+        (p as any).operable === false
+          ? (p as any).connectionHealth === "DISABLED"
+            ? t("panels.disconnected")
+            : t("panels.premiumUnavailable")
+          : undefined,
+    })),
+    ...(showXuiTypeChip ? [{ id: "3x-ui", name: "3x-ui" }] : []),
+  ];
+
+  const modernAccount =
+    !isExternalProvider && !isNativeTypeTab && overviewData?.admin ? (
+      <ModernAccountCard
+        admin={overviewData.admin}
+        clientCount={overviewData.clientEmails?.length ?? 0}
+        onlineCount={ownOnlineCount}
+        isSuperAdmin={isSuperAdmin}
+        expiryLabel={
+          overviewData.admin.expiryTime > 0
+            ? overviewData.admin.expiryTime < Date.now()
+              ? t("common.expired")
+              : t("clients.daysRemaining", { count: Math.ceil((overviewData.admin.expiryTime - Date.now()) / (1000 * 60 * 60 * 24)) })
+            : t("common.never")
         }
       />
+    ) : null;
 
-      {/* Panel selector — 3x-ui first, then Pasarguard, then Eylan */}
-      {showPanelSelector && (
-        <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 p-3">
-          <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-            <Network size={14} /> {t("clients.panelSelectorLabel")}
-          </div>
-          <div className="flex overflow-x-auto hide-scrollbar items-center gap-2">
-            {selectorPanels.map((p) => (
-              <button
-                type="button"
-                key={p.id}
-                onClick={() => selectPanel(p.id)}
-                className={`whitespace-nowrap px-4 py-2 rounded-xl text-sm font-semibold transition-colors border inline-flex items-center gap-2 ${
-                  panelId === p.id
-                    ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/20 ring-2 ring-blue-500/30"
-                    : "bg-zinc-50 dark:bg-zinc-950 text-zinc-600 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                }`}
-              >
-                <Database size={14} className={panelId === p.id ? "text-white" : "text-zinc-400"} />
-                {p.name}
-                {(p as any).operable === false ? (
-                  <span className="text-[10px] opacity-80">
-                    {(p as any).connectionHealth === "DISABLED"
-                      ? t("panels.disconnected")
-                      : t("panels.premiumUnavailable")}
-                  </span>
-                ) : null}
-              </button>
-            ))}
-            {showXuiTypeChip && (
-              <button
-                type="button"
-                onClick={() => selectPanel("3x-ui")}
-                className={`whitespace-nowrap px-4 py-2 rounded-xl text-sm font-semibold transition-colors border inline-flex items-center gap-2 ${
-                  panelId === "3x-ui"
-                    ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/20 ring-2 ring-blue-500/30"
-                    : "bg-zinc-50 dark:bg-zinc-950 text-zinc-600 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                }`}
-              >
-                <Database size={14} className={panelId === "3x-ui" ? "text-white" : "text-zinc-400"} />
-                3x-ui
-              </button>
-            )}
-            <PluginSlot name="clients.providerSelector.extra" props={{ panelId, selectPanel }} />
-          </div>
-        </div>
-      )}
-
-      {/* Search and Quick Filters */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="w-full sm:w-72 relative">
-          <div className="absolute inset-y-0 start-3 flex items-center pointer-events-none">
-            <svg className="h-4 w-4 text-zinc-500 dark:text-zinc-400" viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
-            </svg>
-          </div>
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-            }}
-            placeholder={t("clients.searchExtendedPlaceholder")}
-            className="w-full bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-lg ps-9 pe-4 py-2 text-base md:text-sm text-zinc-800 dark:text-zinc-100 focus:outline-none focus:border-blue-500"
-          />
-        </div>
-      </div>
-
-      <div>
-        <div className="flex overflow-x-auto hide-scrollbar items-center gap-2 pb-2 -mx-4 px-4 sm:mx-0 sm:px-0">
-          <div className="hidden sm:flex items-center gap-2 me-2 text-sm text-zinc-500 dark:text-zinc-400 font-medium">
-            <Filter size={16} /> {t("clients.filtersLabel")}
-          </div>
-          {filterChips.map(f => (
-            <button
-              key={f.id}
-              onClick={() => { setStatus(f.id); setPage(1); }}
-              className={`whitespace-nowrap px-4 py-1.5 rounded-full text-xs font-semibold transition-colors border ${
-                status === f.id ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/20' : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800'
-              }`}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Advanced Filters Drawer/Collapsible */}
-      <div className="md:hidden flex justify-end">
-        <button
-          onClick={() => setFilterDrawerOpen(!filterDrawerOpen)}
-          className="flex items-center gap-2 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-4 py-2 text-sm font-medium text-zinc-600 dark:text-zinc-300"
-        >
-          <Filter size={16} /> {filterDrawerOpen ? t("clients.hideFilters") : t("clients.advancedFilters")}
-        </button>
-      </div>
-
-      <Card className={`p-4 space-y-4 ${filterDrawerOpen ? "block" : "hidden md:block"}`}>
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-4 lg:grid-cols-6">
-
-          {/* Admin Filter */}
-          {isSuperAdmin && (
-            <div>
-              <select
-                value={adminId}
-                onChange={(e) => {
-                  setAdminId(e.target.value);
-                  setPage(1);
-                }}
-                className="w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-sm text-zinc-600 dark:text-zinc-300 outline-none focus:border-blue-500"
-              >
-                <option value="">{t("clients.allAdmins")}</option>
-                <option value="orphaned">{t("clients.noAdminDirect")}</option>
-                {adminsList?.data.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.username}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {/* Inbound Filter — scoped to the selected panel */}
-          <div>
-            <select
-              value={inboundId}
-              onChange={(e) => {
-                setInboundId(e.target.value);
-                setPage(1);
-              }}
-              className="w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-sm text-zinc-600 dark:text-zinc-300 outline-none focus:border-blue-500"
-            >
-              <option value="">{t("clients.allInbounds")}</option>
-              {filterInbounds.map((i) => (
-                <option key={i.id} value={i.id}>
-                  {i.remark ? `${i.remark} — ` : ''}{i.tag} ({i.protocol})
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {(search || adminId || inboundId || status || expiry || trafficRange) && (
-          <div className="flex justify-end">
-            <button
-              onClick={resetFilters}
-              className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
-            >
-              {t("clients.resetFilters")}
-            </button>
-          </div>
-        )}
-      </Card>
-
+  const clientsListBlock = (
       <AnimatePresence mode="wait">
         <motion.div
           key={panelId || "none"}
@@ -902,7 +826,7 @@ export default function ClientsPage() {
         <PanelSwitchSkeleton />
       ) : isExternalProvider || isNativeTypeTab ? (
         <PluginSlot name="clients.kpi.override" props={{ providerId: panelId }} />
-      ) : overviewData && overviewData.admin ? (
+      ) : !modern && overviewData && overviewData.admin ? (
         <div className="mb-4">
           <div className="md:hidden flex justify-between items-center mb-2">
             <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">{t("clients.overviewStats")}</span>
@@ -971,11 +895,15 @@ export default function ClientsPage() {
       isExternalProvider ? (
         <PluginSlot name="clients.list.override" props={{ providerId: panelId }} />
       ) : (
-      <Card className="overflow-hidden p-0 bg-transparent md:bg-zinc-50 dark:bg-zinc-950 border-0 md:border md:border-zinc-200 dark:border-zinc-800">
+      <Card className={modern
+        ? "hm-client-list overflow-hidden p-0 border-0 bg-transparent md:border md:border-[var(--hm-line)] md:bg-[var(--hm-card)] md:rounded-[1.625rem] md:shadow-[var(--hm-shadow-card)]"
+        : "overflow-hidden p-0 bg-transparent md:bg-zinc-50 dark:bg-zinc-950 border-0 md:border md:border-zinc-200 dark:border-zinc-800"}>
         <div className="overflow-x-auto">
           <table className="w-full text-sm block md:table">
             <thead className="hidden md:table-header-group">
-              <tr className="border-b border-zinc-200 dark:border-zinc-800 text-start text-xs uppercase tracking-wide text-zinc-500 bg-white dark:bg-zinc-900/30 font-semibold">
+              <tr className={modern
+                ? "border-b border-[var(--hm-line)] text-start text-[12px] font-medium text-zinc-500 dark:text-zinc-400"
+                : "border-b border-zinc-200 dark:border-zinc-800 text-start text-xs uppercase tracking-wide text-zinc-500 bg-white dark:bg-zinc-900/30 font-semibold"}>
                 <th className="w-12 px-4 py-3 text-center">
                   <button
                     onClick={handleSelectAll}
@@ -1024,7 +952,13 @@ export default function ClientsPage() {
                             setExpandedId(isExpanded ? null : c.id);
                           }
                         }}
-                        className={`block md:table-row bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 md:border-b md:border-x-0 md:border-t-0 md:border-zinc-200 dark:border-zinc-800/60 rounded-xl md:rounded-none last:border-b-0 hover:bg-zinc-50 dark:hover:bg-zinc-900/30 transition-colors cursor-pointer ${
+                        className={modern
+                          ? clsx(
+                              "block md:table-row cursor-pointer rounded-[1.4rem] border border-[var(--hm-line)] bg-[var(--hm-surface)] transition-colors md:rounded-none md:border-x-0 md:border-t-0 md:bg-transparent last:md:border-b-0 hover:md:bg-zinc-900/[0.025] dark:hover:md:bg-white/[0.03]",
+                              isSelected && "md:!bg-[var(--hm-accent-soft)]",
+                              isExpanded && "md:bg-zinc-900/[0.02] dark:md:bg-white/[0.02]",
+                            )
+                          : `block md:table-row bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 md:border-b md:border-x-0 md:border-t-0 md:border-zinc-200 dark:border-zinc-800/60 rounded-xl md:rounded-none last:border-b-0 hover:bg-zinc-50 dark:hover:bg-zinc-900/30 transition-colors cursor-pointer ${
                           isExpanded ? "bg-white dark:bg-zinc-900/20" : ""
                         }`}
                       >
@@ -1042,7 +976,28 @@ export default function ClientsPage() {
                           )}
                         </button>
                       </td>
-                      <td className="block md:table-cell px-4 py-3">
+                      <td className={modern ? "block md:table-cell px-4 py-3.5" : "block md:table-cell px-4 py-3"}>
+                        {modern ? (
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex min-w-0 items-center gap-2.5">
+                              <div className="md:hidden" onClick={(e) => { e.stopPropagation(); handleSelectOne(c); }}>
+                                {isSelected ? <CheckSquare size={18} className="text-blue-500" /> : <Square size={18} className="text-zinc-400" />}
+                              </div>
+                              <ClientIdentity
+                                name={c.email}
+                                remark={c.remark}
+                                online={isOnline}
+                                ipCount={ipCount}
+                                onSessions={openOnlineSessions}
+                                panelName={!panelId && accessiblePanels.length > 1 ? (c.inbound?.panel?.name || (c as any).panel?.name) : null}
+                              />
+                            </div>
+                            <div className="shrink-0 md:hidden">
+                              <ClientStatus status={clientStatus(c, isOnline)} ipCount={ipCount} onSessions={openOnlineSessions} />
+                            </div>
+                          </div>
+                        ) : (
+                        <>
                         <div className="flex items-center justify-between md:justify-start gap-2">
                           <div className="flex items-center gap-2">
                             {/* Checkbox wrapper for mobile */}
@@ -1107,14 +1062,28 @@ export default function ClientsPage() {
                             <Database size={10} /> {c.inbound?.panel?.name || (c as any).panel?.name}
                           </div>
                         )}
+                        </>
+                        )}
                       </td>
                       <td className="hidden md:table-cell px-4 py-3 text-zinc-600 dark:text-zinc-300">
-                        {c.admin?.username || <Badge tone="gray">{t("clients.directPanel")}</Badge>}
+                        {modern ? <OwnerChip name={c.admin?.username} /> : (c.admin?.username || <Badge tone="gray">{t("clients.directPanel")}</Badge>)}
                       </td>
                       <td className="hidden md:table-cell px-4 py-3">
-                        <UsageBar up={c.up} down={c.down} total={c.total} />
+                        {modern ? <ClientUsage up={c.up} down={c.down} total={c.total} /> : <UsageBar up={c.up} down={c.down} total={c.total} />}
                       </td>
                       <td className="block md:table-cell px-4 py-3 text-zinc-600 dark:text-zinc-300">
+                        {modern ? (
+                          <>
+                            <div className="flex items-center justify-between gap-3 md:hidden">
+                              <ClientUsage up={c.up} down={c.down} total={c.total} />
+                              <ClientExpiry expiryTime={c.expiryTime} />
+                            </div>
+                            <div className="hidden md:block">
+                              <ClientExpiry expiryTime={c.expiryTime} />
+                            </div>
+                          </>
+                        ) : (
+                        <>
                         <div className="md:hidden flex items-center justify-between">
                           <UsageBar up={c.up} down={c.down} total={c.total} />
                           <span className={`text-xs ms-2 whitespace-nowrap ${isExpired(c.expiryTime) ? "text-red-400 font-medium" : ""}`}>
@@ -1124,9 +1093,11 @@ export default function ClientsPage() {
                         <span className={`hidden md:inline ${isExpired(c.expiryTime) ? "text-red-400 font-medium" : ""}`}>
                           {formatExpiry(c.expiryTime)}
                         </span>
+                        </>
+                        )}
                       </td>
                       <td className="hidden md:table-cell px-4 py-3">
-                        {(() => {
+                        {modern ? <ClientStatus status={clientStatus(c, isOnline)} ipCount={ipCount} onSessions={openOnlineSessions} /> : (() => {
                           const used = Number(c.up) + Number(c.down);
                           const cap = Number(c.total);
                           const outOfTraffic = cap > 0 && used >= cap;
@@ -1176,6 +1147,35 @@ export default function ClientsPage() {
                         })()}
                       </td>
                       <td className="hidden md:table-cell px-4 py-3 border-t border-zinc-200 dark:border-zinc-800/50 md:border-0 mt-2 md:mt-0" onClick={(e) => e.stopPropagation()}>
+                        {modern ? (
+                          <div className="flex items-center justify-end gap-0.5">
+                            <MIconButton
+                              label={c.enable ? t("clients.disableClient") : t("clients.enableClient")}
+                              tone={c.enable ? "live" : "default"}
+                              onClick={(e) => { e.stopPropagation(); toggle.mutate(c); }}
+                            >
+                              <Power size={16} />
+                            </MIconButton>
+                            <MIconButton label={t("clients.subscriptionQr")} tone="accent" onClick={(e) => { e.stopPropagation(); setConnectionDetailsClient(c); }}>
+                              <QrCode size={16} />
+                            </MIconButton>
+                            <MIconButton label={t("clients.editClient")} onClick={(e) => { e.stopPropagation(); setEditing(c); }}>
+                              <Edit2 size={16} />
+                            </MIconButton>
+                            <MIconButton
+                              label={t("clients.deleteClient")}
+                              tone="danger"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (confirm(t("clients.deleteClientConfirm", { email: c.email }))) {
+                                  bulkMutation.mutate({ ids: [c.id], action: 'delete' });
+                                }
+                              }}
+                            >
+                              <Trash2 size={16} />
+                            </MIconButton>
+                          </div>
+                        ) : (
                         <div className="flex flex-wrap items-center justify-start md:justify-end gap-1.5 md:gap-1.5 w-full">
                           <motion.button
                             whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
@@ -1227,6 +1227,7 @@ export default function ClientsPage() {
                             <Trash2 size={16} />
                           </motion.button>
                         </div>
+                        )}
                       </td>
                       <AnimatePresence>
                         {isExpanded && (
@@ -1462,6 +1463,247 @@ export default function ClientsPage() {
 
         </motion.div>
       </AnimatePresence>
+  );
+
+  return (
+    <div className="space-y-6 pb-20">
+      {modern ? (
+        <ModernClientsTop
+          totalItems={isExternalProvider ? null : totalItems}
+          actions={modernActions}
+          status={status}
+          onStatus={(v) => {
+            setStatus(v);
+            setPage(1);
+          }}
+          counts={isSuperAdmin ? { online: ownOnlineCount } : {
+            online: ownOnlineCount,
+            "traffic-low": overviewData?.attention?.trafficLow,
+            "expiring-soon": overviewData?.attention?.expiringSoon,
+            disabled: overviewData?.attention?.disabled,
+            depleted: overviewData?.attention?.depleted,
+          }}
+          search={search}
+          onSearch={(v) => {
+            setSearch(v);
+            setPage(1);
+          }}
+          selects={modernSelects}
+          canReset={!!(search || adminId || inboundId || status || expiry || trafficRange)}
+          onReset={resetFilters}
+        />
+      ) : (
+      <>
+      <PageHeader
+        title={t("clients.title")}
+        subtitle={
+          isExternalProvider
+            ? ""
+            : t(totalItems === 1 ? "clients.subtitle" : "clients.subtitle_plural", { count: totalItems })
+        }
+        action={
+          <>
+            <PluginSlot name="clients.actions" />
+            {!isExternalProvider && (
+              <>
+                {!isNativeTypeTab && (
+                <button
+                  onClick={() => setBulkCreateOpen(true)}
+                  disabled={trafficExhausted}
+                  title={trafficExhausted ? t("clients.insufficientBalance") : undefined}
+                  className="flex items-center gap-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors disabled:opacity-50 disabled:pointer-events-none"
+                >
+                  <Users size={16} /> {t("clients.bulkCreate")}
+                </button>
+                )}
+                <button
+                  onClick={() => setAddOpen(true)}
+                  disabled={trafficExhausted}
+                  title={trafficExhausted ? t("clients.insufficientBalance") : undefined}
+                  className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 transition-colors shadow-lg shadow-blue-500/20 disabled:opacity-50 disabled:pointer-events-none disabled:shadow-none"
+                >
+                  <Plus size={16} /> {t("clients.addClient")}
+                </button>
+              </>
+            )}
+          </>
+        }
+      />
+
+      {/* Panel selector — 3x-ui first, then Pasarguard, then Eylan */}
+      {showPanelSelector && (
+        <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 p-3">
+          <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+            <Network size={14} /> {t("clients.panelSelectorLabel")}
+          </div>
+          <div className="flex overflow-x-auto hide-scrollbar items-center gap-2">
+            {selectorPanels.map((p) => (
+              <button
+                type="button"
+                key={p.id}
+                onClick={() => selectPanel(p.id)}
+                className={`whitespace-nowrap px-4 py-2 rounded-xl text-sm font-semibold transition-colors border inline-flex items-center gap-2 ${
+                  panelId === p.id
+                    ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/20 ring-2 ring-blue-500/30"
+                    : "bg-zinc-50 dark:bg-zinc-950 text-zinc-600 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                }`}
+              >
+                <Database size={14} className={panelId === p.id ? "text-white" : "text-zinc-400"} />
+                {p.name}
+                {(p as any).operable === false ? (
+                  <span className="text-[10px] opacity-80">
+                    {(p as any).connectionHealth === "DISABLED"
+                      ? t("panels.disconnected")
+                      : t("panels.premiumUnavailable")}
+                  </span>
+                ) : null}
+              </button>
+            ))}
+            {showXuiTypeChip && (
+              <button
+                type="button"
+                onClick={() => selectPanel("3x-ui")}
+                className={`whitespace-nowrap px-4 py-2 rounded-xl text-sm font-semibold transition-colors border inline-flex items-center gap-2 ${
+                  panelId === "3x-ui"
+                    ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/20 ring-2 ring-blue-500/30"
+                    : "bg-zinc-50 dark:bg-zinc-950 text-zinc-600 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                }`}
+              >
+                <Database size={14} className={panelId === "3x-ui" ? "text-white" : "text-zinc-400"} />
+                3x-ui
+              </button>
+            )}
+            <PluginSlot name="clients.providerSelector.extra" props={{ panelId, selectPanel }} />
+          </div>
+        </div>
+      )}
+
+      {/* Search and Quick Filters */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="w-full sm:w-72 relative">
+          <div className="absolute inset-y-0 start-3 flex items-center pointer-events-none">
+            <svg className="h-4 w-4 text-zinc-500 dark:text-zinc-400" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
+            </svg>
+          </div>
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
+            placeholder={t("clients.searchExtendedPlaceholder")}
+            className="w-full bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-lg ps-9 pe-4 py-2 text-base md:text-sm text-zinc-800 dark:text-zinc-100 focus:outline-none focus:border-blue-500"
+          />
+        </div>
+      </div>
+
+      <div>
+        <div className="flex overflow-x-auto hide-scrollbar items-center gap-2 pb-2 -mx-4 px-4 sm:mx-0 sm:px-0">
+          <div className="hidden sm:flex items-center gap-2 me-2 text-sm text-zinc-500 dark:text-zinc-400 font-medium">
+            <Filter size={16} /> {t("clients.filtersLabel")}
+          </div>
+          {filterChips.map(f => (
+            <button
+              key={f.id}
+              onClick={() => { setStatus(f.id); setPage(1); }}
+              className={`whitespace-nowrap px-4 py-1.5 rounded-full text-xs font-semibold transition-colors border ${
+                status === f.id ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/20' : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800'
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Advanced Filters Drawer/Collapsible */}
+      <div className="md:hidden flex justify-end">
+        <button
+          onClick={() => setFilterDrawerOpen(!filterDrawerOpen)}
+          className="flex items-center gap-2 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-4 py-2 text-sm font-medium text-zinc-600 dark:text-zinc-300"
+        >
+          <Filter size={16} /> {filterDrawerOpen ? t("clients.hideFilters") : t("clients.advancedFilters")}
+        </button>
+      </div>
+
+      <Card className={`p-4 space-y-4 ${filterDrawerOpen ? "block" : "hidden md:block"}`}>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-4 lg:grid-cols-6">
+
+          {/* Admin Filter */}
+          {isSuperAdmin && (
+            <div>
+              <select
+                value={adminId}
+                onChange={(e) => {
+                  setAdminId(e.target.value);
+                  setPage(1);
+                }}
+                className="w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-sm text-zinc-600 dark:text-zinc-300 outline-none focus:border-blue-500"
+              >
+                <option value="">{t("clients.allAdmins")}</option>
+                <option value="orphaned">{t("clients.noAdminDirect")}</option>
+                {adminsList?.data.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.username}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Inbound Filter — scoped to the selected panel */}
+          <div>
+            <select
+              value={inboundId}
+              onChange={(e) => {
+                setInboundId(e.target.value);
+                setPage(1);
+              }}
+              className="w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-sm text-zinc-600 dark:text-zinc-300 outline-none focus:border-blue-500"
+            >
+              <option value="">{t("clients.allInbounds")}</option>
+              {filterInbounds.map((i) => (
+                <option key={i.id} value={i.id}>
+                  {i.remark ? `${i.remark} — ` : ''}{i.tag} ({i.protocol})
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {(search || adminId || inboundId || status || expiry || trafficRange) && (
+          <div className="flex justify-end">
+            <button
+              onClick={resetFilters}
+              className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+            >
+              {t("clients.resetFilters")}
+            </button>
+          </div>
+        )}
+      </Card>
+      </>
+      )}
+
+      {modern ? (
+        <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[18.5rem_minmax(0,1fr)]">
+          {showPanelSelector || modernAccount ? (
+            <ModernClientsRail
+              destinations={showPanelSelector ? modernDestinations : []}
+              panelId={panelId}
+              onSelect={selectPanel}
+              extraSlot={showPanelSelector ? <PluginSlot name="clients.providerSelector.extra" props={{ panelId, selectPanel }} /> : null}
+              account={modernAccount}
+            />
+          ) : null}
+          <div className="min-w-0 xl:col-start-2">{clientsListBlock}</div>
+        </div>
+      ) : (
+        clientsListBlock
+      )}
+
 
       {/* Floating Bulk Actions Bar (Responsive) */}
       <AnimatePresence>

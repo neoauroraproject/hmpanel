@@ -8,6 +8,58 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [3.0.0] - 2026-11-18
+
+### ظاهر جدید (قابل انتخاب)
+- **ظاهر مدرن برای کل پنل و ماژول‌های پرمیوم.** داشبورد، کلاینت‌ها، ادمین‌ها، پنل‌ها، تاریخچه ترافیک و صفحه‌های پرمیوم ساختار، نمودار و چیدمان تازه دارند. منو بالا یا کناری قابل انتخاب است. ظاهر قبلی پیش‌فرض می‌ماند؛ مدیر کل می‌تواند پیش‌فرض کل پنل را عوض کند و هر کاربر هم ظاهر خودش را انتخاب می‌کند.
+- همه کلیدهای روشن/خاموش حالا سوییچ واضح با متن «روشن/خاموش» هستند.
+- **منوی پرمیوم:** دکمه طلایی جدا در منوی بالا که با رفتن موس روی آن، مگامنوی همه ماژول‌های پرمیوم باز می‌شود. بدون لایسنس، ماژول‌ها قفل‌شده نمایش داده می‌شوند و دکمه خرید از ربات و سایت دارد.
+- **شخصی‌سازی منوی بالا:** هر کاربر انتخاب می‌کند کدام صفحه‌ها (تا ۷ تا) و به چه ترتیبی در منوی بالا باشند. با پرمیوم فعال، فروشگاه و افزایش اعتبار به‌طور پیش‌فرض بالا هستند.
+
+### ادمین‌ها
+- ساخت ادمین به‌صورت مرحله‌به‌مرحله؛ نوع حجم (کلی یا جدا برای هر پنل) همان اول انتخاب می‌شود.
+- **شارژ سریع:** افزایش حجم هر پنل، ظرفیت کاربر و روز از یک پنجره، بدون رفتن به تب دسترسی‌ها.
+- دسترسی ماژول‌های پرمیوم هر ادمین از همان صفحه ادمین‌ها تنظیم می‌شود.
+
+### فروشگاه و ربات (پرمیوم)
+- **رفع ارسال تکراری سفارش:** هر سفارش جدید فقط یک پیام در ربات ادمین می‌سازد و به‌روزرسانی‌ها همان پیام را ویرایش می‌کنند (قبلاً تا ۳ بار می‌آمد).
+- کد تخفیف در سفارش و پیام ربات نمایش داده می‌شود؛ بخش کد تخفیف بازطراحی شد (محدوده واضح، تاریخچه استفاده، فعال/غیرفعال). رفع خطایی که با ذخیره دوباره، کد محدود را برای کل فروشگاه باز می‌کرد.
+- ربات: خلاصه قیمت خواناتر، دکمه بازگشت در همه مراحل، خطاهای کد تخفیف به فارسی، جستجوی سفارش و تنظیمات سریع برای ادمین.
+- **محصولات دیجیتال:** نمای کلی موجودی و فروش، هشدار کمبود موجودی، کارت محصول با روشن/خاموش، کپی و حذف، و ساخت گروهی پک‌های تلگرام استارز از روی قیمت ۱۰۰ استارز.
+- **نرخ استارز:** به‌جای «استار به ازای هر تومان»، قیمت ۱۰۰ استارز را وارد می‌کنید و قیمت هر استار و مثال حساب می‌شود.
+- **پرداخت به‌ازای مصرف:** داشبورد جدید (درآمد ۳۰ روز، پردرآمدترین سرویس‌ها، مشتری‌های رو به اتمام موجودی) و فیلتر وضعیت‌ها. مشتری می‌تواند سرویسش را از ربات کامل حذف کند و ادمین هم از پنل؛ کانفیگ از پنل هم پاک می‌شود. با تمام شدن موجودی سرویس فقط غیرفعال می‌شود.
+- **نمایندگی:** صفحه راه‌اندازی فروش نمایندگی با چک‌لیست و پیش‌نمایش پیشنهاد. رفع شارژ نمایندگان با حجم جدا برای هر پنل که در بعضی پلن‌ها حجم را اضافه نمی‌کرد، و جلوگیری از دو بار تمدید هنگام تلاش مجدد.
+- شارژ اضطراری برای مشتری‌هایی که حجم یا زمانشان تمام شده، و ویجت‌های ربات (نمودار مصرف، پیگیری سفارش).
+
+### نصب و حذف
+- **حذف کامل پنل از سرور:** حذف‌کننده دیگر سرویس systemd، کانتینرها، والیوم‌ها، شبکه، ایمیج‌ها و فایل‌های موقت را جا نمی‌گذارد؛ نصب دوباره بدون خطا انجام می‌شود. نصب‌کننده کانتینرهای باقی‌مانده از نصب قبلی را هم پاک می‌کند.
+- اطلاعات دستگاه (سیستم‌عامل، نام میزبان) هنگام فعال‌سازی لایسنس ارسال می‌شود تا در پنل لایسنس قابل شناسایی باشد.
+
+### New look (optional)
+- **Modern UI for the whole panel and the Premium modules**, with new structure, charts and layouts. Top or side navigation. The classic look stays the default; the super admin sets the panel-wide default and each user can pick their own.
+- Every on/off control is now a clear switch with an On/Off label.
+- **Premium menu:** a separate gold button in the top bar opens a mega menu of every Premium module on hover. Without a license the modules show locked, with buttons to buy in the Telegram bot or on the website.
+- **Customizable top menu:** each user picks which pages (up to 7) sit in the top bar and in what order. With Premium active, Store and Reseller sales are pinned by default.
+
+### Admins
+- New admin creation is a step-by-step wizard; shared or per-panel traffic is chosen first.
+- **Quick top-up:** add per-panel GB, client capacity and days from one dialog.
+- Premium module access per admin is managed on the Admins page.
+
+### Store and bot (Premium)
+- **Fixed duplicate order notifications:** a new order now creates one admin message and later updates edit it (it used to arrive up to 3 times).
+- Orders and bot messages show the coupon used. The coupon section is redesigned (explicit scope, usage history, enable/disable). Fixed a bug where re-saving a limited coupon opened it to the whole store.
+- Bot: clearer price summary, back buttons on every step, Persian coupon errors, order search and quick settings for admins.
+- **Digital goods:** stock and sales overview, low-stock warnings, product cards with on/off, duplicate and delete, and bulk creation of Telegram Stars packs from the price of 100 stars.
+- **Stars rate:** enter the price of 100 stars instead of "stars per toman"; the per-star price and an example are shown.
+- **Pay-as-you-go:** new dashboard (30-day revenue, top services, customers about to run out) and state filters. Customers can delete their service from the bot and admins from the panel; the config is removed from the panel too. An empty wallet only disables the service.
+- **Resellers:** setup hub with a checklist and an offer preview. Fixed per-panel reseller top-ups that dropped the plan's traffic in some cases, and retries that extended the expiry twice.
+- Emergency recharge for customers who ran out of traffic or time, and bot widgets (usage chart, order tracker).
+
+### Install and uninstall
+- **Uninstall now removes everything it should:** the systemd service, containers, volumes, network, images and temp files, so reinstalling works. The installer also clears containers left by an earlier install.
+- License activation sends device info (OS, hostname) so the license panel can label each device.
+
 ## [2.5.23] - 2026-11-11
 
 ### رفع اشکال

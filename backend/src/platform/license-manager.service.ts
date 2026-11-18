@@ -5,6 +5,7 @@ import { getModulesForFeature } from './manifests';
 import { PremiumBundleService } from './premium-bundle.service';
 import { InstanceFingerprintService } from './instance-fingerprint.service';
 import { requestLicenseServer } from './license-server.client';
+import { getLicenseDeviceInfo } from './license-device-info.util';
 import {
   hydrateLicensedModules,
   licensedModuleSet,
@@ -141,6 +142,7 @@ export class LicenseManagerService {
       body: JSON.stringify({
         licenseKey,
         instanceId: this.instanceFingerprint.getInstanceId(),
+        ...getLicenseDeviceInfo(),
       }),
     });
     const now = new Date().toISOString();

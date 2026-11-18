@@ -44,7 +44,7 @@ export function NavItemLink({
       onClick={onNavigate}
       aria-current={active ? "page" : undefined}
       className={clsx(
-        "group relative flex cursor-pointer items-center gap-2.5 rounded-lg ps-3 pe-2 outline-none transition-colors duration-200",
+        "hm-nav-link group relative flex cursor-pointer items-center gap-2.5 rounded-lg ps-3 pe-2 outline-none transition-colors duration-200",
         "focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-zinc-950",
         compact ? "min-h-9 text-[13.5px]" : "min-h-11 text-[15px] md:min-h-9 md:text-[13.5px]",
         active
@@ -55,7 +55,7 @@ export function NavItemLink({
       <span
         aria-hidden
         className={clsx(
-          "absolute start-0 top-1.5 bottom-1.5 w-[3px] rounded-full transition-opacity duration-200",
+          "hm-nav-indicator absolute start-0 top-1.5 bottom-1.5 w-[3px] rounded-full transition-opacity duration-200",
           active ? "bg-blue-600 opacity-100 dark:bg-blue-400" : "opacity-0",
         )}
       />

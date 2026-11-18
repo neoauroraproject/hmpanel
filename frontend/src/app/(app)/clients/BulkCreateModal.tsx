@@ -7,6 +7,7 @@ import { motion } from "framer-motion";
 import { formatBytes } from "@/lib/format";
 import { useT } from "@/i18n";
 import { NodeInboundBadge } from "@/components/NodeInboundBadge";
+import { SwitchInput } from "@/components/SwitchInput";
 
 interface BulkCreateModalProps {
   onClose: () => void;
@@ -456,12 +457,10 @@ export function BulkCreateModal({ onClose, inboundsList }: BulkCreateModalProps)
               </div>
 
               <div className="flex items-center gap-2 pt-2">
-                <input
-                  type="checkbox"
+                <SwitchInput
                   id="bulk-enable"
                   checked={form.enable}
                   onChange={(e) => setForm({ ...form, enable: e.target.checked })}
-                  className="h-4 w-4 rounded border-zinc-300 text-blue-600 focus:ring-blue-500"
                 />
                 <label htmlFor="bulk-enable" className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
                   {t("clients.enableImmediately")}

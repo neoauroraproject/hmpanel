@@ -11,7 +11,7 @@ export function Card({
   return (
     <div
       className={clsx(
-        "rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/40 p-5",
+        "hm-card rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/40 p-5",
         className,
       )}
     >
@@ -78,7 +78,7 @@ export function PageHeader({
   return (
     <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
       <div className="min-w-0">
-        <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">{title}</h1>
+        <h1 className="hm-page-title text-2xl font-semibold text-zinc-900 dark:text-zinc-50">{title}</h1>
         {subtitle && <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{subtitle}</p>}
       </div>
       {action ? (

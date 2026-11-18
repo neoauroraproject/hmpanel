@@ -10,6 +10,10 @@ import { useToast } from "@/components/toast";
 import { motion } from "framer-motion";
 import { SslManagerModal } from "./SslManagerModal";
 import { PanelPortsCard } from "./PanelPortsCard";
+import { AppearanceSettingsCard } from "./AppearanceSettingsCard";
+import { useUiStyle } from "@/store/uiStyle";
+import { clsx } from "clsx";
+import { MHero, M_SURFACE, M_FOCUS } from "@/components/modern/kit";
 import { LicenseSettingsCard } from "@/components/LicenseSettingsCard";
 import { LocaleSwitcher } from "@/components/LocaleSwitcher";
 import { useT } from "@/i18n";
@@ -25,6 +29,7 @@ import {
 
 export default function GlobalSettingsPage() {
   const t = useT();
+  const { modern } = useUiStyle();
   const qc = useQueryClient();
   const toast = useToast((s) => s.push);
   const router = useRouter();
@@ -87,12 +92,48 @@ export default function GlobalSettingsPage() {
 
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
+      {modern ? (
+        <div className="mb-6">
+          <MHero title={t("settings.title")} subtitle={t("settings.subtitle")} />
+        </div>
+      ) : (
       <PageHeader
         title={t("settings.title")}
         subtitle={t("settings.subtitle")}
       />
+      )}
 
-      <div className="mb-6 flex flex-wrap gap-2 rounded-2xl border border-zinc-200 bg-zinc-50/80 p-1.5 dark:border-zinc-800 dark:bg-zinc-900/40">
+      <div className={modern ? "grid grid-cols-1 items-start gap-6 lg:grid-cols-[16rem_minmax(0,1fr)]" : "contents"}>
+      {modern ? (
+        <nav aria-label={t("settings.title")} className={clsx("p-2 lg:sticky lg:top-2", M_SURFACE)}>
+          <div className="hide-scrollbar flex gap-1 overflow-x-auto lg:flex-col lg:overflow-visible">
+            {tabs.map(({ id, label, icon: Icon }) => {
+              const active = tab === id;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setTab(id)}
+                  aria-current={active ? "page" : undefined}
+                  className={clsx(
+                    "flex min-h-11 shrink-0 cursor-pointer items-center gap-3 rounded-[1.1rem] px-3 text-start text-[13.5px] transition-colors lg:w-full",
+                    M_FOCUS,
+                    active ? "hm-ink font-semibold" : "font-medium text-zinc-600 hover:bg-zinc-900/[0.05] dark:text-zinc-300 dark:hover:bg-white/[0.06]",
+                  )}
+                >
+                  <span className={clsx("flex h-8 w-8 shrink-0 items-center justify-center rounded-full", active ? "bg-white/15" : "bg-zinc-900/[0.05] dark:bg-white/[0.07]")}>
+                    <Icon size={15} />
+                  </span>
+                  <span className="whitespace-nowrap">{label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </nav>
+      ) : null}
+      <div className={modern ? "hm-split-body min-w-0" : "contents"}>
+
+      <div className={modern ? "hidden" : "mb-6 flex flex-wrap gap-2 rounded-2xl border border-zinc-200 bg-zinc-50/80 p-1.5 dark:border-zinc-800 dark:bg-zinc-900/40"}>
         {tabs.map(({ id, label, icon: Icon }) => {
           const active = tab === id;
           return (
@@ -115,6 +156,9 @@ export default function GlobalSettingsPage() {
 
       {tab === "general" && (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 items-start">
+          <div className="lg:col-span-2">
+            <AppearanceSettingsCard settings={settings} />
+          </div>
           <Card className="p-6">
             <div className="flex items-center gap-3 mb-6">
               <div className="p-2 rounded-lg bg-blue-500/10 text-blue-500">
@@ -367,6 +411,8 @@ export default function GlobalSettingsPage() {
       )}
 
       <SslManagerModal isOpen={isSslModalOpen} onClose={() => setIsSslModalOpen(false)} />
+      </div>
+      </div>
     </motion.div>
   );
 }

@@ -32,6 +32,13 @@ export class SettingsController {
     return { timezone, calendar };
   }
 
+  @Get('ui-preferences')
+  // Any authenticated JWT user — the panel-wide default look (classic | modern) and nav layout
+  @ApiOperation({ summary: 'Get the panel-wide default UI style' })
+  async getUiPreferences() {
+    return this.settingsService.getUiPreferences();
+  }
+
   @Get()
   @Roles('SUPER_ADMIN')
   @ApiOperation({ summary: 'Get all system settings' })

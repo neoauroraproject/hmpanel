@@ -26,6 +26,8 @@ import { useAuth } from "@/store/auth";
 import { useLicenseActivation } from "@/hooks/useLicenseActivation";
 import { useT } from "@/i18n";
 import { io } from "socket.io-client";
+import { useUiStyle } from "@/store/uiStyle";
+import { ModernSuperDashboard, ModernResellerHero } from "./ModernDashboard";
 
 const GB = 1024 ** 3;
 const tip = {
@@ -209,6 +211,8 @@ function SuperDashboard() {
   const toast = useToast((s) => s.push);
   const [range, setRange] = useState<"24h" | "7d" | "30d">("24h");
   const [pieRange, setPieRange] = useState<"allTime" | "24h">("allTime");
+  const admin = useAuth((s) => s.admin);
+  const { modern } = useUiStyle();
 
   const overview = useQuery({ queryKey: ["overview"], queryFn: async () => (await api.get<any>("/stats/overview")).data });
   const series = useQuery({ queryKey: ["series", range], queryFn: async () => (await api.get<SeriesPoint[]>(`/stats/traffic-series?range=${range}`)).data });
@@ -253,6 +257,28 @@ function SuperDashboard() {
   const sys = sysQuery.data;
 
   const totalRangeTraffic = seriesData.reduce((sum, p) => sum + p.bytes, 0);
+
+  if (modern) {
+    return (
+      <ModernSuperDashboard
+        username={admin?.username ?? ""}
+        overview={o}
+        sys={sys}
+        mon={mon.data}
+        seriesData={seriesData}
+        totalRangeTraffic={totalRangeTraffic}
+        range={range}
+        setRange={setRange}
+        pieRange={pieRange}
+        setPieRange={setPieRange}
+        adminData={adminData}
+        inboundData={inboundData}
+        newClients={trends.data?.allTime?.newClients ?? []}
+        livePanels={livePanels}
+        revenueSlot={<RevenueOrAdsSlot revenue={o.revenue} />}
+      />
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -550,6 +576,7 @@ function ResellerDashboard() {
   const admin = useAuth((s) => s.admin);
   const router = useRouter();
   const [editing, setEditing] = useState<any>(null);
+  const { modern } = useUiStyle();
 
   const inboundsQuery = useQuery({
     queryKey: ["inbounds-list"],
@@ -599,12 +626,21 @@ function ResellerDashboard() {
 
   return (
     <div className="space-y-5">
+      {modern ? (
+        <ModernResellerHero
+          username={admin?.username ?? ""}
+          account={a}
+          clientCount={clientCount}
+          expiryLabel={expiryLabel}
+        />
+      ) : (
       <div>
         <h1 className="text-xl font-semibold text-zinc-900 sm:text-2xl dark:text-white">
           {t("dashboard.welcomeBack", { username: admin?.username ?? "" })}
         </h1>
         <p className="mt-1 text-sm leading-relaxed text-zinc-500 dark:text-zinc-400">{t("dashboard.resellerSubtitle")}</p>
       </div>
+      )}
 
       {a?.gracePeriodStart && !a?.unlimitedTraffic && !(Number(a.availableTraffic) > 0) && (
         <div className="flex items-start gap-3 rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-red-600 dark:text-red-400">
@@ -618,6 +654,7 @@ function ResellerDashboard() {
         </div>
       )}
 
+      {!modern && (
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
         <div className={`${statCard} col-span-2 lg:col-span-1`}>
           <div className="flex items-center gap-2 text-xs font-medium text-zinc-500">
@@ -668,6 +705,7 @@ function ResellerDashboard() {
           <div className="mt-1 text-xs text-zinc-500">{t("dashboard.untilAccountExpiration")}</div>
         </div>
       </div>
+      )}
 
       {showDestinations && (
         <div>
@@ -781,7 +819,7 @@ function ResellerDashboard() {
                 </button>
               )}
             </div>
-            <div className="divide-y divide-zinc-800">
+            <div className="divide-y divide-zinc-200 dark:divide-zinc-800">
               {priorityClients.map((c: any) => (
                 <div key={c.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-zinc-100 dark:hover:bg-zinc-800/50 transition-colors">
                   <div>

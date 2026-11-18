@@ -61,6 +61,19 @@ export class SettingsService {
     return cal === 'gregorian' ? 'gregorian' : 'jalali';
   }
 
+  /** Panel-wide default look. Unknown or missing values fall back to the original UI. */
+  async getUiPreferences(): Promise<{
+    style: 'classic' | 'modern';
+    nav: 'top' | 'side';
+  }> {
+    const style = await this.getSetting('ui_style_default', 'classic');
+    const nav = await this.getSetting('ui_nav_default', 'top');
+    return {
+      style: style === 'modern' ? 'modern' : 'classic',
+      nav: nav === 'side' ? 'side' : 'top',
+    };
+  }
+
   async setSetting(key: string, value: any) {
     const valueStr = JSON.stringify(value);
     return this.prisma.systemSetting.upsert({

@@ -24,6 +24,9 @@ import { Card, PageHeader, Badge, Spinner, ErrorBox } from "@/components/ui";
 import { useAuth } from "@/store/auth";
 import { useLocale, useT } from "@/i18n";
 import { useToast } from "@/components/toast";
+import { useUiStyle } from "@/store/uiStyle";
+import { MHero, MPills, M_SURFACE } from "@/components/modern/kit";
+import { LedgerOverview, PickResellerEmpty, ResellerStrip } from "./ModernTrafficParts";
 
 type LedgerQuota = {
   quotaMode: string;
@@ -240,6 +243,7 @@ function writeStoredPanelTab(adminId: string, id: string) {
 
 export default function TrafficPage() {
   const t = useT();
+  const { modern } = useUiStyle();
   const { dir } = useLocale();
   const PrevIcon = dir === "rtl" ? ChevronRight : ChevronLeft;
   const NextIcon = dir === "rtl" ? ChevronLeft : ChevronRight;
@@ -476,8 +480,20 @@ export default function TrafficPage() {
     purgeMutation.mutate({ all: true });
   };
 
+  const pickAdmin = (id: string) => {
+    setAdminId(id);
+    setPage(1);
+    setPanelId("");
+    tabInitFor.current = "";
+  };
+
   return (
     <div className="space-y-6">
+      {modern ? (
+        <MHero title={t("traffic.title")} subtitle={t("traffic.subtitle")}>
+          {isSuper ? <ResellerStrip resellers={resellers} adminId={adminId} onPick={pickAdmin} /> : null}
+        </MHero>
+      ) : (
       <PageHeader
         title={t("traffic.title")}
         subtitle={t("traffic.subtitle")}
@@ -503,15 +519,29 @@ export default function TrafficPage() {
           ) : undefined
         }
       />
+      )}
 
       {isSuper && !adminId ? (
+        modern ? <PickResellerEmpty /> : (
         <Card>
           <p className="text-sm text-zinc-500 dark:text-zinc-400">
             {t("traffic.pickReseller")}
           </p>
         </Card>
+        )
       ) : (
         <>
+          {modern ? (
+            <MPills
+              value={viewTab}
+              onChange={switchTab}
+              options={[
+                { id: "ledger", label: t("traffic.tabLedger") },
+                { id: "actions", label: t("traffic.tabActions") },
+              ]}
+              className="w-fit"
+            />
+          ) : (
           <div className="flex gap-2 border-b border-zinc-200 dark:border-zinc-800 pb-px">
             <button
               type="button"
@@ -538,8 +568,25 @@ export default function TrafficPage() {
               {t("traffic.tabActions")}
             </button>
           </div>
+          )}
 
-          {viewTab === "ledger" && destinations.length > 0 && (
+          {modern && viewTab === "ledger" && ledger.data ? (
+            <LedgerOverview
+              destinations={destinations}
+              panelId={panelId}
+              onSelect={selectDestination}
+              unlimited={!!quota?.unlimitedTraffic || remainingBytes == null}
+              remaining={remainingBytes}
+              used={usedBytes}
+              total={totalBytes}
+              totals={ledger.data.totals}
+              rows={ledger.data.data as any}
+              panelTypeLabel={(type) => panelTypeLabel(type, t)}
+              sharedHint={quota?.sharedRemaining && !quota.unlimitedTraffic ? t("traffic.sharedPoolHint") : null}
+            />
+          ) : null}
+
+          {!modern && viewTab === "ledger" && destinations.length > 0 && (
             <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 p-3">
               <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
                 <Network size={14} /> {t("traffic.destinations")}
@@ -572,7 +619,7 @@ export default function TrafficPage() {
             </div>
           )}
 
-          {viewTab === "ledger" && ledger.data && (
+          {!modern && viewTab === "ledger" && ledger.data && (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <Card>
                 <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
@@ -616,7 +663,7 @@ export default function TrafficPage() {
             </p>
           )}
 
-          <div className="flex flex-col gap-3 bg-white dark:bg-zinc-900/40 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800">
+          <div className={modern ? `flex flex-col gap-3 p-3 ${M_SURFACE}` : "flex flex-col gap-3 bg-white dark:bg-zinc-900/40 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800"}>
             <div className="flex flex-col sm:flex-row gap-3 justify-between items-stretch sm:items-center">
               <form onSubmit={handleSearch} className="relative w-full sm:w-72">
                 <Search className="absolute start-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />

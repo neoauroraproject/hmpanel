@@ -12,6 +12,7 @@ import { InstanceFingerprintService } from './instance-fingerprint.service';
 import { PremiumBundleService } from './premium-bundle.service';
 import { LICENSE_LEASE_KEY, LicenseManagerService } from './license-manager.service';
 import { verifyEntitlementLease } from './license-lease.util';
+import { getLicenseDeviceInfo } from './license-device-info.util';
 import { PluginsService } from '../plugins/plugins.service';
 import type { LicenseState } from './types/module-manifest.types';
 import {
@@ -118,6 +119,7 @@ export class LicenseActivationService {
         clientIp,
         panelVersion,
         productSlug: process.env.LICENSE_PRODUCT_ID || 'hmpanel',
+        ...getLicenseDeviceInfo(),
       }),
     });
 
@@ -410,6 +412,7 @@ export class LicenseActivationService {
         instanceId,
         clientIp,
         ...(version ? { version } : {}),
+        ...getLicenseDeviceInfo(),
       }),
     });
   }
@@ -439,6 +442,7 @@ export class LicenseActivationService {
         clientIp,
         panelVersion,
         productSlug: process.env.LICENSE_PRODUCT_ID || 'hmpanel',
+        ...getLicenseDeviceInfo(),
       }),
     });
 
@@ -651,7 +655,7 @@ export class LicenseActivationService {
       const { res, data, usedUrl } = await requestLicenseServer('/v1/panel/bundle-url', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ licenseKey, instanceId, version, clientIp }),
+        body: JSON.stringify({ licenseKey, instanceId, version, clientIp, ...getLicenseDeviceInfo() }),
       });
       push('bundle_url_request', res.ok, {
         status: res.status,
