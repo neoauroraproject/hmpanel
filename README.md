@@ -39,9 +39,20 @@
 
 اچ‌ام‌پنل (HMPanel) یک **لایه مدیریت حرفه‌ای روی 3x-ui اصلی** است، برای ارائه‌دهندگان VPN، نماینده‌ها و ادمین‌هایی که چندین سرور و تعداد زیادی کاربر دارند.
 
+### ✨ تازه‌های نسخه ۳.۰.۱
+
+- **قوانین سرویس فروشگاه (پرمیوم):** نحوه تمدید (اضافه شدن به باقیمانده، شروع از نو، یا **رزرو** تا تمام شدن سرویس فعلی و شروع خودکار)، نام کاربری سرویس‌های جدید (از نام تلگرام، پیشوند + شماره، یا کد تصادفی؛ همیشه بدون تکرار)، **خرید حجم یا زمان اضافه** از ربات، **پلن دلخواه** با قیمت خودکار برای هر گیگ و روز، و **تیکت پشتیبانی** که ادمین با Reply در چت ادمین جواب می‌دهد (*فروشگاه ← تنظیمات ← قوانین سرویس*).
+- **ربات (پرمیوم):** دکمه‌های **لیست قیمت** و **آموزش‌ها**، متن دلخواه صفحه پشتیبانی (مثلاً آیدی پشتیبان)، و پروکسی تلگرام با چسباندن لینک و تست مسیر مستقیم و پروکسی.
+- **شارژ اضطراری (پرمیوم)** در صفحه ساب همه قالب‌ها، فقط برای سرویس‌های خریداری‌شده؛ شارژهای اخیر در تب جدای فروشگاه.
+- **اتصال به پنل‌های ثنایی از طریق پروکسی:** اگر سرور مستقیم به 3x-ui وصل نشود، درخواست‌ها از پروکسی SOCKS5 یا HTTP می‌روند؛ «فقط وقتی مستقیم نشد» یا «همیشه» (*تنظیمات ← عمومی*).
+- **ظرفیت هر پنل:** حداکثر تعداد کلاینت؛ پنل پر کلاینت جدید نمی‌سازد و در فروش جدید نمایش داده نمی‌شود، ولی تمدید کار می‌کند.
+- **گروه‌ها** در خود پنل هم ذخیره می‌شوند و فیلتر گروه به لیست کلاینت‌ها اضافه شد؛ گروه 3x-ui هم همگام می‌شود.
+- **پیام روی لینک ساب**، **جزئیات بازطراحی‌شده کلاینت** (مصرف، انقضا، لینک‌ها و QR) و پنجره «چه چیزی جدید است» برای مدیر اصلی بعد از هر آپدیت.
+- **آپدیت خودکار پرمیوم:** بعد از `hm update`، اگر لایسنس فعال باشد باندل پرمیوم هم خودکار به‌روز می‌شود.
+
 ### ✨ تازه‌های نسخه ۳
 
-- **ظاهر مدرن جدید (اختیاری).** داشبورد، کلاینت‌ها، ادمین‌ها، پنل‌ها، ترافیک و همه صفحه‌های پرمیوم چیدمان و نمودارهای تازه دارند. منوی بالا یا کناری، روشن و تاریک. ظاهر کلاسیک همچنان پیش‌فرض است و هر وقت بخواهید برمی‌گردد (*تنظیمات ← ظاهر* یا از منوی حساب).
+- **ظاهر مدرن جدید.** داشبورد، کلاینت‌ها، ادمین‌ها، پنل‌ها، ترافیک و همه صفحه‌های پرمیوم چیدمان و نمودارهای تازه دارند. منوی بالا یا کناری، روشن و تاریک. از ۳.۰.۱ ظاهر جدید با منوی کناری پیش‌فرض است و ظاهر کلاسیک هر وقت بخواهید برمی‌گردد (*تنظیمات ← ظاهر* یا از منوی حساب).
 - **منوی بالای شخصی.** انتخاب کنید کدام صفحه‌ها (تا ۷ تا) و به چه ترتیبی در منوی بالا باشند (*منوی حساب ← شخصی‌سازی منوی بالا*).
 - **منوی جدای پرمیوم.** دکمه طلایی «پرمیوم» مگامنوی همه ماژول‌های پرمیوم را باز می‌کند. بدون لایسنس، ماژول‌ها قفل‌شده نمایش داده می‌شوند و لینک خرید دارند.
 - **ادمین‌ها:** ساخت ادمین مرحله‌به‌مرحله (نوع حجم کلی یا جدا برای هر پنل همان اول)، پنجره شارژ سریع برای حجم هر پنل، ظرفیت کاربر و روز، و تنظیم دسترسی ماژول‌های پرمیوم از همان صفحه ادمین‌ها.
@@ -80,12 +91,15 @@
 - **مدیریت چند پنل و نماینده:** کنترل چندین سرور 3x-ui، نماینده‌ها با محدودیت حجم، تعداد کاربر و زمان؛ حجم کلی یا جدا برای هر پنل.
 - **حسابداری ترافیک:** محاسبه لحظه‌ای، حالت مصرفی و تخصیصی، مهلت قطع و لاگ امن استرداد.
 - **یکپارچگی با 3x-ui:** اتصال کلاینت‌ها به گروه‌های اصلی 3x-ui و یک کلاینت روی چند اینباند. پشتیبانی تا نسخه 3.11.
+- **گروه‌بندی و ظرفیت:** گروه کلاینت‌ها با فیلتر، و سقف تعداد کلاینت برای هر پنل.
+- **اتصال از طریق پروکسی** به پنل‌هایی که مستقیم در دسترس نیستند (SOCKS5 یا HTTP).
 - **عملیات گروهی و مهاجرت:** ساخت، ویرایش، تمدید و حذف گروهی؛ مهاجرت از پنل‌های قدیمی.
 - **پشتیبان‌گیری:** دانلود، آپلود و بازگردانی بکاپ از پنل یا دستور `hm`.
 - **ظاهر مدرن یا کلاسیک**، فارسی و انگلیسی، روشن و تاریک، قابل نصب به‌صورت اپ (PWA).
 
 **نسخه پرمیوم**
 - **فروشگاه و ربات تلگرام:** فروش پلن با ربات و مینی‌اپ، رسید، کد تخفیف، باشگاه مشتریان، دعوت دوستان و تحویل خودکار.
+- **قوانین سرویس:** تمدید افزایشی، از نو یا رزروی؛ نام‌گذاری خودکار سرویس‌ها؛ فروش حجم و زمان اضافه؛ پلن دلخواه؛ تیکت پشتیبانی؛ لیست قیمت و آموزش‌ها در ربات؛ شارژ اضطراری.
 - **محصولات دیجیتال** با موجودی کد رمزگذاری‌شده و تحویل خودکار یا دستی؛ **پرداخت به‌ازای مصرف** از کیف پول مشتری.
 - **پرداخت:** کارت بانکی، کیف پول کریپتو، درگاه آنلاین و تلگرام استارز.
 - **فروش نمایندگی:** فروش حساب نمایندگی و شارژ نمایندگان از اول تا آخر.
@@ -121,7 +135,7 @@ sudo hm update
 
 <div dir="rtl">
 
-یا `sudo hm` را بزنید و گزینه **Update** را انتخاب کنید. بعد از آپدیت پنل، در *تنظیمات ← لایسنس پرمیوم* دکمه **به‌روزرسانی باندل پرمیوم** را بزنید.
+یا `sudo hm` را بزنید و گزینه **Update** را انتخاب کنید. اگر لایسنس پرمیوم فعال باشد، باندل پرمیوم هم بعد از آپدیت پنل خودکار به‌روز می‌شود و نتیجه در پایان آپدیت نمایش داده می‌شود. در صورت نیاز می‌توانید از *تنظیمات ← لایسنس پرمیوم* دکمه **به‌روزرسانی باندل پرمیوم** را دستی بزنید.
 
 ### 💾 بکاپ و بازگردانی
 - **از پنل:** *تنظیمات ← نگهداری سیستم* برای دانلود، آپلود یا بازگردانی بکاپ با یک کلیک.
@@ -165,9 +179,20 @@ bash <(curl -fsSL https://raw.githubusercontent.com/neoauroraproject/hmpanel/mai
 
 HMPanel is a **professional management layer built on top of native 3x-ui**, for VPN providers, resellers and administrators who run many servers and a large number of clients.
 
+### ✨ What's new in v3.0.1
+
+- **Store service rules (Premium):** how renewals apply (add to what is left, start fresh, or **reserve** until the current service runs out and then start automatically), names for new services (Telegram name, prefix + number, or random code; always unique), **extra volume or time** from the bot, a **custom plan** priced per GB and day, and **support tickets** answered by replying in the admin chat (*Store → Settings → Service rules*).
+- **Bot (Premium):** **Price list** and **Tutorials** buttons, your own support page text (e.g. the support account), and a Telegram proxy you can paste as a link and test against the direct route.
+- **Emergency recharge (Premium)** on the subscription page in every theme, for purchased services only; recent recharges have their own Store tab.
+- **Reach 3x-ui panels through a proxy:** when this server cannot connect to a panel directly, requests go through a SOCKS5 or HTTP proxy, only when direct fails or always (*Settings → General*).
+- **Panel capacity:** a maximum number of clients per panel; a full panel takes no new clients and is left out of new sales, while renewals keep working.
+- **Groups** are also stored in the panel, with a group filter on the client list; the 3x-ui group still syncs.
+- **Subscription message**, **redesigned client details** (usage, expiry, links and QR) and a one-time "What's new" window for the main admin after each update.
+- **Premium auto-update:** after `hm update`, an active license also updates the Premium bundle.
+
 ### ✨ What's new in v3
 
-- **New modern look, optional.** Dashboard, clients, admins, panels, traffic and every Premium page have new layouts and charts. Top bar or sidebar navigation, light and dark. The classic look is still the default and can be switched back at any time (*Settings → Appearance*, or from the account menu).
+- **New modern look.** Dashboard, clients, admins, panels, traffic and every Premium page have new layouts and charts. Top bar or sidebar navigation, light and dark. Since 3.0.1 the new look with the side menu is the default; the classic look can be switched back at any time (*Settings → Appearance*, or from the account menu).
 - **Your own top menu.** Pick which pages (up to 7) sit in the top bar and in what order (*account menu → Customize top menu*).
 - **Dedicated Premium menu.** A gold Premium button opens a mega menu of every Premium module. Without a license the modules are shown locked, with links to buy.
 - **Admins:** step-by-step admin creation (shared or per-panel traffic is chosen first), a quick top-up dialog for per-panel GB, client capacity and days, and Premium module access set on the Admins page.
@@ -206,12 +231,15 @@ Full list: [CHANGELOG.md](CHANGELOG.md).
 - **Multi-panel & reseller management:** control many 3x-ui nodes, resellers with their own traffic, client and expiry limits, shared or per-panel traffic.
 - **Traffic accounting:** real-time collection, usage-based and allocation-based modes, grace periods and an audited refund log.
 - **Native 3x-ui integration:** clients map to native 3x-ui groups; one client can sit on several inbounds. Supports 3x-ui up to 3.11.
+- **Groups and capacity:** client groups with a filter, and a client cap per panel.
+- **Proxy connection** to panels that cannot be reached directly (SOCKS5 or HTTP).
 - **Bulk operations & migration:** bulk create, edit, extend and delete; migration from older panels.
 - **Backups:** download, upload and restore PostgreSQL backups from the web UI or the `hm` CLI.
 - **Modern or classic UI**, Persian and English, light and dark, installable as an app (PWA).
 
 **Premium**
 - **Store & Telegram bot:** sell plans with a bot and mini app, receipts, coupons, loyalty, referrals and auto delivery.
+- **Service rules:** additive, fresh or reserved renewals; automatic service names; extra volume and time; custom plans; support tickets; price list and tutorials in the bot; emergency recharge.
 - **Digital goods** with encrypted code stock and automatic or manual delivery; **pay-as-you-go** services billed from the customer wallet.
 - **Payments:** bank cards, crypto wallets, online gateways and Telegram Stars.
 - **Reseller sales:** sell reseller accounts and reseller top-ups end to end.
@@ -235,7 +263,7 @@ Existing installs update in place; no reinstall is needed and data is kept:
 ```bash
 sudo hm update
 ```
-Or open `sudo hm` and choose **Update**. After updating the panel, press **Update premium bundle** in *Settings → Premium License*.
+Or open `sudo hm` and choose **Update**. With an active Premium license, the Premium bundle also updates automatically after the panel update, and the result is shown at the end. You can still press **Update premium bundle** in *Settings → Premium License* by hand if needed.
 
 ### 💾 Backup & Restore
 - **Web UI:** *Settings → System Maintenance* to download, upload or restore backups with one click.
