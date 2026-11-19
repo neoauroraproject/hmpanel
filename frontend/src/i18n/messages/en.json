@@ -1854,6 +1854,12 @@
       "addTraffic": "e.g. 50 or -10",
       "addDays": "e.g. 30",
       "addClients": "e.g. 20"
-    }
+    },
+    "scope": "Scope",
+    "scopeAll": "All panels (whole account)",
+    "scopePanel": "Only {name}",
+    "scopePlus": "Panel Plus {name}",
+    "scopePanelNote": "Only admins with a quota per panel change.",
+    "scopePlusNote": "Changes the admins' Panel Plus quota (Premium)."
   }
 }

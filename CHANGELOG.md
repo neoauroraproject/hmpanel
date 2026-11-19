@@ -8,6 +8,30 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [3.0.3] - 2026-11-19
+
+### پنل
+- **عملیات گروهی ادمین‌ها با انتخاب محدوده:** همه پنل‌ها، فقط یک پنل 3x-ui، یا پنل پلاس (Eylan/Pasarguard). برای پنل پلاس می‌توانید دسترسی را روشن/خاموش کنید و حجم، روز و ظرفیت را تغییر دهید (نیاز به پرمیوم ۳.۰.۲).
+
+### نمایندگی و افزایش اعتبار (پرمیوم ۳.۰.۲)
+- **تب جدید «نماینده‌ها» برای مدیر کل:** باقیمانده، روزها، کاربرها، رسیدهای در انتظار و دکمه مشخص **شارژ** برای هر نماینده؛ جستجو و فیلتر «رسید در انتظار»، «تایید خودکار» و «رو به اتمام».
+- **تایید خودکار** روی کارت هر نماینده؛ با روشن شدن، به خود نماینده در تلگرام اطلاع داده می‌شود و در صفحه شارژ و ربات هم می‌بیند که رسیدش فوری تایید می‌شود.
+- **پرداخت به‌ازای مصرف برای ادمین‌ها:** پلن با قیمت هر گیگ؛ نماینده هر مقدار بخواهد شارژ می‌کند، رسید می‌فرستد و بعد از تایید، حجم به حسابش اضافه می‌شود و با مصرف کم می‌شود.
+- **صفحه شارژ نماینده:** کارت حساب با باقیمانده، انقضا، کاربرها و دکمه بزرگ «شارژ حساب».
+- **ربات:** منوی نمایندگی مرتب‌تر با موجودی حساب متصل، دکمه‌های پلن با حجم و روز، انتخاب حجم برای پلن‌های به‌ازای مصرف، و پیام تایید فوری.
+- رفع خطایی که در صورت شکست تایید خودکار، خود ثبت خطا هم از کار می‌افتاد.
+
+### Panel
+- **Bulk admin actions with a scope:** all panels, one 3x-ui panel, or Panel Plus (Eylan/Pasarguard). For Panel Plus you can turn access on or off and change traffic, days and capacity (needs Premium 3.0.2).
+
+### Agency and top-ups (Premium 3.0.2)
+- **New Resellers tab for the super admin:** what each reseller has left, days, users, waiting receipts and a clear **Top up** button, with search and filters for waiting receipts, instant approval and running low.
+- **Instant approval** on each reseller card; turning it on tells the reseller in Telegram, and their top-up page and the bot say their receipts are approved right away.
+- **Pay as you go for admins:** a plan priced per GB; resellers top up any amount, send a receipt, and after approval the traffic is added and goes down as they use it.
+- **Reseller top-up page:** an account card with balance, expiry, users and a big Top up button.
+- **Bot:** a cleaner agency menu with the linked account's balance, plan buttons with GB and days, GB choices for pay-as-you-go plans, and an instant-approval message.
+- Fixed the error handler crashing when an instant approval failed.
+
 ## [3.0.2] - 2026-11-19
 
 ### پنل

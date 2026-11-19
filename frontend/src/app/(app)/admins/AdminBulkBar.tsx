@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarPlus, HardDrive, Network, Power, PowerOff, Users, X } from "lucide-react";
+import { CalendarPlus, HardDrive, Layers, Network, Power, PowerOff, Users, X } from "lucide-react";
 import { clsx } from "clsx";
 import { api } from "@/lib/api";
 import { useToast } from "@/components/toast";
@@ -12,6 +12,9 @@ import { useT } from "@/i18n";
 type Action = "enable" | "disable" | "addTraffic" | "addDays" | "addClients" | "addInbounds" | "removeInbounds";
 type InboundRow = { id: string; tag: string; remark?: string | null; port: number; protocol: string; panel: { id: string; name: string; panelType?: string | null } };
 type BulkResult = { success: number; skipped: number; failed: number; errors: string[] };
+type PanelRow = { id: string; name: string; panelType?: string | null };
+/** "" = whole account · "panel:<id>" = one 3x-ui panel · "plus:eylan|pasarguard" = Panel Plus (Premium) */
+type Scope = string;
 
 /**
  * Bulk actions for the selected admins: enable/disable, add or remove traffic, days and
@@ -25,6 +28,22 @@ export function AdminBulkBar({ ids, onClear }: { ids: string[]; onClear: () => v
   const [value, setValue] = useState("");
   const [picked, setPicked] = useState<string[]>([]);
   const [filter, setFilter] = useState("");
+  const [scope, setScope] = useState<Scope>("");
+
+  const panelsQuery = useQuery<PanelRow[]>({
+    queryKey: ["panels-bulk-scope"],
+    queryFn: async () => {
+      const rows = (await api.get("/panels")).data as PanelRow[] | { data?: PanelRow[] };
+      return Array.isArray(rows) ? rows : rows?.data || [];
+    },
+    staleTime: 60_000,
+  });
+  const xuiPanels = (panelsQuery.data ?? []).filter((p) => !["eylan", "pasarguard"].includes(String(p.panelType || "")));
+  const plusProviders = (["eylan", "pasarguard"] as const).filter((k) =>
+    (panelsQuery.data ?? []).some((p) => p.panelType === k),
+  );
+  const plus = scope.startsWith("plus:") ? scope.slice(5) : null;
+  const panelId = scope.startsWith("panel:") ? scope.slice(6) : undefined;
 
   const inboundsQuery = useQuery<InboundRow[]>({
     queryKey: ["inbounds-all"],
@@ -36,6 +55,7 @@ export function AdminBulkBar({ ids, onClear }: { ids: string[]; onClear: () => v
       (inboundsQuery.data ?? []).filter(
         (i) =>
           !["eylan", "pasarguard"].includes(String(i.panel?.panelType || "")) &&
+          (!panelId || i.panel?.id === panelId) &&
           (!filter.trim() ||
             `${i.panel?.name} ${i.remark || ""} ${i.tag} ${i.port}`.toLowerCase().includes(filter.trim().toLowerCase())),
       ),
@@ -43,7 +63,10 @@ export function AdminBulkBar({ ids, onClear }: { ids: string[]; onClear: () => v
   );
 
   const run = useMutation({
-    mutationFn: async (body: Record<string, unknown>) => (await api.post<BulkResult>("/admins/bulk", { ids, ...body })).data,
+    mutationFn: async (body: Record<string, unknown>) =>
+      plus
+        ? (await api.post<BulkResult>("/premium-modules/admin-recharge/provider-access/bulk", { ids, provider: plus, ...body })).data
+        : (await api.post<BulkResult>("/admins/bulk", { ids, ...(panelId ? { panelId } : {}), ...body })).data,
     onSuccess: (r) => {
       toast(
         t("adminBulk.done", { ok: r.success, skipped: r.skipped, failed: r.failed }),
@@ -78,6 +101,32 @@ export function AdminBulkBar({ ids, onClear }: { ids: string[]; onClear: () => v
       <div className="fixed inset-x-0 bottom-4 z-40 flex justify-center px-4">
         <div className="flex max-w-full flex-wrap items-center gap-1 rounded-2xl bg-zinc-900 px-3 py-2 text-white shadow-2xl dark:bg-zinc-100 dark:text-zinc-900">
           <span className="px-2 text-sm font-semibold">{t("adminBulk.selected", { count: ids.length })}</span>
+          {xuiPanels.length > 1 || plusProviders.length ? (
+            <label className="inline-flex items-center gap-1.5 rounded-full bg-white/10 ps-2.5 text-xs dark:bg-black/10">
+              <Layers size={14} aria-hidden />
+              <span className="sr-only">{t("adminBulk.scope")}</span>
+              <select
+                value={scope}
+                onChange={(e) => setScope(e.target.value)}
+                className="max-w-[11rem] rounded-full bg-transparent py-1.5 pe-2 text-xs font-semibold outline-none [&>option]:text-zinc-900"
+                title={t("adminBulk.scope")}
+              >
+                <option value="">{t("adminBulk.scopeAll")}</option>
+                {xuiPanels.length > 1
+                  ? xuiPanels.map((p) => (
+                      <option key={p.id} value={`panel:${p.id}`}>
+                        {t("adminBulk.scopePanel", { name: p.name })}
+                      </option>
+                    ))
+                  : null}
+                {plusProviders.map((k) => (
+                  <option key={k} value={`plus:${k}`}>
+                    {t("adminBulk.scopePlus", { name: k === "eylan" ? "Eylan" : "Pasarguard" })}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           <button type="button" className={btn} disabled={run.isPending} onClick={() => run.mutate({ action: "enable" })}>
             <Power size={14} aria-hidden /> {t("adminBulk.enable")}
           </button>
@@ -93,9 +142,11 @@ export function AdminBulkBar({ ids, onClear }: { ids: string[]; onClear: () => v
           <button type="button" className={btn} onClick={() => open("addClients")}>
             <Users size={14} aria-hidden /> {t("adminBulk.clients")}
           </button>
-          <button type="button" className={btn} onClick={() => open("addInbounds")}>
-            <Network size={14} aria-hidden /> {t("adminBulk.inbounds")}
-          </button>
+          {!plus ? (
+            <button type="button" className={btn} onClick={() => open("addInbounds")}>
+              <Network size={14} aria-hidden /> {t("adminBulk.inbounds")}
+            </button>
+          ) : null}
           <button type="button" className={clsx(btn, "ms-1")} onClick={onClear} aria-label={t("adminBulk.clear")}>
             <X size={14} aria-hidden />
           </button>
@@ -116,6 +167,15 @@ export function AdminBulkBar({ ids, onClear }: { ids: string[]; onClear: () => v
                     {t(`adminBulk.title.${numeric ? dialog : "inbounds"}`, { count: ids.length })}
                   </h3>
                   <p className="mt-1 text-xs text-zinc-500">{t(`adminBulk.hint.${numeric ? dialog : "inbounds"}`)}</p>
+                  {scope ? (
+                    <p className="mt-2 inline-flex rounded-full bg-blue-500/10 px-2.5 py-1 text-xs font-medium text-blue-700 dark:text-blue-300">
+                      {plus
+                        ? t("adminBulk.scopePlus", { name: plus === "eylan" ? "Eylan" : "Pasarguard" })
+                        : t("adminBulk.scopePanel", { name: xuiPanels.find((p) => `panel:${p.id}` === scope)?.name || "" })}
+                      {" · "}
+                      {t(plus ? "adminBulk.scopePlusNote" : "adminBulk.scopePanelNote")}
+                    </p>
+                  ) : null}
                 </div>
 
                 {numeric ? (

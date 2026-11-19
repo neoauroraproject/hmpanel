@@ -509,7 +509,8 @@ export class AdminsService implements OnModuleInit {
             patch = { status: 'disabled' };
             break;
           case 'addTraffic':
-            if (admin.unlimitedTraffic) break;
+            // One panel chosen: only admins with a quota per panel have something to change.
+            if (admin.unlimitedTraffic || (dto.panelId && !perPanel)) break;
             if (perPanel) {
               const rows = targetQuotas
                 .filter((q) => !q.unlimitedTraffic)
@@ -524,6 +525,7 @@ export class AdminsService implements OnModuleInit {
             break;
           case 'addClients': {
             const bump = (cap: number) => (cap === 0 ? 0 : Math.max(0, cap + Math.round(value)));
+            if (dto.panelId && !perPanel) break;
             if (perPanel) {
               const rows = targetQuotas
                 .filter((q) => Number(q.maxClients || 0) > 0)
