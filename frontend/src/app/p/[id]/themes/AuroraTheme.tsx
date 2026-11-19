@@ -17,6 +17,7 @@ import {
   type SubData,
 } from "./portal-kit";
 import { ClientAppsSheet } from "./client-apps";
+import { EmergencyRechargeCard } from "../EmergencyRechargeBar";
 
 export default function AuroraTheme({ id, data }: { id: string; data: SubData }) {
   useThemeFont("Aurora");
@@ -99,6 +100,7 @@ export default function AuroraTheme({ id, data }: { id: string; data: SubData })
             barClassName="bg-gradient-to-r from-teal-400 to-cyan-300"
             trackClassName="h-2 overflow-hidden rounded-full bg-white/10"
           />
+          <EmergencyRechargeCard id={id} isFa={model.isFa} className="mt-4 text-white" />
           <PortalDeviceLimit
             show={model.showDeviceLimit}
             limit={model.deviceLimit}

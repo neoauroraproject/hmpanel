@@ -4,6 +4,7 @@ import {
   Post,
   Patch,
   Delete,
+  Put,
   Body,
   Param,
   Query,
@@ -16,6 +17,12 @@ import { AuthGuard } from '@nestjs/passport';
 import { RolesGuard, Roles } from '../common/roles.guard';
 import { PanelsService } from './panels.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { SettingsService } from '../settings/settings.service';
+import {
+  PANEL_PROXY_SETTING,
+  PanelConnectionProxyService,
+  normalizePanelProxyConfig,
+} from './panel-connection-proxy.service';
 import type { AuthRequest } from '../common/auth-request';
 
 @ApiTags('Panels')
@@ -27,7 +34,45 @@ export class PanelsController {
   constructor(
     private panelsService: PanelsService,
     private prisma: PrismaService,
+    private connectionProxy: PanelConnectionProxyService,
+    private settings: SettingsService,
   ) {}
+
+  // ── Proxy for reaching 3x-ui panels (fallback when the direct path fails) ──
+  @Get('connection-proxy')
+  @ApiOperation({ summary: 'Proxy used to reach panels (password never returned)' })
+  async getConnectionProxy() {
+    const cfg = await this.connectionProxy.getConfig();
+    return { ...cfg, password: undefined, passwordSet: !!cfg.password };
+  }
+
+  @Put('connection-proxy')
+  @ApiOperation({ summary: 'Save the panel connection proxy' })
+  async saveConnectionProxy(@Body() body: Record<string, unknown>) {
+    const current = normalizePanelProxyConfig(await this.settings.getSetting(PANEL_PROXY_SETTING, null));
+    // Blank password keeps the saved one (the form never shows it).
+    const password = String(body.password ?? '').trim() ? String(body.password) : current.password;
+    const next = normalizePanelProxyConfig({ ...body, password });
+    await this.settings.setSetting(PANEL_PROXY_SETTING, next);
+    this.connectionProxy.invalidate();
+    return { ...next, password: undefined, passwordSet: !!next.password };
+  }
+
+  @Post('connection-proxy/test')
+  @ApiOperation({ summary: 'Reach one panel directly and through the proxy' })
+  async testConnectionProxy(@Body() body: { panelId?: string; url?: string; proxy?: Record<string, unknown> }) {
+    let url = String(body.url || '').trim();
+    if (!url && body.panelId) {
+      const panel = await this.prisma.panel.findUnique({ where: { id: body.panelId }, select: { url: true } });
+      url = panel?.url || '';
+    }
+    if (!url) return { error: 'No panel URL' };
+    const override = body.proxy ? normalizePanelProxyConfig(body.proxy) : undefined;
+    if (override && !String(body.proxy?.password ?? '').trim()) {
+      override.password = (await this.connectionProxy.getConfig()).password;
+    }
+    return this.connectionProxy.probe(url, override);
+  }
 
   @Post('test-connection')
   @ApiOperation({ summary: 'Test connectivity to a panel URL' })
@@ -141,6 +186,7 @@ export class PanelsController {
       apiToken?: string;
       status?: string;
       description?: string | null;
+      maxClients?: number | string | null;
     },
   ) {
     return this.panelsService.update(id, dto);

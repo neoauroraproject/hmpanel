@@ -13,6 +13,7 @@ import {
   NeoDeviceLimit,
   useNeoMetrics,
 } from "./neo-shared";
+import { EmergencyRechargeCard } from "../EmergencyRechargeBar";
 
 /** Vibrant — warm orange hero, clean white shell. */
 export default function VibrantTheme({ id, data }: { id: string; data: SubData }) {
@@ -109,6 +110,8 @@ export default function VibrantTheme({ id, data }: { id: string; data: SubData }
             className="mt-4 text-center text-white"
           />
         </section>
+
+        <EmergencyRechargeCard id={id} isFa={m.isFa} />
 
         <section>
           <h2 className="mb-2.5 text-base font-bold">{m.t("configs")}</h2>

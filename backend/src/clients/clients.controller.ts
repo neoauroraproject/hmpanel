@@ -98,13 +98,14 @@ export class ClientsController {
     @Query('adminId') adminId?: string,
     @Query('expiry') expiry?: string,
     @Query('trafficRange') trafficRange?: string,
+    @Query('group') group?: string,
   ) {
     return this.clientsService.findAll(
       req.user.id,
       req.user.role,
       Number(page) || 1,
       Number(limit) || 25,
-      { search, status, inboundId, panelId, panelType, adminId, expiry, trafficRange },
+      { search, status, inboundId, panelId, panelType, adminId, expiry, trafficRange, group },
     );
   }
 

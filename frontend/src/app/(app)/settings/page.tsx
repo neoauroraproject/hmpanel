@@ -10,6 +10,7 @@ import { useToast } from "@/components/toast";
 import { motion } from "framer-motion";
 import { SslManagerModal } from "./SslManagerModal";
 import { PanelPortsCard } from "./PanelPortsCard";
+import { PanelProxyCard } from "./PanelProxyCard";
 import { AppearanceSettingsCard } from "./AppearanceSettingsCard";
 import { useUiStyle } from "@/store/uiStyle";
 import { clsx } from "clsx";
@@ -352,6 +353,7 @@ export default function GlobalSettingsPage() {
           </Card>
           {/* Panel HTTP/HTTPS ports — must stay on this tab (added in 2.5.1+). */}
           <PanelPortsCard />
+          <PanelProxyCard />
         </div>
       )}
 

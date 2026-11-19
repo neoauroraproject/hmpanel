@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { clsx } from "clsx";
 import { PanelLeft, PanelTop, SwatchBook } from "lucide-react";
 import { useT } from "@/i18n";
@@ -98,7 +99,14 @@ export function AppearanceControls({ className }: { className?: string }) {
   );
 }
 
-/** Icon button + popover with the appearance controls. `placement` is where the popover opens. */
+const POPOVER_W = 240;
+const EDGE = 8;
+
+/**
+ * Icon button + popover with the appearance controls. `placement` is where the popover
+ * opens. The popover is fixed to the viewport, centred on the button and kept inside the
+ * screen, so a narrow or clipped container (the sidebar) can never cut it off.
+ */
 export function AppearanceButton({
   placement = "top",
   className,
@@ -107,28 +115,50 @@ export function AppearanceButton({
   className?: string;
 }) {
   const t = useT();
-  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<React.CSSProperties | null>(null);
+  const open = pos !== null;
+  const setOpen = (next: boolean | ((v: boolean) => boolean)) => {
+    const want = typeof next === "function" ? next(open) : next;
+    if (!want) return setPos(null);
+    const r = buttonRef.current?.getBoundingClientRect();
+    if (!r) return;
+    const left = Math.min(Math.max(EDGE, r.left + r.width / 2 - POPOVER_W / 2), window.innerWidth - POPOVER_W - EDGE);
+    setPos(
+      placement === "top"
+        ? { position: "fixed", left, bottom: window.innerHeight - r.top + EDGE, width: POPOVER_W }
+        : { position: "fixed", left, top: r.bottom + EDGE, width: POPOVER_W },
+    );
+  };
   const ref = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
     const onDown = (e: PointerEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (ref.current?.contains(target) || popRef.current?.contains(target)) return;
+      setPos(null);
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") setPos(null);
     };
+    // A fixed popover would drift from its button; close it instead.
+    const onMove = () => setPos(null);
     document.addEventListener("pointerdown", onDown);
     document.addEventListener("keydown", onKey);
+    window.addEventListener("resize", onMove);
     return () => {
       document.removeEventListener("pointerdown", onDown);
       document.removeEventListener("keydown", onKey);
+      window.removeEventListener("resize", onMove);
     };
   }, [open]);
 
   return (
     <div ref={ref} className={clsx("relative shrink-0", className)}>
       <button
+        ref={buttonRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
@@ -139,14 +169,14 @@ export function AppearanceButton({
       >
         <SwatchBook size={16} />
       </button>
-      {open ? (
+      {/* Portal: a transformed ancestor (the sidebar) would otherwise anchor "fixed" to itself. */}
+      {open && typeof document !== "undefined" ? createPortal(
         <div
+          ref={popRef}
           role="dialog"
           aria-label={t("appearance.title")}
-          className={clsx(
-            "hm-pop absolute end-0 z-50 w-60 rounded-2xl border border-zinc-200 bg-white p-3.5 shadow-xl shadow-black/10 dark:border-zinc-800 dark:bg-zinc-900 dark:shadow-black/50",
-            placement === "top" ? "bottom-full mb-2" : "top-full mt-2",
-          )}
+          style={pos ?? undefined}
+          className="hm-pop z-[70] rounded-2xl border border-zinc-200 bg-white p-3.5 shadow-xl shadow-black/10 dark:border-zinc-800 dark:bg-zinc-900 dark:shadow-black/50"
         >
           <div className="mb-3 text-sm font-semibold text-zinc-900 dark:text-zinc-50">
             {t("appearance.title")}
@@ -155,7 +185,8 @@ export function AppearanceButton({
           <p className="mt-3 text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
             {t("appearance.personalHint")}
           </p>
-        </div>
+        </div>,
+        document.body,
       ) : null}
     </div>
   );

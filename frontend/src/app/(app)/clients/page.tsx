@@ -20,6 +20,7 @@ import {
 import { io } from "socket.io-client";
 import { ConnectionDetailsModal } from "@/components/ConnectionDetailsModal";
 import { BulkCreateModal } from "./BulkCreateModal";
+import { ClientDetailsPanel } from "./ClientDetailsPanel";
 import { PluginSlot } from "@/components/PluginSlot";
 import { NodeInboundBadge } from "@/components/NodeInboundBadge";
 import { isXui380Plus } from "@/lib/panel-version";
@@ -214,6 +215,12 @@ export default function ClientsPage() {
   const [status, setStatus] = useState("");
   const [expiry, setExpiry] = useState("");
   const [trafficRange, setTrafficRange] = useState("");
+  const [group, setGroup] = useState("");
+  const { data: groupList = [] } = useQuery<string[]>({
+    queryKey: ["client-groups"],
+    queryFn: async () => (await api.get<string[]>("/clients/groups")).data,
+    staleTime: 60_000,
+  });
 
   // Pagination State
   const [page, setPage] = useState(1);
@@ -278,7 +285,7 @@ export default function ClientsPage() {
 
   // Query Clients
   const { data, isLoading, isFetching, error } = useQuery<Paginated<Client>>({
-    queryKey: ["clients", page, limit, search, adminId, inboundId, panelId, status, expiry, trafficRange],
+    queryKey: ["clients", page, limit, search, adminId, inboundId, panelId, status, expiry, trafficRange, group],
     placeholderData: (previousData, previousQuery) => {
       if (!previousQuery) return undefined;
       const prevPanel = previousQuery.queryKey[6];
@@ -296,6 +303,7 @@ export default function ClientsPage() {
       if (status) params.append("status", status);
       if (expiry) params.append("expiry", expiry);
       if (trafficRange) params.append("trafficRange", trafficRange);
+      if (group) params.append("group", group);
 
       return (await api.get<Paginated<Client>>(`/clients?${params.toString()}`)).data;
     },
@@ -358,10 +366,10 @@ export default function ClientsPage() {
     onMutate: async (c: Client) => {
       // Optimistic UI updates
       await qc.cancelQueries({ queryKey: ["clients"] });
-      const previous = qc.getQueryData(["clients", page, limit, search, adminId, inboundId, panelId, status, expiry, trafficRange]);
+      const previous = qc.getQueryData(["clients", page, limit, search, adminId, inboundId, panelId, status, expiry, trafficRange, group]);
       
       qc.setQueryData(
-        ["clients", page, limit, search, adminId, inboundId, panelId, status, expiry, trafficRange],
+        ["clients", page, limit, search, adminId, inboundId, panelId, status, expiry, trafficRange, group],
         (old: any) => {
           if (!old) return old;
           return {
@@ -387,7 +395,7 @@ export default function ClientsPage() {
     onError: (err, variables, context) => {
       if (context?.previous) {
         qc.setQueryData(
-          ["clients", page, limit, search, adminId, inboundId, panelId, status, expiry, trafficRange],
+          ["clients", page, limit, search, adminId, inboundId, panelId, status, expiry, trafficRange, group],
           context.previous
         );
       }
@@ -691,6 +699,7 @@ export default function ClientsPage() {
     setStatus("");
     setExpiry("");
     setTrafficRange("");
+    setGroup("");
     setPage(1);
   };
 
@@ -777,6 +786,24 @@ export default function ClientsPage() {
           </option>
         ))}
       </MSelect>
+      {groupList.length ? (
+        <MSelect
+          label={t("clients.allGroups")}
+          value={group}
+          onChange={(v) => {
+            setGroup(v);
+            setPage(1);
+          }}
+          className="min-w-32"
+        >
+          <option value="">{t("clients.allGroups")}</option>
+          {groupList.map((g) => (
+            <option key={g} value={g}>
+              {g}
+            </option>
+          ))}
+        </MSelect>
+      ) : null}
     </>
   );
 
@@ -1296,101 +1323,15 @@ export default function ClientsPage() {
                         animate={{ opacity: 1, height: "auto" }}
                         exit={{ opacity: 0, height: 0 }}
                         transition={{ duration: 0.25, ease: "easeOut" }}
-                        className="hidden md:table-row bg-white dark:bg-zinc-900/40 border border-t-0 border-zinc-200 dark:border-zinc-800 md:border-b md:border-x-0"
+                        className="hidden md:table-row bg-gradient-to-b from-blue-500/[0.03] to-transparent border border-t-0 border-zinc-200 dark:border-zinc-800 md:border-b md:border-x-0"
                       >
                         <td colSpan={7} className="px-4 py-4">
-                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
-                            <div className="space-y-1">
-                              <div className="text-xs text-zinc-500 uppercase font-semibold">{t("clients.connectionDetails")}</div>
-                              <div className="flex justify-between items-center bg-zinc-50 dark:bg-zinc-950 p-2 rounded border border-zinc-200 dark:border-zinc-800">
-                                <span className="text-zinc-600 dark:text-zinc-400">{t("clients.panelLabel")}</span>
-                                <span className="font-medium text-zinc-900 dark:text-zinc-100">{c.inbound?.panel?.name || t("common.unknown")}</span>
-                              </div>
-                              <div className="flex justify-between items-center bg-zinc-50 dark:bg-zinc-950 p-2 rounded border border-zinc-200 dark:border-zinc-800">
-                                <span className="text-zinc-600 dark:text-zinc-400">{t("clients.inboundLabel")}</span>
-                                <span className="font-medium text-zinc-900 dark:text-zinc-100 flex items-center gap-1">
-                                  {c.inbounds?.length ? c.inbounds.slice(0, 2).map((i: any) => i.tag).join(', ') : (c.inbound?.tag || t("common.unknown"))}
-                                  {c.inbounds && c.inbounds.length > 2 && (
-                                    <span className="text-[10px] bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400 px-1.5 py-0.5 rounded font-bold">
-                                      +{c.inbounds.length - 2}
-                                    </span>
-                                  )}
-                                </span>
-                              </div>
-                              <div className="flex justify-between items-center bg-zinc-50 dark:bg-zinc-950 p-2 rounded border border-zinc-200 dark:border-zinc-800">
-                                <span className="text-zinc-600 dark:text-zinc-400">{t("clients.protocolLabel")}</span>
-                                <span className="font-medium text-zinc-900 dark:text-zinc-100 uppercase flex items-center gap-1">
-                                  {c.inbounds?.length 
-                                    ? c.inbounds.slice(0, 2).map((i: any) => `${i.protocol}${i.streamSettings?.network ? ` ${i.streamSettings.network}` : ''}`).join(', ')
-                                    : `${c.inbound?.protocol || t("common.unknown")}${(c.inbound as any)?.streamSettings?.network ? ` ${(c.inbound as any).streamSettings.network}` : ''}`
-                                  }
-                                  {c.inbounds && c.inbounds.length > 2 && (
-                                    <span className="text-[10px] bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400 px-1.5 py-0.5 rounded font-bold">
-                                      +{c.inbounds.length - 2}
-                                    </span>
-                                  )}
-                                </span>
-                              </div>
-                            </div>
-                            <div className="space-y-1">
-                              <div className="text-xs text-zinc-500 uppercase font-semibold">{t("clients.trafficSpecifics")}</div>
-                              <div className="flex justify-between items-center bg-zinc-50 dark:bg-zinc-950 p-2 rounded border border-zinc-200 dark:border-zinc-800">
-                                <span className="text-zinc-600 dark:text-zinc-400">{t("clients.uploadLabel")}</span>
-                                <span className="font-medium text-emerald-500">{formatBytes(c.up)}</span>
-                              </div>
-                              <div className="flex justify-between items-center bg-zinc-50 dark:bg-zinc-950 p-2 rounded border border-zinc-200 dark:border-zinc-800">
-                                <span className="text-zinc-600 dark:text-zinc-400">{t("clients.downloadLabel")}</span>
-                                <span className="font-medium text-blue-500">{formatBytes(c.down)}</span>
-                              </div>
-                            </div>
-                            <div className="space-y-1 lg:col-span-2">
-                               <div className="text-xs text-zinc-500 uppercase font-semibold">{t("clients.subscriptionLinks")}</div>
-                               
-                               <div className="flex items-center gap-2 bg-zinc-50 dark:bg-zinc-950 p-2 rounded border border-zinc-200 dark:border-zinc-800">
-                                 <span className="text-zinc-500 w-[70px] whitespace-nowrap">{t("clients.systemSub")}</span>
-                                 <a 
-                                   href={typeof window !== 'undefined' ? `${window.location.origin}/s/${c.subId || c.email}` : '#'} 
-                                   target="_blank" 
-                                   className="font-mono text-xs text-blue-500 hover:underline truncate flex-1 block"
-                                   onClick={(e) => e.stopPropagation()}
-                                 >
-                                   {typeof window !== 'undefined' ? `${window.location.origin}/s/${c.subId || c.email}` : ''}
-                                 </a>
-                               </div>
-                               
-                               {c.inbound?.panel?.url && (
-                                 <div className="flex items-center gap-2 bg-zinc-50 dark:bg-zinc-950 p-2 rounded border border-zinc-200 dark:border-zinc-800">
-                                   <span className="text-zinc-500 w-[70px] whitespace-nowrap">{t("clients.panelSub")}</span>
-                                   {(() => {
-                                     const sub = encodeURIComponent(c.subId || c.email || '');
-                                     let link = '';
-                                     if (c.inbound.panel.subUrl) {
-                                       const base = c.inbound.panel.subUrl.endsWith('/') ? c.inbound.panel.subUrl : `${c.inbound.panel.subUrl}/`;
-                                       link = `${base}${sub}`;
-                                     } else {
-                                       try {
-                                         const parsed = new URL(c.inbound.panel.url);
-                                         link = `${parsed.origin}/sub/${sub}`;
-                                       } catch {
-                                         const base = c.inbound.panel.url.endsWith('/') ? c.inbound.panel.url : `${c.inbound.panel.url}/`;
-                                         link = `${base}sub/${sub}`;
-                                       }
-                                     }
-                                     return (
-                                       <a 
-                                         href={link} 
-                                         target="_blank" 
-                                         className="font-mono text-xs text-blue-500 hover:underline truncate flex-1 block"
-                                         onClick={(e) => e.stopPropagation()}
-                                       >
-                                         {link}
-                                       </a>
-                                     );
-                                   })()}
-                                 </div>
-                               )}
-                           </div>
-                           </div>
+                          <ClientDetailsPanel
+                            client={c}
+                            online={isOnline}
+                            onShowConnection={() => setConnectionDetailsClient(c)}
+                            onEdit={() => setEditing(c)}
+                          />
                         </td>
                       </motion.tr>
                     )}
@@ -1489,7 +1430,7 @@ export default function ClientsPage() {
             setPage(1);
           }}
           selects={modernSelects}
-          canReset={!!(search || adminId || inboundId || status || expiry || trafficRange)}
+          canReset={!!(search || adminId || inboundId || status || expiry || trafficRange || group)}
           onReset={resetFilters}
         />
       ) : (
@@ -1671,9 +1612,28 @@ export default function ClientsPage() {
               ))}
             </select>
           </div>
+          {groupList.length ? (
+            <div>
+              <select
+                value={group}
+                onChange={(e) => {
+                  setGroup(e.target.value);
+                  setPage(1);
+                }}
+                className="w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-sm text-zinc-600 dark:text-zinc-300 outline-none focus:border-blue-500"
+              >
+                <option value="">{t("clients.allGroups")}</option>
+                {groupList.map((g) => (
+                  <option key={g} value={g}>
+                    {g}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
         </div>
 
-        {(search || adminId || inboundId || status || expiry || trafficRange) && (
+        {(search || adminId || inboundId || status || expiry || trafficRange || group) && (
           <div className="flex justify-end">
             <button
               onClick={resetFilters}

@@ -13,6 +13,7 @@ import {
   NeoDeviceLimit,
   useNeoMetrics,
 } from "./neo-shared";
+import { EmergencyRechargeCard } from "../EmergencyRechargeBar";
 
 /** Glass — soft pastel blobs + frosted cards. */
 export default function GlassTheme({ id, data }: { id: string; data: SubData }) {
@@ -143,6 +144,7 @@ export default function GlassTheme({ id, data }: { id: string; data: SubData }) 
             qrLabel={m.t("qr")}
           />
         </section>
+        <EmergencyRechargeCard id={id} isFa={m.isFa} className="mb-4" />
 
         <NeoDualSubCopy
           systemUrl={m.systemUrl}

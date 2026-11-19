@@ -12,6 +12,7 @@ import { PanelOperationGate } from './native/panel-operation-gate';
 import { PanelOperationRouter } from './native/panel-operation.router';
 import { NativePanelOrchestrator } from './native/native-panel.orchestrator';
 import { XuiPanelDriver } from './native/xui-panel.driver';
+import { PanelConnectionProxyService } from './panel-connection-proxy.service';
 
 @Module({
   imports: [
@@ -30,8 +31,10 @@ import { XuiPanelDriver } from './native/xui-panel.driver';
     PanelOperationRouter,
     NativePanelOrchestrator,
     XuiPanelDriver,
+    PanelConnectionProxyService,
   ],
   exports: [
+    PanelConnectionProxyService,
     PanelsService,
     PanelCapabilitiesService,
     ApiCapabilityResolver,

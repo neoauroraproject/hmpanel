@@ -16,6 +16,7 @@ import {
   type SubData,
 } from "./portal-kit";
 import { ClientAppsSheet } from "./client-apps";
+import { EmergencyRechargeCard } from "../EmergencyRechargeBar";
 
 /** Horizon Atelier — dusk navy field, warm amber accent, formal & calm. */
 export default function SunsetTheme({ id, data }: { id: string; data: SubData }) {
@@ -128,6 +129,7 @@ export default function SunsetTheme({ id, data }: { id: string; data: SubData })
             barClassName="bg-gradient-to-r from-amber-500 to-orange-300"
             trackClassName="h-2 overflow-hidden rounded-full bg-white/10"
           />
+          <EmergencyRechargeCard id={id} isFa={model.isFa} className="mt-4 text-amber-50" />
           <PortalDeviceLimit
             show={model.showDeviceLimit}
             limit={model.deviceLimit}

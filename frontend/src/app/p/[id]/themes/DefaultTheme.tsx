@@ -36,6 +36,7 @@ import {
   type SubData,
 } from "./portal-kit";
 import { ClientAppsSheet } from "./client-apps";
+import { EmergencyRechargeCard } from "../EmergencyRechargeBar";
 
 export default function DefaultTheme({ id, data }: { id: string; data: SubData }) {
   const { lang, setLang, isFa, t, fontFamily } = usePortalLocale(data);
@@ -235,6 +236,7 @@ export default function DefaultTheme({ id, data }: { id: string; data: SubData }
                 <div className={ts.accent}>↓ {formatBytes(downBytes)}</div>
                 <div className="text-blue-400">↑ {formatBytes(upBytes)}</div>
               </div>
+              <EmergencyRechargeCard id={id} isFa={isFa} className="mt-4" />
               <PortalDeviceLimit
                 show={!!data.showDeviceLimit}
                 limit={data.limitIp}

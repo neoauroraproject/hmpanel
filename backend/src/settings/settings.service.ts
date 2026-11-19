@@ -62,15 +62,53 @@ export class SettingsService {
   }
 
   /** Panel-wide default look. Unknown or missing values fall back to the original UI. */
+  /**
+   * "What's new" after an update, shown once to the panel owner.
+   * On every boot we compare the running version with the one we booted last time; a
+   * change means an update happened and the release notes become pending until the owner
+   * dismisses them. A panel that never recorded a boot (older releases) counts as updated
+   * when its owner account is older than an hour, so fresh installs stay quiet.
+   */
+  async recordBootVersion(current: string): Promise<void> {
+    const last = await this.getSetting('app_version_last_boot', null);
+    if (last === current) return;
+    let updated = typeof last === 'string' && last.length > 0;
+    if (!updated) {
+      const owner = await this.prisma.admin.findFirst({
+        where: { isOwner: true },
+        select: { createdAt: true },
+      });
+      updated = !!owner && Date.now() - owner.createdAt.getTime() > 60 * 60 * 1000;
+    }
+    if (updated) await this.setSetting('whats_new_pending', { version: current, from: last ?? null });
+    await this.setSetting('app_version_last_boot', current);
+  }
+
+  async getWhatsNew(adminId: string): Promise<{ show: boolean; version?: string; from?: string | null }> {
+    const admin = await this.prisma.admin.findUnique({ where: { id: adminId }, select: { isOwner: true } });
+    if (!admin?.isOwner) return { show: false };
+    const pending = await this.getSetting('whats_new_pending', null);
+    if (!pending || typeof pending !== 'object' || !pending.version) return { show: false };
+    return { show: true, version: String(pending.version), from: pending.from ?? null };
+  }
+
+  async dismissWhatsNew(adminId: string): Promise<{ ok: boolean }> {
+    const admin = await this.prisma.admin.findUnique({ where: { id: adminId }, select: { isOwner: true } });
+    if (!admin?.isOwner) return { ok: false };
+    await this.prisma.systemSetting.deleteMany({ where: { key: 'whats_new_pending' } });
+    return { ok: true };
+  }
+
   async getUiPreferences(): Promise<{
     style: 'classic' | 'modern';
     nav: 'top' | 'side';
   }> {
-    const style = await this.getSetting('ui_style_default', 'classic');
-    const nav = await this.getSetting('ui_nav_default', 'top');
+    // v3 default: new look with the side menu, unless the owner picked something else.
+    const style = await this.getSetting('ui_style_default', 'modern');
+    const nav = await this.getSetting('ui_nav_default', 'side');
     return {
-      style: style === 'modern' ? 'modern' : 'classic',
-      nav: nav === 'side' ? 'side' : 'top',
+      style: style === 'classic' ? 'classic' : 'modern',
+      nav: nav === 'top' ? 'top' : 'side',
     };
   }
 

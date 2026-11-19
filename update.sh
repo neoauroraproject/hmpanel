@@ -92,6 +92,47 @@ check_root() {
   fi
 }
 
+# Licensed panels fetch the matching Premium bundle on their first boot after an update
+# (LicenseActivationService.autoUpdateBundleAfterPanelUpdate). Follow it here so the admin
+# sees the result instead of having to press "Update premium bundle".
+follow_premium_bundle_update() {
+  local waited=0 logs="" started=false
+  info "Checking whether this panel has Premium and its bundle needs updating..."
+  while [[ $waited -lt 75 ]]; do
+    logs=$(docker logs --since 10m hmpanel-panel 2>&1 | grep -E "Premium auto-update|checking for a newer Premium bundle" || true)
+    if [[ "$logs" == *"checking for a newer Premium bundle"* ]]; then started=true; fi
+    if [[ "$logs" == *"already current"* ]]; then
+      log "Premium bundle is already the latest version."
+      return 0
+    fi
+    if [[ "$logs" == *"Premium auto-update failed"* ]]; then
+      warn "Premium bundle update failed. Open Settings → Premium License and press 'Update premium bundle'."
+      return 0
+    fi
+    if [[ "$logs" == *"installed bundle"* ]]; then
+      info "New Premium bundle installed; waiting for the backend to restart with it..."
+      sleep 8
+      local i=0
+      while [[ $i -lt 30 ]]; do
+        if docker exec hmpanel-panel curl -sf "http://127.0.0.1:4000/health" &>/dev/null; then
+          log "Premium bundle updated: $(echo "$logs" | grep -o 'installed bundle [^;]*' | tail -n1 | sed 's/installed bundle //')"
+          return 0
+        fi
+        sleep 2; i=$((i + 1))
+      done
+      warn "Backend is slow to come back after the bundle update. Check: hm logs"
+      return 0
+    fi
+    # No license → the check never starts; stop waiting a little after it would have.
+    if [[ "$started" == false && $waited -ge 40 ]]; then
+      info "No active Premium license found — nothing to update."
+      return 0
+    fi
+    sleep 3; waited=$((waited + 3))
+  done
+  info "Premium bundle check is still running; it finishes in the background."
+}
+
 main() {
   echo -e "${CYAN}${BOLD}HMPanel Master Updater v1.3.0${NC}"
   check_root
@@ -467,6 +508,7 @@ END \$\$;
   fi
 
   log "HMPanel Panel successfully updated to version $(read_running_app_version)!"
+  follow_premium_bundle_update || true
 
   info "Pruning old panel backups to free disk..."
   # Keep last 5 of each backup_* family (same policy as cli.sh do_backup)

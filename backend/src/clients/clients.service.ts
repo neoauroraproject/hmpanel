@@ -55,6 +55,8 @@ export interface ClientFilters {
   adminId?: string; // filter by owner (super-admin only)
   expiry?: string;
   trafficRange?: string;
+  /** Panel-side group label (Client.ownerTag). */
+  group?: string;
 }
 
 const NATIVE_PANEL_TYPES = ['eylan', 'pasarguard'] as const;
@@ -1310,6 +1312,23 @@ export class ClientsService {
     });
   }
 
+  /** Panel-wide client cap (Panel.maxClients, 0 = unlimited). Only checked for new clients. */
+  private async assertPanelsHaveRoom(panels: Array<{ id: string; name: string; maxClients?: number | null }>) {
+    const seen = new Set<string>();
+    for (const panel of panels) {
+      if (seen.has(panel.id)) continue;
+      seen.add(panel.id);
+      const cap = Number((panel as { maxClients?: number }).maxClients || 0);
+      if (!(cap > 0)) continue;
+      const count = await this.prisma.client.count({ where: { panelId: panel.id } });
+      if (count >= cap) {
+        throw new BadRequestException(
+          `PANEL_FULL: panel "${panel.name}" has reached its limit of ${cap} clients / ظرفیت پنل «${panel.name}» پر است (${cap} کلاینت)`,
+        );
+      }
+    }
+  }
+
   async create(
     callerId: string,
     data: {
@@ -1357,6 +1376,7 @@ export class ClientsService {
       });
       if (!inbounds || inbounds.length === 0)
         throw new BadRequestException('No valid inbounds found');
+      await this.assertPanelsHaveRoom(inbounds.map((i) => i.panel).filter(Boolean) as Array<{ id: string; name: string }>);
 
       const externalTypes = new Set(
         inbounds.map((i) => i.panel?.panelType).filter((t) => isExternalPanelType(t)),
@@ -1832,6 +1852,9 @@ export class ClientsService {
 
     // Search by name, note, provider username or UUID. Kept in AND so the online and
     // expiry filters below, which set email/OR themselves, still apply.
+    const group = filters.group?.trim();
+    if (group) where.ownerTag = group;
+
     const search = filters.search?.trim();
     if (search) {
       where.AND = [
@@ -3075,6 +3098,14 @@ export class ClientsService {
   async getGroups(adminId: string, role: string) {
     const panels = await this.prisma.panel.findMany({ select: { id: true } });
     const uniqueGroups = new Set<string>();
+    // Our own groups (kept on the client row) work on every panel type.
+    const local = await this.prisma.client.findMany({
+      where: { ownerTag: { not: null }, ...(role === 'SUPER_ADMIN' ? {} : { adminId }) },
+      distinct: ['ownerTag'],
+      select: { ownerTag: true },
+      take: 500,
+    });
+    for (const row of local) if (row.ownerTag) uniqueGroups.add(row.ownerTag);
 
     for (const panel of panels) {
       try {
@@ -4332,8 +4363,15 @@ export class ClientsService {
       }
       return { affected: results.success };
     } else if (dto.action === 'assignGroup') {
-      if (!dto.groupName)
+      const groupName = String(dto.groupName || '').trim().slice(0, 40);
+      if (!groupName)
         throw new BadRequestException('Group name is required');
+      // Saved in the panel first: filtering and listing never depend on 3x-ui.
+      await this.prisma.client.updateMany({
+        where: { id: { in: targets.map((t) => t.id) } },
+        data: { ownerTag: groupName },
+      });
+      results.success = targets.length;
 
       const panelClients = new Map<string, string[]>();
       for (const t of targets) {
@@ -4363,15 +4401,10 @@ export class ClientsService {
 
       for (const [panelId, emails] of panelClients.entries()) {
         try {
-          await this.panelsService.assignClientToGroup(
-            panelId,
-            emails,
-            dto.groupName,
-          );
-          results.success += emails.length;
+          await this.panelsService.assignClientToGroup(panelId, emails, groupName);
         } catch (err: any) {
-          results.failed += emails.length;
-          results.errors.push(`Panel ${panelId}: ${err.message}`);
+          // Older 3x-ui builds have no client groups; the panel-side group still applies.
+          results.errors.push(`Panel ${panelId} (3x-ui group not updated): ${err.message}`);
         }
       }
     } else if (dto.action === 'delete' || dto.action === 'cleanup') {

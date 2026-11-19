@@ -611,6 +611,7 @@ export class SubscriptionsService {
           'update-interval',
         ];
         for (const h of headersToForward) {
+          if (h === 'announce' && res.getHeader('announce')) continue;
           if (firstValidResponse.headers[h]) {
             res.setHeader(h, firstValidResponse.headers[h]);
           }
@@ -739,6 +740,12 @@ export class SubscriptionsService {
     }
 
     const ps = details.portalSettings || {};
+    // Admin's own message, shown by apps that read `announce` (Hiddify, v2rayNG, Streisand…).
+    // Base64 keeps Persian text intact through HTTP headers.
+    const announce = String(ps.subAnnounce ?? '').trim();
+    if (announce) {
+      res.setHeader('announce', `base64:${Buffer.from(announce.slice(0, 400), 'utf8').toString('base64')}`);
+    }
     if (ps.websiteUrl) {
       res.setHeader('support-url', String(ps.websiteUrl));
     } else if (ps.telegramLink) {

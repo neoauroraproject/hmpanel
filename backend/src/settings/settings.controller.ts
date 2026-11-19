@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Body, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, UseGuards, Req, OnApplicationBootstrap } from '@nestjs/common';
+import { getAppVersion } from '../common/utils/app-version';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { RolesGuard, Roles } from '../common/roles.guard';
@@ -9,7 +10,7 @@ import { DiagnosticService } from './diagnostic.service';
 @ApiBearerAuth()
 @UseGuards(AuthGuard('jwt'), RolesGuard)
 @Controller('settings')
-export class SettingsController {
+export class SettingsController implements OnApplicationBootstrap {
   constructor(
     private settingsService: SettingsService,
     private licenseService: LicenseService,
@@ -30,6 +31,25 @@ export class SettingsController {
     const timezone = await this.settingsService.getDisplayTimezone();
     const calendar = await this.settingsService.getDisplayCalendar();
     return { timezone, calendar };
+  }
+
+  async onApplicationBootstrap() {
+    try {
+      await this.settingsService.recordBootVersion(getAppVersion());
+    } catch {
+      /* never block boot on release notes */
+    }
+  }
+
+  // Release notes after an update: only the panel owner sees them, once.
+  @Get('whats-new')
+  async whatsNew(@Req() req: { user: { id: string } }) {
+    return this.settingsService.getWhatsNew(req.user.id);
+  }
+
+  @Post('whats-new/seen')
+  async whatsNewSeen(@Req() req: { user: { id: string } }) {
+    return this.settingsService.dismissWhatsNew(req.user.id);
   }
 
   @Get('ui-preferences')

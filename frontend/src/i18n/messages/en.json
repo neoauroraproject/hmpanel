@@ -195,7 +195,9 @@
     "failed": "Login failed",
     "signingIn": "Signing in…",
     "showPassword": "Show password",
-    "hidePassword": "Hide password"
+    "hidePassword": "Hide password",
+    "welcome": "Welcome back 👋",
+    "welcomeHint": "Sign in to continue"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -531,7 +533,8 @@
     "onlineSessionIp": "IP",
     "onlineSessionDevice": "Device",
     "onlineSessionHwid": "HWID",
-    "onlineSessionUser": "Client"
+    "onlineSessionUser": "Client",
+    "allGroups": "All groups"
   },
   "connection": {
     "platformQr": "Platform Sub QR",
@@ -833,7 +836,9 @@
     "colTag": "Tag",
     "colRemark": "Remark",
     "premiumUnavailable": "Premium unavailable",
-    "disconnected": "Disconnected"
+    "disconnected": "Disconnected",
+    "maxClients": "Max clients on this panel",
+    "maxClientsHint": "0 means no limit. When full, no new clients are created and the store stops offering it for new purchases; renewing existing services still works."
   },
   "traffic": {
     "title": "Traffic History",
@@ -1749,5 +1754,61 @@
     "down": "Move down",
     "remove": "Remove from menu",
     "reset": "Reset to default"
+  },
+  "clientDetails": {
+    "copied": "Link copied",
+    "copyFailed": "Copy failed; select the link by hand",
+    "open": "Open",
+    "daysLeft": "{count} days left",
+    "onlineNow": "Online now",
+    "systemLink": "System subscription link",
+    "panelLink": "Panel subscription link",
+    "qrAndConfigs": "QR & configs"
+  },
+  "whatsNew": {
+    "badge": "New version",
+    "title": "Welcome to HMPanel 3",
+    "subtitle": "Your panel was updated. These are the biggest changes:",
+    "p1Title": "Modern look",
+    "p1": "New layouts and charts with side or top navigation, light and dark. The classic look is still in Settings.",
+    "p2Title": "Your menu and the Premium menu",
+    "p2": "Pin the pages you use most and open every Premium feature from one place.",
+    "p3Title": "Redesigned sales",
+    "p3": "Store, bot, digital goods, pay-as-you-go, reseller sales and emergency top-ups.",
+    "p4Title": "Admins and clients",
+    "p4": "Step-by-step admin creation, quick per-panel top-ups and full client details with links.",
+    "premium": "If you have Premium, its bundle was updated automatically after the update. To buy: license.hmray.pro",
+    "start": "Get started",
+    "changelog": "Full changelog"
+  },
+  "portalSettings": {
+    "announceTitle": "Message inside apps",
+    "announceHint": "Shown above the service in apps that support subscription messages (such as Hiddify and v2rayNG). Used traffic, remaining traffic and expiry are always sent automatically. Leave empty for no message.",
+    "announcePlaceholder": "e.g. To renew, message @myvpn_bot"
+  },
+  "panelProxy": {
+    "title": "Reach 3x-ui panels through a proxy",
+    "hint": "If this server cannot connect to your 3x-ui panels directly (filtering, blocked IP or DNS), panel requests go through this proxy.",
+    "mode": {
+      "fallback": "Only when direct fails",
+      "always": "Always use the proxy"
+    },
+    "modeHint": {
+      "fallback": "Direct first; on a network failure, through the proxy. A panel that only works via the proxy keeps using it for 10 minutes.",
+      "always": "Every request to your panels goes through the proxy."
+    },
+    "paste": "Paste link",
+    "pasteInvalid": "Could not read this link. Example: socks5://user:pass@1.2.3.4:1080",
+    "host": "Proxy host",
+    "username": "Username (optional)",
+    "password": "Password (optional)",
+    "passwordKept": "Saved password is kept",
+    "testTitle": "Test with panel",
+    "testRun": "Test",
+    "direct": "Direct",
+    "viaProxy": "Through the proxy",
+    "failed": "No connection",
+    "saved": "Panel proxy settings saved",
+    "saveFailed": "Could not save"
   }
 }

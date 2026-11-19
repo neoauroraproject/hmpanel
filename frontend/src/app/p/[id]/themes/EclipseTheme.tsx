@@ -14,6 +14,7 @@ import {
   NeoDeviceLimit,
   useNeoMetrics,
 } from "./neo-shared";
+import { EmergencyRechargeCard } from "../EmergencyRechargeBar";
 
 /** Eclipse — light shell, black hero card, emerald accents. */
 export default function EclipseTheme({ id, data }: { id: string; data: SubData }) {
@@ -141,6 +142,7 @@ export default function EclipseTheme({ id, data }: { id: string; data: SubData }
 
         <section>
           <h2 className="mb-2.5 text-base font-bold">{m.t("appsActions")}</h2>
+          <EmergencyRechargeCard id={id} isFa={m.isFa} className="mb-4" />
           <NeoDualSubCopy
             systemUrl={m.systemUrl}
             nativeUrl={m.nativeUrl}

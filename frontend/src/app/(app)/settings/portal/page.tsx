@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Save, Image as ImageIcon, Palette, Layout, Link as LinkIcon, MessageCircle, Phone, Globe, Mail, QrCode } from "lucide-react";
+import { Save, Image as ImageIcon, Palette, Layout, Link as LinkIcon, MessageCircle, Phone, Globe, Mail, QrCode, Megaphone } from "lucide-react";
 import { api } from "@/lib/api";
 import { Card, PageHeader, Spinner, ErrorBox } from "@/components/ui";
 import { useToast } from "@/components/toast";
@@ -22,6 +22,8 @@ const defaultSettings = {
   showWhatsApp: false, whatsappLink: "",
   showWebsite: false, websiteUrl: "",
   showEmail: false, emailAddress: "",
+  // Message shown inside VPN apps that read the subscription "announce" header
+  subAnnounce: "",
   // Branding
   portalName: "",
   logoUrl: "",
@@ -163,6 +165,24 @@ export default function ResellerSettingsPage() {
             <SupportRow icon={<Globe className="text-purple-400"/>} title="Website" checked={form.showWebsite} onCheck={(v: boolean) => setForm(f => ({ ...f, showWebsite: v }))} value={form.websiteUrl} onChange={(v: string) => setForm(f => ({ ...f, websiteUrl: v }))} placeholder="https://myvpn.com" />
             <SupportRow icon={<Mail className="text-amber-400"/>} title="Email Address" checked={form.showEmail} onCheck={(v: boolean) => setForm(f => ({ ...f, showEmail: v }))} value={form.emailAddress} onChange={(v: string) => setForm(f => ({ ...f, emailAddress: v }))} placeholder="support@myvpn.com" />
           </div>
+        </Card>
+
+        <Card className="p-6 md:col-span-2 space-y-3">
+          <div className="flex items-center gap-2">
+            <Megaphone size={18} className="text-blue-500" aria-hidden />
+            <h3 className="text-lg font-semibold text-zinc-800 dark:text-zinc-100">{t("portalSettings.announceTitle")}</h3>
+          </div>
+          <p className="text-sm text-zinc-500">{t("portalSettings.announceHint")}</p>
+          <textarea
+            rows={3}
+            maxLength={400}
+            dir="auto"
+            value={String(form.subAnnounce ?? "")}
+            onChange={(e) => setForm((f) => ({ ...f, subAnnounce: e.target.value }))}
+            placeholder={t("portalSettings.announcePlaceholder")}
+            className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500 dark:border-zinc-800 dark:bg-zinc-950"
+          />
+          <div className="text-end text-xs tabular-nums text-zinc-400">{String(form.subAnnounce ?? "").length}/400</div>
         </Card>
 
       </div>

@@ -17,6 +17,7 @@ import { InstallPrompt } from "@/components/pwa/InstallPrompt";
 import { UiStyleScope } from "@/components/UiStyleScope";
 import { ModernTopNav } from "@/components/ModernTopNav";
 import { useUiStyle } from "@/store/uiStyle";
+import { WhatsNewModal } from "@/components/WhatsNewModal";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -89,6 +90,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </main>
       <PwaBottomNav />
       <InstallPrompt />
+      <WhatsNewModal />
       <Toaster />
     </div>
   );

@@ -32,6 +32,9 @@ model Panel {
   name            String
   url             String
   subUrl          String? // Custom domain/URL for subscription links
+  /// Most clients this panel may hold (0 = no limit). New clients are refused and the
+  /// store stops selling it when full; renewals of existing clients still work.
+  maxClients      Int       @default(0)
   version         String? // Reported Xray/panel version (from the node, simulated in demo)
   apiToken        String? // Bearer token for 3x-ui API Token Based Auth
   username        String? // Fallback: username/password auth

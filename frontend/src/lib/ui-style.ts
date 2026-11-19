@@ -14,8 +14,9 @@ export const UI_DEFAULT_STORAGE_KEY = "hmpanel-ui-default";
 export const UI_STYLE_SETTING_KEY = "ui_style_default";
 export const UI_NAV_SETTING_KEY = "ui_nav_default";
 
-export const FALLBACK_UI_STYLE: UiStyle = "classic";
-export const FALLBACK_UI_NAV: UiNav = "top";
+/** Since v3 the new look with the side menu is the default; classic stays one click away. */
+export const FALLBACK_UI_STYLE: UiStyle = "modern";
+export const FALLBACK_UI_NAV: UiNav = "side";
 
 export function parseUiStyle(value: unknown): UiStyle | null {
   return value === "classic" || value === "modern" ? value : null;
@@ -86,12 +87,12 @@ export function clearUiAttributes() {
 }
 
 /**
- * Runs before hydration on admin routes: personal choice → cached panel default → classic.
+ * Runs before hydration on admin routes: personal choice → cached panel default → modern + side.
  * Kept dependency-free because it is inlined as a string.
  */
 export const UI_STYLE_BOOT_SCRIPT = `(function(){try{
 var h=document.documentElement,g=function(k){try{return localStorage.getItem(k)}catch(e){return null}};
 var d={};try{d=JSON.parse(g('${UI_DEFAULT_STORAGE_KEY}')||'{}')||{}}catch(e){}
 var s=g('${UI_STYLE_STORAGE_KEY}')||d.style,n=g('${UI_NAV_STORAGE_KEY}')||d.nav;
-if(s==='modern'){h.setAttribute('data-ui','modern');h.setAttribute('data-ui-nav',n==='side'?'side':'top');}
+if(s!=='classic'){h.setAttribute('data-ui','modern');h.setAttribute('data-ui-nav',n==='top'?'top':'side');}
 }catch(e){}})();`;

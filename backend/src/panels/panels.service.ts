@@ -1077,12 +1077,13 @@ export class PanelsService implements OnModuleInit {
       apiToken?: string;
       status?: string;
       description?: string | null;
+      maxClients?: number | string | null;
     },
   ) {
     const existing = await this.findOne(id);
     if (isExternalPanelType(existing.panelType)) {
       await this.panelGate.assertCanOperate(existing);
-      data = { name: data.name, description: data.description };
+      data = { name: data.name, description: data.description, maxClients: data.maxClients };
     }
     let formattedSubUrl: string | undefined | null = undefined;
     if (data.subUrl !== undefined) {
@@ -1110,6 +1111,7 @@ export class PanelsService implements OnModuleInit {
       apiToken?: string;
       status?: string;
       description?: string | null;
+      maxClients?: number;
     } = {
       name: data.name,
       subUrl: formattedSubUrl,
@@ -1118,6 +1120,9 @@ export class PanelsService implements OnModuleInit {
     };
     if (data.description !== undefined) {
       updateData.description = data.description;
+    }
+    if (data.maxClients !== undefined && data.maxClients !== null && data.maxClients !== '') {
+      updateData.maxClients = Math.max(0, Math.floor(Number(data.maxClients) || 0));
     }
 
     if (data.url) {

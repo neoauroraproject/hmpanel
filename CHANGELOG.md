@@ -8,6 +8,56 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [3.0.1] - 2026-11-19
+
+### پنل
+- **پیش‌فرض بعد از آپدیت:** ظاهر جدید با منوی کناری. ظاهر کلاسیک همچنان از منوی ظاهر قابل انتخاب است.
+- **معرفی نسخه جدید:** بنر صفحه ورود حذف شد. بعد از هر آپدیت، مدیر اصلی یک بار پنجره «چه چیزی جدید است» را بعد از ورود می‌بیند.
+- صفحه ورود ساده‌تر و نسخه پنل پایین آن نمایش داده می‌شود.
+- **جزئیات کلاینت بازطراحی شد:** مصرف، انقضا با روزهای باقیمانده، پنل، اینباندها و لینک‌های اشتراک با کپی، باز کردن و QR.
+- **اتصال به پنل‌های ثنایی از طریق پروکسی:** اگر سرور نتواند مستقیم به 3x-ui وصل شود، درخواست‌ها از پروکسی SOCKS5 یا HTTP عبور می‌کنند. حالت «فقط وقتی مستقیم نشد» یا «همیشه»، با چسباندن لینک و تست با یک پنل (تنظیمات ← عمومی).
+- **ظرفیت هر پنل:** حداکثر تعداد کلاینت برای هر پنل. وقتی پر شود کلاینت جدید ساخته نمی‌شود و فروشگاه آن را برای خرید جدید نشان نمی‌دهد؛ تمدید سرویس‌های فعلی کار می‌کند.
+- **گروه‌ها:** گروه کلاینت‌ها حالا در خود پنل هم ذخیره می‌شود، روی همه نوع پنل کار می‌کند و فیلتر «گروه» در لیست کلاینت‌ها اضافه شد. گروه ثنایی همچنان در صورت پشتیبانی همگام می‌شود.
+- **پیام روی لینک ساب:** متنی که در تنظیمات پورتال می‌نویسید در برنامه‌های کلاینت نمایش داده می‌شود.
+- پنجره ظاهر در منوی کناری دیگر بیرون از صفحه باز نمی‌شود.
+- **آپدیت خودکار پرمیوم:** بعد از آپدیت پنل، اگر لایسنس فعال باشد باندل پرمیوم هم خودکار به‌روز می‌شود و `update.sh` نتیجه را نشان می‌دهد.
+
+### فروشگاه و ربات (پرمیوم)
+- **شارژ اضطراری** در صفحه ساب همه قالب‌ها نمایش داده می‌شود و فقط برای سرویس‌های خریداری‌شده (نه تست). شارژهای اضطراری اخیر حالا یک تب جدا در فروشگاه دارند.
+- **قوانین سرویس** (فروشگاه ← تنظیمات ← قوانین سرویس):
+  - **نحوه تمدید:** اضافه شدن به باقیمانده، شروع دوره از نو، یا **رزرو** تا وقتی سرویس فعلی تمام شود و بعد خودکار شروع شود.
+  - **نام کاربری سرویس‌های جدید:** از نام تلگرام، پیشوند + شماره، یا پیشوند + کد تصادفی؛ تکراری بودن همیشه بررسی می‌شود.
+  - **خرید حجم یا زمان اضافه** از صفحه سرویس در ربات، با پرداخت از کیف پول.
+  - **پلن دلخواه:** مشتری حجم و مدت را در محدوده‌ای که تعیین می‌کنید انتخاب می‌کند و قیمت خودکار حساب می‌شود.
+  - **تیکت پشتیبانی:** مشتری از ربات پیام می‌فرستد و ادمین با Reply در چت ادمین جواب می‌دهد.
+- **لیست قیمت** و **آموزش‌ها** به‌عنوان دکمه‌های منوی ربات؛ متن صفحه پشتیبانی (مثلاً آیدی پشتیبان) قابل تنظیم است.
+- پنل‌های پر در خرید جدید ربات و فروشگاه وب نمایش داده نمی‌شوند.
+- **پروکسی ربات تلگرام:** چسباندن لینک پروکسی و تست هم‌زمان مسیر مستقیم و پروکسی.
+
+### Panel
+- **Default after updating:** the new look with the side menu. The classic look is still available from the appearance menu.
+- **What's new:** the login banner is gone. After each update, the main admin sees a "What's new" window once after logging in.
+- Simpler login page that shows the panel version.
+- **Redesigned client details:** usage, expiry with days left, panel, inbounds and subscription links with copy, open and QR.
+- **Reach 3x-ui panels through a proxy:** when this server cannot connect to a panel directly, requests go through a SOCKS5 or HTTP proxy, either only when direct fails or always. Paste a link and test it against a panel (Settings → General).
+- **Panel capacity:** a maximum number of clients per panel. When full, no new clients are created and the store stops offering it for new purchases; renewals keep working.
+- **Groups:** client groups are now also stored in the panel, work on every panel type, and the client list has a group filter. The 3x-ui group still syncs where supported.
+- **Subscription message:** text set in the portal settings shows in client apps.
+- The appearance window in the side menu no longer opens off screen.
+- **Premium auto-update:** after a panel update, an active license also updates the Premium bundle, and `update.sh` reports the result.
+
+### Store and bot (Premium)
+- **Emergency recharge** shows on the subscription page in every theme, only for purchased (not test) services. Recent emergency recharges have their own Store tab.
+- **Service rules** (Store → Settings → Service rules):
+  - **How renewals apply:** add to what is left, start a fresh period, or **reserve** until the current service runs out and then start automatically.
+  - **Names for new services:** from the Telegram name, prefix + number, or prefix + random code; uniqueness is always checked.
+  - **Buy extra volume or time** from the service page in the bot, paid from the wallet.
+  - **Custom plan:** customers pick volume and duration within your limits and the price is calculated.
+  - **Support tickets:** customers message support from the bot and admins answer by replying in the admin chat.
+- **Price list** and **Tutorials** as bot menu buttons; the support page text (e.g. your support account) is configurable.
+- Full panels are left out of new purchases in the bot and the web store.
+- **Telegram bot proxy:** paste a proxy link and test the direct and proxy routes side by side.
+
 ## [3.0.0] - 2026-11-18
 
 ### ظاهر جدید (قابل انتخاب)
