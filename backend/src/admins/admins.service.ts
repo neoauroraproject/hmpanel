@@ -458,6 +458,125 @@ export class AdminsService implements OnModuleInit {
     };
   }
 
+  /**
+   * Same change for many admins. Each admin goes through `update`, so quota rules and
+   * the 3x-ui sync behave exactly like a single edit. Owner and super admins are skipped.
+   */
+  async bulk(
+    callerId: string,
+    dto: {
+      ids: string[];
+      action: string;
+      value?: number;
+      inboundIds?: string[];
+      panelId?: string;
+    },
+  ) {
+    const GB = 1024 ** 3;
+    const DAY = 86_400_000;
+    const ids = [...new Set((dto.ids || []).map(String))].slice(0, 500);
+    if (!ids.length) throw new BadRequestException('No admins selected');
+    const value = Number(dto.value || 0);
+    const needsValue = ['addTraffic', 'addDays', 'addClients'].includes(dto.action);
+    if (needsValue && (!Number.isFinite(value) || value === 0)) {
+      throw new BadRequestException('Enter a non-zero amount');
+    }
+    const inboundIds = [...new Set((dto.inboundIds || []).map(String))];
+    if (['addInbounds', 'removeInbounds'].includes(dto.action) && !inboundIds.length) {
+      throw new BadRequestException('Select at least one inbound');
+    }
+
+    const results = { success: 0, skipped: 0, failed: 0, errors: [] as string[] };
+    for (const id of ids) {
+      let name = id;
+      try {
+        const admin: any = await this.findOne(id);
+        name = admin.username;
+        if (admin.role === 'SUPER_ADMIN' || admin.isOwner || id === callerId) {
+          results.skipped++;
+          continue;
+        }
+        const perPanel = admin.quotaMode === 'PER_PANEL';
+        const quotas: any[] = Array.isArray(admin.panelQuotas) ? admin.panelQuotas : [];
+        const targetQuotas = quotas.filter((q) => !dto.panelId || q.panelId === dto.panelId);
+        let patch: Record<string, unknown> | null = null;
+
+        switch (dto.action) {
+          case 'enable':
+            patch = { status: 'active' };
+            break;
+          case 'disable':
+            patch = { status: 'disabled' };
+            break;
+          case 'addTraffic':
+            if (admin.unlimitedTraffic) break;
+            if (perPanel) {
+              const rows = targetQuotas
+                .filter((q) => !q.unlimitedTraffic)
+                .map((q) => ({
+                  panelId: q.panelId,
+                  balanceBytes: Math.max(0, Math.round(Number(q.balance || 0) + value * GB)),
+                }));
+              if (rows.length) patch = { panelQuotas: rows };
+            } else {
+              patch = { balance: Math.max(0, Math.round(Number(admin.balance || 0) + value * GB)) };
+            }
+            break;
+          case 'addClients': {
+            const bump = (cap: number) => (cap === 0 ? 0 : Math.max(0, cap + Math.round(value)));
+            if (perPanel) {
+              const rows = targetQuotas
+                .filter((q) => Number(q.maxClients || 0) > 0)
+                .map((q) => ({
+                  panelId: q.panelId,
+                  balanceBytes: Math.max(0, Math.round(Number(q.balance || 0))),
+                  maxClients: bump(Number(q.maxClients || 0)),
+                }));
+              if (rows.length) patch = { panelQuotas: rows };
+            } else if (Number(admin.maxClients || 0) > 0) {
+              patch = { maxClients: bump(Number(admin.maxClients || 0)) };
+            }
+            break;
+          }
+          case 'addDays': {
+            const current = Number(admin.expiryTime || 0);
+            if (current <= 0) break; // no expiry stays no expiry
+            const base = Math.max(current, Date.now());
+            patch = { expiryTime: Math.max(Date.now(), base + Math.round(value) * DAY) };
+            break;
+          }
+          case 'addInbounds':
+          case 'removeInbounds': {
+            const current: string[] = (admin.adminInbounds || [])
+              .filter((ai: any) => !['eylan', 'pasarguard'].includes(String(ai.inbound?.panel?.panelType || '')))
+              .map((ai: any) => ai.inbound.id);
+            const next =
+              dto.action === 'addInbounds'
+                ? [...new Set([...current, ...inboundIds])]
+                : current.filter((x) => !inboundIds.includes(x));
+            if (next.length === current.length && next.every((x) => current.includes(x))) break;
+            if (!next.length) throw new BadRequestException('An admin needs at least one inbound');
+            patch = { inboundIds: next };
+            break;
+          }
+          default:
+            throw new BadRequestException(`Unknown action ${dto.action}`);
+        }
+
+        if (!patch) {
+          results.skipped++;
+          continue;
+        }
+        await this.update(id, patch as any, callerId);
+        results.success++;
+      } catch (err: any) {
+        results.failed++;
+        results.errors.push(`${name}: ${err?.response?.message || err?.message || err}`);
+      }
+    }
+    return results;
+  }
+
   async update(
     id: string,
     data: {

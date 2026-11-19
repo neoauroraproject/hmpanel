@@ -59,6 +59,46 @@ export interface ClientFilters {
   group?: string;
 }
 
+/**
+ * What a client looked like right before it was deleted, kept on the delete log row so
+ * the traffic history still shows its volume, usage and expiry afterwards.
+ */
+export function deletedClientSnapshot(
+  c: {
+    adminId?: string | null;
+    remark?: string | null;
+    total?: bigint | number | null;
+    up?: bigint | number | null;
+    down?: bigint | number | null;
+    expiryTime?: bigint | number | null;
+    limitIp?: number | null;
+    enable?: boolean | null;
+    panelId?: string | null;
+    createdAt?: Date | string | null;
+    panel?: { name?: string | null } | null;
+    inbounds?: unknown[] | null;
+  },
+  live?: { up: bigint; down: bigint } | null,
+) {
+  const up = BigInt(live?.up ?? c.up ?? 0);
+  const down = BigInt(live?.down ?? c.down ?? 0);
+  return {
+    targetAdminId: c.adminId ?? null,
+    snapshot: {
+      remark: c.remark ?? null,
+      total: String(c.total ?? 0),
+      used: String(up + down),
+      expiryTime: String(c.expiryTime ?? 0),
+      limitIp: c.limitIp ?? 0,
+      enable: c.enable ?? null,
+      panelId: c.panelId ?? null,
+      panelName: c.panel?.name ?? null,
+      inbounds: Array.isArray(c.inbounds) ? c.inbounds.length : null,
+      createdAt: c.createdAt ? new Date(c.createdAt).toISOString() : null,
+    },
+  };
+}
+
 const NATIVE_PANEL_TYPES = ['eylan', 'pasarguard'] as const;
 
 function isNativePanelTypeFilter(value?: string | null): value is 'eylan' | 'pasarguard' {
@@ -1277,6 +1317,7 @@ export class ClientsService {
           details: {
             clientEmail: existing.email,
             adminUsername: existing.admin?.username ?? null,
+            ...deletedClientSnapshot(existing as any),
           },
         },
       });
@@ -2956,6 +2997,7 @@ export class ClientsService {
                 details: {
                   clientEmail: existing.email,
                   adminUsername: existing.admin?.username,
+                  ...deletedClientSnapshot(existing as any, liveUsage),
                 },
               },
             });
@@ -4105,6 +4147,7 @@ export class ClientsService {
             clientEmail: existing.email,
             adminUsername: existing.admin?.username,
             bulkDeleted: true,
+            ...deletedClientSnapshot(existing as any, liveUsage),
           },
         },
       });

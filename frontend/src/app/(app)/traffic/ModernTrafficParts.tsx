@@ -1,8 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import { clsx } from "clsx";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { ArrowDownRight, ArrowUpRight, Database, Users } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, Database, Search, Users } from "lucide-react";
 import { formatBytes, formatDateTime } from "@/lib/format";
 import { useT } from "@/i18n";
 import {
@@ -20,7 +21,10 @@ import {
 
 type Reseller = { id: string; username: string; trafficMode?: string };
 
-/** Avatar strip of resellers for super admins; replaces the dropdown. */
+/**
+ * Reseller picker for super admins. Wraps onto several rows (never off screen); with many
+ * resellers it gets a search box and a scrollable area.
+ */
 export function ResellerStrip({
   resellers,
   adminId,
@@ -31,40 +35,65 @@ export function ResellerStrip({
   onPick: (id: string) => void;
 }) {
   const t = useT();
+  const [q, setQ] = useState("");
   if (resellers.length === 0) return null;
+  const many = resellers.length > 8;
+  const needle = q.trim().toLowerCase();
+  const shown = needle ? resellers.filter((r) => r.username.toLowerCase().includes(needle) || r.id === adminId) : resellers;
   return (
-    <div className="hide-scrollbar -mx-1 flex gap-2 overflow-x-auto px-1 pb-1" role="tablist" aria-label={t("traffic.selectReseller")}>
-      {resellers.map((r) => {
-        const active = r.id === adminId;
-        return (
-          <button
-            key={r.id}
-            type="button"
-            role="tab"
-            aria-selected={active}
-            onClick={() => onPick(r.id)}
+    <div className="min-w-0 space-y-2">
+      {many ? (
+        <div className="relative max-w-xs">
+          <Search size={15} className={clsx("pointer-events-none absolute start-3 top-1/2 -translate-y-1/2", M_MUTED)} aria-hidden />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder={t("traffic.searchReseller", { count: resellers.length })}
             className={clsx(
-              "flex h-12 shrink-0 cursor-pointer items-center gap-2.5 rounded-full border ps-1.5 pe-4 transition-colors duration-150",
+              "h-10 w-full rounded-full border border-[var(--hm-line)] bg-[var(--hm-card)] ps-9 pe-4 text-sm outline-none",
               M_FOCUS,
-              active
-                ? "hm-ink border-transparent"
-                : "border-[var(--hm-line)] bg-[var(--hm-card)] hover:bg-[var(--hm-surface)]",
             )}
-          >
-            <MAvatar name={r.username} size={36} />
-            <span className="flex flex-col items-start leading-tight">
-              <span className={clsx("text-[13px] font-semibold", !active && M_INK)} dir="ltr">
-                {r.username}
-              </span>
-              {r.trafficMode ? (
-                <span className={clsx("text-[10.5px]", active ? "opacity-70" : M_MUTED)}>
-                  {r.trafficMode === "USAGE" ? t("modernAdmins.modeUsage") : t("modernAdmins.modeAllocation")}
+          />
+        </div>
+      ) : null}
+      <div
+        className={clsx("flex flex-wrap gap-2", many && "max-h-[7.5rem] overflow-y-auto pe-1")}
+        role="tablist"
+        aria-label={t("traffic.selectReseller")}
+      >
+        {shown.map((r) => {
+          const active = r.id === adminId;
+          return (
+            <button
+              key={r.id}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => onPick(r.id)}
+              className={clsx(
+                "flex h-12 min-w-0 max-w-full cursor-pointer items-center gap-2.5 rounded-full border ps-1.5 pe-4 transition-colors duration-150",
+                M_FOCUS,
+                active
+                  ? "hm-ink border-transparent"
+                  : "border-[var(--hm-line)] bg-[var(--hm-card)] hover:bg-[var(--hm-surface)]",
+              )}
+            >
+              <MAvatar name={r.username} size={36} />
+              <span className="flex min-w-0 flex-col items-start leading-tight">
+                <span className={clsx("max-w-[10rem] truncate text-[13px] font-semibold", !active && M_INK)} dir="ltr">
+                  {r.username}
                 </span>
-              ) : null}
-            </span>
-          </button>
-        );
-      })}
+                {r.trafficMode ? (
+                  <span className={clsx("text-[10.5px]", active ? "opacity-70" : M_MUTED)}>
+                    {r.trafficMode === "USAGE" ? t("modernAdmins.modeUsage") : t("modernAdmins.modeAllocation")}
+                  </span>
+                ) : null}
+              </span>
+            </button>
+          );
+        })}
+        {!shown.length ? <p className={clsx("px-2 py-3 text-sm", M_MUTED)}>{t("traffic.noResellerMatch")}</p> : null}
+      </div>
     </div>
   );
 }

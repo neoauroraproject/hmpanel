@@ -92,6 +92,8 @@
 - **حسابداری ترافیک:** محاسبه لحظه‌ای، حالت مصرفی و تخصیصی، مهلت قطع و لاگ امن استرداد.
 - **یکپارچگی با 3x-ui:** اتصال کلاینت‌ها به گروه‌های اصلی 3x-ui و یک کلاینت روی چند اینباند. پشتیبانی تا نسخه 3.11.
 - **گروه‌بندی و ظرفیت:** گروه کلاینت‌ها با فیلتر، و سقف تعداد کلاینت برای هر پنل.
+- **عملیات گروهی روی ادمین‌ها:** فعال/غیرفعال، افزودن حجم، روز و ظرفیت، و دادن یا گرفتن دسترسی اینباند برای چند ادمین با هم.
+- **تاریخچه ترافیک و لاگ عملیات** که حجم، مصرف و انقضای سرویس‌های حذف‌شده را هم نگه می‌دارد.
 - **اتصال از طریق پروکسی** به پنل‌هایی که مستقیم در دسترس نیستند (SOCKS5 یا HTTP).
 - **عملیات گروهی و مهاجرت:** ساخت، ویرایش، تمدید و حذف گروهی؛ مهاجرت از پنل‌های قدیمی.
 - **پشتیبان‌گیری:** دانلود، آپلود و بازگردانی بکاپ از پنل یا دستور `hm`.
@@ -232,6 +234,8 @@ Full list: [CHANGELOG.md](CHANGELOG.md).
 - **Traffic accounting:** real-time collection, usage-based and allocation-based modes, grace periods and an audited refund log.
 - **Native 3x-ui integration:** clients map to native 3x-ui groups; one client can sit on several inbounds. Supports 3x-ui up to 3.11.
 - **Groups and capacity:** client groups with a filter, and a client cap per panel.
+- **Bulk actions on admins:** enable or disable, add traffic, days and capacity, and grant or revoke inbounds for many admins at once.
+- **Traffic history and action log** that keeps the volume, usage and expiry of deleted services.
 - **Proxy connection** to panels that cannot be reached directly (SOCKS5 or HTTP).
 - **Bulk operations & migration:** bulk create, edit, extend and delete; migration from older panels.
 - **Backups:** download, upload and restore PostgreSQL backups from the web UI or the `hm` CLI.

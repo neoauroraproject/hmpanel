@@ -933,7 +933,18 @@
     "deleteLogsConfirmAll": "Delete ALL action logs for this admin? This cannot be undone.",
     "deleteLogsDone": "{count} log(s) deleted",
     "deleteLogsFailed": "Failed to delete logs",
-    "selectLogsHint": "Select logs to delete, or clear by category / all"
+    "selectLogsHint": "Select logs to delete, or clear by category / all",
+    "searchReseller": "Search {count} admins…",
+    "noResellerMatch": "No admin found.",
+    "noExpiry": "No expiry",
+    "startsOnFirstUse": "{days} days from first use",
+    "snapRemark": "Display name",
+    "snapVolume": "Used / volume before delete",
+    "snapExpiry": "Expiry before delete",
+    "snapUsers": "Users",
+    "snapPanel": "Panel",
+    "snapCreated": "Created",
+    "snapMissing": "Not recorded for deletions before this version"
   },
   "migration": {
     "title": "Migration",
@@ -1810,5 +1821,39 @@
     "failed": "No connection",
     "saved": "Panel proxy settings saved",
     "saveFailed": "Could not save"
+  },
+  "adminBulk": {
+    "selected": "{count} admins selected",
+    "selectAll": "Select all",
+    "clear": "Clear selection",
+    "enable": "Enable",
+    "disable": "Disable",
+    "traffic": "Traffic",
+    "days": "Days",
+    "clients": "Client cap",
+    "inbounds": "Inbounds",
+    "addInbounds": "Grant access",
+    "removeInbounds": "Revoke access",
+    "searchInbounds": "Search panel or inbound…",
+    "apply": "Apply to {count} admins",
+    "done": "{ok} done · {skipped} unchanged · {failed} failed",
+    "failed": "Could not apply",
+    "title": {
+      "addTraffic": "Add or remove traffic",
+      "addDays": "Add or remove days",
+      "addClients": "Change client cap",
+      "inbounds": "Inbound access"
+    },
+    "hint": {
+      "addTraffic": "In GB; a negative number subtracts. Per-panel admins get it on every limited panel; unlimited admins are left unchanged.",
+      "addDays": "Number of days; a negative number subtracts. Admins without an expiry date are left unchanged.",
+      "addClients": "Number of clients; a negative number subtracts. Unlimited caps stay unlimited.",
+      "inbounds": "The selected inbounds are added to or removed from the admins’ access. Each admin keeps at least one inbound."
+    },
+    "placeholder": {
+      "addTraffic": "e.g. 50 or -10",
+      "addDays": "e.g. 30",
+      "addClients": "e.g. 20"
+    }
   }
 }

@@ -114,3 +114,37 @@ export class UpdateAdminDto {
   @Type(() => AdminPanelQuotaDto)
   panelQuotas?: AdminPanelQuotaDto[];
 }
+
+export const BULK_ADMIN_ACTIONS = [
+  'enable',
+  'disable',
+  'addTraffic',
+  'addDays',
+  'addClients',
+  'addInbounds',
+  'removeInbounds',
+] as const;
+
+export class BulkAdminDto {
+  @ApiProperty({ type: [String] })
+  @IsArray()
+  @IsString({ each: true })
+  ids: string[];
+
+  @ApiProperty({ enum: BULK_ADMIN_ACTIONS })
+  @IsString()
+  action: (typeof BULK_ADMIN_ACTIONS)[number];
+
+  /** GB for addTraffic, days for addDays, count for addClients (negative subtracts). */
+  @ApiPropertyOptional() @IsOptional() @IsNumber() value?: number;
+
+  /** addInbounds / removeInbounds */
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  inboundIds?: string[];
+
+  /** Per-panel admins: only this panel's quota (default: every limited panel). */
+  @ApiPropertyOptional() @IsOptional() @IsString() panelId?: string;
+}

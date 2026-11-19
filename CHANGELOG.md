@@ -8,6 +8,18 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [3.0.2] - 2026-11-19
+
+### پنل
+- **تاریخچه ترافیک:** لیست ادمین‌ها دیگر از کنار صفحه بیرون نمی‌زند؛ در چند ردیف می‌شکند و وقتی ادمین‌ها زیاد باشند جستجو دارد. همه ادمین‌ها نمایش داده می‌شوند (نه فقط ۱۰۰ تای اول).
+- **لاگ حذف سرویس:** وقتی کلاینتی حذف می‌شود، حجم، مصرف، تاریخ انقضا، تعداد کاربر، پنل و تاریخ ساختش در لاگ عملیات می‌ماند. حذفی که مدیر کل روی کلاینت یک نماینده انجام دهد حالا در لاگ همان نماینده هم دیده می‌شود.
+- **عملیات گروهی روی ادمین‌ها:** چند ادمین را تیک بزنید و یک‌جا فعال یا غیرفعال کنید، حجم، روز یا ظرفیت کاربر اضافه یا کم کنید، یا دسترسی اینباندها را بدهید یا بگیرید. ادمین‌های حجم جدا برای هر پنل روی همه پنل‌های محدودشان تغییر می‌کنند.
+
+### Panel
+- **Traffic history:** the admin list no longer runs off the page; it wraps onto several rows and gets a search box when there are many admins. All admins are listed, not only the first 100.
+- **Deleted services in the log:** when a client is deleted, its volume, usage, expiry, user limit, panel and creation date stay in the action log. Deletions the super admin makes on a reseller's client now also show in that reseller's log.
+- **Bulk actions on admins:** tick several admins to enable or disable them, add or remove traffic, days or client capacity, or grant or revoke inbounds in one go. Per-panel admins change on every limited panel.
+
 ## [3.0.1] - 2026-11-19
 
 ### پنل

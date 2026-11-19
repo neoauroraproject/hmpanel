@@ -23,6 +23,7 @@ import {
 } from "./quota-adjust";
 import { useUiStyle } from "@/store/uiStyle";
 import { ModernAdminsView } from "./ModernAdminsView";
+import { AdminBulkBar } from "./AdminBulkBar";
 import { QuickQuotaDialog } from "./QuickQuotaDialog";
 import { AdminPremiumAccess, postPremiumAssignment, useAssignableModules } from "./AdminPremiumAccess";
 
@@ -176,6 +177,8 @@ export default function AdminsPage() {
   const [quickFor, setQuickFor] = useState<Admin | null>(null);
   
   const [activeTab, setActiveTab] = useState<'active' | 'disabled'>('active');
+  
+  const [selected, setSelected] = useState<string[]>([]);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
@@ -255,9 +258,16 @@ export default function AdminsPage() {
   if (error && !data) return <ErrorBox message={t("admins.loadFailed")} />;
 
   const admins = data?.data ?? [];
+  const selectable = admins.filter((a) => a.role !== "SUPER_ADMIN");
+  const selectedIds = selected.filter((id) => selectable.some((a) => a.id === id));
+  const onSelect = (id: string, on: boolean) =>
+    setSelected((prev) => (on ? [...new Set([...prev, id])] : prev.filter((x) => x !== id)));
+  const onSelectAll = (ids: string[], on: boolean) =>
+    setSelected((prev) => (on ? [...new Set([...prev, ...ids])] : prev.filter((x) => !ids.includes(x))));
 
   return (
-    <motion.div {...MOTION_CONFIG.page}>
+    <motion.div {...MOTION_CONFIG.page} className={selectedIds.length ? "pb-24" : undefined}>
+      <AdminBulkBar ids={selectedIds} onClear={() => setSelected([])} />
       {modern ? (
         <ModernAdminsView
           admins={admins}
@@ -272,6 +282,9 @@ export default function AdminsPage() {
           onEdit={setEditAdmin}
           onQuick={setQuickFor}
           onToggle={toggleStatus}
+          selected={selectedIds}
+          onSelect={onSelect}
+          onSelectAll={onSelectAll}
           onDelete={(a) => {
             if (confirm(t("admins.deleteConfirm", { username: a.username }))) {
               quickAction.mutate({ id: a.id, payload: { delete: true } });
@@ -340,7 +353,20 @@ export default function AdminsPage() {
         <table className="w-full text-sm block md:table">
           <thead className="hidden md:table-header-group">
             <tr className="border-b border-zinc-200 dark:border-zinc-800 text-start text-xs uppercase tracking-wide text-zinc-500 bg-white dark:bg-zinc-900/50">
-              <th className="px-4 py-3 font-medium">{t("admins.colAdmin")}</th>
+              <th className="px-4 py-3 font-medium">
+                <span className="flex items-center gap-3">
+                  {selectable.length ? (
+                    <input
+                      type="checkbox"
+                      checked={selectable.every((a) => selectedIds.includes(a.id))}
+                      onChange={(e) => onSelectAll(selectable.map((a) => a.id), e.target.checked)}
+                      aria-label={t("adminBulk.selectAll")}
+                      className="h-4 w-4 cursor-pointer"
+                    />
+                  ) : null}
+                  {t("admins.colAdmin")}
+                </span>
+              </th>
               <th className="px-4 py-3 font-medium">{t("common.status")}</th>
               <th className="px-4 py-3 font-medium">{t("admins.colTraffic")}</th>
               <th className="px-4 py-3 font-medium">{t("admins.colClients")}</th>
@@ -363,6 +389,15 @@ export default function AdminsPage() {
                   <div className="flex justify-between items-center md:block">
                     <div>
                       <div className="font-semibold text-zinc-800 dark:text-zinc-100 flex items-center gap-2">
+                        {a.role !== "SUPER_ADMIN" ? (
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.includes(a.id)}
+                            onChange={(e) => onSelect(a.id, e.target.checked)}
+                            aria-label={a.username}
+                            className="h-4 w-4 shrink-0 cursor-pointer"
+                          />
+                        ) : null}
                         {canEdit ? (
                           <button
                             type="button"

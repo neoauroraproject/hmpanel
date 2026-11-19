@@ -174,6 +174,38 @@ function formatChangeValue(
   return String(value);
 }
 
+type DeletedSnapshot = {
+  remark?: string | null;
+  total?: string;
+  used?: string;
+  expiryTime?: string;
+  limitIp?: number;
+  panelName?: string | null;
+  inbounds?: number | null;
+  createdAt?: string | null;
+};
+
+/** Volume, usage and expiry a deleted client had (kept on the delete log since 3.0.2). */
+function deletedSnapshot(details: Record<string, unknown>): DeletedSnapshot | null {
+  const snap = details.snapshot;
+  return snap && typeof snap === "object" ? (snap as DeletedSnapshot) : null;
+}
+
+function snapshotVolume(snap: DeletedSnapshot, t: (key: string) => string): string {
+  const total = Number(snap.total || 0);
+  const used = formatBytes(Number(snap.used || 0));
+  // LTR isolate so "used / total" keeps its order inside Persian text.
+  const text = total > 0 ? `${used} / ${formatBytes(total)}` : `${used} / ${t("traffic.unlimited")}`;
+  return `⁦${text}⁩`;
+}
+
+function snapshotExpiry(snap: DeletedSnapshot, t: (key: string, params?: Record<string, string | number>) => string): string {
+  const exp = Number(snap.expiryTime || 0);
+  if (exp === 0) return t("traffic.noExpiry");
+  if (exp < 0) return t("traffic.startsOnFirstUse", { days: Math.round(-exp / 86400000) });
+  return formatDateTime(exp);
+}
+
 function getActionChanges(details: Record<string, unknown>): ActionChange[] {
   const raw = details.changes;
   if (!Array.isArray(raw)) return [];
@@ -198,7 +230,8 @@ function actionSummary(
     return `${from} → ${to}`;
   }
   if (row.action === "CLIENT_DELETED" || row.action === "CLIENT_CLEANUP") {
-    return t("traffic.actionDeleted");
+    const snap = deletedSnapshot(details);
+    return snap ? `${t("traffic.actionDeleted")} · ${snapshotVolume(snap, t)}` : t("traffic.actionDeleted");
   }
   if (row.action === "CLIENT_CREATED" && Array.isArray(details.panelsProvisioned)) {
     return `${t("traffic.createdOnPanels")}: ${details.panelsProvisioned.length}`;
@@ -267,7 +300,7 @@ export default function TrafficPage() {
 
   const adminsQuery = useQuery({
     queryKey: ["admins-mini"],
-    queryFn: async () => (await api.get<Paginated<Admin>>("/admins?limit=100")).data,
+    queryFn: async () => (await api.get<Paginated<Admin>>("/admins?limit=1000")).data,
     enabled: isSuper,
   });
 
@@ -1143,6 +1176,17 @@ function ActionDetailsPanel({
         label: t("traffic.colClient"),
         value: String(row.clientEmail || details.clientEmail),
       });
+    }
+    const snap = deletedSnapshot(details);
+    if (snap) {
+      if (snap.remark) metaRows.push({ label: t("traffic.snapRemark"), value: String(snap.remark) });
+      metaRows.push({ label: t("traffic.snapVolume"), value: snapshotVolume(snap, t) });
+      metaRows.push({ label: t("traffic.snapExpiry"), value: snapshotExpiry(snap, t) });
+      if (snap.limitIp) metaRows.push({ label: t("traffic.snapUsers"), value: String(snap.limitIp) });
+      if (snap.panelName) metaRows.push({ label: t("traffic.snapPanel"), value: String(snap.panelName) });
+      if (snap.createdAt) metaRows.push({ label: t("traffic.snapCreated"), value: formatDateTime(snap.createdAt) });
+    } else {
+      metaRows.push({ label: t("traffic.snapVolume"), value: t("traffic.snapMissing") });
     }
   }
   if (row.action === "CLIENT_CREATED" && Array.isArray(details.panelsProvisioned)) {

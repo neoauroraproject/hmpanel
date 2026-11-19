@@ -15,7 +15,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { RolesGuard, Roles } from '../common/roles.guard';
 import { AdminsService } from './admins.service';
-import { CreateAdminDto, UpdateAdminDto } from './dto/admin.dto';
+import { BulkAdminDto, CreateAdminDto, UpdateAdminDto } from './dto/admin.dto';
 import type { AuthRequest } from '../common/auth-request';
 
 @ApiTags('Admins')
@@ -65,6 +65,15 @@ export class AdminsController {
       throw new ForbiddenException('You can only view your own profile');
     }
     return this.adminsService.findOne(id);
+  }
+
+  @Post('bulk')
+  @Roles('SUPER_ADMIN')
+  @ApiOperation({
+    summary: 'Bulk action on admins (enable/disable/addTraffic/addDays/addClients/addInbounds/removeInbounds)',
+  })
+  bulk(@Req() req: AuthRequest, @Body() dto: BulkAdminDto) {
+    return this.adminsService.bulk(req.user.id, dto);
   }
 
   @Patch(':id')

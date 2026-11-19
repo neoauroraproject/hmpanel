@@ -42,6 +42,9 @@ type Props = {
   onQuick: (a: Admin) => void;
   onToggle: (a: Admin) => void;
   onDelete: (a: Admin) => void;
+  selected: string[];
+  onSelect: (id: string, on: boolean) => void;
+  onSelectAll: (ids: string[], on: boolean) => void;
 };
 
 function trafficOf(a: Admin) {
@@ -56,7 +59,9 @@ function trafficOf(a: Admin) {
   return { total, left, used, pct: total > 0 ? (used / total) * 100 : 0 };
 }
 
-function AdminCard({ a, canEdit, roleLabel, onEdit, onQuick, onToggle, onDelete }: {
+function AdminCard({ a, canEdit, roleLabel, onEdit, onQuick, onToggle, onDelete, selected, onSelect }: {
+  selected: boolean;
+  onSelect?: (on: boolean) => void;
   a: Admin;
   canEdit: boolean;
   roleLabel: string;
@@ -78,8 +83,17 @@ function AdminCard({ a, canEdit, roleLabel, onEdit, onQuick, onToggle, onDelete 
   const showPower = !isSuper || !a.isOwner;
 
   return (
-    <MSurface className="group flex flex-col p-5">
+    <MSurface className={clsx("group flex flex-col p-5", selected && "ring-2 ring-[var(--hm-accent)]")}>
       <div className="flex items-start gap-3">
+        {onSelect ? (
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={(e) => onSelect(e.target.checked)}
+            aria-label={a.username}
+            className="mt-3.5 h-4 w-4 shrink-0 cursor-pointer accent-[var(--hm-accent)]"
+          />
+        ) : null}
         <MAvatar name={a.username} size={44} />
         <div className="min-w-0 flex-1">
           <button
@@ -286,6 +300,17 @@ export function ModernAdminsView(p: Props) {
           ]}
         />
         <MSearch value={p.search} onChange={p.onSearch} placeholder={t("admins.searchPlaceholder")} className="min-w-0 flex-1" />
+        {resellers.length ? (
+          <label className={clsx("flex shrink-0 cursor-pointer items-center gap-2 px-2 text-sm", M_MUTED)}>
+            <input
+              type="checkbox"
+              checked={resellers.every((a) => p.selected.includes(a.id))}
+              onChange={(e) => p.onSelectAll(resellers.map((a) => a.id), e.target.checked)}
+              className="h-4 w-4 cursor-pointer accent-[var(--hm-accent)]"
+            />
+            {t("adminBulk.selectAll")}
+          </label>
+        ) : null}
       </MSurface>
 
       {sorted.length === 0 ? (
@@ -304,6 +329,8 @@ export function ModernAdminsView(p: Props) {
               onQuick={() => p.onQuick(a)}
               onToggle={() => p.onToggle(a)}
               onDelete={() => p.onDelete(a)}
+              selected={p.selected.includes(a.id)}
+              onSelect={a.role === "SUPER_ADMIN" ? undefined : (on) => p.onSelect(a.id, on)}
             />
           ))}
         </div>
