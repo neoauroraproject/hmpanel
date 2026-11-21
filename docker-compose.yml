@@ -10,6 +10,10 @@ services:
     image: ghcr.io/neoauroraproject/hmpanel:latest
     container_name: hmpanel-panel
     restart: unless-stopped
+    # Lets the panel reach a 3x-ui running on this same server without going out
+    # through its domain (Panels → Local connection).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     expose:
       - "3000"  # Frontend (served via nginx)
       - "4000"  # Backend API (served via nginx)

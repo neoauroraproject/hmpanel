@@ -11,6 +11,8 @@ import {
   Req,
   UseGuards,
   ForbiddenException,
+  NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
@@ -24,6 +26,7 @@ import {
   normalizePanelProxyConfig,
 } from './panel-connection-proxy.service';
 import type { AuthRequest } from '../common/auth-request';
+import { normalizeLocalOrigin } from './panel-local-route.util';
 
 @ApiTags('Panels')
 @ApiBearerAuth()
@@ -72,6 +75,41 @@ export class PanelsController {
       override.password = (await this.connectionProxy.getConfig()).password;
     }
     return this.connectionProxy.probe(url, override);
+  }
+
+  // ── Local route: 3x-ui on the same server as HMPanel ──
+  @Get(':id/local-route')
+  @ApiOperation({ summary: 'Local route of a panel and whether it is in use' })
+  async getLocalRoute(@Param('id') id: string) {
+    const panel = await this.prisma.panel.findUnique({ where: { id }, select: { url: true } });
+    if (!panel) throw new NotFoundException('Panel not found');
+    return this.connectionProxy.localRouteState(panel.url);
+  }
+
+  @Post(':id/local-route/detect')
+  @ApiOperation({ summary: 'Look for this panel on local addresses of this server' })
+  async detectLocalRoute(@Param('id') id: string) {
+    const panel = await this.prisma.panel.findUnique({ where: { id }, select: { url: true, apiToken: true } });
+    if (!panel) throw new NotFoundException('Panel not found');
+    return this.connectionProxy.detectLocalRoute(panel);
+  }
+
+  @Put(':id/local-route')
+  @ApiOperation({ summary: 'Use a local address for API calls to this panel (null turns it off)' })
+  async saveLocalRoute(@Param('id') id: string, @Body() body: { localUrl?: string | null }) {
+    const panel = await this.prisma.panel.findUnique({ where: { id }, select: { url: true, apiToken: true } });
+    if (!panel) throw new NotFoundException('Panel not found');
+    const raw = String(body?.localUrl ?? '').trim();
+    let localUrl: string | null = null;
+    if (raw) {
+      localUrl = normalizeLocalOrigin(raw);
+      if (!localUrl) throw new BadRequestException('LOCAL_URL_INVALID');
+      const check = await this.connectionProxy.detectLocalRoute(panel, [localUrl]);
+      if (!check.best) throw new BadRequestException('LOCAL_URL_UNREACHABLE');
+    }
+    await this.prisma.panel.update({ where: { id }, data: { localUrl } });
+    this.connectionProxy.invalidate();
+    return this.connectionProxy.localRouteState(panel.url);
   }
 
   @Post('test-connection')

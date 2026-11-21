@@ -8,6 +8,26 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [3.0.4] - 2026-11-21
+
+### پنل
+- **اتصال محلی به 3x-ui روی همین سرور:** در ویرایش پنل، «پیدا کردن روی همین سرور» آدرس‌های داخلی را امتحان می‌کند (فقط آدرسی که توکن API پنل را بپذیرد) و سرعت را با مسیر دامنه مقایسه می‌کند. با روشن کردن آن، درخواست‌ها از مسیر داخلی سرور می‌روند و دامنه فقط برای لینک‌ها می‌ماند. اگر مسیر محلی قطع شود، ۵ دقیقه خودکار از دامنه استفاده می‌شود.
+- **رفع کسر دوباره حجم در ریست مصرف:** ریست مصرف کلاینت فقط حجمی را که دوباره قابل استفاده می‌شود از ادمین کم می‌کند. اگر حجم کلاینت بعد از مصرف کم شده باشد (مثلاً ۱۹۷ گیگ مصرف و حجم ۱۰ گیگ)، ریست فقط ۱۰ گیگ کسر می‌کند، نه کل مصرف قبلی که قبلاً پرداخت شده بود.
+
+### پرمیوم ۳.۰.۵
+- **تحویل‌های دیجیتال کامل‌تر:** فیلتر با تعداد (نیاز به اقدام، تحویل‌شده، لغو/رد)، جستجو، وضعیت فارسی، و پنل سفارش با رسید و تاریخچه؛ تحویل کد، **تحویل بدون کد** (خارج از ربات)، تایید یا رد پرداخت، لغو، تغییر دستی وضعیت، **نمایش و ارسال دوباره کد**. سفارش لغو یا ردشده دیگر «منتظر تحویل» نمی‌ماند.
+- **دکمه «ارسال تست برای من»** برای پیام همگانی، پیام‌های ربات، پیام‌های مسیر مارکتینگ (وفاداری، بازگشت مشتری و …) و پیام‌های محصول دیجیتال؛ فقط به چت ادمین فروشگاه همان ادمین فرستاده می‌شود.
+- **وفاداری مشتری** در جزئیات مشتری حالا با هر تغییر خودکار ذخیره می‌شود.
+
+### Panel
+- **Local connection to a 3x-ui on this server:** in the panel edit dialog, "Find it on this server" tries local addresses (only one that accepts the panel's API token counts) and compares speed with the domain. Once on, API calls go over the server's internal path and the domain stays for links. If the local path fails, the domain is used automatically for 5 minutes.
+- **Fixed double charge on usage reset:** resetting a client's usage now bills the admin only for the traffic it makes usable again. If the client's volume was lowered after use (e.g. 197 GB used, volume 10 GB), the reset bills 10 GB, not the earlier usage that was already paid for.
+
+### Premium 3.0.5
+- **Fuller digital deliveries:** filters with counts (needs action, delivered, cancelled/rejected), search, readable statuses, and an order panel with receipt and history: deliver a code, **deliver without a code** (outside the bot), approve or reject payment, cancel, change status by hand, **show and resend the code**. Cancelled or rejected orders no longer stay "waiting for delivery".
+- **"Send test to me" button** for broadcasts, bot messages, marketing journey messages (loyalty, win-back…) and digital product messages; it goes only to that admin's own store admin chat.
+- **Customer loyalty** in customer details now saves on every change.
+
 ## [3.0.3] - 2026-11-19
 
 ### پنل

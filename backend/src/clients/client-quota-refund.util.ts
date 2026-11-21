@@ -68,3 +68,17 @@ export function computeDeletionRefund(input: {
   if (input.total <= 0n) return 0n;
   return clampRefund(input.total - input.used, input.netCharged);
 }
+
+/**
+ * What resetting a client's usage costs its admin: only the traffic the reset
+ * makes usable again. Before the reset the client could still use
+ * max(0, total − used); after it, the full total. So a client whose volume was
+ * lowered to 10 GB after using 193 GB costs 10 GB, not 193 GB: the used traffic
+ * was already paid for when it was allocated. Unlimited clients (total 0) keep
+ * the old rule and cost what they used.
+ */
+export function computeResetCharge(input: { total: bigint; used: bigint }): bigint {
+  if (input.used <= 0n) return 0n;
+  if (input.total <= 0n) return input.used;
+  return input.used < input.total ? input.used : input.total;
+}

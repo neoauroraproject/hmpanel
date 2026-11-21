@@ -44,6 +44,9 @@ model Panel {
   panelType       String    @default("3x-ui")
   webBasePath     String?
   apiBaseUrl      String?
+  /// Local origin for API calls when 3x-ui runs on this same server (e.g.
+  /// http://host.docker.internal:2053). `url` stays the public address.
+  localUrl        String?
   lastSync        DateTime?
   lastOnline      DateTime?
   inboundCount    Int       @default(0)

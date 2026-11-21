@@ -838,7 +838,24 @@
     "premiumUnavailable": "Premium unavailable",
     "disconnected": "Disconnected",
     "maxClients": "Max clients on this panel",
-    "maxClientsHint": "0 means no limit. When full, no new clients are created and the store stops offering it for new purchases; renewing existing services still works."
+    "maxClientsHint": "0 means no limit. When full, no new clients are created and the store stops offering it for new purchases; renewing existing services still works.",
+    "localRoute": {
+      "title": "Local connection (3x-ui on this server)",
+      "hint": "If this panel is installed on this same server, calls go over the server's internal path instead of the domain: faster, with no DNS or CDN in between. If the local path stops working, the domain is used automatically.",
+      "detect": "Find it on this server",
+      "viaDomain": "Through the domain",
+      "use": "Use {url} ({ms} ms)",
+      "notFound": "This panel was not found on local addresses of this server. If it runs on another server, no local connection is needed.",
+      "noToken": "This panel has no API token; only the port was checked, not that it is this exact panel.",
+      "on": "Local connection on",
+      "paused": "The local path did not answer; using the domain for now",
+      "turnOff": "Turn off",
+      "saveManual": "Save",
+      "saved": "Local connection saved",
+      "off": "Local connection turned off",
+      "unreachable": "The panel did not answer on this address or refused the token.",
+      "invalid": "Not a valid address (example: http://host.docker.internal:2053)."
+    }
   },
   "traffic": {
     "title": "Traffic History",

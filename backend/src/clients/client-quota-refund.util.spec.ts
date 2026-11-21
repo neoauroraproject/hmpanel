@@ -1,6 +1,7 @@
 import {
   computeDeletionRefund,
   computeEditRefund,
+  computeResetCharge,
   freshestUsage,
   netChargedForClient,
 } from './client-quota-refund.util';
@@ -104,5 +105,22 @@ describe('freshestUsage', () => {
   it('takes the larger of stored and live counters per side', () => {
     expect(freshestUsage({ up: 1n, down: 10n }, { up: 3n, down: 4n })).toBe(13n);
     expect(freshestUsage({ up: 1n, down: 2n }, null)).toBe(3n);
+  });
+});
+
+describe('computeResetCharge', () => {
+  it('bills only the volume the reset makes usable again', () => {
+    // 197 GB client lowered to 10 GB after using 193 GB: the reset gives 10 GB back
+    expect(computeResetCharge({ total: 10n * GB, used: 193n * GB })).toBe(10n * GB);
+  });
+
+  it('bills the used traffic when it is below the volume', () => {
+    expect(computeResetCharge({ total: 50n * GB, used: 20n * GB })).toBe(20n * GB);
+    expect(computeResetCharge({ total: 197n * GB, used: 197n * GB })).toBe(197n * GB);
+  });
+
+  it('costs nothing without usage, and unlimited clients cost what they used', () => {
+    expect(computeResetCharge({ total: 10n * GB, used: 0n })).toBe(0n);
+    expect(computeResetCharge({ total: 0n, used: 7n * GB })).toBe(7n * GB);
   });
 });

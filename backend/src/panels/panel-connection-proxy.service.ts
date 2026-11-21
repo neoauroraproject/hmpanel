@@ -2,6 +2,14 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { SocksProxyAgent } from 'socks-proxy-agent';
 import { HttpsProxyAgent } from 'https-proxy-agent';
+import * as https from 'https';
+import {
+  isIpAddress,
+  localRouteCandidates,
+  normalizeLocalOrigin,
+  originalHostHeader,
+  rewriteToLocal,
+} from './panel-local-route.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { SettingsService } from '../settings/settings.service';
 
@@ -42,7 +50,16 @@ const NETWORK_ERRORS = new Set([
 ]);
 const STICKY_MS = 10 * 60 * 1000;
 
-type ProxiedConfig = InternalAxiosRequestConfig & { __panelProxy?: 'used' | 'retried' };
+type ProxiedConfig = InternalAxiosRequestConfig & {
+  __panelProxy?: 'used' | 'retried';
+  /** "used": sent over the local route; "fallback"/"skip": the local route is not used. */
+  __panelLocal?: 'used' | 'fallback' | 'skip';
+  __panelLocalOrig?: { url?: string; baseURL?: string; httpsAgent?: unknown; proxy?: unknown };
+};
+
+type LocalRoute = { localOrigin: string; panelName: string };
+/** After a local-route network failure, calls go to the saved URL for this long. */
+const LOCAL_DOWN_MS = 5 * 60 * 1000;
 
 export function emptyPanelProxyConfig(): PanelProxyConfig {
   return { enabled: false, mode: 'fallback', type: 'socks5', host: '', port: 1080 };
@@ -81,6 +98,10 @@ export class PanelConnectionProxyService implements OnModuleInit, OnModuleDestro
   private stickyUntil = new Map<string, number>();
   private agents: { http: unknown; https: unknown } | null = null;
   private interceptors: { req: number; res: number } | null = null;
+  private localRoutes = new Map<string, LocalRoute>();
+  private localLoadedAt = 0;
+  private localDownUntil = new Map<string, number>();
+  private localAgents = new Map<string, https.Agent>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -108,6 +129,8 @@ export class PanelConnectionProxyService implements OnModuleInit, OnModuleDestro
     this.hostsLoadedAt = 0;
     this.agents = null;
     this.stickyUntil.clear();
+    this.localLoadedAt = 0;
+    this.localDownUntil.clear();
   }
 
   async getConfig(): Promise<PanelProxyConfig> {
@@ -167,7 +190,168 @@ export class PanelConnectionProxyService implements OnModuleInit, OnModuleDestro
     config.proxy = false;
   }
 
+  // ── Local route (3x-ui on the same server) ─────────────────────────
+
+  private fullUrl(config: InternalAxiosRequestConfig): URL | null {
+    try {
+      return new URL(String(config.url || ''), config.baseURL || undefined);
+    } catch {
+      return null;
+    }
+  }
+
+  private async localRouteFor(origin: string): Promise<LocalRoute | null> {
+    if (Date.now() - this.localLoadedAt > 60_000) {
+      const rows = await this.prisma.panel.findMany({
+        where: { localUrl: { not: null } },
+        select: { url: true, localUrl: true, name: true },
+      });
+      const next = new Map<string, LocalRoute>();
+      for (const r of rows) {
+        const local = normalizeLocalOrigin(r.localUrl);
+        if (!local) continue;
+        try {
+          next.set(new URL(r.url).origin.toLowerCase(), { localOrigin: local, panelName: r.name });
+        } catch {
+          /* malformed panel URL: skip */
+        }
+      }
+      this.localRoutes = next;
+      this.localLoadedAt = Date.now();
+    }
+    return this.localRoutes.get(origin.toLowerCase()) || null;
+  }
+
+  /** TLS to a local address: no certificate check, SNI keeps the panel's real name. */
+  private localAgent(servername: string): https.Agent {
+    const key = servername || '-';
+    let agent = this.localAgents.get(key);
+    if (!agent) {
+      agent = new https.Agent({
+        rejectUnauthorized: false,
+        keepAlive: true,
+        timeout: 5_000,
+        maxFreeSockets: 8,
+        ...(servername && !isIpAddress(servername) ? { servername } : {}),
+      });
+      this.localAgents.set(key, agent);
+    }
+    return agent;
+  }
+
+  private async applyLocalRoute(config: ProxiedConfig): Promise<boolean> {
+    if (config.__panelLocal) return false;
+    const full = this.fullUrl(config);
+    if (!full || (full.protocol !== 'http:' && full.protocol !== 'https:')) return false;
+    const origin = full.origin.toLowerCase();
+    const route = await this.localRouteFor(origin);
+    if (!route || (this.localDownUntil.get(origin) || 0) > Date.now()) return false;
+    config.__panelLocalOrig = {
+      url: config.url,
+      baseURL: config.baseURL,
+      httpsAgent: config.httpsAgent,
+      proxy: config.proxy,
+    };
+    config.url = rewriteToLocal(full.toString(), route.localOrigin);
+    config.baseURL = undefined;
+    config.headers.set('Host', originalHostHeader(full.toString()));
+    if (route.localOrigin.startsWith('https:')) config.httpsAgent = this.localAgent(full.hostname);
+    config.proxy = false;
+    config.__panelLocal = 'used';
+    return true;
+  }
+
+  /** Local route failed on the network level: retry the saved URL and stop using it for a while. */
+  private async localFallback(error: AxiosError, config: ProxiedConfig): Promise<unknown> {
+    const orig = config.__panelLocalOrig || {};
+    config.url = orig.url;
+    config.baseURL = orig.baseURL;
+    config.httpsAgent = orig.httpsAgent as any;
+    config.proxy = orig.proxy as any;
+    config.headers.delete('Host');
+    config.__panelLocal = 'fallback';
+    const full = this.fullUrl(config);
+    if (full) {
+      const origin = full.origin.toLowerCase();
+      if (!((this.localDownUntil.get(origin) || 0) > Date.now())) {
+        this.logger.warn(
+          `Panel ${full.host}: local route failed (${error.code || error.message}); using the saved URL for 5 minutes.`,
+        );
+      }
+      this.localDownUntil.set(origin, Date.now() + LOCAL_DOWN_MS);
+    }
+    return axios.request(config);
+  }
+
+  /** Is the local route of this panel URL working right now (not in its 5-minute pause)? */
+  async localRouteState(panelUrl: string): Promise<{ localUrl: string | null; active: boolean }> {
+    let origin = '';
+    try {
+      origin = new URL(panelUrl).origin.toLowerCase();
+    } catch {
+      return { localUrl: null, active: false };
+    }
+    this.localLoadedAt = 0;
+    const route = await this.localRouteFor(origin);
+    if (!route) return { localUrl: null, active: false };
+    return { localUrl: route.localOrigin, active: !((this.localDownUntil.get(origin) || 0) > Date.now()) };
+  }
+
+  /**
+   * Try every local address for a saved panel. With an API token the answer must be a
+   * successful status call, so a different service on the same port never counts.
+   */
+  async detectLocalRoute(panel: { url: string; apiToken?: string | null }, only?: string[]) {
+    const saved = new URL(panel.url);
+    const path = saved.pathname.replace(/\/$/, '');
+    const panelIndex = path.indexOf('/panel');
+    const webBasePath = panelIndex !== -1 ? path.substring(0, panelIndex) : path;
+    const statusPath = `${webBasePath}/panel/api/server/status`;
+    const token = String(panel.apiToken || '').trim();
+
+    const attempt = async (origin: string, local: boolean) => {
+      const started = Date.now();
+      try {
+        const res = await axios.get(`${origin}${statusPath}`, {
+          timeout: local ? 3_000 : 10_000,
+          validateStatus: () => true,
+          maxRedirects: 0,
+          proxy: false,
+          headers: {
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            ...(local ? { Host: saved.host } : {}),
+          },
+          httpsAgent: local ? this.localAgent(saved.hostname) : new https.Agent({ rejectUnauthorized: false }),
+          __panelLocal: 'skip',
+          __panelProxy: 'used',
+        } as any);
+        const verified = !!token && res.status === 200 && !!(res.data as any)?.success;
+        const ok = token ? verified : res.status > 0 && res.status < 500;
+        return { url: origin, ok, verified, status: res.status, ms: Date.now() - started };
+      } catch (err: any) {
+        return {
+          url: origin,
+          ok: false,
+          verified: false,
+          ms: Date.now() - started,
+          error: String(err?.code || err?.message || err).slice(0, 120),
+        };
+      }
+    };
+
+    const candidates = only?.length ? only : localRouteCandidates(panel.url);
+    const local = await Promise.all(candidates.map((c) => attempt(c, true)));
+    const direct = await attempt(saved.origin, false);
+    const best = local.filter((r) => r.ok).sort((a, b) => a.ms - b.ms)[0] || null;
+    return { tokenChecked: !!token, direct, candidates: local, best: best?.url || null };
+  }
+
   private async beforeRequest(config: ProxiedConfig): Promise<ProxiedConfig> {
+    try {
+      if (await this.applyLocalRoute(config)) return config;
+    } catch {
+      /* never break a panel call because of the local route */
+    }
     try {
       const cfg = await this.getConfig();
       if (!cfg.enabled || !cfg.host || config.__panelProxy) return config;
@@ -186,6 +370,10 @@ export class PanelConnectionProxyService implements OnModuleInit, OnModuleDestro
 
   private async onError(error: AxiosError): Promise<unknown> {
     const config = error?.config as ProxiedConfig | undefined;
+    if (config?.__panelLocal === 'used') {
+      if (isNetworkFailure(error)) return this.localFallback(error, config);
+      throw error;
+    }
     if (!config || config.__panelProxy) throw error;
     const cfg = await this.getConfig().catch(() => null);
     if (!cfg?.enabled || !cfg.host || cfg.mode !== 'fallback') throw error;

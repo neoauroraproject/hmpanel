@@ -17,6 +17,7 @@ import { NodeInboundBadge } from "@/components/NodeInboundBadge";
 import { PluginSlot } from "@/components/PluginSlot";
 import { useUiStyle } from "@/store/uiStyle";
 import { ModernPanelsView } from "./ModernPanelsView";
+import { LocalRouteCard } from "./LocalRouteCard";
 
 interface PanelForm {
   name: string;
@@ -778,6 +779,7 @@ function EditPanel({ panel, onClose, onSaved }: { panel: any; onClose: () => voi
           <Field ltr label={t("panels.maxClients")} type="number" value={form.maxClients} onChange={(e) => setForm({ ...form, maxClients: e.target.value })} />
           <div className="text-[10px] text-zinc-500 mt-1 ps-1 leading-tight">{t("panels.maxClientsHint")}</div>
         </div>
+        <LocalRouteCard panelId={panel.id} />
         <div>
           <label className="mb-1 block text-sm text-zinc-500 dark:text-zinc-400">{t("panels.status")}</label>
           <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}

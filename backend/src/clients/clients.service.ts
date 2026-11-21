@@ -145,6 +145,7 @@ import {
   freshestUsage,
   netChargedForClient,
   type ClientUsage,
+  computeResetCharge,
 } from './client-quota-refund.util';
 import { isExpiryReached } from '../traffic/usage-mode-xui.util';
 import {
@@ -3023,6 +3024,8 @@ export class ClientsService {
   async resetUsage(id: string, adminId: string, role: string) {
     const existing = await this.findOne(id, adminId, role);
     const used = existing.up + existing.down;
+    // Only the traffic the reset makes usable again is billed (see computeResetCharge).
+    const resetCharge = computeResetCharge({ total: existing.total, used });
 
     return this.executeAtomicOperation(
       existing.adminId || null,
@@ -3085,17 +3088,17 @@ export class ClientsService {
             role !== 'SUPER_ADMIN' &&
             !this.skipTrafficAccounting(admin)
           ) {
-            if (admin.trafficMode === 'ALLOCATION') {
+            if (admin.trafficMode === 'ALLOCATION' && resetCharge > 0n) {
               await this.adminQuota.assertCanAllocate(
                 admin as any,
-                used,
+                resetCharge,
                 existing.panelId,
               );
               await this.adminQuota.debit(
                 tx,
                 admin as any,
                 existing.panelId,
-                used,
+                resetCharge,
                 {
                   clientId: id,
                   targetClientUuid: existing.uuid,
