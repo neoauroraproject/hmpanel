@@ -28,6 +28,8 @@ import { useT } from "@/i18n";
 import { io } from "socket.io-client";
 import { useUiStyle } from "@/store/uiStyle";
 import { ModernSuperDashboard, ModernResellerHero } from "./ModernDashboard";
+import { ResellerTopUpCard } from "./ResellerTopUpCard";
+import { useAppNav } from "@/hooks/useAppNav";
 
 const GB = 1024 ** 3;
 const tip = {
@@ -577,6 +579,7 @@ function ResellerDashboard() {
   const router = useRouter();
   const [editing, setEditing] = useState<any>(null);
   const { modern } = useUiStyle();
+  const { showTopUp, rechargePendingCount } = useAppNav();
 
   const inboundsQuery = useQuery({
     queryKey: ["inbounds-list"],
@@ -653,6 +656,8 @@ function ResellerDashboard() {
           </div>
         </div>
       )}
+
+      {showTopUp ? <ResellerTopUpCard account={a} pending={rechargePendingCount} /> : null}
 
       {!modern && (
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">

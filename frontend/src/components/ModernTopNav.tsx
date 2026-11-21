@@ -11,6 +11,7 @@ import { PanelBrandName, PanelLogo } from "@/components/PanelLogo";
 import { useAppNav } from "@/hooks/useAppNav";
 import { useAppBrand } from "@/hooks/useAppBrand";
 import { NavItemLink, NavSectionBlock } from "@/components/app-nav";
+import { TopUpNavButton } from "@/components/TopUpNavButton";
 import {
   DEFAULT_PINS_COMMUNITY,
   DEFAULT_PINS_PREMIUM,
@@ -415,7 +416,8 @@ function AccountMenu({ onCustomize }: { onCustomize: () => void }) {
 export function ModernTopNav() {
   const t = useT();
   const pathname = usePathname();
-  const { sections, storeHasNewOrders, rechargePendingCount, isPremium, premiumTeaser } = useAppNav();
+  const { menuSections: sections, showTopUp, storeHasNewOrders, rechargePendingCount, isPremium, premiumTeaser } =
+    useAppNav();
   const userPins = useNavPins((s) => s.pins);
   const hydratePins = useNavPins((s) => s.hydrate);
   const [customizing, setCustomizing] = useState(false);
@@ -497,6 +499,7 @@ export function ModernTopNav() {
       </nav>
 
       <div className="flex shrink-0 items-center gap-2">
+        {showTopUp ? <TopUpNavButton variant="pill" pending={rechargePendingCount} /> : null}
         <div className={clsx("flex h-11 w-11 items-center justify-center rounded-full [&>button]:rounded-full [&>button]:bg-transparent dark:[&>button]:bg-transparent", PILL_BAR)}>
           <ThemeToggle />
         </div>

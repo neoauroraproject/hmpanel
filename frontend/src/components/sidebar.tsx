@@ -12,6 +12,7 @@ import { PanelBrandName, PanelLogo } from "@/components/PanelLogo";
 import { useAppNav } from "@/hooks/useAppNav";
 import { useAppBrand } from "@/hooks/useAppBrand";
 import { NavSectionBlock } from "@/components/app-nav";
+import { TopUpNavButton } from "@/components/TopUpNavButton";
 
 export function Sidebar() {
   const t = useT();
@@ -20,7 +21,7 @@ export function Sidebar() {
   const router = useRouter();
   const admin = useAuth((s) => s.admin);
   const logout = useAuth((s) => s.logout);
-  const { sections, storeHasNewOrders, rechargePendingCount } = useAppNav();
+  const { menuSections: sections, showTopUp, storeHasNewOrders, rechargePendingCount } = useAppNav();
 
   return (
     <aside className="hm-sidebar hidden w-64 shrink-0 flex-col border-e border-slate-200 bg-white dark:border-zinc-800 dark:bg-zinc-950 md:flex">
@@ -30,6 +31,7 @@ export function Sidebar() {
       </div>
 
       <nav className="flex-1 space-y-5 overflow-y-auto overflow-x-hidden px-2.5 py-4" aria-label={t("nav.menu")}>
+        {showTopUp ? <TopUpNavButton variant="block" pending={rechargePendingCount} /> : null}
         {sections.map((section) => (
           <NavSectionBlock
             key={section.id}

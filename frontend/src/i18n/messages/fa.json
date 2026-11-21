@@ -70,7 +70,9 @@
     "sectionAppearance": "ظاهر",
     "sectionAdministration": "مدیریت",
     "sectionSettings": "تنظیمات",
-    "apiKeys": "دسترسی API"
+    "apiKeys": "دسترسی API",
+    "topUp": "شارژ حساب",
+    "topUpHint": "افزایش حجم و اعتبار نمایندگی"
   },
   "common": {
     "save": "ذخیره",
@@ -280,7 +282,18 @@
     "daysLeft": "{count} روز",
     "destinationActive": "فعال",
     "destinationInactive": "غیرفعال",
-    "clientCap": "کلاینت"
+    "clientCap": "کلاینت",
+    "topUp": {
+      "title": "شارژ حساب",
+      "instant": "تایید فوری",
+      "pending": "{count} رسید در انتظار",
+      "left": "باقیمانده حساب شما",
+      "low": "حساب شما رو به اتمام است — همین حالا شارژ کنید",
+      "button": "شارژ حساب",
+      "quick": "شارژ سریع با یک پلن",
+      "payg": "هر مقدار دلخواه (به‌ازای هر گیگ)",
+      "toman": "تومان"
+    }
   },
   "clients": {
     "title": "کلاینت‌ها",

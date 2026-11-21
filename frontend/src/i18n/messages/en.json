@@ -70,7 +70,9 @@
     "sectionAppearance": "Appearance",
     "sectionAdministration": "Administration",
     "sectionSettings": "Settings",
-    "apiKeys": "API access"
+    "apiKeys": "API access",
+    "topUp": "Top up account",
+    "topUpHint": "Add traffic and credit to your account"
   },
   "common": {
     "save": "Save",
@@ -280,7 +282,18 @@
     "daysLeft": "{count} days",
     "destinationActive": "Active",
     "destinationInactive": "Inactive",
-    "clientCap": "Clients"
+    "clientCap": "Clients",
+    "topUp": {
+      "title": "Account top-up",
+      "instant": "Instant approval",
+      "pending": "{count} receipts waiting",
+      "left": "Left on your account",
+      "low": "Your account is running low — top up now",
+      "button": "Top up account",
+      "quick": "Quick top-up with a plan",
+      "payg": "Any amount (priced per GB)",
+      "toman": "Toman"
+    }
   },
   "clients": {
     "title": "Clients",

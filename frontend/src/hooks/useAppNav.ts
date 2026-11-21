@@ -124,8 +124,24 @@ export function useAppNav() {
       .filter((s) => s.items.length > 0);
   }, [isPremium, admin?.role, t]);
 
+  // Resellers get "Account top-up" as its own button, apart from the regular menu.
+  const showTopUp =
+    admin?.role !== "SUPER_ADMIN" &&
+    sections.some((s) => s.items.some((i) => i.moduleId === "admin-recharge"));
+  const menuSections = useMemo(
+    () =>
+      showTopUp
+        ? sections
+            .map((s) => ({ ...s, items: s.items.filter((i) => i.moduleId !== "admin-recharge") }))
+            .filter((s) => s.items.length > 0)
+        : sections,
+    [sections, showTopUp],
+  );
+
   return {
     sections,
+    menuSections,
+    showTopUp,
     storeHasNewOrders,
     rechargePendingCount,
     isPremium: !!isPremium,

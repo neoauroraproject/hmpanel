@@ -12,6 +12,7 @@ import { useT } from "@/i18n";
 import { PanelBrandName, PanelLogo } from "@/components/PanelLogo";
 import { useAppNav } from "@/hooks/useAppNav";
 import { NavSectionBlock } from "@/components/app-nav";
+import { TopUpNavButton } from "@/components/TopUpNavButton";
 import { useMobileNavDrawer } from "@/store/mobileNav";
 
 const CLOSE_MS = 280;
@@ -118,7 +119,7 @@ export function MobileNav() {
   const router = useRouter();
   const admin = useAuth((s) => s.admin);
   const logout = useAuth((s) => s.logout);
-  const { sections, storeHasNewOrders, rechargePendingCount } = useAppNav();
+  const { menuSections: sections, showTopUp, storeHasNewOrders, rechargePendingCount } = useAppNav();
 
   return (
     <>
@@ -186,6 +187,9 @@ export function MobileNav() {
               )}
               aria-label={t("nav.menu")}
             >
+              {showTopUp ? (
+                <TopUpNavButton variant="block" pending={rechargePendingCount} onNavigate={() => setIsOpen(false)} />
+              ) : null}
               {sections.map((section) => (
                 <NavSectionBlock
                   key={section.id}

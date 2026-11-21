@@ -8,6 +8,18 @@ All notable changes to this project will be documented in this file.
 3. Update this `CHANGELOG.md` file by adding a new section at the top for the new version.
 4. Create a GitHub Release with the new version tag (e.g., `v1.5.3`). This triggers the CI/CD pipeline to build and publish the new Docker image to GHCR.
 
+## [3.0.5] - 2026-11-22
+
+### نماینده‌ها
+- **دکمه جدا و مشخص «شارژ حساب»** برای نماینده‌ها: بالای منوی کناری، بالای منوی موبایل و به‌صورت دکمه جدا در نوار بالای ظاهر مدرن؛ با تعداد رسیدهای در انتظار، و مستقیم وارد مراحل شارژ می‌شود.
+- **کارت شارژ حساب در داشبورد نماینده:** باقیمانده حساب با نوار مصرف (قرمز وقتی رو به اتمام است)، دکمه بزرگ شارژ، و سه پلن اول برای شارژ سریع که مستقیم با همان پلن به پرداخت می‌روند.
+- (پرمیوم ۳.۰.۶) دکمه «شارژ حساب» در صفحه شارژ حالا واقعاً مراحل شارژ را شروع می‌کند (قبلاً کاری انجام نمی‌داد).
+
+### Resellers
+- **A separate "Top up account" button** for resellers: at the top of the sidebar and the mobile menu, and as its own pill in the modern top bar; it shows waiting receipts and opens the top-up flow directly.
+- **Top-up card on the reseller dashboard:** what is left with a usage bar (red when running low), a big top-up button, and the first three plans as one-tap shortcuts straight to checkout.
+- (Premium 3.0.6) The "Top up account" button on the top-up page now actually starts the flow (it did nothing before).
+
 ## [3.0.4] - 2026-11-21
 
 ### پنل
