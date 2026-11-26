@@ -3152,6 +3152,10 @@ export class ClientsService {
     });
     for (const row of local) if (row.ownerTag) uniqueGroups.add(row.ownerTag);
 
+    // Panel-side groups span every admin (each admin's username is a group), so
+    // resellers only ever get the groups of their own clients.
+    if (role !== 'SUPER_ADMIN') return Array.from(uniqueGroups).sort();
+
     for (const panel of panels) {
       try {
         const groups = await this.panelsService.listGroups(panel.id);
