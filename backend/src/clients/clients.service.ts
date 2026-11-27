@@ -1943,7 +1943,8 @@ export class ClientsService {
       if (onlineEmails.length === 0) {
         where.email = { in: ['__none__'] }; // Match nothing if no one is online
       } else {
-        where.email = { in: onlineEmails };
+        // Panels report emails lowercased; stored emails may keep their case.
+        where.email = { in: onlineEmails, mode: 'insensitive' };
       }
     } else if (filters.status === 'offline') {
       const onlineEmails = await this.panelsService.getLiveOnlineEmails();

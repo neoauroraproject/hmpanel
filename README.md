@@ -327,7 +327,7 @@ Forgot the owner **username** too? `sudo hm admin reset-login` (or `sudo hm rese
 </table>
 
 <p><sub><b>More from NeoProject</b></sub><br>
-<a href="https://github.com/neoauroraproject/neotunnel">NeoTunnel</a> · <a href="https://github.com/neoauroraproject/Neo-Uptime">NeoUptime</a> · <a href="https://github.com/neoauroraproject/neoexit">NeoExit</a> · <a href="https://github.com/neoauroraproject/neopaste">NeoPaste</a> · <a href="https://github.com/neoauroraproject/NeoTemplate">NeoTemplate</a> · <a href="https://github.com/neoauroraproject/NeoConfig">NeoConfig</a> · <a href="https://github.com/neoauroraproject/neocheck">NeoCheck</a> · <a href="https://neoproject.dev/projects"><b>All projects</b></a></p>
+<a href="https://github.com/neoauroraproject/neotunnel">NeoTunnel</a> · <a href="https://github.com/neoauroraproject/Neo-Uptime">NeoUptime</a> · <a href="https://github.com/neoauroraproject/neoexit">NeoExit</a> · <a href="https://github.com/neoauroraproject/neopaste">NeoPaste</a> · <a href="https://github.com/neoauroraproject/NeoTemplate">NeoTemplate</a> · <a href="https://github.com/neoauroraproject/NeoConfig">NeoConfig</a> · <a href="https://github.com/neoauroraproject/neocheck">NeoCheck</a> · <a href="https://github.com/neoauroraproject/3xfactor">3xFactor</a> · <a href="https://neoproject.dev/projects"><b>All projects</b></a></p>
 
 <p>⭐ If HMPanel is useful to you, give it a star.</p>
 

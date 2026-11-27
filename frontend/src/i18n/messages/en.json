@@ -746,7 +746,8 @@
     "passwordKeepBlank": "Leave blank to keep unchanged",
     "statusActive": "Active",
     "statusSuspended": "Suspended",
-    "statusDisabled": "Disabled"
+    "statusDisabled": "Disabled",
+    "deleteConfirmWithClients": "Delete admin {username}?\n\nTheir {count} clients are not deleted and keep working on the servers.\nIn the main Sanaei (3x-ui) panel they show under Groups as \"{username}\" (or the group you gave them), and here on the Clients page with the group filter."
   },
   "panels": {
     "title": "Panels",
@@ -1890,6 +1891,8 @@
     "scopePanel": "Only {name}",
     "scopePlus": "Panel Plus {name}",
     "scopePanelNote": "Only admins with a quota per panel change.",
-    "scopePlusNote": "Changes the admins' Panel Plus quota (Premium)."
+    "scopePlusNote": "Changes the admins' Panel Plus quota (Premium).",
+    "delete": "Delete",
+    "deleteConfirm": "Delete the {count} selected admins?\n\nTheir clients are not deleted and keep working on the servers. In the main Sanaei (3x-ui) panel they show under Groups by each admin's name (or the group you gave them), and here on the Clients page with the group filter.\nSuper admins and your own account are not deleted."
   }
 }

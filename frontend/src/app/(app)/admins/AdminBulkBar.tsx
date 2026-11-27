@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarPlus, HardDrive, Layers, Network, Power, PowerOff, Users, X } from "lucide-react";
+import { CalendarPlus, HardDrive, Layers, Network, Power, PowerOff, Trash2, Users, X } from "lucide-react";
 import { clsx } from "clsx";
 import { api } from "@/lib/api";
 import { useToast } from "@/components/toast";
@@ -98,7 +98,7 @@ export function AdminBulkBar({ ids, onClear }: { ids: string[]; onClear: () => v
 
   return (
     <>
-      <div className="fixed inset-x-0 bottom-4 z-40 flex justify-center px-4">
+      <div className="fixed inset-x-0 bottom-[calc(var(--hm-bottom-nav,0px)+1rem)] z-[45] flex justify-center px-4">
         <div className="flex max-w-full flex-wrap items-center gap-1 rounded-2xl bg-zinc-900 px-3 py-2 text-white shadow-2xl dark:bg-zinc-100 dark:text-zinc-900">
           <span className="px-2 text-sm font-semibold">{t("adminBulk.selected", { count: ids.length })}</span>
           {xuiPanels.length > 1 || plusProviders.length ? (
@@ -145,6 +145,18 @@ export function AdminBulkBar({ ids, onClear }: { ids: string[]; onClear: () => v
           {!plus ? (
             <button type="button" className={btn} onClick={() => open("addInbounds")}>
               <Network size={14} aria-hidden /> {t("adminBulk.inbounds")}
+            </button>
+          ) : null}
+          {!plus ? (
+            <button
+              type="button"
+              className={clsx(btn, "text-rose-300 hover:bg-rose-500/20 dark:text-rose-600")}
+              disabled={run.isPending}
+              onClick={() => {
+                if (window.confirm(t("adminBulk.deleteConfirm", { count: ids.length }))) run.mutate({ action: "delete" });
+              }}
+            >
+              <Trash2 size={14} aria-hidden /> {t("adminBulk.delete")}
             </button>
           ) : null}
           <button type="button" className={clsx(btn, "ms-1")} onClick={onClear} aria-label={t("adminBulk.clear")}>

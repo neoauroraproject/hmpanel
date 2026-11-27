@@ -501,6 +501,12 @@ export class AdminsService implements OnModuleInit {
         const targetQuotas = quotas.filter((q) => !dto.panelId || q.panelId === dto.panelId);
         let patch: Record<string, unknown> | null = null;
 
+        if (dto.action === 'delete') {
+          await this.remove(id, callerId);
+          results.success++;
+          continue;
+        }
+
         switch (dto.action) {
           case 'enable':
             patch = { status: 'active' };
@@ -1080,11 +1086,18 @@ export class AdminsService implements OnModuleInit {
       throw new ForbiddenException('Only Super Admins can delete Super Admins');
     }
 
+    // The admin's clients are not deleted: they keep running on the panels, where 3x-ui
+    // still shows them under the group named after the admin. Here they lose their owner
+    // (Client.admin is onDelete: SetNull) and keep that group name, so the super admin
+    // can find them with the group filter.
     const clientCount = await this.prisma.client.count({
       where: { adminId: id },
     });
     if (clientCount > 0) {
-      throw new BadRequestException('Cannot delete admin with active clients');
+      await this.prisma.client.updateMany({
+        where: { adminId: id, OR: [{ ownerTag: null }, { ownerTag: '' }] },
+        data: { ownerTag: admin.username },
+      });
     }
 
     await this.prisma.auditLog.create({
@@ -1108,6 +1121,7 @@ export class AdminsService implements OnModuleInit {
           details: {
             groupName: admin.username,
             message: 'Group was left in panel intentionally.',
+            clientsKept: clientCount,
           },
         },
       });

@@ -116,6 +116,7 @@ export class UpdateAdminDto {
 }
 
 export const BULK_ADMIN_ACTIONS = [
+  'delete',
   'enable',
   'disable',
   'addTraffic',

@@ -5015,6 +5015,41 @@ export class PanelsService implements OnModuleInit {
     });
   }
 
+  /**
+   * Keeps only the online emails that belong to `adminId`'s own clients.
+   * Resellers must never see (or count) other admins' online users.
+   */
+  async scopeOnlineToAdmin(
+    adminId: string,
+    keys: string[],
+  ): Promise<Set<string>> {
+    if (keys.length === 0) return new Set();
+    const owned = await this.prisma.client.findMany({
+      where: { adminId },
+      select: { email: true },
+    });
+    return new Set(owned.map((c) => c.email.trim().toLowerCase()));
+  }
+
+  async getLiveOnlineEmailsForAdmin(
+    adminId: string,
+    panelIds?: string[],
+  ): Promise<string[]> {
+    const all = await this.getLiveOnlineEmails(panelIds);
+    const owned = await this.scopeOnlineToAdmin(adminId, all);
+    return all.filter((e) => owned.has(e.trim().toLowerCase()));
+  }
+
+  async getOnlineClientIpsForAdmin(adminId: string): Promise<Record<string, number>> {
+    const all = await this.getOnlineClientIps();
+    const owned = await this.scopeOnlineToAdmin(adminId, Object.keys(all));
+    const out: Record<string, number> = {};
+    for (const [email, n] of Object.entries(all)) {
+      if (owned.has(email.trim().toLowerCase())) out[email] = n;
+    }
+    return out;
+  }
+
   async getLiveOnlineEmails(panelIds?: string[]): Promise<string[]> {
     const whereClause: any = { status: 'online' };
     if (panelIds && panelIds.length > 0) {

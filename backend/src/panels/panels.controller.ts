@@ -123,7 +123,10 @@ export class PanelsController {
   @Get('online-ips')
   @Roles('SUPER_ADMIN', 'RESELLER')
   @ApiOperation({ summary: 'Get active IP counts for online clients' })
-  getOnlineIps() {
+  getOnlineIps(@Req() req: AuthRequest) {
+    if (req.user.role !== 'SUPER_ADMIN') {
+      return this.panelsService.getOnlineClientIpsForAdmin(req.user.id);
+    }
     return this.panelsService.getOnlineClientIps();
   }
 

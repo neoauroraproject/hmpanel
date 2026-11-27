@@ -79,7 +79,6 @@ function AdminCard({ a, canEdit, roleLabel, onEdit, onQuick, onToggle, onDelete,
   const capPct = a.maxClients > 0 ? (clients / a.maxClients) * 100 : null;
   const days = a.expiryTime > 0 ? Math.ceil((a.expiryTime - now) / DAY) : null;
   const canDelete = !a.isOwner;
-  const blockedByClients = clients > 0;
   const showPower = !isSuper || !a.isOwner;
 
   return (
@@ -225,10 +224,9 @@ function AdminCard({ a, canEdit, roleLabel, onEdit, onQuick, onToggle, onDelete,
           ) : null}
           {canDelete ? (
             <MIconButton
-              label={blockedByClients ? t("admins.cannotDeleteWithClients") : t("admins.deleteAdmin")}
+              label={t("admins.deleteAdmin")}
               tone="danger"
-              onClick={blockedByClients ? () => undefined : onDelete}
-              className={blockedByClients ? "cursor-not-allowed opacity-40" : undefined}
+              onClick={onDelete}
             >
               <Trash2 size={16} />
             </MIconButton>

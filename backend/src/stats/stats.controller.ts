@@ -22,9 +22,16 @@ export class StatsController {
   @ApiOperation({
     summary: 'Get live online client emails directly from panels',
   })
-  async getLiveOnlines(@Query('panelId') panelId?: string) {
+  async getLiveOnlines(
+    @Req() req: AuthRequest,
+    @Query('panelId') panelId?: string,
+  ) {
     const panelsToQuery = panelId ? [panelId] : [];
-    const emails = await this.panelsService.getLiveOnlineEmails(panelsToQuery);
+    // Resellers only ever see their own online clients (count + list).
+    const emails =
+      req.user.role === 'SUPER_ADMIN'
+        ? await this.panelsService.getLiveOnlineEmails(panelsToQuery)
+        : await this.panelsService.getLiveOnlineEmailsForAdmin(req.user.id, panelsToQuery);
     return { onlines: emails };
   }
 

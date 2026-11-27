@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { clsx } from "clsx";
 import {
   LayoutDashboard,
@@ -50,12 +50,38 @@ export function PwaBottomNav() {
     return TAB_CANDIDATES.filter((tab) => available.has(tab.href)).slice(0, MAX_TABS);
   }, [sections]);
 
+  // Publish the bar's real height as --hm-bottom-nav so floating bars (bulk actions,
+  // sticky checkout) sit above it instead of underneath. 0 when the bar is not shown.
+  const navRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const root = document.documentElement;
+    const el = navRef.current;
+    if (!standalone || !el) {
+      root.style.setProperty("--hm-bottom-nav", "0px");
+      return;
+    }
+    const update = () => {
+      const visible = window.getComputedStyle(el).display !== "none";
+      root.style.setProperty("--hm-bottom-nav", visible ? `${Math.ceil(el.getBoundingClientRect().height)}px` : "0px");
+    };
+    update();
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(update) : null;
+    ro?.observe(el);
+    window.addEventListener("resize", update);
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener("resize", update);
+      root.style.setProperty("--hm-bottom-nav", "0px");
+    };
+  }, [standalone]);
+
   if (!standalone) return null;
 
   const menuActive = drawerOpen || !tabs.some((tab) => isActive(pathname, tab.href));
 
   return (
     <nav
+      ref={navRef}
       aria-label={t("pwa.bottomNav")}
       className="pwa-bottom-nav pointer-events-none fixed inset-x-0 bottom-0 z-40 px-3 md:hidden"
     >

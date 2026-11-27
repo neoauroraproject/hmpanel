@@ -207,6 +207,14 @@ export default function AdminsPage() {
     },
   });
 
+  // Deleting keeps the admin's clients: say so, and where to find them afterwards.
+  const deleteConfirmText = (a: { username: string; _count?: { clients?: number } }) => {
+    const count = a._count?.clients ?? 0;
+    return count > 0
+      ? t("admins.deleteConfirmWithClients", { username: a.username, count })
+      : t("admins.deleteConfirm", { username: a.username });
+  };
+
   const quickAction = useMutation({
     mutationFn: async ({ id, payload }: { id: string, payload: any }) => {
       if (payload.delete) {
@@ -286,7 +294,7 @@ export default function AdminsPage() {
           onSelect={onSelect}
           onSelectAll={onSelectAll}
           onDelete={(a) => {
-            if (confirm(t("admins.deleteConfirm", { username: a.username }))) {
+            if (confirm(deleteConfirmText(a))) {
               quickAction.mutate({ id: a.id, payload: { delete: true } });
             }
           }}
@@ -548,20 +556,18 @@ export default function AdminsPage() {
                       const isOwnerRow = a.isOwner === true;
                       const isExtraSuper = a.role === "SUPER_ADMIN" && !isOwnerRow;
                       const canDelete = !isOwnerRow;
-                      const blockedByClients = (a._count?.clients ?? 0) > 0;
                       if (!canDelete) return null;
                       return (
                     <motion.button
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
-                      disabled={blockedByClients}
                       onClick={() => {
-                        if (confirm(t("admins.deleteConfirm", { username: a.username }))) {
+                        if (confirm(deleteConfirmText(a))) {
                           quickAction.mutate({ id: a.id, payload: { delete: true } }); 
                         }
                       }}
-                      className={`p-2 rounded-lg transition-colors ${blockedByClients ? "text-zinc-600 cursor-not-allowed" : "text-red-400 hover:bg-red-400/10"}`}
-                      title={blockedByClients ? t("admins.cannotDeleteWithClients") : isExtraSuper ? t("admins.deleteSuperAdmin") : t("admins.deleteAdmin")}
+                      className="p-2 rounded-lg transition-colors text-red-400 hover:bg-red-400/10"
+                      title={isExtraSuper ? t("admins.deleteSuperAdmin") : t("admins.deleteAdmin")}
                     >
                       <Trash2 size={16} />
                     </motion.button>

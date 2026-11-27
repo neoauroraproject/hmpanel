@@ -1418,6 +1418,39 @@ model StoreEmergencyGrant {
   @@index([adminId, createdAt])
 }
 
+/// Premium: fingerprints of submitted payment receipts (duplicate-receipt guard).
+/// kind: img (image bytes) | tgu (Telegram file_unique_id) | ref (bank tracking number)
+model StoreReceiptFingerprint {
+  id         String   @id
+  adminId    String
+  customerId String?
+  kind       String
+  hash       String
+  orderId    String?
+  depositId  String?
+  createdAt  DateTime @default(now())
+
+  @@index([adminId, hash])
+  @@index([orderId])
+  @@index([depositId])
+}
+
+/// Premium: support inbox archive (bot tickets IN, admin replies OUT).
+model StoreSupportMessage {
+  id         String    @id
+  adminId    String
+  customerId String?
+  chatId     String
+  direction  String
+  text       String    @default("")
+  photo      String?
+  readAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([adminId, createdAt])
+  @@index([adminId, chatId, createdAt])
+}
+
 model StoreCouponRedemption {
   id         String   @id @default(uuid())
   couponId   String
